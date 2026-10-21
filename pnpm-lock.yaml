@@ -27,6 +27,9 @@ catalogs:
     playwright:
       specifier: ^1.64.1
       version: 1.64.1
+    seroval:
+      specifier: ^1.6.11
+      version: 1.6.11
     typescript:
       specifier: ^7.0.2
       version: 7.0.2
@@ -66,6 +69,9 @@ importers:
       '@solidjs/signals':
         specifier: 'catalog:'
         version: 2.0.0-rc.15
+      seroval:
+        specifier: 'catalog:'
+        version: 1.6.11
     devDependencies:
       '@rinka/config':
         specifier: workspace:*
@@ -884,6 +890,10 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
+  seroval@1.6.11:
+    resolution: {integrity: sha512-hpb6XnMCGN/A+79Uf8V7/iTGkyyyazNn5X0CoCAp7Uy9vT3RT8jZ9GLcnxGoVjg3P8AArbe4ZVHq6C8oT2a0kA==}
+    engines: {node: '>=10'}
+
   sirv@3.0.2:
     resolution: {integrity: sha512-2wcC/oGxHis/BoHkkPwldgiPSYcpZK3JU28WoMVv55yHJgcZ8rlXvuG9iZggz+sU1d4bRgIGASwyWqjxu3FM0g==}
     engines: {node: '>=18'}
@@ -1543,6 +1553,8 @@ snapshots:
       '@rolldown/binding-openharmony-arm64': 1.2.14
       '@rolldown/binding-win32-arm64-msvc': 1.2.14
       '@rolldown/binding-win32-x64-msvc': 1.2.14
+
+  seroval@1.6.11: {}
 
   sirv@3.0.2:
     dependencies:

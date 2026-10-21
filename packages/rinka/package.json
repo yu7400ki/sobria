@@ -18,7 +18,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@solidjs/signals": "catalog:"
+    "@solidjs/signals": "catalog:",
+    "seroval": "catalog:"
   },
   "devDependencies": {
     "@rinka/config": "workspace:*",
