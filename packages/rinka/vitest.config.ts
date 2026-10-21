@@ -15,7 +15,6 @@ const types = (name: string) => ({
 
 export default defineConfig({
   test: {
-    passWithNoTests: true,
     projects: [
       { test: { name: "node", include: ["test/node/**/*.test.ts"] } },
       {
