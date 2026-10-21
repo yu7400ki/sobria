@@ -1,0 +1,8 @@
+{
+  "name": "@onibi-tests/fixture-library",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "onibi": "workspace:*"
+  }
+}

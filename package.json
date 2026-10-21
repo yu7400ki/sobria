@@ -1,0 +1,9 @@
+{
+  "name": "onibi-repository",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck"
+  }
+}

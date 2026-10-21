@@ -1,0 +1,8 @@
+{
+  "name": "@onibi-tests/e2e",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "onibi": "workspace:*"
+  }
+}
