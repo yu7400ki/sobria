@@ -1,6 +1,0 @@
-{
-  "extends": "@onibi/config/tsconfig.base.json",
-  "compilerOptions": {
-    "customConditions": ["onibi-shared", "onibi-server"]
-  }
-}

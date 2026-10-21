@@ -1,1 +1,1 @@
-export { root as default } from "@onibi/config/oxlint";
+export { root as default } from "@rinka/config/oxlint";

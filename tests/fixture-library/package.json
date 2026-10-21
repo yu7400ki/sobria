@@ -1,8 +1,8 @@
 {
-  "name": "@onibi-tests/fixture-library",
+  "name": "@rinka-tests/fixture-library",
   "private": true,
   "type": "module",
   "dependencies": {
-    "onibi": "workspace:*"
+    "rinka": "workspace:*"
   }
 }

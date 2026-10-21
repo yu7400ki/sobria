@@ -35,7 +35,7 @@ importers:
 
   .:
     devDependencies:
-      '@onibi/config':
+      '@rinka/config':
         specifier: workspace:*
         version: link:packages/config
       oxfmt:
@@ -58,9 +58,9 @@ importers:
         specifier: 'catalog:'
         version: 7.0.2
 
-  packages/onibi:
+  packages/rinka:
     devDependencies:
-      '@onibi/config':
+      '@rinka/config':
         specifier: workspace:*
         version: link:../config
       '@types/node':
@@ -81,11 +81,11 @@ importers:
 
   tests/e2e:
     dependencies:
-      onibi:
+      rinka:
         specifier: workspace:*
-        version: link:../../packages/onibi
+        version: link:../../packages/rinka
     devDependencies:
-      '@onibi/config':
+      '@rinka/config':
         specifier: workspace:*
         version: link:../../packages/config
       '@types/node':
@@ -106,9 +106,9 @@ importers:
 
   tests/fixture-library:
     dependencies:
-      onibi:
+      rinka:
         specifier: workspace:*
-        version: link:../../packages/onibi
+        version: link:../../packages/rinka
 
 packages:
 

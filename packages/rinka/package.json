@@ -1,5 +1,5 @@
 {
-  "name": "onibi",
+  "name": "rinka",
   "version": "0.0.0",
   "private": true,
   "files": [
@@ -18,7 +18,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@onibi/config": "workspace:*",
+    "@rinka/config": "workspace:*",
     "@types/node": "catalog:",
     "@vitest/browser-playwright": "catalog:",
     "playwright": "catalog:",

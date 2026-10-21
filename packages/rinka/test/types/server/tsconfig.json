@@ -1,0 +1,6 @@
+{
+  "extends": "@rinka/config/tsconfig.base.json",
+  "compilerOptions": {
+    "customConditions": ["rinka-server"]
+  }
+}

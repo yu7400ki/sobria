@@ -1,5 +1,5 @@
 {
-  "name": "@onibi-tests/e2e",
+  "name": "@rinka-tests/e2e",
   "private": true,
   "type": "module",
   "scripts": {
@@ -7,10 +7,10 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "onibi": "workspace:*"
+    "rinka": "workspace:*"
   },
   "devDependencies": {
-    "@onibi/config": "workspace:*",
+    "@rinka/config": "workspace:*",
     "@types/node": "catalog:",
     "@vitest/browser-playwright": "catalog:",
     "playwright": "catalog:",

@@ -1,5 +1,5 @@
 {
-  "name": "onibi-repository",
+  "name": "rinka-repository",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,7 +12,7 @@
     "test": "pnpm build && pnpm -r --if-present test"
   },
   "devDependencies": {
-    "@onibi/config": "workspace:*",
+    "@rinka/config": "workspace:*",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "catalog:"
