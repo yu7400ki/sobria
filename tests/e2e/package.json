@@ -2,7 +2,19 @@
   "name": "@onibi-tests/e2e",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
   "dependencies": {
     "onibi": "workspace:*"
+  },
+  "devDependencies": {
+    "@onibi/config": "workspace:*",
+    "@types/node": "catalog:",
+    "@vitest/browser-playwright": "catalog:",
+    "playwright": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }
