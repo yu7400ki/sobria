@@ -21,7 +21,7 @@ describe("tagFromPath", () => {
     expect(tagFromPath("x", "card.jsx")).toBe("x-card");
   });
 
-  it("Custom Element の名前にならないファイル名は、パスとタグ名を示すエラーにする", () => {
+  it("Custom Element の名前にできないファイル名では、パスとタグ名を示すエラーを投げる", () => {
     expect(() => tagFromPath("app", "カード.tsx")).toThrow(
       "src/elements/カード.tsx のタグ名 app-カード は、Custom Element の名前にできません。",
     );

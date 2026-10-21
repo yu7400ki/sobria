@@ -25,6 +25,7 @@ describe("isJson", () => {
     ];
     for (const value of values) expect(isJson(value)).toBe(false);
     expect(isJson(Object.create({}))).toBe(false);
+    expect(isJson(Object.assign(Object.create(null) as object, { a: 1 }))).toBe(true);
   });
 });
 
@@ -48,6 +49,9 @@ describe("checkSerializable", () => {
     );
     expect(() => checkSerializable(new Map([["k", () => 1]]), "v")).toThrow(
       "v.get(k) は関数なので",
+    );
+    expect(() => checkSerializable(new Map([[Symbol("k"), 1]]), "v")).toThrow(
+      "v のキー は symbol なので",
     );
   });
 
@@ -87,7 +91,7 @@ describe("toScript", () => {
     expect(Object.is(result.special[1], -0)).toBe(true);
   });
 
-  it("出力は < を含まないので、script 要素を閉じない", () => {
+  it("出力は < を含まないので、埋め込んだ値が script 要素を閉じない", () => {
     expect(toScript({ html: "</script><script>alert(1)</script>" }, "v")).not.toContain("<");
   });
 

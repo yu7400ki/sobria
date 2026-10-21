@@ -6,7 +6,7 @@ function refuseError(): never {
   throw new Error("Error は送信できません。");
 }
 
-/** Error を拒否する seroval のプラグイン。Error は、1 回のシリアライズの中で検出する。 */
+/** Error を拒否する seroval のプラグイン。 */
 const refuseErrors = createPlugin<Error, never>({
   tag: "rinka/refuse-error",
   test: (value) => value instanceof Error,
@@ -15,7 +15,7 @@ const refuseErrors = createPlugin<Error, never>({
   deserialize: refuseError,
 });
 
-/** `run` が失敗したときだけ `value` をたどり、送れない値の位置を示すエラーを投げる。 */
+/** `run` が失敗したときだけ `value` を走査し、送信できない値の位置を示すエラーを投げる。 */
 function withPath<T>(run: () => T, value: unknown, path: string): T {
   try {
     return run();
@@ -25,12 +25,12 @@ function withPath<T>(run: () => T, value: unknown, path: string): T {
   }
 }
 
-/** ページのスクリプトに埋め込む、`value` を作る JS の式を返す。 */
+/** ページのスクリプトに埋め込む、`value` を作成する JS の式を返す。 */
 export function toScript(value: unknown, path: string): string {
   return withPath(() => serialize(value, { plugins: [refuseErrors] }), value, path);
 }
 
-/** サーバー関数の戻り値から、RPC のレスポンスの本文を作る。 */
+/** サーバー関数の戻り値から、RPC のレスポンスの本文を作成する。 */
 export function toRpcBody(value: unknown): { ok: unknown } | { s: SerovalJSON } {
   if (isJson(value)) return { ok: value };
   return {
@@ -38,7 +38,7 @@ export function toRpcBody(value: unknown): { ok: unknown } | { s: SerovalJSON } 
   };
 }
 
-/** seroval の JSON の形式で送られた RPC の入力を読む。プラグインを使わないので、関数の参照は復元しない。 */
+/** seroval の JSON の形式で送られた RPC の入力を読む。関数の参照は復元しない。 */
 export function fromRpcInput(json: SerovalJSON): unknown {
   return fromJSON(json);
 }

@@ -215,6 +215,66 @@ describe("action と optimistic", () => {
     expect(shown()).toBe(0);
   });
 
+  it("async 関数の最初の await より前の書き込みは、action が終わるまで保留される", async () => {
+    const finish = deferred();
+    const [count, setCount] = signal(0);
+    let run!: () => Promise<void>;
+    createRoot(() => {
+      run = action(async () => {
+        setCount(1);
+        await finish.promise;
+      });
+    });
+    const running = run();
+    await tick();
+    flush();
+    expect(count()).toBe(0);
+    finish.resolve();
+    await running;
+    flush();
+    expect(count()).toBe(1);
+  });
+
+  it("action の中で refresh を await すると、memo が解決するまで optimistic の値を保つ", async () => {
+    let server = 1;
+    let fetching = deferred();
+    let shown!: () => number;
+    let save!: (n: number) => Promise<void>;
+    let user!: ReturnType<typeof memo<number>>;
+    createRoot(() => {
+      user = memo(async () => {
+        const value = server;
+        await fetching.promise;
+        return value;
+      });
+      const [value, setShown] = optimistic(() => user());
+      shown = value;
+      save = action(async (n: number) => {
+        setShown(n);
+        server = n;
+        await refresh(user);
+      });
+    });
+    flush();
+    fetching.resolve();
+    await tick();
+    flush();
+    expect(shown()).toBe(1);
+    fetching = deferred();
+    const running = save(5);
+    flush();
+    expect(shown()).toBe(5);
+    await tick();
+    flush();
+    expect(user()).toBe(1);
+    expect(shown()).toBe(5);
+    fetching.resolve();
+    await running;
+    flush();
+    expect(user()).toBe(5);
+    expect(shown()).toBe(5);
+  });
+
   it("action が失敗すると optimistic の値は元に戻る", async () => {
     const fail = deferred();
     const [count] = signal(1);

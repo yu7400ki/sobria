@@ -39,7 +39,7 @@ export type Action<Args extends unknown[], R> = ((...args: Args) => Promise<R>) 
 
 type ActionBody<Args extends unknown[], R> = (
   ...args: Args
-) => Promise<R> | Generator<unknown, R, unknown> | AsyncGenerator<unknown, R, unknown>;
+) => Promise<R> | Generator<unknown, R, unknown>;
 
 /**
  * 1 つのトランザクションとして実行する書き込みを作成する。
@@ -48,14 +48,11 @@ type ActionBody<Args extends unknown[], R> = (
  */
 export function action<Args extends unknown[], R>(fn: ActionBody<Args, R>): Action<Args, R> {
   const [pending, setPending] = createOptimistic(false);
-  const run = solidAction((...args: Args) => {
+  const run = solidAction(function* (...args: Args): Generator<unknown, R, R> {
     setPending(true);
     const result = fn(...args);
-    return result instanceof Promise ? wait(result) : result;
+    if (result instanceof Promise) return yield result;
+    return yield* result;
   });
   return Object.assign((...args: Args) => run(...args), { pending });
-}
-
-function* wait<R>(promise: Promise<R>): Generator<Promise<R>, R, R> {
-  return yield promise;
 }

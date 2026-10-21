@@ -22,24 +22,37 @@ describe("生成した一覧", () => {
       "remove",
       "append",
       "insertBefore",
+      "insertAdjacentHTML",
+      "setHTMLUnsafe",
       "setAttribute",
       "dispatchEvent",
       "attachShadow",
       "shadowRoot",
+      "attachInternals",
     ]) {
       expect(structuralMembers).toContain(name);
     }
-    for (const name of ["focus", "blur", "click", "textContent", "children"]) {
+    for (const name of [
+      "focus",
+      "blur",
+      "click",
+      "textContent",
+      "children",
+      "contains",
+      "querySelector",
+      "cloneNode",
+    ]) {
       expect(structuralMembers).not.toContain(name);
     }
   });
 });
 
 describe("checkPropNames", () => {
-  it("使える名前には何も返さない", () => {
+  it("問題の無い名前では、空の配列を返す", () => {
     expect(
       checkPropNames(["heading", "userId", "onSelect", "children", "header", "items"]),
     ).toEqual([]);
+    expect(checkPropNames(["constructor", "__proto__", "toString", "hasOwnProperty"])).toEqual([]);
   });
 
   it("名前、理由、代わりの名前の例を示す", () => {
@@ -110,6 +123,7 @@ describe("checkExposeName", () => {
       "setAttribute",
       "addEventListener",
       "shadowRoot",
+      "attachInternals",
       "connectedCallback",
       "form",
       "validity",

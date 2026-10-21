@@ -11,7 +11,7 @@ export function toKebabCase(name: string): string {
 export const propToAttribute = toKebabCase;
 
 /**
- * `src/elements/` からの相対パスで表した要素のファイルのタグ名を返す。
+ * `src/elements/` からの相対パスで表現した要素のファイルのタグ名を返す。
  * `index` のファイルはディレクトリの名前になる。Custom Element の名前にならないときは例外を投げる。
  */
 export function tagFromPath(prefix: string, path: string): string {

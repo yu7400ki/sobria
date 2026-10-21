@@ -1,11 +1,11 @@
-// TypeScript の DOM の型定義から、props と expose に使えない名前の一覧を生成する。
+// TypeScript の DOM の型定義から、props と expose に使用できない名前の一覧を生成する。
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { API, SymbolFlags } from "typescript/unstable/sync";
 
 const root = resolve(import.meta.dirname, "..");
-const config = resolve(root, "tsconfig.json");
+const config = resolve(root, "scripts/tsconfig.dom.json");
 const output = resolve(root, "src/shared/dom-names.generated.ts");
 
 const names = (symbols: readonly { name: string }[]) => symbols.map((s) => s.name);
@@ -27,16 +27,19 @@ try {
   };
   const methods = (name: string) =>
     names(members(name).filter((s) => (s.flags & SymbolFlags.Method) !== 0));
+  const mutating =
+    /^(append|prepend|insert|remove|replace|before$|after$|moveBefore|normalize|setHTML)/;
 
   const htmlElement = names(members("HTMLElement"));
   const structural = [
     ...names(members("EventTarget")),
-    ...methods("Node"),
-    ...methods("ChildNode"),
-    ...methods("ParentNode"),
+    ...["Node", "ChildNode", "ParentNode", "Element"]
+      .flatMap(methods)
+      .filter((name) => mutating.test(name)),
     ...names(members("Element")).filter((name) => name.includes("Attribute")),
     "attachShadow",
     "shadowRoot",
+    "attachInternals",
   ];
 
   writeFileSync(
@@ -47,7 +50,7 @@ try {
       "/** `HTMLElement` のメンバーの名前。継承したメンバーを含む。 */",
       `export const htmlElementMembers: ReadonlySet<string> = ${setLiteral(htmlElement)};`,
       "",
-      "/** ノードの構造、属性、イベント、Shadow DOM を操作する、`HTMLElement` のメンバーの名前。 */",
+      "/** ノードの構造、属性、イベント、Shadow DOM、ElementInternals を操作する、`HTMLElement` のメンバーの名前。 */",
       `export const structuralMembers: ReadonlySet<string> = ${setLiteral(structural)};`,
       "",
     ].join("\n"),

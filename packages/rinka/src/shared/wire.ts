@@ -1,7 +1,7 @@
 /** RPC のリクエストとレスポンスで、値の形式を示すヘッダーの名前。 */
 export const wireHeader = "x-rinka-wire";
 
-/** `wireHeader` に設定する値。`rpc` は rinka が組み立てたレスポンスを示し、`seroval` は本文が seroval の JSON の形式であることを示す。 */
+/** `wireHeader` に設定する値。`rpc` は rinka が構築したレスポンスを示し、`seroval` は本文が seroval の JSON の形式であることを示す。 */
 export const wireFormat = { rpc: "rpc", seroval: "seroval" } as const;
 
 /** `JSON.parse(JSON.stringify(value))` が `value` と同じ値を返すかどうかを返す。 */
@@ -35,8 +35,8 @@ export function isJson(value: unknown): boolean {
 const builtins = [Date, RegExp, Map, Set, ArrayBuffer, DataView];
 
 /**
- * seroval でシリアライズできない値を `value` の中から探し、`path` に続けてその値の位置を示すエラーを投げる。
- * `allowFunction` が `true` を返す関数は、送れる値として扱う。
+ * seroval でシリアライズできない値を `value` の中から探索し、`path` に続けてその値の位置を示すエラーを投げる。
+ * `allowFunction` が `true` を返す関数は、送信できる値として扱う。
  */
 export function checkSerializable(
   value: unknown,
