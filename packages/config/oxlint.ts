@@ -1,5 +1,7 @@
 import { defineConfig } from "oxlint";
 
+export { defineConfig };
+
 /** すべてのパッケージに適用する oxlint の設定。 */
 export const base = defineConfig({
   plugins: ["typescript", "unicorn", "oxc"],
@@ -38,3 +40,13 @@ export const testRelaxations = {
   "typescript/no-unsafe-return": "off",
   "typescript/no-unsafe-type-assertion": "off",
 } as const;
+
+/** リポジトリのルートに適用する oxlint の設定。`options` は、ルートの設定にだけ記述できる。 */
+export const root = defineConfig({
+  ...base,
+  options: {
+    typeAware: true,
+    denyWarnings: true,
+    reportUnusedDisableDirectives: "error",
+  },
+});

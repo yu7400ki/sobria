@@ -1,5 +1,4 @@
-import { base, testRelaxations } from "@onibi/config/oxlint";
-import { defineConfig } from "oxlint";
+import { base, defineConfig, testRelaxations } from "@onibi/config/oxlint";
 
 export default defineConfig({
   ...base,
