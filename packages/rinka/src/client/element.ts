@@ -18,6 +18,7 @@ import {
   type ElementComponent,
   type ElementOptions,
 } from "../shared/element.ts";
+import { checkExposeName } from "../shared/expose-names.ts";
 import {
   customEventName,
   isEventProp,
@@ -170,7 +171,14 @@ export function defineElement<P, M extends object = object>(
           host,
           onMount: (mount) => instance.mounts.push(mount),
           expose: (members) => {
-            Object.defineProperties(host, Object.getOwnPropertyDescriptors(members));
+            const descriptors = Object.getOwnPropertyDescriptors(members);
+            if (import.meta.env?.DEV) {
+              for (const name of Object.keys(descriptors)) {
+                const error = checkExposeName(name, options.props);
+                if (error) throw new Error(`<${tag}> ${error}`);
+              }
+            }
+            Object.defineProperties(host, descriptors);
           },
         };
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion
