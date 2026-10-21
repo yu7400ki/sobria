@@ -1,23 +1,11 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "@onibi/config/tsconfig.base.json",
   "compilerOptions": {
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "lib": [
-      "ES2022",
-      "DOM",
-      "DOM.Iterable"
-    ],
-    "types": [
-      "node"
-    ]
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"]
   },
-  "include": [
-    "src",
-    "test",
-    "*.ts"
-  ],
-  "exclude": [
-    "test/types"
-  ]
+  "include": ["src", "test", "*.ts"],
+  "exclude": ["test/types"]
 }
