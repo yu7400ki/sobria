@@ -1,11 +1,9 @@
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
 
-/** 型の単体テストのプロジェクト。`test/types/<name>/tsconfig.json` の条件で型を解決する。 */
 const types = (name: string) => ({
   test: {
     name: `types-${name}`,
-    include: [],
     typecheck: {
       enabled: true,
       only: true,
@@ -19,7 +17,7 @@ export default defineConfig({
   test: {
     passWithNoTests: true,
     projects: [
-      { test: { name: "node", environment: "node", include: ["test/node/**/*.test.ts"] } },
+      { test: { name: "node", include: ["test/node/**/*.test.ts"] } },
       {
         test: {
           name: "browser",

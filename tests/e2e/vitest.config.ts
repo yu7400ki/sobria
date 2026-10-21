@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     passWithNoTests: true,
     projects: [
-      { test: { name: "node", environment: "node", include: ["node/**/*.test.ts"] } },
+      { test: { name: "node", include: ["node/**/*.test.ts"] } },
       {
         test: {
           name: "e2e",
