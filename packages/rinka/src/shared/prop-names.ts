@@ -1,7 +1,8 @@
-import { htmlElementMembers, structuralMembers } from "./dom-names.generated.ts";
-import { propToAttribute } from "./names.ts";
+import { formMembers, lifecycleCallbacks } from "./host-members.ts";
+import { htmlElementMembers } from "./html-element-members.generated.ts";
+import { propToAttribute, reservedProp, type ReservedProp } from "./names.ts";
 
-/** ホストで意味を持つ属性の名前と、props にできない理由と、代わりの名前の例。小文字で照合する。 */
+/** ホストで意味を持つ属性の名前を、props にできない理由と代わりの名前の例に対応させる。名前は小文字で照合する。 */
 const hostAttributes: ReadonlyMap<string, readonly [reason: string, alternative: string]> = new Map(
   [
     ["id", ["ホストの id 属性になるためです。", "識別子には itemId"]],
@@ -37,52 +38,53 @@ const hostAttributes: ReadonlyMap<string, readonly [reason: string, alternative:
   ],
 );
 
-/** rinka がフォームの部品のホストに付与する API の名前。 */
-const formMembers: ReadonlySet<string> = new Set([
-  "form",
-  "labels",
-  "validity",
-  "validationMessage",
-  "willValidate",
-  "checkValidity",
-  "reportValidity",
+/** 予約された props の種類を、props にできない理由と代わりの名前の例に対応させる。 */
+const reservedProps: Readonly<
+  Record<ReservedProp, readonly [reason: string, alternative: string]>
+> = {
+  ref: ["rinka が要素への ref として扱うためです。", "内側のノードを受け取る関数には inputRef"],
+  key: ["rinka が一覧の項目を区別するために使用するためです。", "識別子には itemKey"],
+  "load:": [
+    "rinka が要素を読み込むタイミングの指定として扱うためです。",
+    "読み込みの状態には loadState",
+  ],
+};
+
+const ariaOrData: readonly [reason: string, alternative: string] = [
+  "rinka が aria-* と data-* の属性を、そのままホストに渡すためです。",
+  "代わりに label",
+];
+
+/**
+ * ホストのプロパティになる名前を、props にできない理由に対応させる。名前は大文字と小文字を区別して照合する。
+ * `children` は含めない。
+ */
+const hostMembers = new Map<string, string>([
+  ...htmlElementMembers
+    .filter((name) => name !== "children")
+    .map((name): [string, string] => [
+      name,
+      `props はホストのプロパティになり、ホストの ${name} を上書きするためです。`,
+    ]),
+  ...formMembers.map((name): [string, string] => [
+    name,
+    `rinka がフォームの部品のホストに ${name} を付与するためです。`,
+  ]),
+  ...lifecycleCallbacks.map((name): [string, string] => [
+    name,
+    "Custom Element のライフサイクルのコールバックと衝突するためです。",
+  ]),
 ]);
 
-/** Custom Element のライフサイクルのコールバックの名前。 */
-const lifecycleCallbacks: ReadonlySet<string> = new Set([
-  "connectedCallback",
-  "disconnectedCallback",
-  "adoptedCallback",
-  "attributeChangedCallback",
-  "connectedMoveCallback",
-  "formAssociatedCallback",
-  "formResetCallback",
-  "formDisabledCallback",
-  "formStateRestoreCallback",
-]);
-
-/** 名前の無いスロットの props の名前。`Element.children` と同じ名前でも props にできる。 */
-const slotChildren = "children";
-
-function propNameError(name: string): string | undefined {
-  const head = `"${name}" は props の名前にできません。`;
-  if (name === "ref") return `${head}rinka が要素への ref として扱うためです。`;
-  if (name === "key") return `${head}rinka が一覧の項目を区別するために使用するためです。`;
-  if (name.startsWith("load:")) {
-    return `${head}rinka が要素を読み込むタイミングの指定として扱うためです。`;
-  }
+/** props にできない理由と、代わりの名前の例を返す。props にできる名前なら `undefined` を返す。 */
+function reasonOf(name: string): readonly [reason: string, alternative?: string] | undefined {
+  const reserved = reservedProp(name);
+  if (reserved) return reservedProps[reserved];
+  if (/^(aria|data)[A-Z]/.test(name)) return ariaOrData;
   const host = hostAttributes.get(name.toLowerCase());
-  if (host) return `${head}${host[0]}${host[1]} のような名前を使用してください。`;
-  if (/^(aria|data)[A-Z]/.test(name)) {
-    return `${head}rinka が aria-* と data-* の属性を、そのままホストに渡すためです。代わりに label のような名前を使用してください。`;
-  }
-  if (formMembers.has(name)) {
-    return `${head}rinka がフォームの部品のホストに ${name} を付与するためです。要素の役割を表す別の名前を使用してください。`;
-  }
-  if (name !== slotChildren && htmlElementMembers.has(name)) {
-    return `${head}props はホストのプロパティになり、HTMLElement の ${name} を上書きするためです。要素の役割を表す別の名前を使用してください。`;
-  }
-  return undefined;
+  if (host) return host;
+  const member = hostMembers.get(name);
+  return member === undefined ? undefined : [member];
 }
 
 /** Props の型に記述した props の名前を検査し、問題ごとのメッセージを返す。 */
@@ -90,8 +92,14 @@ export function checkPropNames(names: readonly string[]): string[] {
   const errors: string[] = [];
   const byAttribute = new Map<string, string>();
   for (const name of names) {
-    const error = propNameError(name);
-    if (error) errors.push(error);
+    const reason = reasonOf(name);
+    if (reason) {
+      const [why, alternative] = reason;
+      const advice = alternative
+        ? `${alternative} のような名前を使用してください。`
+        : "要素の役割を表す別の名前を使用してください。";
+      errors.push(`"${name}" は props の名前にできません。${why}${advice}`);
+    }
     const attribute = propToAttribute(name);
     const other = byAttribute.get(attribute);
     if (other === undefined) byAttribute.set(attribute, name);
@@ -102,15 +110,4 @@ export function checkPropNames(names: readonly string[]): string[] {
     }
   }
   return errors;
-}
-
-/** `ctx.expose` で公開する名前を検査し、公開できない名前ならメッセージを返す。 */
-export function checkExposeName(name: string, propNames: readonly string[]): string | undefined {
-  const head = `"${name}" は expose で公開できません。`;
-  if (structuralMembers.has(name) || lifecycleCallbacks.has(name)) {
-    return `${head}rinka のランタイムと、ページの JS によるホストの操作が壊れるためです。`;
-  }
-  if (formMembers.has(name)) return `${head}rinka がフォームへの参加に使用するためです。`;
-  if (propNames.includes(name)) return `${head}同じ名前の props の値が置き換わるためです。`;
-  return undefined;
 }

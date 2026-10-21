@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { propToAttribute, tagFromPath } from "../../src/shared/names.ts";
+import {
+  eventName,
+  isEventProp,
+  propToAttribute,
+  reservedProp,
+  tagFromPath,
+} from "../../src/shared/names.ts";
 
 describe("propToAttribute", () => {
   it("props の名前を kebab-case にし、大文字の連続を 1 語として扱う", () => {
@@ -26,5 +32,29 @@ describe("tagFromPath", () => {
       "src/elements/カード.tsx のタグ名 app-カード は、Custom Element の名前にできません。",
     );
     expect(() => tagFromPath("app", "user card.tsx")).toThrow("user card.tsx");
+  });
+});
+
+describe("特別な props の名前", () => {
+  it("ref、key、load: で始まる名前を予約された props とし、種類を返す", () => {
+    expect(["ref", "key", "load:visible", "load:idle"].map(reservedProp)).toEqual([
+      "ref",
+      "key",
+      "load:",
+      "load:",
+    ]);
+    for (const name of ["children", "onClick", "loading", "Ref"])
+      expect(reservedProp(name)).toBeUndefined();
+  });
+
+  it("on と大文字で始まる名前をイベントの props とし、イベント名を kebab-case にする", () => {
+    for (const name of ["onClick", "onLikeClick", "onSale"]) expect(isEventProp(name)).toBe(true);
+    for (const name of ["on", "online", "onclick", "click"]) expect(isEventProp(name)).toBe(false);
+    expect(eventName("onSelect")).toBe("select");
+    expect(eventName("onLikeClick")).toBe("like-click");
+  });
+
+  it("src/elements/ の直下の index のファイルはエラーにする", () => {
+    expect(() => tagFromPath("app", "index.tsx")).toThrow("src/elements/index.tsx");
   });
 });

@@ -16,7 +16,14 @@ export const propToAttribute = toKebabCase;
  */
 export function tagFromPath(prefix: string, path: string): string {
   const segments = path.replace(/\.[jt]sx?$/, "").split("/");
-  if (segments.length > 1 && segments.at(-1) === "index") segments.pop();
+  if (segments.at(-1) === "index") {
+    if (segments.length === 1) {
+      throw new Error(
+        `src/elements/${path} は、ディレクトリの名前が無いので、タグ名を決定できません。ファイル名を変更してください。`,
+      );
+    }
+    segments.pop();
+  }
   const tag = [prefix, ...segments.map(toKebabCase)].join("-");
   if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(tag)) {
     throw new Error(
@@ -25,3 +32,18 @@ export function tagFromPath(prefix: string, path: string): string {
   }
   return tag;
 }
+
+/** rinka が予約している props の名前の種類。`load:` は `load:` で始まるすべての名前を表す。 */
+export type ReservedProp = "ref" | "key" | "load:";
+
+/** 予約された props の名前なら、その種類を返す。予約されていない名前なら `undefined` を返す。 */
+export function reservedProp(name: string): ReservedProp | undefined {
+  if (name === "ref" || name === "key") return name;
+  return name.startsWith("load:") ? "load:" : undefined;
+}
+
+/** `on` と大文字で始まる、イベントの props の名前かどうかを返す。 */
+export const isEventProp = (name: string): boolean => /^on[A-Z]/.test(name);
+
+/** イベントの props のイベント名を返す。`onSelect` は `select`、`onLikeClick` は `like-click` になる。 */
+export const eventName = (prop: string): string => toKebabCase(prop.slice(2));
