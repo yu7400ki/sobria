@@ -1,6 +1,6 @@
 import { createPlugin, fromJSON, serialize, toJSON, type SerovalJSON } from "seroval";
 
-import { checkSerializable, isJson } from "../shared/wire.ts";
+import { checkSerializable, isJson, type RpcBody } from "../shared/wire.ts";
 
 function refuseError(): never {
   throw new Error("Error は送信できません。");
@@ -31,7 +31,7 @@ export function toScript(value: unknown, path: string): string {
 }
 
 /** サーバー関数の戻り値から、RPC のレスポンスの本文を作成する。 */
-export function toRpcBody(value: unknown): { ok: unknown } | { s: SerovalJSON } {
+export function toRpcBody(value: unknown): RpcBody {
   if (isJson(value)) return { ok: value };
   return {
     s: withPath(() => toJSON(value, { plugins: [refuseErrors] }), value, "サーバー関数の戻り値"),
