@@ -10,6 +10,10 @@
     ".": {
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
+    },
+    "./jsx-runtime": {
+      "types": "./lib/client/jsx-runtime.d.ts",
+      "default": "./lib/client/jsx-runtime.js"
     }
   },
   "scripts": {

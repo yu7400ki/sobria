@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  eventName,
+  customEventName,
   isEventProp,
+  listenerEventName,
   propToAttribute,
   reservedProp,
   tagFromPath,
@@ -47,11 +48,13 @@ describe("特別な props の名前", () => {
       expect(reservedProp(name)).toBeUndefined();
   });
 
-  it("on と大文字で始まる名前をイベントの props とし、イベント名を kebab-case にする", () => {
+  it("on と大文字で始まる名前をイベントの props とし、発行するイベント名を kebab-case に、リスナーのイベント名を小文字にする", () => {
     for (const name of ["onClick", "onLikeClick", "onSale"]) expect(isEventProp(name)).toBe(true);
     for (const name of ["on", "online", "onclick", "click"]) expect(isEventProp(name)).toBe(false);
-    expect(eventName("onSelect")).toBe("select");
-    expect(eventName("onLikeClick")).toBe("like-click");
+    expect(customEventName("onSelect")).toBe("select");
+    expect(customEventName("onLikeClick")).toBe("like-click");
+    expect(listenerEventName("onClick")).toBe("click");
+    expect(listenerEventName("onDblClick")).toBe("dblclick");
   });
 
   it("src/elements/ の直下の index のファイルはエラーにする", () => {
