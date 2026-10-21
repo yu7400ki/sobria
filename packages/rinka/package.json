@@ -13,7 +13,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.lib.json",
+    "build": "node scripts/generate-dom-names.ts && tsc -p tsconfig.lib.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
   },
