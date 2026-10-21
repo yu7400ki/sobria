@@ -1,10 +1,6 @@
 {
   "extends": "@onibi/config/tsconfig.base.json",
   "compilerOptions": {
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "customConditions": ["onibi-server"],
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
-  },
-  "include": ["**/*.test-d.ts", "**/*.test-d.tsx"]
+    "customConditions": ["onibi-server"]
+  }
 }
