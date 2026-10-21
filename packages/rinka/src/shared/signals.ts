@@ -3,7 +3,6 @@ import {
   createMemo,
   createOptimistic,
   createSignal,
-  createTrackedEffect,
   isPending,
   refresh,
 } from "@solidjs/signals";
@@ -13,15 +12,6 @@ export const signal = createSignal;
 
 /** ほかの signal や memo から計算する値を作成する。関数は Promise を返してもよい。 */
 export const memo = createMemo;
-
-/**
- * `fn` が読み取った値が変化するたびに、`fn` を再び実行する。
- * `fn` が返した後始末の関数は、次に `fn` を実行する前と、effect を破棄するときに呼ばれる。
- */
-export function effect(fn: () => void | (() => void)): void {
-  // oxlint-disable-next-line typescript/no-deprecated
-  createTrackedEffect(fn);
-}
 
 /**
  * action の中で書き込むとすぐに反映され、action が終わると元の値に戻る値を作成する。

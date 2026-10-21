@@ -1,5 +1,6 @@
 declare const client: unique symbol;
 declare const server: unique symbol;
+declare const slot: unique symbol;
 
 /** 要素のファイルの JSX を評価した値の型。実行時の値は、DOM のノードである。 */
 export interface ClientNode {
@@ -11,5 +12,18 @@ export interface ServerNode {
   readonly [server]: true;
 }
 
-/** スロットに渡せる内容。要素とサーバーコンポーネントのどちらで記述した内容も受け付ける。 */
-export type Slot = ClientNode | ServerNode | string | number | boolean | null | undefined | Slot[];
+/** 要素の Props で、スロットになる props の型を表す。 */
+export interface Slot {
+  readonly [slot]: true;
+}
+
+/** スロットに渡せる内容を表す。要素とサーバーコンポーネントのどちらで記述した内容も受け付ける。 */
+export type SlotContent =
+  | ClientNode
+  | ServerNode
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | SlotContent[];

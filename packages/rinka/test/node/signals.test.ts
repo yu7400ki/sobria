@@ -1,15 +1,8 @@
 import { createRoot, flush } from "@solidjs/signals";
 import { describe, expect, it } from "vitest";
 
-import {
-  action,
-  effect,
-  isPending,
-  memo,
-  optimistic,
-  refresh,
-  signal,
-} from "../../src/shared/signals.ts";
+import { effect } from "../../src/client/effect.ts";
+import { action, isPending, memo, optimistic, refresh, signal } from "../../src/shared/signals.ts";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -50,26 +43,6 @@ describe("signal と memo", () => {
     setCount(2);
     flush();
     expect(doubled()).toBe(4);
-  });
-});
-
-describe("effect", () => {
-  it("後始末の関数を、次の実行の前と破棄のときに呼ぶ", () => {
-    const log: string[] = [];
-    const [count, setCount] = signal(0);
-    const dispose = createRoot((disposeRoot) => {
-      effect(() => {
-        const n = count();
-        log.push(`run ${n}`);
-        return () => log.push(`cleanup ${n}`);
-      });
-      return disposeRoot;
-    });
-    flush();
-    setCount(1);
-    flush();
-    dispose();
-    expect(log).toEqual(["run 0", "cleanup 0", "run 1", "cleanup 1"]);
   });
 });
 

@@ -1,7 +1,7 @@
-export type { ClientNode, ServerNode, Slot } from "./shared/nodes.ts";
+export { effect } from "./client/effect.ts";
+export type { ClientNode, ServerNode, Slot, SlotContent } from "./shared/nodes.ts";
 export {
   action,
-  effect,
   isPending,
   memo,
   optimistic,
