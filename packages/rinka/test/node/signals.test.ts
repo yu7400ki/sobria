@@ -6,17 +6,6 @@ import { action, isPending, memo, optimistic, refresh, signal } from "../../src/
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-/** 解決を外から制御できる Promise。 */
-function deferred<T = void>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
-
 /** effect で値を記録し、記録した値の一覧を返す。 */
 function watch<T>(read: () => T): T[] {
   const seen: T[] = [];
@@ -90,7 +79,7 @@ describe("isPending と refresh", () => {
 
 describe("action と optimistic", () => {
   it("optimistic の書き込みはすぐに反映され、action が終わると元の値に戻る", async () => {
-    const done = deferred();
+    const done = Promise.withResolvers<void>();
     const [count] = signal(1);
     let shown!: () => number;
     let seen: number[] = [];
@@ -116,8 +105,8 @@ describe("action と optimistic", () => {
   });
 
   it("async 関数の await の後の書き込みは、すぐに反映される", async () => {
-    const step = deferred();
-    const finish = deferred();
+    const step = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
     const [count, setCount] = signal(0);
     let run!: () => Promise<void>;
     createRoot(() => {
@@ -137,8 +126,8 @@ describe("action と optimistic", () => {
   });
 
   it("generator の yield の後の書き込みは、action が終わるまで保留される", async () => {
-    const step = deferred();
-    const finish = deferred();
+    const step = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
     const [count, setCount] = signal(0);
     let run!: () => Promise<void>;
     createRoot(() => {
@@ -160,8 +149,8 @@ describe("action と optimistic", () => {
   });
 
   it("同時に呼び出した action は、すべてが終わったときに一緒に終わる", async () => {
-    const first = deferred();
-    const second = deferred();
+    const first = Promise.withResolvers<void>();
+    const second = Promise.withResolvers<void>();
     const [likes] = signal(0);
     let shown!: () => number;
     let like!: (wait: Promise<void>) => Promise<void>;
@@ -189,7 +178,7 @@ describe("action と optimistic", () => {
   });
 
   it("async 関数の最初の await より前の書き込みは、action が終わるまで保留される", async () => {
-    const finish = deferred();
+    const finish = Promise.withResolvers<void>();
     const [count, setCount] = signal(0);
     let run!: () => Promise<void>;
     createRoot(() => {
@@ -210,7 +199,7 @@ describe("action と optimistic", () => {
 
   it("action の中で refresh を await すると、memo が解決するまで optimistic の値を保つ", async () => {
     let server = 1;
-    let fetching = deferred();
+    let fetching = Promise.withResolvers<void>();
     let shown!: () => number;
     let save!: (n: number) => Promise<void>;
     let user!: ReturnType<typeof memo<number>>;
@@ -233,7 +222,7 @@ describe("action と optimistic", () => {
     await tick();
     flush();
     expect(shown()).toBe(1);
-    fetching = deferred();
+    fetching = Promise.withResolvers<void>();
     const running = save(5);
     flush();
     expect(shown()).toBe(5);
@@ -249,7 +238,7 @@ describe("action と optimistic", () => {
   });
 
   it("action が失敗すると optimistic の値は元に戻る", async () => {
-    const fail = deferred();
+    const fail = Promise.withResolvers<void>();
     const [count] = signal(1);
     let shown!: () => number;
     let save!: () => Promise<void>;
@@ -272,7 +261,7 @@ describe("action と optimistic", () => {
   });
 
   it("pending() は呼び出しの実行中だけ true を返す", async () => {
-    const done = deferred();
+    const done = Promise.withResolvers<void>();
     let save!: ReturnType<typeof action<[], void>>;
     let seen: boolean[] = [];
     createRoot(() => {
