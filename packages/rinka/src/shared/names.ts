@@ -33,17 +33,17 @@ export function tagFromPath(prefix: string, path: string): string {
   return tag;
 }
 
-/** rinka が予約している props の名前の種類。`load:` は `load:` で始まるすべての名前を表す。 */
+/** rinka が予約している props の名前の種類を表す。`load:` は `load:` で始まるすべての名前を表す。 */
 export type ReservedProp = "ref" | "key" | "load:";
 
-/** 予約された props の名前なら、その種類を返す。予約されていない名前なら `undefined` を返す。 */
+/** 予約された props の名前なら、その種類を返す。 */
 export function reservedProp(name: string): ReservedProp | undefined {
   if (name === "ref" || name === "key") return name;
   return name.startsWith("load:") ? "load:" : undefined;
 }
 
-/** `on` と大文字で始まる、イベントの props の名前かどうかを返す。 */
+/** `on` の直後に大文字が続く、イベントの props の名前かどうかを返す。 */
 export const isEventProp = (name: string): boolean => /^on[A-Z]/.test(name);
 
-/** イベントの props のイベント名を返す。`onSelect` は `select`、`onLikeClick` は `like-click` になる。 */
+/** イベントの props の名前から、イベント名を返す。`onSelect` は `select`、`onLikeClick` は `like-click` になる。 */
 export const eventName = (prop: string): string => toKebabCase(prop.slice(2));
