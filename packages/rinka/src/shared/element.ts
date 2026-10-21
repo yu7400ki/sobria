@@ -9,7 +9,7 @@ export interface ElementOptions {
   readonly props: readonly string[];
   /** 属性から変換する props の型。記述しない props は、属性の値を文字列のまま受け取る。 */
   readonly types?: Readonly<Record<string, AttributeType>>;
-  /** Props の型でスロットとして宣言した props の名前の一覧。`children` は含めない。 */
+  /** Props の型でスロットとして宣言した、`children` 以外の props の名前の一覧。 */
   readonly slots?: readonly string[];
   /** Props の型で関数として宣言した props の名前の一覧。 */
   readonly functionProps?: readonly string[];

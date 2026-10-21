@@ -3,6 +3,7 @@ import { createRenderEffect, onCleanup, runWithOwner, untrack } from "@solidjs/s
 import { attributeValue, tagAttributeName } from "../shared/attributes.ts";
 import { isEventProp, listenerEventName } from "../shared/names.ts";
 import type { ClientNode } from "../shared/nodes.ts";
+import { registerSlot } from "./slots.ts";
 
 /** DOM に挿入できる値を表す。関数は、値が変化するたびに挿入し直す領域になる。 */
 export type Child =
@@ -78,6 +79,7 @@ function createTag(tag: string, props: Record<string, unknown>): Element {
   for (const name of propertyNames) {
     if (name in props) bind(props[name], setter(el, name, true));
   }
+  if (tag === "slot") registerSlot(typeof props.name === "string" ? props.name : "");
   if (isFunction(props.ref)) callRef(props.ref, el);
   return el;
 }
@@ -85,10 +87,15 @@ function createTag(tag: string, props: Record<string, unknown>): Element {
 /**
  * `value` を `parent` の末尾に挿入する。配列は要素ごとに挿入する。
  * 関数の値は、2 つのコメントで囲んだ領域になり、値が変化するたびに領域の中身を置換する。
+ * 文字列、数値、ノードは、`place` で変換してから挿入する。
  */
-export function insert(parent: ParentNode, value: unknown): void {
+export function insert(
+  parent: ParentNode,
+  value: unknown,
+  place: (node: Node) => Node = (node) => node,
+): void {
   if (Array.isArray(value)) {
-    for (const item of value as unknown[]) insert(parent, item);
+    for (const item of value as unknown[]) insert(parent, item, place);
   } else if (isFunction(value)) {
     const start = document.createComment("");
     const end = document.createComment("");
@@ -96,7 +103,7 @@ export function insert(parent: ParentNode, value: unknown): void {
     createRenderEffect(
       () => {
         const fragment = document.createDocumentFragment();
-        insert(fragment, value());
+        insert(fragment, value(), place);
         return fragment;
       },
       (fragment) => {
@@ -105,9 +112,9 @@ export function insert(parent: ParentNode, value: unknown): void {
       },
     );
   } else if (typeof value === "string" || typeof value === "number") {
-    parent.append(String(value));
+    parent.append(place(document.createTextNode(String(value))));
   } else if (value instanceof Node) {
-    parent.append(value);
+    parent.append(place(value));
   }
 }
 
