@@ -1,6 +1,8 @@
 {
   "extends": "@rinka/config/tsconfig.base.json",
   "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "types": ["node"]
   },
   "include": ["**/*.ts", "**/*.tsx"]

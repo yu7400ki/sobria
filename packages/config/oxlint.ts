@@ -41,7 +41,7 @@ export const testRelaxations = {
   "typescript/no-unsafe-type-assertion": "off",
 } as const;
 
-/** リポジトリのルートに適用する oxlint の設定。`options` は、ルートの設定にだけ記述できる。 */
+/** リポジトリのルートに適用する oxlint の設定。 */
 export const root = defineConfig({
   ...base,
   options: {
