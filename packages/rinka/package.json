@@ -17,6 +17,9 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
   },
+  "dependencies": {
+    "@solidjs/signals": "catalog:"
+  },
   "devDependencies": {
     "@rinka/config": "workspace:*",
     "@types/node": "catalog:",
