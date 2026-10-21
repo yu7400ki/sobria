@@ -150,3 +150,4 @@ vite.config.ts.timestamp-*
 
 # rinka
 /packages/rinka/lib/
+/packages/rinka/.lint-probe-*/

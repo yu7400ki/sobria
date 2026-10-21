@@ -10,7 +10,7 @@ const restrict = (...patterns: Pattern[]): Restrict => ({
 
 /** `src/` の中の、指定したディレクトリからの import に一致するパターンを返す。 */
 const directory = (dir: string): Pattern => ({
-  regex: String.raw`^(\.\./)+${dir}/`,
+  regex: String.raw`^(\./)?(\.\./)+(src/)?${dir}/`,
   message: `このディレクトリのファイルは、src/${dir}/ を import できません。`,
 });
 
@@ -18,7 +18,21 @@ const directory = (dir: string): Pattern => ({
 const propNameList: Pattern = {
   regex: String.raw`/(prop-names|html-element-members\.generated)(\.[jt]s)?$`,
   message:
-    "クライアントのランタイムは、props の名前の検査と、HTMLElement のメンバーの一覧を import できません。",
+    "props の名前の検査と、HTMLElement のメンバーの一覧を import できるのは、src/server/ と src/shared/prop-names.ts です。",
+};
+
+/** パッケージ自身の名前での import に一致するパターンを表す。 */
+const self: Pattern = {
+  regex: "^rinka(/|$)",
+  message:
+    "src/ の中のファイルは、互いを相対パスで import してください。パッケージの名前 rinka は使用できません。",
+};
+
+/** Node.js の組み込みモジュールの import に一致するパターンを表す。 */
+const nodeBuiltin: Pattern = {
+  regex: "^node:",
+  message:
+    "src/shared/ と src/client/ のファイルはブラウザで実行するので、node: のモジュールを import できません。",
 };
 
 /** seroval の import に一致するパターンを表す。 */
@@ -28,21 +42,41 @@ const seroval: Pattern = {
     "seroval を import できるのは、src/server/wire.ts と src/client/wire-codec.ts です。src/shared/wire.ts は型だけを import できます。値のシリアライズには、これらのモジュールを使用してください。",
 };
 
-const shared = [directory("client"), directory("server")];
-const client = [directory("server"), propNameList];
-const server = [directory("client")];
+const shared = [directory("client"), directory("server"), self, nodeBuiltin, propNameList];
+const client = [directory("server"), self, nodeBuiltin, propNameList];
+const server = [directory("client"), self];
 
 export default defineConfig({
   ...base,
+  rules: {
+    ...base.rules,
+    "unicorn/prefer-node-protocol": "error",
+  },
   overrides: [
-    { files: ["src/shared/**"], rules: restrict(...shared, seroval) },
+    {
+      files: ["src/shared/**"],
+      env: { "shared-node-browser": true },
+      rules: { ...restrict(...shared, seroval), "no-undef": "error" },
+    },
+    {
+      files: ["src/shared/prop-names.ts"],
+      rules: restrict(...shared.filter((pattern) => pattern !== propNameList), seroval),
+    },
     {
       files: ["src/shared/wire.ts"],
       rules: restrict(...shared, { ...seroval, allowTypeImports: true }),
     },
-    { files: ["src/client/**"], rules: restrict(...client, seroval) },
+    {
+      files: ["src/client/**"],
+      env: { browser: true },
+      rules: { ...restrict(...client, seroval), "no-undef": "error" },
+    },
     { files: ["src/client/wire-codec.ts"], rules: restrict(...client) },
-    { files: ["src/server/**"], rules: restrict(...server, seroval) },
+    {
+      files: ["src/server/**"],
+      env: { node: true },
+      rules: { ...restrict(...server, seroval), "no-undef": "error" },
+    },
     { files: ["src/server/wire.ts"], rules: restrict(...server) },
     { files: ["test/**"], rules: testRelaxations },
   ],
