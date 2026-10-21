@@ -28,7 +28,7 @@ const properties: Readonly<Record<string, readonly string[]>> = {
 };
 
 /** 関数かどうかを返す。 */
-const isFunction = (value: unknown): value is (...args: unknown[]) => unknown =>
+export const isFunction = (value: unknown): value is (...args: unknown[]) => unknown =>
   typeof value === "function";
 
 /** 実行時の DOM のノードを、`ClientNode` の型として扱う。 */
@@ -42,7 +42,7 @@ export function callRef<T>(ref: (node: T) => unknown, node: T): void {
 }
 
 /** `isProperty` が `true` ならプロパティとして、`false` なら属性として、値を設定する関数を返す。プロパティの `null` と `undefined` は `""` にする。 */
-function setter(el: Element, name: string, isProperty: boolean): (value: unknown) => void {
+export function setter(el: Element, name: string, isProperty: boolean): (value: unknown) => void {
   if (isProperty) {
     return (value) => {
       Reflect.set(el, name, value ?? "");
@@ -57,7 +57,7 @@ function setter(el: Element, name: string, isProperty: boolean): (value: unknown
 }
 
 /** `value` を `set` に渡す。関数の値は、値が変化するたびに渡し直す。 */
-function bind(value: unknown, set: (value: unknown) => void): void {
+export function bind(value: unknown, set: (value: unknown) => void): void {
   if (isFunction(value)) createRenderEffect(() => value(), set);
   else set(value);
 }
@@ -111,10 +111,8 @@ export function insert(parent: ParentNode, value: unknown): void {
   }
 }
 
-/** JSX の要素を作成する。ネイティブのタグはノードを作成し、コンポーネントは props を渡して 1 回だけ呼ぶ。 */
-export function jsx<P>(type: Component<P>, props: P, key?: string): ClientNode;
-export function jsx(type: string, props: Record<string, unknown>, key?: string): ClientNode;
-export function jsx(
+/** ネイティブのタグはノードを作成し、コンポーネントは props を渡して、読み取った値を追跡せずに 1 回だけ呼ぶ。 */
+export function createNode(
   type: string | Component<Record<string, unknown>>,
   props: Record<string, unknown>,
   key?: string,
