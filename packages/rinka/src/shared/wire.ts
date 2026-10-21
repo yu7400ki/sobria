@@ -1,5 +1,7 @@
 import type { SerovalJSON } from "seroval";
 
+import { isPlainObject } from "./objects.ts";
+
 /** RPC のリクエストとレスポンスで、値の形式を示すヘッダーの名前。 */
 export const wireHeader = "x-rinka-wire";
 
@@ -11,12 +13,6 @@ export const rpcQuery = { json: "d", seroval: "s" } as const;
 
 /** rinka が構築した RPC のレスポンスのうち、値を返すときの本文を表す。 */
 export type RpcBody = { ok: unknown } | { s: SerovalJSON };
-
-/** プロトタイプが `Object.prototype` か `null` のオブジェクトかどうかを返す。 */
-function isPlainObject(value: object): boolean {
-  const prototype: unknown = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
 
 /** `JSON.parse(JSON.stringify(value))` が `value` と同じ値を返すかどうかを返す。 */
 export function isJson(value: unknown): boolean {

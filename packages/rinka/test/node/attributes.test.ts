@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { attributeName, attributeValue } from "../../src/shared/attributes.ts";
+import { attributeValue, tagAttributeName } from "../../src/shared/attributes.ts";
 
 describe("attributeValue", () => {
   it("true は値の無い属性に、false、null、undefined は出力しない値にする", () => {
@@ -10,12 +10,13 @@ describe("attributeValue", () => {
     expect(attributeValue("title", undefined)).toBeNull();
   });
 
-  it("aria-* と列挙型の属性の真偽値は、false でも文字列にする", () => {
+  it("aria-* と列挙型の属性の真偽値は、true と false のどちらも文字列にする", () => {
     for (const name of ["aria-checked", "draggable", "spellcheck", "contenteditable"]) {
       expect(attributeValue(name, true)).toBe("true");
       expect(attributeValue(name, false)).toBe("false");
     }
     expect(attributeValue("aria-label", null)).toBeNull();
+    expect(attributeValue("ariaHidden", true)).toBe("");
   });
 
   it("空の文字列は空の値の属性にし、数値とオブジェクトは文字列にする", () => {
@@ -28,13 +29,14 @@ describe("attributeValue", () => {
     expect(attributeValue("class", { a: true, b: false, c: 1, d: "" })).toBe("a c");
     expect(attributeValue("class", { a: false })).toBeNull();
     expect(attributeValue("class", "x y")).toBe("x y");
+    expect(attributeValue("class", ["a", "b"])).toBe("a,b");
   });
 });
 
-describe("attributeName", () => {
+describe("tagAttributeName", () => {
   it("key は data-ok にし、ほかの名前はそのまま返す", () => {
-    expect(attributeName("key")).toBe("data-ok");
-    expect(attributeName("class")).toBe("class");
-    expect(attributeName("aria-label")).toBe("aria-label");
+    expect(tagAttributeName("key")).toBe("data-ok");
+    expect(tagAttributeName("class")).toBe("class");
+    expect(tagAttributeName("aria-label")).toBe("aria-label");
   });
 });
