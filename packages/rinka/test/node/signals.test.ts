@@ -20,8 +20,8 @@ function deferred<T = void>() {
 /** effect で値を記録し、記録した値の一覧を返す。 */
 function watch<T>(read: () => T): T[] {
   const seen: T[] = [];
-  effect(() => {
-    seen.push(read());
+  effect(read, (value) => {
+    seen.push(value);
   });
   return seen;
 }

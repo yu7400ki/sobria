@@ -2,15 +2,16 @@ import { createRoot, flush } from "@solidjs/signals";
 import { describe, expect, it } from "vitest";
 
 import { effect } from "../../src/client/effect.ts";
-import { action, optimistic, signal } from "../../src/shared/signals.ts";
+import { action, memo, optimistic, signal } from "../../src/shared/signals.ts";
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("effect", () => {
-  it("後始末の関数を、次の実行の前と破棄のときに呼ぶ", () => {
+  it("read の値を apply に渡し、後始末の関数を次の apply の前と破棄のときに呼ぶ", () => {
     const log: string[] = [];
     const [count, setCount] = signal(0);
     const dispose = createRoot((disposeRoot) => {
-      effect(() => {
-        const n = count();
+      effect(count, (n) => {
         log.push(`run ${n}`);
         return () => log.push(`cleanup ${n}`);
       });
@@ -23,14 +24,63 @@ describe("effect", () => {
     expect(log).toEqual(["run 0", "cleanup 0", "run 1", "cleanup 1"]);
   });
 
-  it("action の中で optimistic に書き込むと、書き込んだ値で実行し、action が終わると確定した値で実行する", async () => {
+  it("apply の中で読み取った値は追跡しない", () => {
+    const seen: number[] = [];
+    const [count, setCount] = signal(0);
+    const [other, setOther] = signal(0);
+    createRoot(() => {
+      effect(count, (n) => {
+        seen.push(n + other());
+      });
+    });
+    flush();
+    setOther(10);
+    flush();
+    setCount(1);
+    flush();
+    expect(seen).toEqual([0, 11]);
+  });
+
+  it("非同期の memo と、memo が依存する signal を読むときは、memo が解決するまで apply を呼ばない", async () => {
+    const seen: number[][] = [];
+    const [a, setA] = signal(1);
+    createRoot(() => {
+      const m = memo(async () => {
+        const value = a();
+        await tick();
+        return value * 100;
+      });
+      effect(
+        () => [a(), m()],
+        (pair) => {
+          seen.push(pair);
+        },
+      );
+    });
+    flush();
+    await tick();
+    flush();
+    setA(2);
+    flush();
+    await tick();
+    flush();
+    expect(seen).toEqual([
+      [1, 100],
+      [2, 200],
+    ]);
+  });
+
+  it("action の中で optimistic に書き込むと、書き込んだ値で apply を呼び、action が終わると確定した値で呼ぶ", async () => {
     const seen: unknown[] = [];
     const [liked, setLiked] = optimistic(false);
     const [count, setCount] = signal(0);
     createRoot(() => {
-      effect(() => {
-        seen.push([liked(), count()]);
-      });
+      effect(
+        () => [liked(), count()],
+        (pair) => {
+          seen.push(pair);
+        },
+      );
     });
     flush();
     let release!: () => void;
@@ -50,7 +100,7 @@ describe("effect", () => {
     ]);
     release();
     await done;
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
     flush();
     expect(seen).toEqual([
       [false, 0],

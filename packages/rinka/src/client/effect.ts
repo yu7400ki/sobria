@@ -1,10 +1,10 @@
-import { createTrackedEffect } from "@solidjs/signals";
+import { createEffect } from "@solidjs/signals";
 
 /**
- * `fn` が読み取った値が変化するたびに、`fn` を再び実行する。
- * `fn` が返した後始末の関数は、次に `fn` を実行する前と、effect を破棄するときに呼ばれる。
+ * `read` が読み取った値が変化するたびに、`read` の戻り値を `apply` に渡して呼ぶ。
+ * `read` が非同期の memo を読むときは、memo が解決してから `apply` を呼ぶ。
+ * `apply` が返した後始末の関数は、次に `apply` を呼ぶ前と、effect を破棄するときに呼ばれる。
  */
-export function effect(fn: () => void | (() => void)): void {
-  // oxlint-disable-next-line typescript/no-deprecated
-  createTrackedEffect(fn);
+export function effect<T>(read: () => T, apply: (value: T) => void | (() => void)): void {
+  createEffect(read, (value) => apply(value));
 }
