@@ -1,7 +1,7 @@
 import { defineConfig } from "oxlint";
 
-/** すべてのワークスペースに適用する oxlint の設定。 */
-export default defineConfig({
+/** すべてのパッケージに適用する oxlint の設定。 */
+export const base = defineConfig({
   plugins: ["typescript", "unicorn", "oxc"],
   categories: {
     correctness: "error",
@@ -24,12 +24,17 @@ export default defineConfig({
     "typescript/return-await": "error",
     "typescript/switch-exhaustiveness-check": "error",
   },
-  options: {
-    typeAware: true,
-    denyWarnings: true,
-    reportUnusedDisableDirectives: "error",
-  },
   env: {
     builtin: true,
   },
 });
+
+/** テストのコードで無効にする、型の安全性に関する規則。 */
+export const testRelaxations = {
+  "typescript/no-unsafe-argument": "off",
+  "typescript/no-unsafe-assignment": "off",
+  "typescript/no-unsafe-call": "off",
+  "typescript/no-unsafe-member-access": "off",
+  "typescript/no-unsafe-return": "off",
+  "typescript/no-unsafe-type-assertion": "off",
+} as const;
