@@ -48,5 +48,5 @@ export const isEventProp = (name: string): boolean => /^on[A-Z]/.test(name);
 /** 要素が発行する `CustomEvent` の名前を、イベントの props の名前から返す。`onSelect` は `select`、`onLikeClick` は `like-click` になる。 */
 export const customEventName = (prop: string): string => toKebabCase(prop.slice(2));
 
-/** ネイティブのタグとホストのリスナーのイベント名を、イベントの props の名前から返す。`onClick` は `click`、`onDblClick` は `dblclick` になる。 */
+/** ネイティブのタグと、要素のホストに登録するリスナーのイベント名を、イベントの props の名前から返す。`onClick` は `click`、`onDblClick` は `dblclick` になる。 */
 export const listenerEventName = (prop: string): string => prop.slice(2).toLowerCase();
