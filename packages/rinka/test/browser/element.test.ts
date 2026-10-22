@@ -181,7 +181,7 @@ describe("JSX から使う要素", () => {
     expect(evaluated - before).toBe(1);
   });
 
-  it("getter で渡した props とホストの属性は、親の owner で値の変化に追従する", () => {
+  it("getter で渡した props とホストの属性（関数以外の値の onX を含む）は、親の owner で値の変化に追従する", () => {
     const tag = nextTag();
     const Counter = defineElement(
       tag,
@@ -197,6 +197,9 @@ describe("JSX から使う要素", () => {
         get title() {
           return `t${n()}`;
         },
+        get onSale() {
+          return n() > 1;
+        },
       }),
     ) as unknown as HTMLElement;
     flush();
@@ -204,6 +207,7 @@ describe("JSX から使う要素", () => {
     flush();
     expect(shadow(el)).toBe("<p>2</p>");
     expect(el.getAttribute("title")).toBe("t2");
+    expect(el.hasAttribute("onsale")).toBe(true);
   });
 
   it("owner の無い場所で作成した要素は、接続した後に起動し、DOM から外れたときに破棄する", async () => {

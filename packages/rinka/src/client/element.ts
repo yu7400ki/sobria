@@ -22,7 +22,7 @@ import {
 import { checkExposeName } from "../shared/expose-names.ts";
 import { customEventName, isEventProp, propToAttribute } from "../shared/names.ts";
 import type { ClientNode } from "../shared/nodes.ts";
-import { applyAttribute, asClientNode, callRef, insert, isFunction, setter } from "./dom.ts";
+import { applyAttribute, asClientNode, bind, callRef, insert, isFunction, setter } from "./dom.ts";
 import {
   activateInSlot,
   addChild,
@@ -351,8 +351,12 @@ export function createElementInstance(
       const reactive =
         read ?? (isFunction(value) && !instance.functionProps.has(name) ? value : undefined);
       write(prop, reactive ? derive(reactive) : { value });
+    } else if (read && isEventProp(name)) {
+      const listener = untrack(read);
+      if (isFunction(listener)) applyAttribute(host, name, listener);
+      else bind(read, setter(host, name, false));
     } else {
-      applyAttribute(host, name, read && isEventProp(name) ? untrack(read) : value);
+      applyAttribute(host, name, value);
     }
   }
   if (key !== undefined) setter(host, "key", false)(key);
