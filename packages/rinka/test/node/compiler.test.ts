@@ -89,7 +89,7 @@ export async function each() { for await (const v of source()) use(v); }`;
     expect(code).toContain("export async function* stream() { await y(); }");
     expect(code).toContain("export async function none() { return 1; }");
     expect(code).toContain(
-      "export async function each() { const __rinka_gate = __rinka_takeGate(); { await __rinka_gate(undefined); for await (const v of source()) use(v); } }",
+      "export async function each() { const __rinka_gate = __rinka_takeGate(); for await (const v of __rinka_gate.iterate(source())) use(v); }",
     );
   });
 
@@ -104,6 +104,12 @@ export async function each() { for await (const v of source()) use(v); }`;
     const seeded = runSeeding(() => takeGate())(value);
     const later = new Promise((done) => setTimeout(() => done("pending"), 10));
     expect(await Promise.race([seeded.then(() => "settled"), later])).toBe("pending");
+    const items = [1];
+    expect(takeGate().iterate(items)).toBe(items);
+    const iterator = runSeeding(() => takeGate()).iterate(items);
+    const first = (iterator as AsyncIterable<never>)[Symbol.asyncIterator]().next();
+    const waited = new Promise((done) => setTimeout(() => done("pending"), 10));
+    expect(await Promise.race([first.then(() => "settled"), waited])).toBe("pending");
   });
 });
 

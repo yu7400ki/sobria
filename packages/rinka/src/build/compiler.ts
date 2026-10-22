@@ -143,7 +143,7 @@ function addMemoSites(
 
 /**
  * async 関数（generator を除く）の直接の `await` を、その関数の関門で包む。包んだら真を返す。
- * `for await` の文は、文の前で関門を `await` する。
+ * `for await` の文は、反復する値を関門に渡す。
  */
 function gateAwaits(program: ESTree.Program, output: MagicString): boolean {
   let gated = false;
@@ -166,8 +166,8 @@ function gateAwaits(program: ESTree.Program, output: MagicString): boolean {
       output.appendLeft(node.argument.end, ")");
     } else if (node.type === "ForOfStatement" && node.await) {
       owner.used = true;
-      output.prependRight(node.start, `{ await ${GATE}(undefined); `);
-      output.appendLeft(node.end, " }");
+      output.prependRight(node.right.start, `${GATE}.iterate(`);
+      output.appendLeft(node.right.end, ")");
     }
   };
   visit(program, null);
