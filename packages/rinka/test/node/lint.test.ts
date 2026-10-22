@@ -234,11 +234,13 @@ describe("MagicString の向きを持つ挿入", () => {
         'export const b = (s: { prependRight(i: number, t: string): void }) => s.prependRight(0, "x");',
         'export const c = (s: { append(t: string): void }) => s.append("x");',
         'export const d = (s: { appendRight(i: number, t: string): void }) => s["appendRight"](0, "x");',
+        "export const e = (s: { prependLeft(i: number, t: string): void }) => s[`prependLeft`](0, 'x');",
       ]),
     ).toEqual([
       [1, "insert"],
       [2, "insert"],
       [4, "insert"],
+      [5, "insert"],
     ]);
   });
 
@@ -258,7 +260,7 @@ describe("入口の指定子", () => {
         'export const a = "rinka/internal";',
         "export const b = (x: string) => `rinka/${x}`;",
         'export const c = "rinka";',
-        'export const d = "\0rinka/routes";',
+        'export const d = "\\0rinka/routes";',
         'export type E = typeof import("rinka/internal");',
       ]),
     ).toEqual([

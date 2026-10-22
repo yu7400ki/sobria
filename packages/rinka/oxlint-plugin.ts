@@ -18,7 +18,7 @@ interface CallNode {
   readonly callee: {
     readonly type: string;
     readonly computed?: boolean;
-    readonly property?: { readonly type: string; readonly name?: string; readonly value?: unknown };
+    readonly property?: StringNode & { readonly name?: string };
   };
 }
 
@@ -33,9 +33,9 @@ const directionalInserts = new Set(["prependLeft", "prependRight", "appendLeft",
 const leadingText = (node: StringNode): string | undefined =>
   typeof node.value === "string" ? node.value : (node.quasis?.[0]?.value.cooked ?? undefined);
 
-/** 呼び出すメソッドの名前を返す。`s["name"]` の形の名前も返す。 */
-const methodName = ({ callee }: CallNode): unknown =>
-  callee.computed ? callee.property?.value : callee.property?.name;
+/** 呼び出すメソッドの名前を返す。``s["name"]`` と ``s[`name`]`` の形の名前も返す。 */
+const methodName = ({ callee }: CallNode): string | undefined =>
+  callee.computed && callee.property ? leadingText(callee.property) : callee.property?.name;
 
 /** 読み込む先を表すリテラルの、親のノードの種類である。 */
 const moduleSources = new Set([
@@ -97,7 +97,7 @@ export default {
           CallExpression(node: CallNode) {
             if (node.callee.type !== "MemberExpression") return;
             const name = methodName(node);
-            if (typeof name !== "string" || !directionalInserts.has(name)) return;
+            if (name === undefined || !directionalInserts.has(name)) return;
             context.report({
               node,
               message:
