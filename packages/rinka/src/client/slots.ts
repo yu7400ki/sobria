@@ -11,8 +11,8 @@ import {
 
 /** 要素のインスタンスごとの、スロットの状態を表す。 */
 export interface HostSlots {
-  /** スロットの名前ごとに、`<slot>` を作成した時点の owner を保持する。 */
-  readonly owners: Map<string, Owner>;
+  /** スロットの名前ごとに、最後に作成した `<slot>` の登録を保持する。登録は、`<slot>` を作成した時点の owner を持つ。 */
+  readonly owners: Map<string, { readonly owner: Owner }>;
   /** スロットの名前ごとに、そのスロットに配置した子要素を起動する関数を保持する。 */
   readonly children: Map<string, Set<(owner: Owner) => void>>;
 }
@@ -37,15 +37,17 @@ export function enterHost(slots: HostSlots): void {
 
 /**
  * 描画の範囲で `<slot>` を作成したことを、ホストに登録し、そのスロットに配置した子要素を現在の owner の下で起動する。
- * owner が破棄されると、登録を取り消す。子要素は、次に `<slot>` を作成した時点で起動し直す。
+ * `<slot>` を作成した計算の後始末で、登録を取り消す。後始末の前に同じ名前の `<slot>` を登録し直していれば、新しい登録を残す。
+ * 子要素は、次に `<slot>` を作成した時点で起動し直す。
  */
 export function registerSlot(name: string): void {
   const owner = getOwner();
   const slots = owner ? getContext(HostContext) : null;
   if (!owner || !slots) return;
-  slots.owners.set(name, owner);
+  const registration = { owner };
+  slots.owners.set(name, registration);
   onCleanup(() => {
-    if (slots.owners.get(name) === owner) slots.owners.delete(name);
+    if (slots.owners.get(name) === registration) slots.owners.delete(name);
   });
   for (const activate of slots.children.get(name) ?? []) activate(owner);
 }
@@ -104,7 +106,7 @@ export function addChild(
   let children = slots.children.get(name);
   if (!children) slots.children.set(name, (children = new Set()));
   children.add(activate);
-  const owner = slots.owners.get(name);
+  const owner = slots.owners.get(name)?.owner;
   if (owner) activate(owner);
   return () => children.delete(activate);
 }

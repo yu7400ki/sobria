@@ -249,6 +249,32 @@ describe("スロットの owner", () => {
     expect(runs.count).toBe(1);
   });
 
+  it("<slot> を作成した領域が再実行して <slot> を作り直した後に配置した子要素も起動する", () => {
+    const { Child, runs } = defineChild();
+    const [version, setVersion] = signal(0);
+    const [more, setMore] = signal(false);
+    const Card = defineElement(
+      nextTag(),
+      () => () => {
+        version();
+        return jsx("slot", {});
+      },
+      { props: ["children"] },
+    );
+    createRoot(() =>
+      jsx(Card, {
+        get children() {
+          return () => (more() ? jsx(Child, {}) : null);
+        },
+      }),
+    );
+    setVersion(1);
+    flush();
+    setMore(true);
+    flush();
+    expect(runs.count).toBe(1);
+  });
+
   it("owner の無い場所で <slot> を作成しても例外にならない", () => {
     expect(() => jsx("slot", {})).not.toThrow();
   });
