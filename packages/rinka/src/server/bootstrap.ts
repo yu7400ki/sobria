@@ -4,7 +4,7 @@
  * `r(spec)` は、1 つの境界の中身と、その境界の差し替えを適用する。開始と終了の目印がそろわない差し替えは、適用せずに除去する。
  * `spec.w` の組は、境界の完了を通知する前に、ホストが待つキーとして `w` に追加する。
  */
-export const bootstrap = `<script>(R=>{window.$rinka=Object.assign(R,{v:R.v||{},l:R.l||{},w:R.w||{},
+export const bootstrap = `<script>(R=>{window.$rinka=Object.assign(R,{v:R.v||{},l:R.l||{},w:R.w||{},n:R.n||{},
 d(id,o){Object.assign(this.v[id]||(this.v[id]={}),o);(this.l[id]||[]).slice().forEach(f=>f())},
 r(s){const me=document.currentScript;me&&me.remove();
 const fix=root=>{for(const t of root.querySelectorAll('template[shadowrootmode]')){fix(t.content);const host=t.parentElement;

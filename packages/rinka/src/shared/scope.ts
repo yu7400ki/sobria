@@ -39,6 +39,26 @@ export interface MemoOptions {
   readonly site?: string;
 }
 
+/** 描画の範囲ごとに、使用した明示的なキーを保持する。 */
+const explicitKeys = new WeakMap<MemoScope, Set<string>>();
+
+/** 明示的なキーが、空でなく、空白を含まず、`@` で始まらず、同じ範囲で使用していないことを確認する。 */
+function checkKey(scope: MemoScope, key: string): void {
+  if (key === "" || /\s/.test(key) || key.startsWith("@")) {
+    throw new Error(
+      `memo の明示的なキー ${JSON.stringify(key)} は使用できません。空白を含まず、@ で始まらない、空でない文字列を指定してください。`,
+    );
+  }
+  let keys = explicitKeys.get(scope);
+  if (!keys) explicitKeys.set(scope, (keys = new Set<string>()));
+  if (keys.has(key)) {
+    throw new Error(
+      `memo の明示的なキー ${JSON.stringify(key)} は、同じ要素の中で既に使用しています。`,
+    );
+  }
+  keys.add(key);
+}
+
 /**
  * 描画の範囲の中なら、キーを決定し、範囲の `memo` で memo を作成して返す。キーは、明示的なキーか、呼び出し箇所とその箇所で何回目に作成したかである。
  * 範囲の外か、キーも呼び出し箇所も無ければ `undefined` を返す。
@@ -48,7 +68,10 @@ export function scopedMemo<T>(
   options: MemoOptions | undefined,
 ): SourceAccessor<T> | undefined {
   if (!current || !options) return undefined;
-  if (options.key !== undefined) return current.memo(options.key, fn);
+  if (options.key !== undefined) {
+    if (import.meta.env?.DEV) checkKey(current, options.key);
+    return current.memo(options.key, fn);
+  }
   if (options.site === undefined) return undefined;
   let sites = counts.get(current);
   if (!sites) counts.set(current, (sites = new Map<string, number>()));

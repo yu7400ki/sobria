@@ -1,4 +1,5 @@
 import {
+  createMemo,
   createRoot,
   getOwner,
   NotReadyError,
@@ -17,10 +18,12 @@ import {
 } from "../shared/element.ts";
 import { isEventProp, propToAttribute } from "../shared/names.ts";
 import { isFunction } from "../shared/objects.ts";
+import { createScope, withScope } from "../shared/scope.ts";
 import { checkSerializable } from "../shared/wire.ts";
 import { bootstrap } from "./bootstrap.ts";
 import { isSafeLocation, NotFound, Redirect } from "./errors.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
+import { toScript } from "./wire.ts";
 
 /**
  * 出力の単位を表す。文字列、穴、投げられた値、`<Loading>` の位置、`<Errored>` の領域、スロットの内容、要素のホストのいずれかである。
@@ -63,10 +66,10 @@ interface Slotted {
   };
 }
 
-/** 要素のホストの属性を表す。`transfer` は、属性にできない props があることを表す。 */
+/** 要素のホストの属性を表す。`transfer` は、属性にできない props の値を、props の名前ごとに保持する。 */
 interface HostAttributes {
   readonly text: string;
-  readonly transfer: boolean;
+  readonly transfer: Readonly<Record<string, unknown>> | undefined;
 }
 
 /** 要素のホストを表す。開始タグは、`chunks` を文字列にした後で、待つ境界を決定してから出力する。 */
@@ -416,13 +419,14 @@ class Renderer {
     }
     const hostAttributes = (tracked: boolean): HostAttributes => {
       let text = "";
-      let transfer = false;
+      let transfer: Record<string, unknown> | undefined;
       for (const name of options.props) {
         if (slotNames.has(name)) continue;
         const value = propValue(name);
         if ((typeof value === "object" && value !== null) || typeof value === "function") {
+          if (ctx.owner !== null) continue;
           checkSerializable(value, `<${tag}> ${name}`);
-          transfer = true;
+          (transfer ??= {})[name] = value;
           continue;
         }
         text += attribute(propToAttribute(name), value);
@@ -448,10 +452,22 @@ class Renderer {
       onMount: () => {},
       expose: () => {},
     };
+    const memoKeys: string[] = [];
+    const scope = createScope(
+      <T>(memoKey: string, fn: (prev: T | undefined) => T | PromiseLike<T>) =>
+        createMemo<T>((prev) => {
+          const result = fn(prev);
+          if (isPromiseLike(result) && !memoKeys.includes(memoKey)) {
+            memoKeys.push(memoKey);
+            this.sendMemo(id, `<${tag}> の memo ${memoKey}`, memoKey, result);
+          }
+          return result;
+        }),
+    );
     createRoot((dispose) => {
       this.disposers.push(dispose);
       owner = getOwner();
-      tree = asNode(untrack(() => component(elementProps, elementCtx)));
+      tree = asNode(untrack(() => withScope(scope, () => component(elementProps, elementCtx))));
     });
 
     const chunks: Chunk[] = [];
@@ -480,7 +496,8 @@ class Renderer {
     }
     chunks.push(`</${tag}>`);
     const open = ({ text, transfer }: HostAttributes, waits: readonly string[]): string => {
-      const keys = transfer ? [...waits, "@p"] : waits;
+      if (transfer) this.sendProps(id, transfer, `<${tag}>`);
+      const keys = [...memoKeys, ...waits, ...(transfer ? ["@p"] : [])];
       const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
       return `<${tag}${attribute("data-oh", id)}${text}${om}><template shadowrootmode="open">`;
     };
@@ -637,6 +654,44 @@ class Renderer {
     );
   }
 
+  /**
+   * `promise` が解決した値を、シェルを出力した後に `$rinka.d` でホストに送る。
+   * 失敗した値とシリアライズできない値は送らずに、値が無いことを表す `$rinka.n` を送る。シリアライズできない値は記録する。
+   */
+  private sendMemo(host: string, path: string, key: string, promise: PromiseLike<unknown>): void {
+    this.track(
+      (async () => {
+        let value = "$rinka.n";
+        try {
+          const resolved = await promise;
+          try {
+            value = toScript(resolved, path);
+          } catch (error) {
+            console.error(
+              "[rinka] memo の値を送れないので、要素がブラウザで計算し直します。",
+              error,
+            );
+          }
+        } catch {
+          // 失敗した memo の値は送らない
+        }
+        await this.root.sent;
+        this.write(`<script>$rinka.d(${scriptJson(host)},{${scriptJson(key)}:${value}})</script>`);
+      })(),
+    );
+  }
+
+  /** 属性にできない props の値を、シェルを出力した後に `$rinka.d` の `@p` でホストに送る。 */
+  private sendProps(host: string, transfer: Readonly<Record<string, unknown>>, path: string): void {
+    const value = toScript(transfer, path);
+    this.track(
+      (async () => {
+        await this.root.sent;
+        this.write(`<script>$rinka.d(${scriptJson(host)},{"@p":${value}})</script>`);
+      })(),
+    );
+  }
+
   /** 境界の中身を出力しないことを決め、境界を待つホストに境界の完了を通知する。 */
   private abandon(boundary: Boundary): void {
     boundary.send(false);
@@ -697,6 +752,10 @@ function lateBoundary(boundary: Boundary): Boundary | undefined {
   }
   return undefined;
 }
+
+/** `value` が、`then` を持つ値かどうかを返す。 */
+const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
+  typeof value === "object" && value !== null && "then" in value && isFunction(value.then);
 
 /** `Redirect` か、3xx の Response なら、規則を確認する前の移動先を返す。 */
 function requestedLocation(error: unknown): string | undefined {
