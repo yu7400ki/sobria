@@ -6,8 +6,5 @@ export type Gate = <T>(value: T) => T | Promise<never>;
 const pass: Gate = (value) => value;
 const halt: Gate = () => new Promise<never>(() => {});
 
-/**
- * async 関数の開始時点で呼び出し、その関数の `await` の値を渡す関数を返す。
- * シード中に呼び出したら、値の代わりに解決しない Promise を返す関数を返す。
- */
+/** シード中に呼び出したら、値の代わりに解決しない Promise を返す関門を返す。それ以外では、値をそのまま返す関門を返す。 */
 export const takeGate = (): Gate => (isSeeding() ? halt : pass);

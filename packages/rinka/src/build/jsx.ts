@@ -3,7 +3,8 @@ import { parseSync, type ESTree } from "vite";
 
 import { isEventProp } from "../shared/names.ts";
 import { children, isFunction, moduleExportName, type Node } from "./ast.ts";
-import { CompileError, type Transformed } from "./compiler.ts";
+import type { Transformed } from "./compiler.ts";
+import { CompileError } from "./errors.ts";
 
 /** `rinka/jsx-runtime` から import した名前を表す。 */
 interface Runtime {

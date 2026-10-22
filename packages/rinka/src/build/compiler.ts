@@ -1,7 +1,7 @@
 import { MagicString, type SourceMap } from "magic-string";
 import { parseSync, type ESTree } from "vite";
 
-import type { ElementOptions } from "../shared/element.ts";
+import type { ElementInfo, ElementOptions } from "../shared/element.ts";
 import {
   children,
   isFunction,
@@ -12,26 +12,23 @@ import {
   type FunctionNode,
   type Node,
 } from "./ast.ts";
-import { analyzeProps, PropsError } from "./props.ts";
+import { CompileError } from "./errors.ts";
+import { analyzeProps } from "./props.ts";
+
+export { CompileError } from "./errors.ts";
 
 /** 変換するファイルの言語を表す。 */
 export type Lang = "ts" | "tsx" | "js" | "jsx";
 
 /** 元のソースに適用する変換の設定を表す。 */
 export interface SourceOptions {
-  /** プロジェクトのルートからの相対パスを `/` で区切ったもの。 */
+  /** ファイルのパスである。プロジェクトのルートからの相対パスを、`/` で区切って記述する。 */
   readonly file: string;
   readonly lang: Lang;
   /** クライアント向けのコードなら真である。 */
   readonly client: boolean;
   /** 要素のファイルなら、要素のタグ名を持つ。 */
   readonly element?: { readonly tag: string };
-}
-
-/** 要素のファイルの、タグ名と、要素を登録するときの設定を表す。 */
-export interface ElementInfo {
-  readonly tag: string;
-  readonly options: ElementOptions;
 }
 
 /** 変換したコードと、元のコードへのソースマップを表す。 */
@@ -45,9 +42,6 @@ export interface SourceResult extends Transformed {
   /** 要素のファイルなら、要素の情報を持つ。 */
   readonly element: ElementInfo | undefined;
 }
-
-/** ソースを変換できないことを表す。 */
-export class CompileError extends Error {}
 
 /** 関門を取得する関数を、変換したコードの中で呼ぶ名前である。 */
 const TAKE_GATE = "__rinka_takeGate";
@@ -96,13 +90,7 @@ function registerElement(
       `${file}: 要素のファイルは、export default function 名前(props, ctx) の形で関数を default export してください。`,
     );
   }
-  let elementOptions: ElementOptions;
-  try {
-    elementOptions = analyzeProps(program, fn);
-  } catch (error) {
-    if (error instanceof PropsError) throw new CompileError(`${file}: ${error.message}`);
-    throw error;
-  }
+  const elementOptions = analyzeProps(program, fn, file);
   convertSlots(fn, elementOptions, output, file);
   output.remove(exported.start, fn.start);
   output.append(
@@ -137,10 +125,10 @@ function addMemoSites(
     if (node.type !== "CallExpression") return;
     if (node.callee.type !== "Identifier" || !names.has(node.callee.name)) return;
     const [fn, options] = node.arguments;
-    if (!fn) return;
+    if (!fn || fn.type === "SpreadElement" || options?.type === "SpreadElement") return;
     const site = `site: ${JSON.stringify(`${file}:${lineColumn(starts, node.start)}`)}`;
     if (!options) {
-      output.appendLeft(fn.end, `, { ${site} }`);
+      output.appendRight(fn.end, `, { ${site} }`);
     } else if (options.type === "ObjectExpression") {
       output.appendLeft(
         options.start + 1,
@@ -153,7 +141,10 @@ function addMemoSites(
   });
 }
 
-/** async 関数（generator を除く）の直接の `await` を、その関数の関門で包む。包んだら真を返す。 */
+/**
+ * async 関数（generator を除く）の直接の `await` を、その関数の関門で包む。包んだら真を返す。
+ * `for await` の文は、文の前で関門を `await` する。
+ */
 function gateAwaits(program: ESTree.Program, output: MagicString): boolean {
   let gated = false;
   // 内側のノードから順に書き換えるので、開く括弧は prependRight で、閉じる括弧は appendLeft で挿入する
@@ -168,10 +159,15 @@ function gateAwaits(program: ESTree.Program, output: MagicString): boolean {
       return;
     }
     for (const child of children(node)) visit(child, owner);
-    if (node.type === "AwaitExpression" && owner) {
+    if (!owner) return;
+    if (node.type === "AwaitExpression") {
       owner.used = true;
       output.prependRight(node.argument.start, `${GATE}(`);
       output.appendLeft(node.argument.end, ")");
+    } else if (node.type === "ForOfStatement" && node.await) {
+      owner.used = true;
+      output.prependRight(node.start, `{ await ${GATE}(undefined); `);
+      output.appendLeft(node.end, " }");
     }
   };
   visit(program, null);

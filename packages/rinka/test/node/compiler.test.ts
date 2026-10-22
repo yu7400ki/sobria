@@ -34,6 +34,24 @@ const d = m(() => 4, {});`);
     expect(code).toContain('m(() => 4, { site: "src/lib/a.ts:5:11" })');
   });
 
+  it("クライアント向けのコードでも、式の本体の async 関数に付与する ID は、関門の外の memo の引数にする", () => {
+    const code = module(
+      `import { memo } from "rinka";
+const a = memo(async () => get(await id()));`,
+      true,
+    );
+    expect(code).toContain(
+      'const a = memo(async () => { const __rinka_gate = __rinka_takeGate(); return get(await __rinka_gate(id())); }, { site: "src/lib/a.ts:2:11" });',
+    );
+  });
+
+  it("引数にスプレッドを含む呼び出しには付与しない", () => {
+    const code = module(`import { memo } from "rinka";
+memo(fn, ...rest);
+memo(...args);`);
+    expect(code).not.toContain("site");
+  });
+
   it("rinka 以外から import した memo と、自分で定義した memo には付与しない", () => {
     const code = module(`import { memo as other } from "./memo.ts";
 const memo = (fn: () => number) => fn;
@@ -52,7 +70,8 @@ describe("await の関門", () => {
 export const arrow = async () => await x();
 export function* generate() { yield 1; }
 export async function* stream() { await y(); }
-export async function none() { return 1; }`;
+export async function none() { return 1; }
+export async function each() { for await (const v of source()) use(v); }`;
 
   it("クライアント向けのコードでは、async 関数の直接の await を、その関数の関門で包む", () => {
     const code = module(source, true);
@@ -69,6 +88,9 @@ export async function none() { return 1; }`;
     );
     expect(code).toContain("export async function* stream() { await y(); }");
     expect(code).toContain("export async function none() { return 1; }");
+    expect(code).toContain(
+      "export async function each() { const __rinka_gate = __rinka_takeGate(); { await __rinka_gate(undefined); for await (const v of source()) use(v); } }",
+    );
   });
 
   it("サーバー向けのコードと、async 関数の無いコードは関門で包まない", () => {
@@ -80,8 +102,8 @@ export async function none() { return 1; }`;
     const value = Promise.resolve(1);
     expect(takeGate()(value)).toBe(value);
     const seeded = runSeeding(() => takeGate())(value);
-    const settled = await Promise.race([seeded.then(() => "settled"), Promise.resolve("pending")]);
-    expect(settled).toBe("pending");
+    const later = new Promise((done) => setTimeout(() => done("pending"), 10));
+    expect(await Promise.race([seeded.then(() => "settled"), later])).toBe("pending");
   });
 });
 
@@ -128,6 +150,9 @@ export default function X(props: Props) { return <p />; }`);
         "data",
         "onSelect",
         "open",
+        "header",
+        "footer",
+        "children",
         "mode",
         "size",
         "mixed",
@@ -143,6 +168,25 @@ export default function X(props: Props) { return <p />; }`);
       slots: ["header", "footer"],
       functionProps: ["onSelect", "open"],
     });
+  });
+
+  it("負の数とテンプレートのリテラル型、getter、別名で import した Slot を分類する", () => {
+    const { element: info } = element(`import type { Slot as S } from "rinka";
+type Props = { n?: -1 | 1; t?: \`a\`; get g(): string; s?: S; o?: Slot };
+export default function X(props: Props) { return <p />; }`);
+    expect(info?.options).toEqual({
+      props: ["n", "t", "g", "s", "o"],
+      types: { n: "number", t: "string", g: "string" },
+      slots: ["s"],
+    });
+  });
+
+  it("同じ名前の interface の宣言を、1 つの Props の型にまとめる", () => {
+    expect(
+      props(`interface Props { a: string }
+interface Props { b: number }
+export default function X(props: Props) { return <p />; }`),
+    ).toEqual(["a", "b"]);
   });
 
   it("interface と、引数の型リテラルと、rinka の Props<T> で包んだ型を解析する", () => {
@@ -175,6 +219,7 @@ export default function X(props: CardProps) { return <p />; }`),
     expect(fails(`export default function X({ a }: { a: string }) { return <p />; }`)).toThrow(
       /分割代入/,
     );
+    expect(fails(`export default function X(props) { return <p />; }`)).toThrow(/型注釈/);
     expect(fails(`type Props = { ref: string };\n${end}`)).toThrow(/"ref"/);
     expect(fails(`type Props = { title: string };\n${end}`)).toThrow(/"title"/);
   });
