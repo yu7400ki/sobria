@@ -50,12 +50,34 @@ export function registerSlot(name: string): void {
   for (const activate of slots.children.get(name) ?? []) activate(owner);
 }
 
-/** `insert` で挿入する内容と、その中で作成した子要素を、`slots` のホストの `name` のスロットに配置する。 */
-export function insertIntoSlot(slots: HostSlots, name: string, insert: () => void): void {
+/**
+ * `insert` で挿入する内容と、その中で作成した子要素を、`slots` のホストの、props の名前 `prop` のスロットに配置する。
+ * `children` は名前の無いスロットになる。`insert` は、挿入するノードを変換する関数を受け取る。
+ * 名前付きのスロットでは、その関数は要素に `slot` 属性を付与し、テキストを `<span slot>` で包む。
+ */
+export function placeInSlot(
+  slots: HostSlots,
+  prop: string,
+  insert: (place?: (node: Node) => Node) => void,
+): void {
+  const name = prop === "children" ? "" : prop;
   runWithOwner(createOwner(), () => {
     setContext(TargetContext, { slots, name });
-    insert();
+    insert(name === "" ? undefined : (node) => assignSlot(node, name));
   });
+}
+
+/** 名前付きのスロットに配置するノードを返す。要素には `slot` 属性を付与し、テキストは `<span slot>` で包む。 */
+function assignSlot(node: Node, name: string): Node {
+  if (node instanceof Element) {
+    node.setAttribute("slot", name);
+    return node;
+  }
+  if (!(node instanceof Text)) return node;
+  const span = document.createElement("span");
+  span.setAttribute("slot", name);
+  span.append(node);
+  return span;
 }
 
 /**

@@ -28,7 +28,7 @@ import {
   addChild,
   createHostSlots,
   enterHost,
-  insertIntoSlot,
+  placeInSlot,
   type HostSlots,
 } from "./slots.ts";
 
@@ -342,10 +342,7 @@ export function createElementInstance(
     const value: unknown = read ?? descriptor.value;
     const prop = instance.props.get(name);
     if (instance.slotNames.has(name)) {
-      const slot = name === "children" ? "" : name;
-      insertIntoSlot(instance.slots, slot, () =>
-        insert(host, value, slot === "" ? undefined : (node) => assignSlot(node, slot)),
-      );
+      placeInSlot(instance.slots, name, (place) => insert(host, value, place));
     } else if (prop) {
       const reactive =
         read ?? (isFunction(value) && !instance.functionProps.has(name) ? value : undefined);
@@ -361,17 +358,4 @@ export function createElementInstance(
     if (!activateInSlot((slotOwner) => instance.activate(slotOwner))) instance.activate(owner);
   }
   return asClientNode(host);
-}
-
-/** 名前付きのスロットに配置するノードを返す。要素には `slot` 属性を付与し、テキストは `<span slot>` で包む。 */
-function assignSlot(node: Node, name: string): Node {
-  if (node instanceof Element) {
-    node.setAttribute("slot", name);
-    return node;
-  }
-  if (!(node instanceof Text)) return node;
-  const span = document.createElement("span");
-  span.setAttribute("slot", name);
-  span.append(node);
-  return span;
 }
