@@ -58,6 +58,8 @@ interface Run {
   mounts: (() => void)[];
   /** 最初の内容を表示したかどうか。 */
   settled: boolean;
+  /** 起動した owner。 */
+  readonly owner: Owner | null;
 }
 
 /** 要素のインスタンスの状態を表す。 */
@@ -95,6 +97,23 @@ type Takeover =
   | { readonly phase: "done" };
 
 const instances = new WeakMap<HTMLElement, Instance>();
+
+/** 登録したタグの状態を表す。 */
+interface Definition {
+  /** 描画に使用する要素の関数。 */
+  fn: (props: never, ctx: never) => unknown;
+  /** 登録の設定を JSON にした文字列。 */
+  readonly signature: string;
+  /** 起動しているインスタンス。 */
+  readonly shown: Set<Instance>;
+}
+
+/** 開発中に要素のモジュールを更新したときに使用する、Vite の `import.meta.hot` を表す。 */
+export interface HotContext {
+  readonly invalidate: (message?: string) => void;
+}
+
+const definitions = new Map<string, Definition>();
 
 function convert(value: string | null, type: AttributeType | undefined): unknown {
   if (value === null) return undefined;
@@ -135,12 +154,31 @@ function runMounts(host: HTMLElement, run: Run): void {
   for (const mount of mounts) mount();
 }
 
-/** `fn` を要素として、`tag` の名前で Custom Element に登録し、JSX で使用する要素コンポーネントを返す。 */
+/**
+ * `fn` を要素として、`tag` の名前で Custom Element に登録し、JSX で使用する要素コンポーネントを返す。
+ * 登録済みの `tag` をもう一度登録するとき、`hot` があれば、要素の関数を `fn` に置換して、起動しているインスタンスを props の値を引き継いで描画し直す。
+ * `options` が前の登録と異なれば、`hot.invalidate()` を呼ぶ。`hot` が無ければエラーにする。
+ */
 export function defineElement<P, M extends object = object>(
   tag: string,
   fn: ElementFn<P, M>,
   options: ElementOptions,
+  hot?: HotContext,
 ): ElementComponent<P, M> {
+  const signature = JSON.stringify(options);
+  const defined = definitions.get(tag);
+  if (defined) {
+    if (!hot) throw new Error(`<${tag}> は既に登録されています。`);
+    if (defined.signature !== signature) {
+      hot.invalidate(`<${tag}> の props の構成が変わりました。`);
+    } else {
+      defined.fn = fn;
+      for (const instance of Array.from(defined.shown)) instance.activate(instance.run!.owner);
+    }
+    return createElementComponent(tag, fn, options);
+  }
+  const definition: Definition = { fn, signature, shown: new Set() };
+  definitions.set(tag, definition);
   const types = options.types ?? {};
   const functionProps: ReadonlySet<string> = new Set(options.functionProps);
   const slotNames: ReadonlySet<string> = new Set(["children", ...(options.slots ?? [])]);
@@ -200,12 +238,14 @@ export function defineElement<P, M extends object = object>(
     }
     runWithOwner(owner, () =>
       createRoot((dispose) => {
-        const run: Run = { dispose, mounts: [], settled: false };
+        const run: Run = { dispose, mounts: [], settled: false, owner };
         instance.run = run;
+        definition.shown.add(instance);
         enterHost(instance.slots);
         onCleanup(() => {
           instance.run = undefined;
           run.mounts = [];
+          definition.shown.delete(instance);
         });
         const ctx: Ctx<M> = {
           host,
@@ -224,7 +264,9 @@ export function defineElement<P, M extends object = object>(
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion
         const props = createProps(host, instance) as P;
         const render = () => {
-          const content = untrack(() => withScope(scope, () => fn(props, ctx)));
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+          const current = definition.fn as ElementFn<P, M>;
+          const content = untrack(() => withScope(scope, () => current(props, ctx)));
           onSettled(() => {
             if (target !== shadow) {
               shadow.replaceChildren(target);

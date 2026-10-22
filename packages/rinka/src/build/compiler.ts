@@ -65,7 +65,8 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
   const output = new MagicString(code);
   addMemoSites(program, output, code, options.file);
   const element =
-    options.element && registerElement(program, output, options.element.tag, options.file);
+    options.element &&
+    registerElement(program, output, options.element.tag, options.file, options.client);
   if (options.client && gateAwaits(program, output)) {
     output.prepend(`import { takeGate as ${TAKE_GATE} } from "rinka/internal";\n`);
   }
@@ -76,12 +77,16 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
   };
 }
 
-/** default export した要素の関数を、`tag` と Props の解析の結果を渡して要素を登録する呼び出しにする。 */
+/**
+ * default export した要素の関数を、`tag` と Props の解析の結果を渡して要素を登録する呼び出しにする。
+ * クライアント向けなら、登録に `import.meta.hot` を渡し、モジュール自身の更新を受け入れる。
+ */
 function registerElement(
   program: ESTree.Program,
   output: MagicString,
   tag: string,
   file: string,
+  client: boolean,
 ): ElementInfo {
   const exported = program.body.find((statement) => statement.type === "ExportDefaultDeclaration");
   const fn = exported?.declaration;
@@ -93,11 +98,12 @@ function registerElement(
   const elementOptions = analyzeProps(program, fn, file);
   convertSlots(fn, elementOptions, output, file);
   output.remove(exported.start, fn.start);
-  output.append(
-    `
-export default ${DEFINE}(${JSON.stringify(tag)}, ${fn.id.name}, ${JSON.stringify(elementOptions)});
-`,
-  );
+  const args = [JSON.stringify(tag), fn.id.name, JSON.stringify(elementOptions)];
+  if (client) args.push("import.meta.hot");
+  output.append(`
+export default ${DEFINE}(${args.join(", ")});
+`);
+  if (client) output.append("if (import.meta.hot) import.meta.hot.accept();\n");
   output.prepend(`import { defineElement as ${DEFINE} } from "rinka";
 `);
   return { tag, options: elementOptions };

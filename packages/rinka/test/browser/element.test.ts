@@ -72,7 +72,10 @@ describe("props と属性", () => {
         const read = () => [props.count, props.on, props.label];
         return jsx("p", { children: () => String(seen.push(read())) });
       },
-      { props: ["count", "on", "label"], types: { count: "number", on: "boolean" } },
+      {
+        props: ["count", "on", "label"],
+        types: { count: "number", on: "boolean" },
+      },
     );
     const el = document.createElement(tag);
     el.setAttribute("count", "3");
@@ -93,7 +96,9 @@ describe("props と属性", () => {
       functionProps: ["onSelect", "render"],
       slots: ["header"],
     });
-    const ctor = customElements.get(tag) as unknown as { observedAttributes: string[] };
+    const ctor = customElements.get(tag) as unknown as {
+      observedAttributes: string[];
+    };
     expect(ctor.observedAttributes).toEqual(["user-id"]);
   });
 
@@ -589,5 +594,60 @@ describe("起動と破棄", () => {
     await tick();
     flush();
     expect(seen).toEqual([2]);
+  });
+});
+
+/** `invalidate` を呼んだ回数を数える、`import.meta.hot` の代わりを作成する。 */
+function createHot() {
+  const hot = { invalidated: 0, invalidate: () => void hot.invalidated++ };
+  return hot;
+}
+
+describe("開発中の再登録", () => {
+  it("同じタグをもう一度登録すると、表示中のインスタンスを、props の値を引き継いで新しい関数で描画する", async () => {
+    const tag = nextTag();
+    const options = { props: ["label"] };
+    defineElement(
+      tag,
+      (props: CounterProps) => jsx("p", { children: () => `old:${props.label}` }),
+      options,
+    );
+    const host = Object.assign(document.createElement(tag), { label: "a" });
+    await connect(host);
+    expect(shadow(host)).toBe("<p>old:a</p>");
+    const hot = createHot();
+    defineElement(
+      tag,
+      (props: CounterProps) => jsx("p", { children: () => `new:${props.label}` }),
+      options,
+      hot,
+    );
+    flush();
+    expect(shadow(host)).toBe("<p>new:a</p>");
+    Object.assign(host, { label: "b" });
+    flush();
+    expect(shadow(host)).toBe("<p>new:b</p>");
+    const later = await connect(document.createElement(tag));
+    expect(shadow(later)).toBe("<p>new:undefined</p>");
+    expect(hot.invalidated).toBe(0);
+  });
+
+  it("登録の設定が変わると、関数を置換せずに invalidate を呼ぶ", async () => {
+    const tag = nextTag();
+    defineElement(tag, () => jsx("p", { children: "old" }), {
+      props: ["label"],
+    });
+    const host = await connect(document.createElement(tag));
+    const hot = createHot();
+    defineElement(tag, () => jsx("p", { children: "new" }), { props: ["count"] }, hot);
+    flush();
+    expect(hot.invalidated).toBe(1);
+    expect(shadow(host)).toBe("<p>old</p>");
+  });
+
+  it("import.meta.hot を渡さずに同じタグをもう一度登録すると、エラーにする", () => {
+    const tag = nextTag();
+    defineElement(tag, empty, { props: [] });
+    expect(() => defineElement(tag, empty, { props: [] })).toThrow(tag);
   });
 });

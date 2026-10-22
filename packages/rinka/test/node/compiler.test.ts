@@ -243,6 +243,21 @@ export default function X(props: Props) { return <p />; }`);
     );
   });
 
+  it("クライアント向けの要素のモジュールは、import.meta.hot を登録に渡し、自身の更新を受け入れる", () => {
+    const code = `export default function X(props: { a: string }) { return <p />; }`;
+    const client = transformSource(code, {
+      file: "src/elements/x.tsx",
+      lang: "tsx",
+      client: true,
+      element: { tag: "app-x" },
+    }).code;
+    expect(client).toContain(
+      'export default __rinka_defineElement("app-x", X, {"props":["a"],"types":{"a":"string"}}, import.meta.hot);',
+    );
+    expect(client).toContain("if (import.meta.hot) import.meta.hot.accept();");
+    expect(element(code).code).not.toContain("import.meta.hot");
+  });
+
   it("関数の宣言を default export していない要素のファイルは、ビルドのエラーにする", () => {
     expect(() => element("export default (props: {}) => <p />;")).toThrow(
       /export default function/,
