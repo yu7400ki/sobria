@@ -50,6 +50,16 @@ interface Prop {
   readonly trigger: () => void;
 }
 
+/** 1 回の起動に属する状態を表す。 */
+interface Run {
+  /** 描画の範囲を破棄する関数。 */
+  readonly dispose: () => void;
+  /** まだ呼んでいない `onMount` の関数。 */
+  mounts: (() => void)[];
+  /** 最初の内容を表示したかどうか。 */
+  settled: boolean;
+}
+
 /** 要素のインスタンスの状態を表す。 */
 interface Instance {
   /** props の名前ごとの状態。要素の寿命の間は同じ状態を保持する。 */
@@ -64,16 +74,12 @@ interface Instance {
   readonly activate: (owner: Owner | null) => void;
   /** owner のある場所で作成したかどうか。作成した場所の owner が、起動と破棄を管理する。 */
   owned: boolean;
-  /** 起動していれば、描画の範囲を破棄する関数。 */
-  dispose?: () => void;
+  /** 起動していれば、その起動の状態。 */
+  run?: Run;
   /** 起動を待っていれば、待つのをやめる関数。 */
   cancel?: () => void;
   /** 起動した後に呼ぶ、要素への `ref`。 */
   ref?: (host: HTMLElement) => unknown;
-  /** まだ呼んでいない `onMount` の関数。 */
-  mounts: (() => void)[];
-  /** 最初の内容を表示したかどうか。 */
-  settled: boolean;
 }
 
 const instances = new WeakMap<HTMLElement, Instance>();
@@ -110,10 +116,10 @@ function peek(prop: Prop): unknown {
 }
 
 /** 接続していて、最初の内容を表示していれば、まだ呼んでいない `onMount` の関数を呼ぶ。 */
-function runMounts(host: HTMLElement, instance: Instance): void {
-  if (!host.isConnected || !instance.settled) return;
-  const mounts = instance.mounts;
-  instance.mounts = [];
+function runMounts(host: HTMLElement, run: Run): void {
+  if (!host.isConnected || !run.settled) return;
+  const mounts = run.mounts;
+  run.mounts = [];
   for (const mount of mounts) mount();
 }
 
@@ -157,23 +163,25 @@ export function defineElement<P, M extends object = object>(
   /**
    * `owner` の下に root を作成して要素の関数を描画し、要素への `ref` を呼ぶ。
    * `owner` が `null` なら、描画の全体を、フォールバックが空の `<Loading>` で包む。
-   * root を破棄すると、`instance.dispose` を `undefined` にし、まだ呼んでいない `onMount` の関数を捨てる。
+   * 起動していれば、前の起動の root を先に破棄する。
+   * root を破棄すると、まだ呼んでいない `onMount` の関数を捨て、`instance.run` を `undefined` にする。
    */
   function activate(host: HTMLElement, instance: Instance, owner: Owner | null): void {
+    instance.run?.dispose();
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
     shadow.replaceChildren();
-    instance.settled = false;
     runWithOwner(owner, () =>
       createRoot((dispose) => {
-        instance.dispose = dispose;
+        const run: Run = { dispose, mounts: [], settled: false };
+        instance.run = run;
         enterHost(instance.slots);
         onCleanup(() => {
-          instance.dispose = undefined;
-          instance.mounts = [];
+          instance.run = undefined;
+          run.mounts = [];
         });
         const ctx: Ctx<M> = {
           host,
-          onMount: (mount) => instance.mounts.push(mount),
+          onMount: (mount) => run.mounts.push(mount),
           expose: (members) => {
             const descriptors = Object.getOwnPropertyDescriptors(members);
             if (import.meta.env?.DEV) {
@@ -190,8 +198,8 @@ export function defineElement<P, M extends object = object>(
         const render = () => {
           const content = untrack(() => fn(props, ctx));
           onSettled(() => {
-            instance.settled = true;
-            runMounts(host, instance);
+            run.settled = true;
+            runMounts(host, run);
           });
           return content;
         };
@@ -227,8 +235,6 @@ export function defineElement<P, M extends object = object>(
         slots: createHostSlots(),
         activate: (owner) => activate(this, instance, owner),
         owned: false,
-        mounts: [],
-        settled: false,
       };
       instances.set(this, instance);
     }
@@ -241,10 +247,10 @@ export function defineElement<P, M extends object = object>(
 
     connectedCallback(): void {
       const instance = instances.get(this)!;
-      if (instance.dispose) runMounts(this, instance);
+      if (instance.run) runMounts(this, instance.run);
       else if (!instance.owned) {
         queueMicrotask(() => {
-          if (!this.isConnected || instance.dispose) return;
+          if (!this.isConnected || instance.run) return;
           instance.cancel?.();
           instance.cancel = attach(this, instance);
         });
@@ -258,7 +264,7 @@ export function defineElement<P, M extends object = object>(
         if (this.isConnected) return;
         instance.cancel?.();
         instance.cancel = undefined;
-        instance.dispose?.();
+        instance.run?.dispose();
       });
     }
   }
