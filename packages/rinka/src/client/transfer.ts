@@ -12,6 +12,8 @@ interface Receiver {
   readonly l: Record<string, (() => void)[] | undefined>;
   /** 値が無いことを表すオブジェクトである。 */
   readonly n: object;
+  /** インスタンスの起動の条件を満たした時点で `start` を呼ぶ。 */
+  readonly w: (host: Element, start: () => void) => void;
 }
 
 declare global {
@@ -21,6 +23,13 @@ declare global {
 
 /** `window.$rinka` を返す。起動スクリプトを読み込んでいなければ `undefined` を返す。 */
 const receiver = (): Receiver | undefined => globalThis.$rinka;
+
+/** 起動スクリプトが `host` の起動の条件を満たしたと通知した時点で、`start` を呼ぶ。起動スクリプトを読み込んでいないページでは、すぐに呼ぶ。 */
+export function whenStartable(host: Element, start: () => void): void {
+  const store = receiver();
+  if (store) store.w(host, start);
+  else start();
+}
 
 /** ホストが起動の前に待つ、`data-om` のキーを返す。 */
 function waitedKeys(host: Element): string[] {

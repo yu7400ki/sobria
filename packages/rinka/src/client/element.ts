@@ -36,7 +36,7 @@ import {
   placeInSlot,
   type HostSlots,
 } from "./slots.ts";
-import { beginTakeover, whenArrived } from "./transfer.ts";
+import { beginTakeover, whenArrived, whenStartable } from "./transfer.ts";
 
 /** 要素を描画する関数を表す。 */
 export type ElementFn<P, M extends object> = (props: P, ctx: Ctx<M>) => unknown;
@@ -81,6 +81,8 @@ interface Instance {
   run?: Run;
   /** 値の到着を待っているか、スロットに登録していれば、待機か登録を取り消す関数。 */
   cancel?: () => void;
+  /** SSR したホストが、起動スクリプトの起動の条件を待っていれば `waiting`、満たしていれば `open` である。 */
+  gate?: "waiting" | "open";
   /** 起動した後に呼ぶ、要素への `ref`。 */
   ref?: (host: HTMLElement) => unknown;
   /** 値の引き継ぎの段階。 */
@@ -396,6 +398,19 @@ function locate(el: HTMLElement): Position {
 function attach(el: HTMLElement, instance: Instance): void {
   instance.cancel?.();
   instance.cancel = undefined;
+  if (instance.gate !== "open" && el.hasAttribute("data-oh") && locate(el).kind !== "shadow") {
+    if (instance.gate === "waiting") return;
+    instance.gate = "waiting";
+    let synchronous = true;
+    let opened = false;
+    whenStartable(el, () => {
+      instance.gate = "open";
+      opened = true;
+      if (!synchronous && el.isConnected) attach(el, instance);
+    });
+    synchronous = false;
+    if (!opened) return;
+  }
   const id = transferId(el, instance);
   if (id !== null) {
     const cancel = whenArrived(el, id, () => {
