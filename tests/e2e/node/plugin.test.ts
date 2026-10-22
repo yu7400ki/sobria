@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { rinka } from "rinka/vite";
@@ -52,5 +55,27 @@ describe("Vite プラグイン", () => {
         plugins: [rinka(), rinka()],
       }),
     ).rejects.toThrow(/2 つ以上/);
+  });
+});
+
+describe("タグ名の検査", () => {
+  it("2 つのファイルが同じタグになると、開発サーバーの起動時にエラーにする", async () => {
+    const project = await mkdtemp(join(tmpdir(), "rinka-tags-"));
+    try {
+      await mkdir(join(project, "src/elements/forms"), { recursive: true });
+      const source = "export default function X() { return <p />; }\n";
+      await writeFile(join(project, "src/elements/forms/date-picker.tsx"), source);
+      await writeFile(join(project, "src/elements/forms-date-picker.tsx"), source);
+      const starting = createServer({
+        root: project,
+        configFile: false,
+        logLevel: "silent",
+        server: { middlewareMode: true, hmr: false },
+        plugins: [rinka({ prefix: "app" })],
+      });
+      await expect(starting).rejects.toThrow(/app-forms-date-picker/);
+    } finally {
+      await rm(project, { recursive: true, force: true });
+    }
   });
 });

@@ -1,4 +1,5 @@
-import { extname, relative, resolve, sep } from "node:path";
+import { readdirSync } from "node:fs";
+import { extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { Plugin } from "vite";
@@ -86,6 +87,9 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         root = config.root;
         elementsDir = resolve(root, options.elementsDir ?? "src/elements");
       },
+      buildStart() {
+        checkTags(elementsDir, prefix, tagOf);
+      },
       resolveId(id) {
         const side = this.environment.name === "client" ? "client" : "server";
         const entry = runtimes[side][id];
@@ -114,4 +118,34 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       },
     },
   ];
+}
+
+/** `dir` の中の要素のファイルを走査し、2 つのファイルが同じタグになればエラーにする。 */
+function checkTags(
+  dir: string,
+  prefix: string,
+  tagOf: (path: string, lang: Lang) => string | undefined,
+): void {
+  const owners = new Map<string, string>();
+  let entries: string[];
+  try {
+    entries = readdirSync(dir, { recursive: true, encoding: "utf8" });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const path = join(dir, entry);
+    const lang = langs[extname(path)];
+    if (!lang) continue;
+    const tag = tagOf(path, lang);
+    if (tag === undefined) continue;
+    const file = entry.split(sep).join("/");
+    const other = owners.get(tag);
+    if (other !== undefined) {
+      throw new Error(
+        `${other} と ${file} は、どちらもタグ名 ${tag} になります。どちらかのファイル名を変更してください（接頭辞は ${prefix}）。`,
+      );
+    }
+    owners.set(tag, file);
+  }
 }
