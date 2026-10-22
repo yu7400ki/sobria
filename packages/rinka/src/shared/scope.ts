@@ -9,12 +9,13 @@ export type ScopedMemo = <T>(
 /** 要素のインスタンスの描画の範囲を表す。範囲の中で作成する、キーのある memo の作り方を決める。 */
 export interface MemoScope {
   readonly memo: ScopedMemo;
-  /** 呼び出し箇所ごとに、作成した memo の数を保持する。 */
-  readonly counts: Map<string, number>;
 }
 
+/** 描画の範囲ごとに、呼び出し箇所ごとの作成した memo の数を保持する。 */
+const counts = new WeakMap<MemoScope, Map<string, number>>();
+
 /** `memo` でキーのある memo を作成する、描画の範囲を作成する。 */
-export const createScope = (memo: ScopedMemo): MemoScope => ({ memo, counts: new Map() });
+export const createScope = (memo: ScopedMemo): MemoScope => ({ memo });
 
 let current: MemoScope | undefined;
 let seeding = false;
@@ -30,25 +31,30 @@ export function withScope<T>(scope: MemoScope, fn: () => T): T {
   }
 }
 
-/** memo を識別するための、`memo` の 2 番目の引数を表す。 */
+/** `memo` の 2 番目の引数を表す。 */
 export interface MemoOptions {
-  /** 明示的なキー。 */
+  /** 描画の範囲の中で、memo を識別するキーを表す。 */
   readonly key?: string;
-  /** 呼び出し箇所の ID。Vite プラグインが付与する。 */
+  /** 呼び出し箇所の ID を表す。Vite プラグインが付与する。 */
   readonly site?: string;
 }
 
 /**
- * 描画の範囲の中なら、範囲と memo のキーを返す。キーは、明示的なキーか、呼び出し箇所とその箇所で何回目に作成したかである。
+ * 描画の範囲の中なら、範囲の作り方で memo を作成して返す。キーは、明示的なキーか、呼び出し箇所とその箇所で何回目に作成したかである。
  * 範囲の外か、キーも呼び出し箇所も無ければ `undefined` を返す。
  */
-export function scopedKey(options: MemoOptions | undefined): [MemoScope, string] | undefined {
+export function scopedMemo<T>(
+  fn: (prev: T | undefined) => T | PromiseLike<T>,
+  options: MemoOptions | undefined,
+): SourceAccessor<T> | undefined {
   if (!current || !options) return undefined;
-  if (options.key !== undefined) return [current, options.key];
+  if (options.key !== undefined) return current.memo(options.key, fn);
   if (options.site === undefined) return undefined;
-  const count = current.counts.get(options.site) ?? 0;
-  current.counts.set(options.site, count + 1);
-  return [current, `${options.site}#${count}`];
+  let sites = counts.get(current);
+  if (!sites) counts.set(current, (sites = new Map<string, number>()));
+  const count = sites.get(options.site) ?? 0;
+  sites.set(options.site, count + 1);
+  return current.memo(`${options.site}#${count}`, fn);
 }
 
 /** 引き継いだ値を使う memo の、最初の計算（シード）の最中かどうかを返す。 */

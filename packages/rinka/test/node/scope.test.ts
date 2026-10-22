@@ -42,6 +42,17 @@ describe("memo のキー", () => {
     expect([first.keys, second.keys]).toEqual([["a.tsx:1:1#0"], ["a.tsx:1:1#0"]]);
   });
 
+  it("入れ子の描画の範囲で数えた回数は、外側の範囲の回数に影響しない", () => {
+    const outer = recordingScope();
+    const inner = recordingScope();
+    withScope(outer.scope, () => {
+      memo(() => 1, { site: "a.tsx:1:1" });
+      withScope(inner.scope, () => memo(() => 2, { site: "a.tsx:1:1" }));
+      memo(() => 3, { site: "a.tsx:1:1" });
+    });
+    expect([outer.keys, inner.keys]).toEqual([["a.tsx:1:1#0", "a.tsx:1:1#1"], ["a.tsx:1:1#0"]]);
+  });
+
   it("キーの無い memo と、描画の範囲の外の memo は、描画の範囲を使わずに作成する", () => {
     const { scope, keys } = recordingScope();
     createRoot(() => {
