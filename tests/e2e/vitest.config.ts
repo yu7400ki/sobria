@@ -9,6 +9,7 @@ export default defineConfig({
       {
         test: {
           name: "e2e",
+          globalSetup: ["global-setup.ts"],
           include: ["e2e/**/*.test.ts"],
           browser: {
             enabled: true,
