@@ -7,14 +7,7 @@ import { defineElement } from "../../src/server/element.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToResponse, renderToStream } from "../../src/server/render.ts";
 import { memo } from "../../src/shared/signals.ts";
-
-/** ストリームのチャンクを、受け取った順に文字列の配列にする。 */
-async function read(stream: ReadableStream<Uint8Array>): Promise<string[]> {
-  const decoder = new TextDecoder();
-  const chunks: string[] = [];
-  for await (const chunk of stream) chunks.push(decoder.decode(chunk));
-  return chunks;
-}
+import { checkOrder, read, readText } from "./stream-order.ts";
 
 /** 外から解決できる async のコンポーネントを作成する。 */
 function deferred(content: unknown) {
@@ -380,8 +373,10 @@ describe("境界の失敗と順序", () => {
     expect(first).toContain('<template data-ob="p4"></template><!--/ob:p4-->');
     reader.releaseLock();
     slow.resolve();
-    const rest = (await read(stream)).join("");
-    expect(rest).toContain('<template data-op="p4">late</template>');
+    const rest: string[] = [];
+    for await (const chunk of stream) rest.push(decoder.decode(chunk));
+    checkOrder([first, ...rest]);
+    expect(rest.join("")).toContain('<template data-op="p4">late</template>');
   });
 });
 
@@ -398,7 +393,7 @@ describe("Response", () => {
     const response = await renderToResponse(jsx("p", { children: "hi" }));
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
-    expect(await response.text()).toBe(
+    expect(await readText(response)).toBe(
       '<!doctype html><html><head><meta charset="utf-8"></head><body><p>hi</p></body></html>',
     );
   });

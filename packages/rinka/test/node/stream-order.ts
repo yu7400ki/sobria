@@ -1,0 +1,122 @@
+/** 起動スクリプトの後に出力した、`$rinka` の受け口を呼ぶスクリプトの呼び出しを表す。 */
+type Call =
+  | { readonly kind: "r"; readonly at: number; readonly spec: Spec }
+  | {
+      readonly kind: "d";
+      readonly at: number;
+      readonly host: string;
+      readonly values: Record<string, unknown>;
+    };
+
+/** `$rinka.r` の引数を表す。 */
+interface Spec {
+  readonly b: string;
+  readonly bp: readonly string[];
+  readonly p: readonly (readonly [string, readonly string[]])[];
+}
+
+/** `html` の中の、`$rinka.` で始まるスクリプトを実行し、受け口の呼び出しを出力した順に返す。 */
+function calls(html: string): Call[] {
+  const found: Call[] = [];
+  for (const match of html.matchAll(/<script>(\$rinka\..*?)<\/script>/gs)) {
+    const at = match.index;
+    const receiver = {
+      n: {},
+      r: (spec: Spec) => found.push({ kind: "r", at, spec }),
+      d: (host: string, values: Record<string, unknown>) =>
+        found.push({ kind: "d", at, host, values }),
+    };
+    // oxlint-disable-next-line typescript/no-implied-eval
+    new Function("$rinka", match[1] ?? "")(receiver);
+  }
+  return found;
+}
+
+/** `html` の中のホストの開始タグごとに、ホストの ID をキーにして、タグの位置と `data-om` のキーを返す。 */
+function hostTags(html: string): Map<string, { at: number; keys: string[] }> {
+  const tags = new Map<string, { at: number; keys: string[] }>();
+  for (const tag of html.matchAll(/<[a-z][^\s>]*((?:\s+[^\s=>]+(?:="[^"]*")?)*)/g)) {
+    const attributes = tag[1] ?? "";
+    const id = / data-oh="([^"]*)"/.exec(attributes)?.[1];
+    if (id === undefined || tags.has(id)) continue;
+    const om = / data-om="([^"]*)"/.exec(attributes)?.[1] ?? "";
+    const keys = om.replaceAll("&quot;", '"').replaceAll("&amp;", "&").split(" ").filter(Boolean);
+    tags.set(id, { at: tag.index, keys });
+  }
+  return tags;
+}
+
+/**
+ * ストリームのチャンクの列が、出力の順序の前提に合うことを確認する。合わなければ、合わない条件と位置を含むエラーを投げる。
+ * 前提は、最初のチャンクが文書の先頭であること、`$rinka.r` が境界の目印より後にあること、`$rinka.d` がホストの開始タグより後にあり、
+ * キーがそのホストの `data-om` に列挙されていること、出力したホストの `data-om` の各キーの値を 1 回ずつ送ること、
+ * `@b` が、そのホストを含むすべての `$rinka.r` より後にあることである。
+ */
+export function checkOrder(chunks: readonly string[]): void {
+  if (!chunks[0]?.startsWith("<!doctype html>")) {
+    throw new Error(`最初のチャンクが文書の先頭ではありません: ${chunks[0]?.slice(0, 80)}`);
+  }
+  const html = chunks.join("");
+  const found = calls(html);
+  const tags = hostTags(html);
+  const sent = new Map<string, number>();
+  for (const call of found) {
+    if (call.kind === "r") {
+      const marker = html.indexOf(`<template data-ob="${call.spec.b}">`);
+      if (marker === -1 || marker > call.at) {
+        throw new Error(
+          `$rinka.r の境界 ${call.spec.b} の目印が、スクリプト（${call.at}）より前にありません。`,
+        );
+      }
+      continue;
+    }
+    const tag = tags.get(call.host);
+    if (!tag || tag.at > call.at) {
+      throw new Error(
+        `$rinka.d のホスト ${call.host} の開始タグが、スクリプト（${call.at}）より前にありません。`,
+      );
+    }
+    for (const key of Object.keys(call.values)) {
+      sent.set(`${call.host} ${key}`, (sent.get(`${call.host} ${key}`) ?? 0) + 1);
+      if (!tag.keys.includes(key)) {
+        throw new Error(`$rinka.d のキー ${key} が、ホスト ${call.host} の data-om にありません。`);
+      }
+      if (key !== "@b") continue;
+      const later = found.find(
+        (other) =>
+          other.kind === "r" &&
+          other.at > call.at &&
+          (other.spec.bp.includes(call.host) ||
+            other.spec.p.some(([, path]) => path.includes(call.host))),
+      );
+      if (later) {
+        throw new Error(
+          `ホスト ${call.host} の @b（${call.at}）が、そのホストを含む $rinka.r（${later.at}）より前にあります。`,
+        );
+      }
+    }
+  }
+  for (const [host, { keys }] of tags) {
+    for (const key of keys) {
+      const count = sent.get(`${host} ${key}`) ?? 0;
+      if (count !== 1) {
+        throw new Error(`ホスト ${host} の data-om のキー ${key} の値を、${count} 回送りました。`);
+      }
+    }
+  }
+}
+
+/** ストリームのチャンクを、受け取った順に文字列の配列にし、出力の順序の前提に合うことを確認する。 */
+export async function read(stream: ReadableStream<Uint8Array>): Promise<string[]> {
+  const decoder = new TextDecoder();
+  const chunks: string[] = [];
+  for await (const chunk of stream) chunks.push(decoder.decode(chunk));
+  checkOrder(chunks);
+  return chunks;
+}
+
+/** レスポンスの本文を読み、出力の順序の前提に合うことを確認してから返す。 */
+export async function readText(response: Response): Promise<string> {
+  if (!response.body) throw new Error("レスポンスに本文がありません。");
+  return (await read(response.body)).join("");
+}

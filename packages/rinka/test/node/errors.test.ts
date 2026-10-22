@@ -5,6 +5,7 @@ import { defineElement } from "../../src/server/element.ts";
 import { NotFound, notFound, redirect } from "../../src/server/errors.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToResponse } from "../../src/server/render.ts";
+import { readText } from "./stream-order.ts";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -62,7 +63,7 @@ describe("シェルの中", () => {
       notFound: () => jsx("h1", { children: "無い" }),
     });
     expect(response.status).toBe(404);
-    expect(await response.text()).toContain("<body><h1>無い</h1></body>");
+    expect(await readText(response)).toContain("<body><h1>無い</h1></body>");
     expect((await renderToResponse(jsx(throwing(notFound()), {}))).status).toBe(404);
   });
 
@@ -71,7 +72,7 @@ describe("シェルの中", () => {
       error: (error) => jsx("h1", { children: error instanceof Error ? error.message : "" }),
     });
     expect(response.status).toBe(500);
-    expect(await response.text()).toContain("<body><h1>壊れた</h1></body>");
+    expect(await readText(response)).toContain("<body><h1>壊れた</h1></body>");
   });
 
   it("投げた Response は、そのままレスポンスにする", async () => {
@@ -83,7 +84,7 @@ describe("シェルの中", () => {
     const failing = jsx(Errored, { fallback: "x", children: jsx(throwing(new Error("e")), {}) });
     const response = await renderToResponse(failing);
     expect(response.status).toBe(500);
-    expect(await response.text()).toContain("<body>x</body>");
+    expect(await readText(response)).toContain("<body>x</body>");
     const ok = jsx(Errored, {
       fallback: "x",
       status: 200,
@@ -106,7 +107,7 @@ describe("シェルの中", () => {
       }),
     );
     expect(response.status).toBe(500);
-    expect(await response.text()).toContain("<body>x</body>");
+    expect(await readText(response)).toContain("<body>x</body>");
   });
 });
 
@@ -130,7 +131,7 @@ describe("シェルの中の判定", () => {
         const response = await renderToResponse(node);
         expect(response.status).toBe(500);
         // oxlint-disable-next-line no-await-in-loop
-        expect(await response.text()).toContain("<body>x</body>");
+        expect(await readText(response)).toContain("<body>x</body>");
       }
     }
   });
@@ -190,7 +191,7 @@ describe("シェルの後", () => {
     );
     const response = await responding;
     resolve();
-    const html = await response.text();
+    const html = await readText(response);
     expect(response.status).toBe(200);
     expect(html).toContain(
       '<script>location.replace("/login")</script><meta http-equiv="refresh" content="0;url=/login">',
@@ -214,7 +215,7 @@ describe("シェルの後", () => {
     ]);
     moved.resolve();
     denied.resolve();
-    const html = await response.text();
+    const html = await readText(response);
     expect(html).toContain('<script>location.replace("/next")</script>');
     expect(html).toContain('<template data-os="b2">拒否</template>');
   });
@@ -228,7 +229,7 @@ describe("シェルの後", () => {
       jsx(Loading, { fallback: "wait", children: jsx(unsafe.Slow, {}) }),
     );
     unsafe.resolve();
-    const html = await response.text();
+    const html = await readText(response);
     expect(html).not.toContain("location.replace");
     expect(error).toHaveBeenCalledTimes(1);
   });
@@ -244,7 +245,7 @@ describe("シェルの後", () => {
       }),
     );
     unsafe.resolve();
-    expect(await response.text()).toContain('<template data-os="b1">caught</template>');
+    expect(await readText(response)).toContain('<template data-os="b1">caught</template>');
   });
 
   it("Errored がフォールバックに切り替えた領域の中の境界は、移動させない", async () => {
@@ -264,7 +265,7 @@ describe("シェルの後", () => {
     const response = await responding;
     expect(response.status).toBe(500);
     moving.resolve();
-    const html = await response.text();
+    const html = await readText(response);
     expect(html).not.toContain("location.replace");
   });
 
@@ -285,7 +286,7 @@ describe("シェルの後", () => {
     first.resolve();
     await tick();
     second.resolve();
-    const html = await response.text();
+    const html = await readText(response);
     expect(seen.length).toBe(2);
     expect(seen.every((error) => error instanceof NotFound)).toBe(true);
     expect(html.split('<meta name="robots" content="noindex">').length).toBe(2);
@@ -307,7 +308,7 @@ describe("シェルの後", () => {
     failing.resolve();
     await tick();
     resolve();
-    const html = await response.text();
+    const html = await readText(response);
     expect(response.status).toBe(200);
     expect(html).not.toContain('data-os="b1"');
     expect(html).toContain('<template data-os="b2">後</template>');

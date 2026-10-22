@@ -5,6 +5,7 @@ import { defineElement } from "../../src/server/element.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToStream, renderToString } from "../../src/server/render.ts";
 import { memo } from "../../src/shared/signals.ts";
+import { read } from "./stream-order.ts";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -15,9 +16,7 @@ const missing = { missing: true };
 
 /** `node` を文書として描画し、HTML と、出力したスクリプトが `$rinka.d` に渡した値を返す。 */
 async function render(node: unknown) {
-  const decoder = new TextDecoder();
-  let html = "";
-  for await (const chunk of renderToStream(node)) html += decoder.decode(chunk);
+  const html = (await read(renderToStream(node))).join("");
   const sent: [string, Record<string, unknown>][] = [];
   const rinka = {
     n: missing,
