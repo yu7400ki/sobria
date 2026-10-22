@@ -71,7 +71,7 @@ interface Instance {
   owned: boolean;
   /** 起動していれば、その起動の状態。 */
   run?: Run;
-  /** 起動を待っていれば、待つのをやめる関数。 */
+  /** スロットに登録していれば、登録を取り消す関数。 */
   cancel?: () => void;
   /** 起動した後に呼ぶ、要素への `ref`。 */
   ref?: (host: HTMLElement) => unknown;
@@ -246,8 +246,7 @@ export function defineElement<P, M extends object = object>(
       else if (!instance.owned) {
         queueMicrotask(() => {
           if (!this.isConnected || instance.run) return;
-          instance.cancel?.();
-          instance.cancel = attach(this, instance);
+          attach(this, instance);
         });
       }
     }
@@ -299,22 +298,23 @@ function locate(el: HTMLElement): Placement | undefined {
  * 表示されている位置の上に定義済みの要素があれば、そのスロットの `<slot>` の owner の下で起動する。
  * `<slot>` が無ければ、その `<slot>` を作成した時点で、接続していれば起動する。その時点でスロットの位置が変わっていれば、今の位置のスロットに登録し直す。
  * 上に定義済みの要素が無ければ、最上位の要素として起動する。
- * 起動を待っていれば、待つのをやめる関数を返す。
+ * 前のスロットへの登録は取り消し、新しく登録したら、登録を取り消す関数を `instance.cancel` に設定する。
  */
-function attach(el: HTMLElement, instance: Instance): (() => void) | undefined {
+function attach(el: HTMLElement, instance: Instance): void {
+  instance.cancel?.();
+  instance.cancel = undefined;
   const placement = locate(el);
   if (!placement) {
     instance.activate(null);
-    return undefined;
+    return;
   }
-  return addChild(placement.parent.slots, placement.name, (owner) => {
+  instance.cancel = addChild(placement.parent.slots, placement.name, (owner) => {
     if (!el.isConnected) return;
     const current = locate(el);
     if (current?.parent === placement.parent && current.name === placement.name) {
       instance.activate(owner);
     } else {
-      instance.cancel?.();
-      instance.cancel = attach(el, instance);
+      attach(el, instance);
     }
   });
 }
