@@ -1,3 +1,5 @@
+import { HTTPException } from "hono/http-exception";
+
 /** リダイレクトのステータスを表す。 */
 export type RedirectStatus = 301 | 302 | 303 | 307 | 308;
 
@@ -67,8 +69,9 @@ export type Thrown =
   | { readonly kind: "response"; readonly response: Response }
   | { readonly kind: "error" };
 
-/** 投げられた値の種類を返す。 */
+/** 投げられた値の種類を返す。`HTTPException` は、`getResponse()` が返す Response として扱う。 */
 export function classify(error: unknown): Thrown {
+  if (error instanceof HTTPException) return classify(error.getResponse());
   if (error instanceof Redirect) {
     const { location, status } = error;
     return {

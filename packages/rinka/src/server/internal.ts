@@ -8,6 +8,7 @@ import {
   type ElementOptions,
 } from "../shared/element.ts";
 import type { AppOptions, CreateApp, Route } from "../shared/routes.ts";
+import { runInRequest } from "./context.ts";
 import { jsx } from "./jsx-runtime.ts";
 import { renderDocument } from "./render.ts";
 
@@ -27,12 +28,14 @@ export const createApp = ((routes: readonly Route[], options: AppOptions = {}): 
   const { onError } = options;
   if (onError) app.onError((c) => onError(c.error));
   for (const route of routes) {
-    app.get(route.path, async () => {
-      const { default: page } = await route.page();
-      return renderDocument(jsx(page, {}), {
-        ...(options.head !== undefined && { head: options.head }),
-      });
-    });
+    app.get(route.path, (c) =>
+      runInRequest(c, async () => {
+        const { default: page } = await route.page();
+        return renderDocument(jsx(page, {}), {
+          ...(options.head !== undefined && { head: options.head }),
+        });
+      }),
+    );
   }
   return app;
 }) satisfies CreateApp;

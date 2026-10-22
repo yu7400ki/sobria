@@ -1,3 +1,4 @@
+import { HTTPException } from "hono/http-exception";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Errored, Loading } from "../../src/server/control.ts";
@@ -97,6 +98,16 @@ describe("シェルの中", () => {
     expect((await renderToResponse(wrap(redirect("/a")))).status).toBe(303);
     expect((await renderToResponse(wrap(notFound()))).status).toBe(404);
     expect((await renderToResponse(wrap(new Response(null, { status: 401 })))).status).toBe(401);
+  });
+
+  it("投げた HTTPException は、getResponse() の Response として扱い、Errored は受け止めない", async () => {
+    const res = new Response(null, { status: 401, headers: { "www-authenticate": "Basic" } });
+    const response = await renderToResponse(wrap(new HTTPException(401, { res })));
+    expect(response.status).toBe(401);
+    expect(response.headers.get("www-authenticate")).toBe("Basic");
+    const login = new Response(null, { status: 302, headers: { location: "/login" } });
+    const moved = await renderToResponse(jsx(throwing(new HTTPException(302, { res: login })), {}));
+    expect(moved.headers.get("location")).toBe("/login");
   });
 
   it("保留中でない Loading の中で受け止めたエラーは、シェルの中として扱う", async () => {

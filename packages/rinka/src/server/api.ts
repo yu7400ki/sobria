@@ -7,3 +7,13 @@ export {
   type RenderOptions,
   type ResponseOptions,
 } from "./render.ts";
+export { defineMiddleware } from "hono/factory";
+export {
+  defineServerFn,
+  SchemaError,
+  type CallOptions,
+  type ServerFn,
+  type ServerFnMethod,
+  type ServerFnOptions,
+  type Validation,
+} from "./server-fn.ts";
