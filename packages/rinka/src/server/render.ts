@@ -768,7 +768,6 @@ class Renderer {
           noindex =
             '<meta name="robots" content="noindex"><script>document.head.append(document.currentScript.previousSibling.cloneNode())</script>';
         }
-        this.finishBoundary(boundary);
         this.reveal(
           flush,
           noindex +
@@ -781,6 +780,7 @@ class Renderer {
               .join("") +
             `<script>$rinka.r(${scriptJson(spec)})</script>`,
         );
+        this.finishBoundary(boundary);
       })(),
     );
   }
