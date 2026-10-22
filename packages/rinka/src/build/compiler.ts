@@ -9,6 +9,7 @@ import {
   lineStarts,
   follow,
   importedNames,
+  insertInside,
   parseModule,
   unwrap,
   surround,
@@ -123,10 +124,7 @@ function addMemoSites(
     if (!options) {
       follow(output, fn, `, { ${site} }`);
     } else if (options.type === "ObjectExpression") {
-      output.appendLeft(
-        options.start + 1,
-        options.properties.length > 0 ? ` ${site},` : ` ${site} `,
-      );
+      insertInside(output, options, options.properties.length > 0 ? ` ${site},` : ` ${site} `);
     } else {
       surround(output, options, "{ ...", `, ${site} }`);
     }
@@ -170,7 +168,7 @@ function insertStop(fn: FunctionNode, output: MagicString): void {
   if (!body) return;
   const declaration = `const ${STOP} = ${STOP_IF_SEEDING}();`;
   if (body.type === "BlockStatement") {
-    output.appendLeft(body.start + 1, ` ${declaration}`);
+    insertInside(output, body, ` ${declaration}`);
   } else {
     surround(output, body, `{ ${declaration} return `, "; }");
   }

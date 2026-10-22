@@ -96,8 +96,15 @@ export default defineConfig({
     {
       files: ["src/build/**"],
       env: { node: true },
-      rules: { ...restrict(...build, seroval), "no-undef": "error" },
+      rules: {
+        ...restrict(...build, seroval),
+        "no-undef": "error",
+        "rinka/no-directional-insert": "error",
+        "rinka/no-entry-literal": "error",
+      },
     },
+    { files: ["src/build/ast.ts"], rules: { "rinka/no-directional-insert": "off" } },
+    { files: ["src/build/entries.ts"], rules: { "rinka/no-entry-literal": "off" } },
     { files: ["src/shared/transfer-keys.ts"], rules: { "rinka/no-transfer-key-literal": "off" } },
     { files: ["test/**"], rules: testRelaxations },
   ],

@@ -30,6 +30,8 @@ const rules = new Map([
   ["rinka(no-static-wire-codec)", "wire-codec"],
   ["import(no-cycle)", "cycle"],
   ["rinka(no-transfer-key-literal)", "key"],
+  ["rinka(no-directional-insert)", "insert"],
+  ["rinka(no-entry-literal)", "entry"],
 ]);
 
 type Diagnostic = { code: string; labels: { span: { line: number } }[] };
@@ -221,6 +223,48 @@ describe("値の受け渡しのキー", () => {
 
   it("src/shared/transfer-keys.ts のキーの定義は報告しない", () => {
     expect(reports("src/shared/transfer-keys.ts", ['export const a = "@b";'])).toEqual([]);
+  });
+});
+
+describe("MagicString の向きを持つ挿入", () => {
+  it("src/build/ の中で、向きを持つ挿入のメソッドを呼ぶと報告する", () => {
+    expect(
+      reports("src/build/insert.ts", [
+        'export const a = (s: { appendLeft(i: number, t: string): void }) => s.appendLeft(0, "x");',
+        'export const b = (s: { prependRight(i: number, t: string): void }) => s.prependRight(0, "x");',
+        'export const c = (s: { append(t: string): void }) => s.append("x");',
+      ]),
+    ).toEqual([
+      [1, "insert"],
+      [2, "insert"],
+    ]);
+  });
+
+  it("src/build/ast.ts では報告しない", () => {
+    expect(
+      reports("src/build/ast.ts", [
+        'export const a = (s: { appendLeft(i: number, t: string): void }) => s.appendLeft(0, "x");',
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("入口の指定子", () => {
+  it("src/build/ の中で、rinka/ で始まる文字列を記述すると報告する", () => {
+    expect(
+      reports("src/build/entry.ts", [
+        'export const a = "rinka/internal";',
+        "export const b = (x: string) => `rinka/${x}`;",
+        'export const c = "rinka";',
+      ]),
+    ).toEqual([
+      [1, "entry"],
+      [2, "entry"],
+    ]);
+  });
+
+  it("src/build/entries.ts では報告しない", () => {
+    expect(reports("src/build/entries.ts", ['export const a = "rinka/internal";'])).toEqual([]);
   });
 });
 
