@@ -39,7 +39,7 @@ import { seededMemo, transferredValues, whenArrived } from "./transfer.ts";
 /** 要素を描画する関数を表す。 */
 export type ElementFn<P, M extends object> = (props: P, ctx: Ctx<M>) => unknown;
 
-/** props の値か、値を読み取る関数を表す。読み取る関数は、親が渡した関数か、それを包んだ親の owner の memo である。 */
+/** props の値か、値を読み取る関数を表す。読み取る関数は、親が渡した関数か、その関数を親の owner の下で memo にしたものである。 */
 type Source = { readonly value: unknown } | { readonly read: () => unknown };
 
 /** props の 1 つを表す。値はすぐに読み取れ、`track` を呼んだ計算は、値を書き込んだ後の flush で再び実行される。 */
@@ -75,12 +75,14 @@ interface Instance {
   owned: boolean;
   /** 起動していれば、その起動の状態。 */
   run?: Run;
-  /** スロットに登録していれば、登録を取り消す関数。 */
+  /** 値の到着を待っているか、スロットに登録していれば、待機か登録を取り消す関数。 */
   cancel?: () => void;
   /** 起動した後に呼ぶ、要素への `ref`。 */
   ref?: (host: HTMLElement) => unknown;
   /** 一度起動したかどうか。SSR したホストは、最初の起動でだけ、サーバーから値を引き継ぐ。 */
   started: boolean;
+  /** SSR したホストの Shadow DOM の中身を、描画の結果に置き換えたかどうか。 */
+  replaced: boolean;
   /** 親が作り直した子要素なら、値を引き継ぐ SSR したホストの ID。 */
   transfer?: string;
 }
@@ -129,7 +131,7 @@ function runMounts(host: HTMLElement, run: Run): void {
   for (const mount of mounts) mount();
 }
 
-/** `fn` を要素として、`tag` の名前で Custom Element に登録する。 */
+/** `fn` を要素として、`tag` の名前で Custom Element に登録し、JSX で使用する要素コンポーネントを返す。 */
 export function defineElement<P, M extends object = object>(
   tag: string,
   fn: ElementFn<P, M>,
@@ -177,9 +179,7 @@ export function defineElement<P, M extends object = object>(
   function activate(host: HTMLElement, instance: Instance, owner: Owner | null): void {
     instance.run?.dispose();
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
-    const id = instance.started
-      ? null
-      : (host.getAttribute("data-oh") ?? instance.transfer ?? null);
+    const id = transferId(host, instance);
     instance.started = true;
     const values = id === null ? new Map<string, unknown>() : transferredValues(id);
     const passed = values.get("@p");
@@ -233,13 +233,16 @@ export function defineElement<P, M extends object = object>(
             if (target !== shadow) {
               shadow.replaceChildren(target);
               target = shadow;
-              const unused = [...values.keys()].filter(
-                (key) => !key.startsWith("@") && !used.has(key),
-              );
-              if (import.meta.env?.DEV && unused.length > 0) {
-                console.warn(
-                  `[rinka] <${tag}> は、サーバーから引き継いだ memo の値 ${unused.join(", ")} を使用しませんでした。サーバーとクライアントで描画が異なる可能性があります。`,
+              instance.replaced = true;
+              if (import.meta.env?.DEV) {
+                const unused = [...values.keys()].filter(
+                  (key) => !key.startsWith("@") && !used.has(key),
                 );
+                if (unused.length > 0) {
+                  console.warn(
+                    `[rinka] <${tag}> は、サーバーから引き継いだ memo の値 ${unused.join(", ")} を使用しませんでした。サーバーとクライアントで描画が異なる可能性があります。`,
+                  );
+                }
               }
             }
             run.settled = true;
@@ -280,6 +283,7 @@ export function defineElement<P, M extends object = object>(
         activate: (owner) => activate(this, instance, owner),
         owned: false,
         started: false,
+        replaced: false,
       };
       instances.set(this, instance);
     }
@@ -344,14 +348,14 @@ function locate(el: HTMLElement): Position {
  * SSR したホストは、`data-om` と、起動スクリプトが追加したキーの値がすべて届くまで起動しない。
  * 表示されている位置の上に定義済みの要素があれば、そのスロットの `<slot>` の owner の下で起動する。
  * `<slot>` が無ければ、その `<slot>` を作成した時点で、接続していれば起動する。その時点でスロットの位置が変わっていれば、今の位置のスロットに登録し直す。
- * 起動していない SSR したホストの Shadow DOM の中にあれば、起動しない。そのホストが起動するときに、Shadow DOM の中身を作り直す。
+ * SSR したホストの Shadow DOM の中にあり、そのホストが Shadow DOM の中身をまだ置き換えていなければ、起動しない。そのホストが中身を置き換えるときに、子要素も作り直す。
  * それ以外の Shadow DOM の中にあるか、上に定義済みの要素が無ければ、最上位の要素として起動する。
  * 前の待機とスロットへの登録は取り消し、新しく待機か登録をしたら、取り消す関数を `instance.cancel` に設定する。
  */
 function attach(el: HTMLElement, instance: Instance): void {
   instance.cancel?.();
   instance.cancel = undefined;
-  const id = instance.started ? null : el.getAttribute("data-oh");
+  const id = transferId(el, instance);
   if (id !== null) {
     const cancel = whenArrived(el, id, () => {
       instance.cancel = undefined;
@@ -364,7 +368,7 @@ function attach(el: HTMLElement, instance: Instance): void {
   }
   const position = locate(el);
   if (position.kind === "shadow") {
-    if (position.host.hasAttribute("data-oh") && !instanceOf(position.host)?.run) return;
+    if (position.host.hasAttribute("data-oh") && !instanceOf(position.host)?.replaced) return;
     instance.activate(null);
     return;
   }
@@ -386,6 +390,10 @@ function attach(el: HTMLElement, instance: Instance): void {
     }
   });
 }
+
+/** 要素がまだ起動しておらず、SSR したホストか、親が作り直した子要素なら、値を引き継ぐホストの ID を返す。 */
+const transferId = (host: HTMLElement, instance: Instance): string | null =>
+  instance.started ? null : (host.getAttribute("data-oh") ?? instance.transfer ?? null);
 
 const instanceOf = (node: Node): Instance | undefined =>
   node instanceof HTMLElement ? instances.get(node) : undefined;

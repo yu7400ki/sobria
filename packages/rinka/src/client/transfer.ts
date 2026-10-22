@@ -30,7 +30,6 @@ function waitedKeys(host: Element, id: string): string[] {
 
 /**
  * ホストと、ホストの Shadow DOM の中で `@c:キー` の値が指す子要素のホストを、子孫まで含めて、`[ホスト, ID]` の組で返す。
- * 子要素は、親が作り直すときに、子要素のホストの値を引き継ぐ。
  */
 function related(host: Element, id: string): [Element, string][] {
   const found: [Element, string][] = [[host, id]];
@@ -101,8 +100,8 @@ export function transferredValues(id: string): Map<string, unknown> {
 }
 
 /**
- * 引き継いだ `value` を最初の値にする memo を作成する。最初の計算では、依存を登録するために `compute` をシードとして 1 回呼び、戻り値を使用しない。
- * 2 回目以降の計算では、`compute` の戻り値を使用する。
+ * 引き継いだ `value` を最初の値にする memo を作成する。最初の計算では、`compute` に直前の値として `undefined` を渡してシードとして 1 回呼び、
+ * 戻り値と、投げた値を使用しない。2 回目以降の計算では、`compute` の戻り値を使用する。
  */
 export function seededMemo<T>(
   value: T,
@@ -112,8 +111,11 @@ export function seededMemo<T>(
   return createMemo<T>((prev) => {
     if (!seeding) return compute(prev);
     seeding = false;
-    const result = runSeeding(() => compute(value));
-    void Promise.resolve(result).catch(() => {});
+    try {
+      void Promise.resolve(runSeeding(() => compute(undefined))).catch(() => {});
+    } catch {
+      // シードで投げた値は、引き継いだ値があるので使用しない
+    }
     return value;
   });
 }

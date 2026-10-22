@@ -8,7 +8,7 @@ import { defineElement as defineServer } from "../../src/server/element.ts";
 import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
 import { renderToStream } from "../../src/server/render.ts";
 import { isSeeding } from "../../src/shared/scope.ts";
-import { memo } from "../../src/shared/signals.ts";
+import { memo, signal } from "../../src/shared/signals.ts";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -87,6 +87,30 @@ describe("値の引き継ぎ", () => {
     await tick();
     expect(html(document.querySelector(tag)?.shadowRoot)).toBe("<p> ann</p>");
     expect(fetched).toBe(0);
+  });
+
+  it("シードで依存を登録し、依存が変化すると memo を計算し直す", async () => {
+    const tag = nextTag();
+    const [version, setVersion] = signal(0);
+    const view = (h: H) => () => {
+      const value = memo(
+        () => {
+          const current = version();
+          return Promise.resolve(`v${current}`);
+        },
+        { site: "t:10" },
+      );
+      return h("p", { children: () => value() });
+    };
+    const scripts = await serve(server(defineServer(tag, view(server), { props: [] }), {}));
+    scripts.forEach(run);
+    defineClient(tag, view(client), { props: [] });
+    await tick();
+    const host = document.querySelector(tag);
+    expect(html(host?.shadowRoot)).toBe("<p>v0</p>");
+    setVersion(1);
+    await tick();
+    expect(html(host?.shadowRoot)).toBe("<p>v1</p>");
   });
 
   it("data-om の値がすべて届くまで起動しない", async () => {
@@ -213,6 +237,46 @@ describe("Shadow DOM の中の子要素", () => {
     const child = document.querySelector(parentTag)?.shadowRoot?.querySelector(childTag);
     expect(child).not.toBe(ssrChild);
     expect(html(child?.shadowRoot)).toBe("<p>client ann</p>");
+  });
+});
+
+describe("Shadow DOM の中の子要素（親の描画が保留中）", () => {
+  it("親が SSR した中身をまだ置き換えていない間は、値が届いても子要素は起動しない", async () => {
+    const parentTag = nextTag();
+    const childTag = nextTag();
+    const childServer = defineServer(childTag, viewWith(server, "", "t:9", fetchAnn), {
+      props: [],
+    });
+    const scripts = await serve(
+      server(
+        defineServer(parentTag, () => server(childServer, {}), { props: [] }),
+        {},
+      ),
+    );
+    let rendered = 0;
+    const childClient = defineClient(
+      childTag,
+      () => {
+        rendered++;
+        return client("p", { children: "child" });
+      },
+      { props: [] },
+    );
+    const { promise, resolve } = Promise.withResolvers<string>();
+    defineClient(
+      parentTag,
+      () => {
+        const pending = memo(() => promise);
+        return [client("i", { children: () => pending() }), client(childClient, {})];
+      },
+      { props: [] },
+    );
+    await tick();
+    scripts.forEach(run);
+    await tick();
+    resolve("p");
+    await tick();
+    expect(rendered).toBe(1);
   });
 });
 
