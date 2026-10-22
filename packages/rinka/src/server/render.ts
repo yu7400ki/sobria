@@ -84,7 +84,11 @@ interface Host {
   readonly host: {
     readonly record: HostRecord;
     readonly attributes: HostAttributes | Promise<HostAttributes>;
-    readonly open: (attributes: HostAttributes, waiting: boolean) => string;
+    readonly open: (
+      attributes: HostAttributes,
+      waiting: boolean,
+      shown: Promise<boolean>,
+    ) => string;
     readonly chunks: Chunk[];
     /** 要素を作成したホストに、開始タグの後で `@c:キー` を送るスクリプトである。 */
     readonly announce: string | undefined;
@@ -201,34 +205,60 @@ interface WalkCtx {
 
 /** 要素のホストごとの状態を表す。 */
 class HostRecord {
-  /**
-   * 開始タグを作成する前は、`data-om` に列挙する、キーのある非同期の memo のキーと、子要素のホストの ID を送る `@c:キー` を集める。
-   * 作成した後は、`data-om` に列挙したキーのうち、まだ値を送っていないものを持つ。
-   */
-  keys:
-    | { readonly phase: "open"; readonly memo: string[]; readonly child: string[] }
-    | { readonly phase: "sealed"; readonly unsent: Set<string> } = {
-    phase: "open",
+  /** 開始タグを作成する前に、`data-om` に列挙するキーを集める。開始タグを作成した後は `undefined` である。 */
+  private listed: { readonly memo: string[]; readonly child: string[] } | undefined = {
     memo: [],
     child: [],
   };
   /** Shadow DOM の中で後送りにして、まだ送り終えていない境界の数である。 */
   deferred = 0;
-  /** ホストをページに出力したら `true` に、出力しないことが決まったら `false` に解決する。 */
-  readonly shown = Promise.withResolvers<boolean>();
+  /**
+   * ホストをページに出力したら、開始タグの `data-om` に列挙したキーのうち、まだ値を送っていないものの集合に解決する。
+   * 出力しないことが決まったら `false` に解決する。
+   */
+  private readonly settled = Promise.withResolvers<Set<string> | false>();
 
   constructor(
     readonly id: string,
     readonly tag: string,
   ) {}
 
-  /** 集めたキーに `extra` を加えて、`data-om` に列挙するキーとして確定し、その列を返す。 */
-  seal(extra: readonly string[]): string[] {
-    if (this.keys.phase === "sealed")
-      throw new Error(`ホスト ${this.id} の開始タグを 2 回作成しました。`);
-    const keys = [...this.keys.memo, ...this.keys.child, ...extra];
-    this.keys = { phase: "sealed", unsent: new Set(keys) };
+  /** 開始タグを作成する前なら、キーのある非同期の memo のキー `key` を `data-om` に列挙するキーに加える。加えたら真を返す。 */
+  listMemo(key: string): boolean {
+    if (!this.listed || this.listed.memo.includes(key)) return false;
+    this.listed.memo.push(key);
+    return true;
+  }
+
+  /** 開始タグを作成する前なら、`@c:キー` の `key` を `data-om` に列挙するキーに加える。加えたら真を返す。 */
+  listChild(key: string): boolean {
+    if (!this.listed) return false;
+    this.listed.child.push(key);
+    return true;
+  }
+
+  /**
+   * 集めたキーに `extra` を加えて、`data-om` に列挙するキーとして確定し、その列を返す。
+   * `hide` を先に呼び出していなければ、`shown` が真に解決したときに、ホストをページに出力したことを決める。
+   */
+  seal(extra: readonly string[], shown: Promise<boolean>): string[] {
+    if (!this.listed) throw new Error(`ホスト ${this.id} の開始タグを 2 回作成しました。`);
+    const keys = [...this.listed.memo, ...this.listed.child, ...extra];
+    this.listed = undefined;
+    const unsent = new Set(keys);
+    this.settled.resolve(shown.then((output) => output && unsent));
     return keys;
+  }
+
+  /** 開始タグを作成する前なら、ホストをページに出力しないことを決める。 */
+  hide(): void {
+    this.settled.resolve(false);
+  }
+
+  /** ホストをページに出力し、`key` の値をまだ送っていなければ、送ったものとして記録して真に解決する。 */
+  async take(key: string): Promise<boolean> {
+    const unsent = await this.settled.promise;
+    return unsent !== false && unsent.delete(key);
   }
 }
 
@@ -504,11 +534,10 @@ class Renderer {
     if (child?.data instanceof HostRecord && this.hosts.has(child.data)) {
       const creator = child.data;
       const mapKey = childKey(child.key);
-      if (creator.keys.phase === "sealed") {
-        announce = dataScript(creator, mapKey, scriptJson(id));
-      } else {
-        creator.keys.child.push(mapKey);
+      if (creator.listChild(mapKey)) {
         this.send(creator, mapKey, Promise.resolve(scriptJson(id)));
+      } else {
+        announce = dataScript(creator, mapKey, scriptJson(id));
       }
     }
     const slotNames = new Set(["children", ...(options.slots ?? [])]);
@@ -573,9 +602,7 @@ class Renderer {
       <T>(memoKey: string, fn: (prev: T | undefined) => T | PromiseLike<T>) =>
         createMemo<T>((prev) => {
           const result = fn(prev);
-          const { keys } = record;
-          if (isPromiseLike(result) && keys.phase === "open" && !keys.memo.includes(memoKey)) {
-            keys.memo.push(memoKey);
+          if (isPromiseLike(result) && record.listMemo(memoKey)) {
             this.sendMemo(record, `<${tag}> の memo ${memoKey}`, memoKey, result);
           }
           return result;
@@ -613,11 +640,15 @@ class Renderer {
       }
     }
     chunks.push(`</${tag}>`);
-    const open = ({ text, transfer }: HostAttributes, waiting: boolean): string => {
-      const keys = record.seal([
-        ...(waiting ? [BOUNDARIES_KEY] : []),
-        ...(transfer ? [PROPS_KEY] : []),
-      ]);
+    const open = (
+      { text, transfer }: HostAttributes,
+      waiting: boolean,
+      shown: Promise<boolean>,
+    ): string => {
+      const keys = record.seal(
+        [...(waiting ? [BOUNDARIES_KEY] : []), ...(transfer ? [PROPS_KEY] : [])],
+        shown,
+      );
       const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
       return `<${tag}${attribute("data-oh", id)}${text}${om}><template shadowrootmode="open">`;
     };
@@ -674,9 +705,8 @@ class Renderer {
             Promise.resolve(toScript(resolved.transfer, `<${record.tag}>`)),
           );
         }
-        record.shown.resolve(out.shown);
         if (announce) out.scripts.push(announce);
-        return open(resolved, record.deferred > 0) + inner;
+        return open(resolved, record.deferred > 0, out.shown) + inner;
       }
       case "errored": {
         const { chunks, node, ctx } = chunk.errored;
@@ -822,13 +852,7 @@ class Renderer {
   private send(host: HostRecord, key: string, expression: Promise<string>): void {
     const task = (async () => {
       const value = await expression;
-      if (
-        !(await host.shown.promise) ||
-        host.keys.phase === "open" ||
-        !host.keys.unsent.delete(key)
-      ) {
-        return;
-      }
+      if (!(await host.take(key))) return;
       this.write(dataScript(host, key, value));
     })();
     this.values.add(task);
@@ -842,8 +866,8 @@ class Renderer {
 
   /** 境界の中身を出力しないことを決める。 */
   private abandon(boundary: Boundary, flush: DeferredFlush): void {
-    this.finishBoundary(boundary);
     flush.resolve(false);
+    this.finishBoundary(boundary);
   }
 
   /** 境界を送り終えたものとして数え、Shadow DOM の中の後送りの境界をすべて送り終えたホストに、`@b` の値を送る。 */
@@ -886,7 +910,7 @@ class Renderer {
         `<!doctype html><html><head><meta charset="utf-8">${script}</head><body>${shell}${this.shellOut.scripts.join("")}`,
       );
       await this.drain();
-      for (const host of this.hosts) host.shown.resolve(false);
+      for (const host of this.hosts) host.hide();
       await Promise.all(this.values);
       this.write("</body></html>");
     } finally {
