@@ -34,22 +34,26 @@ type Chunk = string | Hole | Fail | Mark | ErroredRegion | Slotted | Host;
 
 /** 穴を表す。`hole` は、内容が決まると出力の単位の列に解決する。 */
 interface Hole {
+  readonly kind: "hole";
   readonly hole: Promise<Chunk[]>;
 }
 
 /** 描画の途中で同期的に投げられた値を表す。文字列にする時点で、保持している値を投げる。 */
 interface Fail {
+  readonly kind: "fail";
   readonly fail: unknown;
 }
 
 /** `<Loading>` の位置を表す。中身を埋め込むか、フォールバックを出力して後送りにするかは、文字列にする時点で決定する。 */
 interface Mark {
+  readonly kind: "mark";
   readonly mark: Boundary;
   readonly fallback: () => Chunk[];
 }
 
 /** `<Errored>` の領域を表す。中身が失敗すると、`node.fallback` が返した内容を出力する。 */
 interface ErroredRegion {
+  readonly kind: "errored";
   readonly errored: { readonly chunks: Chunk[]; readonly node: ErroredNode; readonly ctx: WalkCtx };
 }
 
@@ -58,6 +62,7 @@ interface ErroredRegion {
  * 境界を後送りにし、内容に穴があれば、目印を出力して、内容の全体を境界の差し替えとして後から出力する。
  */
 interface Slotted {
+  readonly kind: "slotted";
   readonly slotted: {
     readonly boundary: Boundary;
     readonly chunks: Chunk[];
@@ -74,6 +79,7 @@ interface HostAttributes {
 
 /** 要素のホストを表す。開始タグは、`chunks` を文字列にした後で、待つ境界を決定してから出力する。 */
 interface Host {
+  readonly kind: "host";
   readonly host: {
     readonly id: string;
     readonly tag: string;
@@ -199,12 +205,18 @@ const serverHost = new Proxy(
 function hasHole(chunks: readonly Chunk[]): boolean {
   return chunks.some((chunk) => {
     if (typeof chunk === "string") return false;
-    if ("hole" in chunk) return true;
-    if ("errored" in chunk) return hasHole(chunk.errored.chunks);
-    if ("host" in chunk) {
-      return chunk.host.attributes instanceof Promise || hasHole(chunk.host.chunks);
+    switch (chunk.kind) {
+      case "hole":
+        return true;
+      case "errored":
+        return hasHole(chunk.errored.chunks);
+      case "host":
+        return chunk.host.attributes instanceof Promise || hasHole(chunk.host.chunks);
+      case "fail":
+      case "mark":
+      case "slotted":
+        return false;
     }
-    return false;
   });
 }
 
@@ -297,7 +309,7 @@ class Renderer {
       case "loading": {
         const boundary = this.newBoundary(ctx.boundary, ctx.path);
         this.walk(node.children, { ...ctx, boundary }, boundary.region);
-        out.push({ mark: boundary, fallback: () => this.chunks(node.fallback, ctx) });
+        out.push({ kind: "mark", mark: boundary, fallback: () => this.chunks(node.fallback, ctx) });
         return;
       }
       case "errored":
@@ -331,7 +343,7 @@ class Renderer {
   /** `promise` の穴を作成する。描画を中断して穴を捨てたときも、`promise` の reject を処理する。 */
   private hole(promise: Promise<Chunk[]>): Hole {
     promise.catch(() => {});
-    return { hole: promise };
+    return { kind: "hole", hole: promise };
   }
 
   /** `props` の値を返す。関数は、追跡せずに呼び出して、戻り値を返す。`tracked` なら、追跡して呼び出す。 */
@@ -388,9 +400,9 @@ class Renderer {
     try {
       this.walk(node.children, ctx, chunks);
     } catch (error) {
-      chunks = [{ fail: error }];
+      chunks = [{ kind: "fail", fail: error }];
     }
-    out.push({ errored: { chunks, node, ctx } });
+    out.push({ kind: "errored", errored: { chunks, node, ctx } });
   }
 
   /**
@@ -513,7 +525,7 @@ class Renderer {
       } else {
         const own = this.chunks(content, light);
         boundary.slotted.push(own);
-        chunks.push({ slotted: { boundary, chunks: own, path: ctx.path } });
+        chunks.push({ kind: "slotted", slotted: { boundary, chunks: own, path: ctx.path } });
       }
     }
     chunks.push(`</${tag}>`);
@@ -522,7 +534,7 @@ class Renderer {
       const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
       return `<${tag}${attribute("data-oh", id)}${text}${om}><template shadowrootmode="open">`;
     };
-    out.push({ host: { id, tag, attributes, open, chunks } });
+    out.push({ kind: "host", host: { id, tag, attributes, open, chunks } });
   }
 
   /**
@@ -552,56 +564,62 @@ class Renderer {
     regions: readonly Region[],
   ): Promise<string> {
     if (typeof chunk === "string") return chunk;
-    if ("fail" in chunk) throw chunk.fail;
-    if ("hole" in chunk) return this.serialize(await chunk.hole, parent, regions);
-    if ("mark" in chunk) {
-      const boundary = chunk.mark;
-      boundary.regions = regions;
-      if (!this.isPending(boundary)) {
-        boundary.sent = parent.sent;
-        return this.serialize(boundary.region, boundary, regions);
+    switch (chunk.kind) {
+      case "fail":
+        throw chunk.fail;
+      case "hole":
+        return this.serialize(await chunk.hole, parent, regions);
+      case "mark": {
+        const boundary = chunk.mark;
+        boundary.regions = regions;
+        if (!this.isPending(boundary)) {
+          boundary.sent = parent.sent;
+          return this.serialize(boundary.region, boundary, regions);
+        }
+        this.schedule(boundary);
+        return marker(boundary.id, await this.serialize(chunk.fallback(), parent, regions));
       }
-      this.schedule(boundary);
-      return marker(boundary.id, await this.serialize(chunk.fallback(), parent, regions));
-    }
-    if ("slotted" in chunk) {
-      const { boundary, chunks, path } = chunk.slotted;
-      if (!boundary.late || !hasHole(chunks)) return this.serialize(chunks, parent, regions);
-      const id = `p${++this.seq}`;
-      const html = this.serialize(chunks, boundary, regions);
-      html.catch(() => {});
-      boundary.patches.push({ id, path, html });
-      return marker(id);
-    }
-    if ("host" in chunk) {
-      const { id, tag, attributes, open, chunks } = chunk.host;
-      const inner = await this.serialize(chunks, parent, regions);
-      const resolved = await attributes;
-      const waits = this.scheduled
-        .filter((boundary) => boundary.path.includes(id))
-        .map((boundary) => `@${boundary.id}`);
-      this.opened.add(id);
-      if (resolved.transfer) {
-        this.send(id, "@p", Promise.resolve(toScript(resolved.transfer, `<${tag}>`)));
+      case "slotted": {
+        const { boundary, chunks, path } = chunk.slotted;
+        if (!boundary.late || !hasHole(chunks)) return this.serialize(chunks, parent, regions);
+        const id = `p${++this.seq}`;
+        const html = this.serialize(chunks, boundary, regions);
+        html.catch(() => {});
+        boundary.patches.push({ id, path, html });
+        return marker(id);
       }
-      const { sent } = parent;
-      void sent.then((output) =>
-        this.host(id).resolve(output && !regions.some((r) => r.discarded)),
-      );
-      return open(resolved, waits) + inner;
-    }
-    const { chunks, node, ctx } = chunk.errored;
-    const region: Region = { discarded: false };
-    try {
-      return await this.serialize(chunks, parent, [...regions, region]);
-    } catch (error) {
-      const late = lateBoundary(parent);
-      const thrown = classify(error);
-      if (passesErrored(thrown, late !== undefined)) throw error;
-      region.discarded = true;
-      if (!late) this.caught = Math.max(this.caught, node.status ?? 500);
-      else if (thrown.kind === "notFound") late.noindex = true;
-      return this.serialize(this.chunks(node.fallback(error), ctx), parent, regions);
+      case "host": {
+        const { id, tag, attributes, open, chunks } = chunk.host;
+        const inner = await this.serialize(chunks, parent, regions);
+        const resolved = await attributes;
+        const waits = this.scheduled
+          .filter((boundary) => boundary.path.includes(id))
+          .map((boundary) => `@${boundary.id}`);
+        this.opened.add(id);
+        if (resolved.transfer) {
+          this.send(id, "@p", Promise.resolve(toScript(resolved.transfer, `<${tag}>`)));
+        }
+        const { sent } = parent;
+        void sent.then((output) =>
+          this.host(id).resolve(output && !regions.some((r) => r.discarded)),
+        );
+        return open(resolved, waits) + inner;
+      }
+      case "errored": {
+        const { chunks, node, ctx } = chunk.errored;
+        const region: Region = { discarded: false };
+        try {
+          return await this.serialize(chunks, parent, [...regions, region]);
+        } catch (error) {
+          const late = lateBoundary(parent);
+          const thrown = classify(error);
+          if (passesErrored(thrown, late !== undefined)) throw error;
+          region.discarded = true;
+          if (!late) this.caught = Math.max(this.caught, node.status ?? 500);
+          else if (thrown.kind === "notFound") late.noindex = true;
+          return this.serialize(this.chunks(node.fallback(error), ctx), parent, regions);
+        }
+      }
     }
   }
 
