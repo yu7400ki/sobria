@@ -6,6 +6,7 @@ import { defineElement } from "../../src/server/element.ts";
 import { notFound } from "../../src/server/errors.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToStream } from "../../src/server/render.ts";
+import type { Receiver } from "../../src/shared/receiver.ts";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -44,12 +45,7 @@ function shadow(doc: Document, id: string): ShadowRoot {
 
 /** 文書の `$rinka` を返す。 */
 function rinka(doc: Document) {
-  const view = doc.defaultView as unknown as {
-    $rinka: {
-      v: Record<string, Record<string, unknown>>;
-      r: (spec: unknown) => void;
-    };
-  };
+  const view = doc.defaultView as unknown as { $rinka: Receiver };
   return view.$rinka;
 }
 

@@ -1,12 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { bootstrap } from "../../src/server/bootstrap.ts";
-
-/** 起動スクリプトの受け口のうち、要素の一覧と起動の条件を受け取るものを表す。 */
-interface Receiver {
-  m(list: [tag: string, module: string, load: string][]): void;
-  w(el: Element, start: () => void): void;
-}
+import type { Receiver } from "../../src/shared/receiver.ts";
 
 /** モジュールを読み込んだ要素のタグ名を、読み込んだ順に列挙する。 */
 declare global {

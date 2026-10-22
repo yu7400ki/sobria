@@ -1,20 +1,9 @@
 import { createMemo, type SourceAccessor } from "@solidjs/signals";
 
 import { isPlainObject } from "../shared/objects.ts";
+import type { Receiver } from "../shared/receiver.ts";
 import { runSeeding, type ScopedMemo } from "../shared/scope.ts";
 import { isChildKey, isReservedKey, PROPS_KEY } from "../shared/transfer-keys.ts";
-
-/** 起動スクリプトが `window.$rinka` に定義する受け口のうち、値の引き継ぎで使用するものを表す。 */
-interface Receiver {
-  /** ホストの ID ごとに、引き継ぐ値をキーごとに保持する。 */
-  readonly v: Record<string, Record<string, unknown> | undefined>;
-  /** ホストの ID ごとに、値が届いたときに呼ぶ関数を保持する。 */
-  readonly l: Record<string, (() => void)[] | undefined>;
-  /** 値が無いことを表すオブジェクトである。 */
-  readonly n: object;
-  /** インスタンスの起動の条件を満たした時点で `start` を呼ぶ。 */
-  readonly w: (host: Element, start: () => void) => void;
-}
 
 declare global {
   /** 起動スクリプトが定義する受け口である。起動スクリプトを読み込んでいないページでは `undefined` である。 */

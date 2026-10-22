@@ -113,13 +113,12 @@ describe("Shadow DOM の中の子要素", () => {
     );
     await serve(server("main", { children: [server(OuterServer, {}), server(InnerServer, {})] }));
     const asked: string[] = [];
-    const rinka = (globalThis as unknown as { $rinka: { w: (el: Element, f: () => void) => void } })
-      .$rinka;
+    const rinka = globalThis.$rinka!;
     const w = rinka.w.bind(rinka);
-    rinka.w = (el, f) => {
+    vi.spyOn(rinka, "w").mockImplementation((el, f) => {
       asked.push(el.getRootNode() instanceof ShadowRoot ? "shadow" : "light");
       w(el, f);
-    };
+    });
     defineClient(inner, startedView(client), { props: [] });
     await tick();
     expect(asked).toEqual(["light"]);
