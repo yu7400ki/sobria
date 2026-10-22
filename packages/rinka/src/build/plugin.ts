@@ -1,8 +1,10 @@
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { Plugin } from "vite";
+import { getRequestListener } from "@hono/node-server";
+import { isRunnableDevEnvironment, type Plugin, type ViteDevServer } from "vite";
 
 import { tagFromPath } from "../shared/names.ts";
 import { transformSource, type Lang } from "./compiler.ts";
@@ -26,6 +28,7 @@ const runtimes: Readonly<Record<"client" | "server", Readonly<Record<string, str
   server: {
     rinka: "server/index.js",
     "rinka/jsx-runtime": "server/jsx-runtime.js",
+    "rinka/internal": "server/internal.js",
   },
 };
 
@@ -39,6 +42,20 @@ const langs: Readonly<Record<string, Lang>> = {
 
 /** rinka のプラグインの名前である。 */
 const NAME = "rinka";
+
+/** ルートの表を export する仮想モジュールの ID である。 */
+const ROUTES = "\0rinka/routes";
+
+/** 開発中のページの `<head>` に出力する、Vite のクライアントを読み込むスクリプトである。 */
+const VITE_CLIENT = '<script type="module" src="/@vite/client"></script>';
+
+/** `ssr` の環境で読み込んだ `rinka/internal` の、アプリを作成する関数を表す。 */
+interface InternalModule {
+  readonly createApp: (
+    routes: unknown,
+    options: { readonly head: string },
+  ) => { readonly fetch: (request: Request) => Response | Promise<Response> };
+}
 
 /**
  * rinka の Vite プラグインを作成する。`rinka` の実行時のコードを環境ごとに解決し、
@@ -91,9 +108,18 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         checkTags(elementsDir, prefix, tagOf);
       },
       resolveId(id) {
+        if (id === "rinka/routes") return ROUTES;
         const side = this.environment.name === "client" ? "client" : "server";
         const entry = runtimes[side][id];
         return entry === undefined ? null : fileURLToPath(new URL(`../${entry}`, import.meta.url));
+      },
+      load(id) {
+        return id === ROUTES ? routesModule(resolve(root, "src/routes"), root) : null;
+      },
+      configureServer(server) {
+        return () => {
+          server.middlewares.use(appMiddleware(server));
+        };
       },
       transform(code, id) {
         const target = projectFile(id);
@@ -148,4 +174,62 @@ function checkTags(
     }
     owners.set(tag, file);
   }
+}
+
+/**
+ * `dir` を走査し、`page.tsx` と `page.jsx` を静的なパスに対応させるルートの表を export するモジュールのコードを返す。
+ * 名前が `[` か `(` で始まるディレクトリは走査しない。
+ */
+function routesModule(dir: string, root: string): string {
+  const routes: string[] = [];
+  const visit = (current: string, segments: readonly string[]): void => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (!entry.name.startsWith("[") && !entry.name.startsWith("(")) {
+          visit(join(current, entry.name), [...segments, entry.name]);
+        }
+      } else if (entry.name === "page.tsx" || entry.name === "page.jsx") {
+        const path = `/${segments.join("/")}`;
+        const module = `/${relative(root, join(current, entry.name)).split(sep).join("/")}`;
+        routes.push(
+          `{ path: ${JSON.stringify(path)}, page: () => import(${JSON.stringify(module)}) }`,
+        );
+      }
+    }
+  };
+  if (existsSync(dir)) visit(dir, []);
+  return `export const routes = [\n${routes.join(",\n")}\n];\n`;
+}
+
+/**
+ * `ssr` の環境のランナーで読み込んだ `rinka/routes` からアプリを作成し、リクエストを渡すミドルウェアを返す。
+ * `rinka/routes` を評価し直したら、アプリを作成し直す。
+ */
+function appMiddleware(
+  server: ViteDevServer,
+): (request: IncomingMessage, response: ServerResponse, next: (error?: unknown) => void) => void {
+  let current:
+    | { readonly routes: unknown; readonly listener: ReturnType<typeof getRequestListener> }
+    | undefined;
+  return (request, response, next) => {
+    const environment = server.environments.ssr;
+    if (!environment || !isRunnableDevEnvironment(environment)) {
+      next();
+      return;
+    }
+    const { runner } = environment;
+    (async () => {
+      const routes: unknown = await runner.import("rinka/routes");
+      let listener = current && current.routes === routes ? current.listener : undefined;
+      if (!listener) {
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+        const { createApp } = (await runner.import("rinka/internal")) as InternalModule;
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+        const table = (routes as { readonly routes: unknown }).routes;
+        listener = getRequestListener(createApp(table, { head: VITE_CLIENT }).fetch);
+        current = { routes, listener };
+      }
+      await listener(request, response);
+    })().catch(next);
+  };
 }

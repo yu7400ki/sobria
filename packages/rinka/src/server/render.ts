@@ -384,10 +384,12 @@ class Renderer {
 
   /**
    * `write` は、出力する文字列を受け取る。`blocking` なら、すべての境界を待って、フォールバックと差し替えを出力しない。
+   * `head` は、文書の `<head>` の末尾に出力するマークアップである。
    */
   constructor(
     private readonly write: (text: string) => void,
     private readonly blocking: boolean,
+    private readonly head = "",
   ) {}
 
   /** シェルの中の `<Errored>` が受け止めたときのステータスのうち、最も大きいものを返す。受け止めていなければ 200 を返す。 */
@@ -911,7 +913,7 @@ class Renderer {
       const script = this.interactive ? bootstrap : "";
       this.reveal(
         this.shellOut.flush,
-        `<!doctype html><html><head><meta charset="utf-8">${script}</head><body>${shell}${this.shellOut.scripts.join("")}`,
+        `<!doctype html><html><head><meta charset="utf-8">${script}${this.head}</head><body>${shell}${this.shellOut.scripts.join("")}`,
       );
       await this.drain();
       for (const host of this.hosts) host.hide();
@@ -936,6 +938,8 @@ const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
 export interface RenderOptions {
   /** すべての `<Loading>` の中身を待ち、中身を埋め込んだ HTML を送る。 */
   readonly blocking?: boolean;
+  /** 文書の `<head>` の末尾に出力するマークアップである。 */
+  readonly head?: string;
 }
 
 /** `node` を描画し、すべての非同期の内容を待ってから、`node` の HTML の文字列を返す。 */
@@ -959,6 +963,7 @@ export function renderToStream(
       const renderer = new Renderer(
         (text) => controller.enqueue(encoder.encode(text)),
         options.blocking ?? false,
+        options.head,
       );
       try {
         await renderer.finish(await renderer.shell(asNode(node)));
@@ -1003,6 +1008,7 @@ async function respond(node: unknown, options: ResponseOptions, status: number):
   const renderer = new Renderer(
     (text) => controller.enqueue(encoder.encode(text)),
     options.blocking ?? false,
+    options.head,
   );
   let shell: string;
   try {
