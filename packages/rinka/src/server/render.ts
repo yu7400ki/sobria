@@ -84,11 +84,7 @@ interface Host {
   readonly host: {
     readonly record: HostRecord;
     readonly attributes: HostAttributes | Promise<HostAttributes>;
-    readonly open: (
-      attributes: HostAttributes,
-      waiting: boolean,
-      shown: Promise<boolean>,
-    ) => string;
+    readonly open: (attributes: HostAttributes, shown: Promise<boolean>) => string;
     readonly chunks: Chunk[];
     /** 要素を作成したホストに、開始タグの後で `@c:キー` を送るスクリプトである。 */
     readonly announce: string | undefined;
@@ -211,7 +207,7 @@ class HostRecord {
     child: [],
   };
   /** Shadow DOM の中で後送りにして、まだ送り終えていない境界の数である。 */
-  deferred = 0;
+  private deferred = 0;
   /**
    * ホストをページに出力したら、開始タグの `data-om` に列挙したキーのうち、まだ値を送っていないものの集合に解決する。
    * 出力しないことが決まったら `false` に解決する。
@@ -238,16 +234,32 @@ class HostRecord {
   }
 
   /**
-   * 集めたキーに `extra` を加えて、`data-om` に列挙するキーとして確定し、その列を返す。
+   * 集めたキーに、後送りの境界を待つなら `@b` を、さらに `extra` を加えて、`data-om` に列挙するキーとして確定し、その列を返す。
    * `hide` を先に呼び出していなければ、`shown` が真に解決したときに、ホストをページに出力したことを決める。
    */
   seal(extra: readonly string[], shown: Promise<boolean>): string[] {
     if (!this.listed) throw new Error(`ホスト ${this.id} の開始タグを 2 回作成しました。`);
-    const keys = [...this.listed.memo, ...this.listed.child, ...extra];
+    const keys = [
+      ...this.listed.memo,
+      ...this.listed.child,
+      ...(this.deferred > 0 ? [BOUNDARIES_KEY] : []),
+      ...extra,
+    ];
     this.listed = undefined;
     const unsent = new Set(keys);
     this.settled.resolve(shown.then((output) => output && unsent));
     return keys;
+  }
+
+  /** Shadow DOM の中で後送りにした境界を 1 つ数える。 */
+  defer(): void {
+    this.deferred++;
+  }
+
+  /** 後送りにした境界を 1 つ送り終えたものとして数え、すべて送り終えたら真を返す。 */
+  release(): boolean {
+    this.deferred--;
+    return this.deferred === 0;
   }
 
   /** 開始タグを作成する前なら、ホストをページに出力しないことを決める。 */
@@ -640,15 +652,8 @@ class Renderer {
       }
     }
     chunks.push(`</${tag}>`);
-    const open = (
-      { text, transfer }: HostAttributes,
-      waiting: boolean,
-      shown: Promise<boolean>,
-    ): string => {
-      const keys = record.seal(
-        [...(waiting ? [BOUNDARIES_KEY] : []), ...(transfer ? [PROPS_KEY] : [])],
-        shown,
-      );
+    const open = ({ text, transfer }: HostAttributes, shown: Promise<boolean>): string => {
+      const keys = record.seal(transfer ? [PROPS_KEY] : [], shown);
       const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
       return `<${tag}${attribute("data-oh", id)}${text}${om}><template shadowrootmode="open">`;
     };
@@ -706,7 +711,7 @@ class Renderer {
           );
         }
         if (announce) out.scripts.push(announce);
-        return open(resolved, record.deferred > 0, out.shown) + inner;
+        return open(resolved, out.shown) + inner;
       }
       case "errored": {
         const { chunks, node, ctx } = chunk.errored;
@@ -750,7 +755,7 @@ class Renderer {
     this.interactive = true;
     const flush: DeferredFlush = { ...resolvable(), kind: "deferred", noindex: false };
     boundary.flush = flush;
-    for (const host of boundary.path) host.deferred++;
+    for (const host of boundary.path) host.defer();
     this.track(
       (async () => {
         const regionOut = Out.of(flush);
@@ -873,8 +878,7 @@ class Renderer {
   /** 境界を送り終えたものとして数え、Shadow DOM の中の後送りの境界をすべて送り終えたホストに、`@b` の値を送る。 */
   private finishBoundary(boundary: Boundary): void {
     for (const host of boundary.path) {
-      host.deferred--;
-      if (host.deferred === 0) this.send(host, BOUNDARIES_KEY, Promise.resolve("1"));
+      if (host.release()) this.send(host, BOUNDARIES_KEY, Promise.resolve("1"));
     }
   }
 
