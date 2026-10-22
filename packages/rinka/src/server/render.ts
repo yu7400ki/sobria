@@ -89,11 +89,6 @@ interface Host {
   };
 }
 
-/** `<Errored>` の領域が、フォールバックに切り替わったかどうかを表す。 */
-interface Region {
-  discarded: boolean;
-}
-
 /** 境界の差し替えを表す。 */
 interface Patch {
   readonly id: string;
@@ -112,16 +107,29 @@ interface Boundary {
   /** 境界の中の `<slot>` に配置するスロットの内容を表す。内容に穴があれば、境界は保留中になる。 */
   readonly slotted: Chunk[][];
   readonly patches: Patch[];
-  readonly parent: Boundary | null;
-  /** 中身を出力したら `true` に、出力しないことが決まったら `false` に解決する。中身を埋め込んだ境界では、親の境界の Promise である。 */
-  sent: Promise<boolean>;
-  send: (sent: boolean) => void;
-  /** 目印を囲む `<Errored>` の領域を表す。 */
-  regions: readonly Region[];
-  /** シェルの後に出力する境界であることを表す。 */
-  late: boolean;
-  /** 境界の中で `notFound()` を受け止めたことを表す。 */
+  /** 境界を後送りにしたときに、中身を送るチャンクを表す。 */
+  flush?: DeferredFlush;
+}
+
+/** 出力を送るチャンクを表す。シェルか、後送りの境界の中身である。 */
+type Flush = { readonly kind: "shell" } | DeferredFlush;
+
+/** 後送りの境界の中身を送るチャンクを表す。 */
+interface DeferredFlush {
+  readonly kind: "deferred";
+  /** 中身を出力したら `true` に、出力しないことが決まったら `false` に解決する。 */
+  readonly shown: Promise<boolean>;
+  readonly resolve: (shown: boolean) => void;
+  /** 中身の中で `notFound()` を受け止めたことを表す。 */
   noindex: boolean;
+}
+
+/** 出力の位置を表す。 */
+interface Out {
+  /** この位置の出力を送るチャンクを表す。 */
+  readonly flush: Flush;
+  /** この位置の出力がページに現れたら `true` に、現れないことが決まったら `false` に解決する。外側の位置の `shown` より先には解決しない。 */
+  readonly shown: Promise<boolean>;
 }
 
 /** 描画している位置の状態を表す。 */
@@ -235,12 +243,16 @@ class Renderer {
   private readonly shown = new Map<string, PromiseWithResolvers<boolean>>();
   /** ホストに値を送る処理のうち、終わっていないものを保持する。 */
   private readonly values = new Set<Promise<void>>();
+  /** 文字列にしたホストごとに、ページに出力したかどうかをホストの Promise に反映する処理を保持する。 */
+  private readonly placed: Promise<void>[] = [];
   /** 要素を描画したか、`<Loading>` の中身を後送りにしたときに真になる。真になったページにだけ、起動スクリプトを出力する。 */
   private interactive = false;
   /** `noindex` の `<meta>` を出力したことを表す。 */
   private noindexSent = false;
   /** シェルを表す境界である。 */
-  private readonly root = this.newBoundary(null, []);
+  private readonly root = this.newBoundary("", []);
+  /** シェルを書き込んだら `true` に解決する。 */
+  private readonly shellShown = Promise.withResolvers<boolean>();
   /** シェルの中の `<Errored>` が受け止めたときのステータスのうち、最も大きいものを表す。 */
   private caught = 200;
 
@@ -257,21 +269,8 @@ class Renderer {
     return this.caught;
   }
 
-  private newBoundary(parent: Boundary | null, path: readonly string[]): Boundary {
-    const { promise, resolve: send } = Promise.withResolvers<boolean>();
-    return {
-      id: parent ? `b${++this.seq}` : "",
-      path,
-      region: [],
-      slotted: [],
-      patches: [],
-      parent,
-      sent: promise,
-      send,
-      regions: [],
-      late: false,
-      noindex: false,
-    };
+  private newBoundary(id: string, path: readonly string[]): Boundary {
+    return { id, path, region: [], slotted: [], patches: [] };
   }
 
   private chunks(node: Node, ctx: WalkCtx): Chunk[] {
@@ -302,7 +301,7 @@ class Renderer {
         this.tag(node.tag, node.props, node.key, ctx, out);
         return;
       case "loading": {
-        const boundary = this.newBoundary(ctx.boundary, ctx.path);
+        const boundary = this.newBoundary(`b${++this.seq}`, ctx.path);
         this.walk(node.children, { ...ctx, boundary }, boundary.region);
         out.push({ kind: "mark", mark: boundary, fallback: () => this.chunks(node.fallback, ctx) });
         return;
@@ -545,101 +544,98 @@ class Renderer {
     return !this.blocking && (hasHole(boundary.region) || boundary.slotted.some(hasHole));
   }
 
-  /** 出力の単位の列を、穴の内容を待ってから文字列にする。`regions` は、列を囲む `<Errored>` の領域である。 */
-  private async serialize(
-    chunks: readonly Chunk[],
-    parent: Boundary,
-    regions: readonly Region[],
-  ): Promise<string> {
-    const parts = await Promise.all(
-      chunks.map((chunk) => this.serializeChunk(chunk, parent, regions)),
-    );
+  /** 出力の単位の列を、穴の内容を待ってから、`out` の位置に出力する文字列にする。 */
+  private async serialize(chunks: readonly Chunk[], out: Out): Promise<string> {
+    const parts = await Promise.all(chunks.map((chunk) => this.serializeChunk(chunk, out)));
     return parts.join("");
   }
 
   /** 出力の単位を文字列にする。保留中の境界は、フォールバックを目印で囲んで出力し、中身を後送りにする。 */
-  private async serializeChunk(
-    chunk: Chunk,
-    parent: Boundary,
-    regions: readonly Region[],
-  ): Promise<string> {
+  private async serializeChunk(chunk: Chunk, out: Out): Promise<string> {
     if (typeof chunk === "string") return chunk;
     switch (chunk.kind) {
       case "fail":
         throw chunk.fail;
       case "hole":
-        return this.serialize(await chunk.hole, parent, regions);
+        return this.serialize(await chunk.hole, out);
       case "mark": {
         const boundary = chunk.mark;
-        boundary.regions = regions;
-        if (!this.isPending(boundary)) {
-          boundary.sent = parent.sent;
-          return this.serialize(boundary.region, boundary, regions);
-        }
-        this.schedule(boundary);
-        return marker(boundary.id, await this.serialize(chunk.fallback(), parent, regions));
+        if (!this.isPending(boundary)) return this.serialize(boundary.region, out);
+        this.schedule(boundary, out);
+        return marker(boundary.id, await this.serialize(chunk.fallback(), out));
       }
       case "slotted": {
         const { boundary, chunks, path } = chunk.slotted;
-        if (!boundary.late || !hasHole(chunks)) return this.serialize(chunks, parent, regions);
+        const { flush } = boundary;
+        if (!flush || !hasHole(chunks)) return this.serialize(chunks, out);
         const id = `p${++this.seq}`;
-        const html = this.serialize(chunks, boundary, regions);
+        const shown = out.shown.then(async (output) => output && (await flush.shown));
+        const html = this.serialize(chunks, { flush, shown });
         html.catch(() => {});
         boundary.patches.push({ id, path, html });
         return marker(id);
       }
       case "host": {
         const { id, tag, attributes, open, chunks } = chunk.host;
-        const inner = await this.serialize(chunks, parent, regions);
+        const inner = await this.serialize(chunks, out);
         const resolved = await attributes;
         if (resolved.transfer) {
           this.send(id, "@p", Promise.resolve(toScript(resolved.transfer, `<${tag}>`)));
         }
-        const { sent } = parent;
-        void sent.then((output) =>
-          this.host(id).resolve(output && !regions.some((r) => r.discarded)),
-        );
+        this.placed.push(out.shown.then((output) => this.host(id).resolve(output)));
         return open(resolved, (this.deferred.get(id) ?? 0) > 0) + inner;
       }
       case "errored": {
         const { chunks, node, ctx } = chunk.errored;
-        const region: Region = { discarded: false };
+        let failed = false;
+        const shown = out.shown.then((output) => output && !failed);
         try {
-          return await this.serialize(chunks, parent, [...regions, region]);
+          return await this.serialize(chunks, { ...out, shown });
         } catch (error) {
-          const late = lateBoundary(parent);
+          failed = true;
+          const { flush } = out;
           const thrown = classify(error);
-          if (passesErrored(thrown, late !== undefined)) throw error;
-          region.discarded = true;
-          if (!late) this.caught = Math.max(this.caught, node.status ?? 500);
-          else if (thrown.kind === "notFound") late.noindex = true;
-          return this.serialize(this.chunks(node.fallback(error), ctx), parent, regions);
+          if (passesErrored(thrown, flush.kind === "deferred")) throw error;
+          if (flush.kind === "shell") this.caught = Math.max(this.caught, node.status ?? 500);
+          else if (thrown.kind === "notFound") flush.noindex = true;
+          return this.serialize(this.chunks(node.fallback(error), ctx), out);
         }
       }
     }
   }
 
   /**
-   * 境界の中身と差し替えを、親の境界を出力した後に出力する。
+   * 境界の中身と差し替えを、目印の位置の出力がページに現れた後に出力する。
    * 中身の出力に失敗したときは、規則に合う移動先への移動なら移動させ、それ以外ならエラーを記録する。
-   * 中身の出力に失敗したとき、親の境界を出力しないとき、目印を囲む `<Errored>` がフォールバックに切り替わったときは、中身と差し替えを出力しない。
+   * 中身の出力に失敗したときと、目印の位置の出力がページに現れないときは、中身と差し替えを出力しない。
    */
-  private schedule(boundary: Boundary): void {
-    const parent = boundary.parent;
-    if (!parent) return;
+  private schedule(boundary: Boundary, out: Out): void {
     this.interactive = true;
-    boundary.late = true;
+    const resolvers = Promise.withResolvers<boolean>();
+    const { promise: shown } = resolvers;
+    const flush: DeferredFlush = {
+      kind: "deferred",
+      shown,
+      resolve: resolvers.resolve,
+      noindex: false,
+    };
+    boundary.flush = flush;
     for (const host of boundary.path) this.deferred.set(host, (this.deferred.get(host) ?? 0) + 1);
     this.track(
       (async () => {
+        const content = await this.serialize(boundary.region, { flush, shown }).then(
+          (region) => ({ region }),
+          (error: unknown) => ({ error }),
+        );
+        if (!(await out.shown)) {
+          this.abandon(boundary, flush);
+          return;
+        }
         let region: string;
         let patches: [Patch, string][];
         try {
-          region = await this.serialize(boundary.region, boundary, []);
-          if (!(await parent.sent) || boundary.regions.some((r) => r.discarded)) {
-            this.abandon(boundary);
-            return;
-          }
+          if ("error" in content) throw content.error;
+          region = content.region;
           patches = await Promise.all(
             boundary.patches.map(async (patch): Promise<[Patch, string]> => [
               patch,
@@ -647,10 +643,6 @@ class Renderer {
             ]),
           );
         } catch (error) {
-          if (!(await parent.sent) || boundary.regions.some((r) => r.discarded)) {
-            this.abandon(boundary);
-            return;
-          }
           const thrown = classify(error);
           if (thrown.kind === "redirect" && thrown.safe) {
             this.write(
@@ -664,7 +656,7 @@ class Renderer {
               error,
             );
           }
-          this.abandon(boundary);
+          this.abandon(boundary, flush);
           return;
         }
         const spec = {
@@ -673,7 +665,7 @@ class Renderer {
           p: patches.map(([patch]) => [patch.id, patch.path]),
         };
         let noindex = "";
-        if (boundary.noindex && !this.noindexSent) {
+        if (flush.noindex && !this.noindexSent) {
           this.noindexSent = true;
           noindex =
             '<meta name="robots" content="noindex"><script>document.head.append(document.currentScript.previousSibling.cloneNode())</script>';
@@ -687,7 +679,7 @@ class Renderer {
             `<script>$rinka.r(${scriptJson(spec)})</script>`,
         );
         this.finishBoundary(boundary);
-        boundary.send(true);
+        flush.resolve(true);
       })(),
     );
   }
@@ -736,9 +728,9 @@ class Renderer {
   }
 
   /** 境界の中身を出力しないことを決める。 */
-  private abandon(boundary: Boundary): void {
+  private abandon(boundary: Boundary, flush: DeferredFlush): void {
     this.finishBoundary(boundary);
-    boundary.send(false);
+    flush.resolve(false);
   }
 
   /** 境界を送り終えたものとして数え、Shadow DOM の中の後送りの境界をすべて送り終えたホストに、`@b` の値を送る。 */
@@ -767,11 +759,10 @@ class Renderer {
 
   /** シェルを描画し、シェルの HTML を返す。 */
   async shell(node: Node): Promise<string> {
-    return this.serialize(
-      this.chunks(node, { owner: null, path: [], boundary: this.root }),
-      this.root,
-      [],
-    );
+    return this.serialize(this.chunks(node, { owner: null, path: [], boundary: this.root }), {
+      flush: { kind: "shell" },
+      shown: this.shellShown.promise,
+    });
   }
 
   /** 文書の先頭と `shell` を出力し、後送りの境界をすべて出力してから、文書を閉じる。 */
@@ -779,8 +770,9 @@ class Renderer {
     try {
       const script = this.interactive ? bootstrap : "";
       this.write(`<!doctype html><html><head><meta charset="utf-8">${script}</head><body>${shell}`);
-      this.root.send(true);
+      this.shellShown.resolve(true);
       await this.drain();
+      await Promise.all(this.placed);
       for (const shown of this.shown.values()) shown.resolve(false);
       await Promise.all(this.values);
       this.write("</body></html>");
@@ -793,14 +785,6 @@ class Renderer {
   dispose(): void {
     for (const dispose of this.disposers.splice(0)) dispose();
   }
-}
-
-/** 境界と、その祖先のうち、シェルの後に出力する最も内側の境界を返す。 */
-function lateBoundary(boundary: Boundary): Boundary | undefined {
-  for (let current: Boundary | null = boundary; current; current = current.parent) {
-    if (current.late) return current;
-  }
-  return undefined;
 }
 
 /** `value` が、`then` を持つ値かどうかを返す。 */

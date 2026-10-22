@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Errored, Loading } from "../../src/server/control.ts";
+import { defineElement } from "../../src/server/element.ts";
 import { NotFound, notFound, redirect } from "../../src/server/errors.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToResponse } from "../../src/server/render.ts";
@@ -32,6 +33,18 @@ const wrap = (value: unknown) =>
 const Sync = () => {
   throw new Error("e");
 };
+
+/** `value` を同期的に投げるコンポーネントを Errored で囲み、保留中でない Loading で囲む。 */
+const slottedErrored = (value: unknown) =>
+  jsx(Loading, {
+    fallback: "w",
+    children: jsx(Errored, {
+      fallback: "x",
+      children: jsx(() => {
+        throw value;
+      }, {}),
+    }),
+  });
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -120,6 +133,21 @@ describe("シェルの中の判定", () => {
         expect(await response.text()).toContain("<body>x</body>");
       }
     }
+  });
+
+  it("後送りの境界の <slot> に配置した内容の中の Errored も、シェルの中として扱う", async () => {
+    const slow = deferredThrow(undefined);
+    const Frame = defineElement(
+      "x-err-frame",
+      () => jsx(Loading, { fallback: "f", children: [jsx(slow.Slow, {}), jsx("slot", {})] }),
+      { props: ["children"] },
+    );
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const caught = renderToResponse(jsx(Frame, { children: slottedErrored(new Error("e")) }));
+    slow.resolve();
+    expect((await caught).status).toBe(500);
+    const missing = await renderToResponse(jsx(Frame, { children: slottedErrored(notFound()) }));
+    expect(missing.status).toBe(404);
   });
 
   it("複数の Errored が受け止めたら、大きいほうのステータスにする", async () => {

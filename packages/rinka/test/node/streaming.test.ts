@@ -448,3 +448,27 @@ describe("出力の順序", () => {
     expect(chunks.join("")).toContain("<main>caught</main>");
   });
 });
+
+describe("スロットの内容の中の境界", () => {
+  it("<slot> を囲む境界が失敗しても、シェルに出力したスロットの内容の中の境界は送る", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { Fail, reject } = failing();
+    const slow = deferred("in");
+    const Frame = defineElement(
+      "x-frame",
+      () => jsx(Loading, { fallback: "f", children: [jsx(Fail, {}), jsx("slot", {})] }),
+      { props: ["children"] },
+    );
+    const reading = read(
+      renderToStream(
+        jsx(Frame, { children: jsx(Loading, { fallback: "w", children: jsx(slow.Slow, {}) }) }),
+      ),
+    );
+    await tick();
+    reject();
+    await tick();
+    slow.resolve();
+    const html = (await reading).join("");
+    expect(html).toMatch(/<template data-os="b\d+">in<\/template>/);
+  });
+});
