@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
-import { checkPropNames } from "../../src/shared/prop-names.ts";
+import { checkPropNames, type HostAttribute } from "../../src/shared/prop-names.ts";
 
 describe("checkPropNames", () => {
   it("問題の無い名前では、空の配列を返す", () => {
@@ -76,5 +76,12 @@ describe("checkPropNames", () => {
     expect(checkPropNames(["userId", "userID"])).toEqual([
       '"userId" と "userID" は、どちらも属性名 user-id になります。どちらかの名前を変更してください。',
     ]);
+  });
+});
+
+describe("HostAttribute", () => {
+  it("ホストで意味を持つ属性の名前だけを表す", () => {
+    expectTypeOf<"id" | "tabindex" | "inputmode">().toExtend<HostAttribute>();
+    expectTypeOf<"label">().not.toExtend<HostAttribute>();
   });
 });
