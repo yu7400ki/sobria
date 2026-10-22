@@ -321,8 +321,8 @@ class Renderer {
   private noindexSent = false;
   /** シェルを表す境界である。 */
   private readonly root = this.newBoundary("", []);
-  /** シェルを送るチャンクである。 */
-  private readonly shellFlush: ShellFlush = { ...resolvable(), kind: "shell" };
+  /** シェルの最も外側の位置である。 */
+  private readonly shellOut = Out.of({ ...resolvable(), kind: "shell" } satisfies ShellFlush);
   /** シェルの中の `<Errored>` が受け止めたときのステータスのうち、最も大きいものを表す。 */
   private caught = 200;
 
@@ -757,7 +757,9 @@ class Renderer {
           noindex =
             '<meta name="robots" content="noindex"><script>document.head.append(document.currentScript.previousSibling.cloneNode())</script>';
         }
-        this.write(
+        this.finishBoundary(boundary);
+        this.reveal(
+          flush,
           noindex +
             `<template data-os="${boundary.id}">${region}</template>` +
             patches
@@ -768,8 +770,6 @@ class Renderer {
               .join("") +
             `<script>$rinka.r(${scriptJson(spec)})</script>`,
         );
-        this.finishBoundary(boundary);
-        flush.resolve(true);
       })(),
     );
   }
@@ -817,6 +817,12 @@ class Renderer {
     this.values.add(task);
   }
 
+  /** `flush` のチャンク `html` を書き込み、`flush` のチャンクがページに現れたことを決める。 */
+  private reveal(flush: Flush, html: string): void {
+    this.write(html);
+    flush.resolve(true);
+  }
+
   /** 境界の中身を出力しないことを決める。 */
   private abandon(boundary: Boundary, flush: DeferredFlush): void {
     this.finishBoundary(boundary);
@@ -850,7 +856,7 @@ class Renderer {
   async shell(node: Node): Promise<string> {
     return this.serialize(
       this.chunks(node, { owner: null, path: [], boundary: this.root }),
-      Out.of(this.shellFlush),
+      this.shellOut,
     );
   }
 
@@ -858,8 +864,10 @@ class Renderer {
   async finish(shell: string): Promise<void> {
     try {
       const script = this.interactive ? bootstrap : "";
-      this.write(`<!doctype html><html><head><meta charset="utf-8">${script}</head><body>${shell}`);
-      this.shellFlush.resolve(true);
+      this.reveal(
+        this.shellOut.flush,
+        `<!doctype html><html><head><meta charset="utf-8">${script}</head><body>${shell}${this.shellOut.scripts.join("")}`,
+      );
       await this.drain();
       for (const host of this.hosts) host.shown.resolve(false);
       await Promise.all(this.values);
