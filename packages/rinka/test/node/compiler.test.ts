@@ -416,6 +416,15 @@ describe("JSX の規則の細部", () => {
     expect(code).toContain("n: -1");
   });
 
+  it("内側のアロー関数の this は数え、内側の通常の関数の this と、プロパティ名の arguments は数えない", async () => {
+    const code = await compile(
+      `function F() { return <C a={items.map(() => this.y)} b={items.map(function () { return this.y; })} c={x.arguments} />; }`,
+    );
+    expect(code).toContain("a: items.map(() => this.y)");
+    expect(code).toContain("get b() { return (items.map(function() {");
+    expect(code).toContain("get c() { return (x.arguments); }");
+  });
+
   it("jsx に渡す 1 つの子の配列は、配列の全体で判定する", async () => {
     expect(await compile(`const view = <div>{[a(), b]}</div>;`)).toContain(
       "children: () => ([a(), b])",

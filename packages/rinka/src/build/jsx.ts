@@ -166,5 +166,7 @@ function usesCallee(node: Node): boolean {
   if (node.type === "ThisExpression" || node.type === "Super") return true;
   if (node.type === "MetaProperty" && node.meta.name === "new") return true;
   if (node.type === "Identifier" && node.name === "arguments") return true;
+  if (node.type === "MemberExpression" && !node.computed) return usesCallee(node.object);
+  if (node.type === "Property" && !node.computed) return usesCallee(node.value);
   return children(node).some(usesCallee);
 }
