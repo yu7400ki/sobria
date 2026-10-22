@@ -1,0 +1,77 @@
+import { createMemo, createRoot } from "@solidjs/signals";
+import { describe, expect, it } from "vitest";
+
+import { createScope, isSeeding, runSeeding, withScope } from "../../src/shared/scope.ts";
+import { memo } from "../../src/shared/signals.ts";
+
+/** memo を作成するたびにキーを記録する描画の範囲を作成する。 */
+function recordingScope() {
+  const keys: string[] = [];
+  const scope = createScope((key, fn) => {
+    keys.push(key);
+    return createMemo(fn);
+  });
+  return { scope, keys };
+}
+
+describe("memo のキー", () => {
+  it("描画の範囲の中では、呼び出し箇所と、その箇所で何回目に作成したかをキーにする", () => {
+    const { scope, keys } = recordingScope();
+    withScope(scope, () => {
+      memo(() => 1, { site: "a.tsx:1:1" });
+      memo(() => 2, { site: "a.tsx:2:1" });
+      memo(() => 3, { site: "a.tsx:1:1" });
+    });
+    expect(keys).toEqual(["a.tsx:1:1#0", "a.tsx:2:1#0", "a.tsx:1:1#1"]);
+  });
+
+  it("明示的なキーは、そのままキーにし、呼び出し箇所の回数に数えない", () => {
+    const { scope, keys } = recordingScope();
+    withScope(scope, () => {
+      memo(() => 1, { key: "user", site: "a.tsx:1:1" });
+      memo(() => 2, { site: "a.tsx:1:1" });
+    });
+    expect(keys).toEqual(["user", "a.tsx:1:1#0"]);
+  });
+
+  it("回数は描画の範囲ごとに数える", () => {
+    const first = recordingScope();
+    const second = recordingScope();
+    withScope(first.scope, () => memo(() => 1, { site: "a.tsx:1:1" }));
+    withScope(second.scope, () => memo(() => 1, { site: "a.tsx:1:1" }));
+    expect([first.keys, second.keys]).toEqual([["a.tsx:1:1#0"], ["a.tsx:1:1#0"]]);
+  });
+
+  it("キーの無い memo と、描画の範囲の外の memo は、描画の範囲を使わずに作成する", () => {
+    const { scope, keys } = recordingScope();
+    createRoot(() => {
+      const inside = withScope(scope, () => memo(() => 1));
+      const outside = memo(() => 2, { site: "a.tsx:1:1" });
+      expect([inside(), outside()]).toEqual([1, 2]);
+    });
+    expect(keys).toEqual([]);
+  });
+
+  it("withScope は、関数が例外を投げても、前の描画の範囲に戻す", () => {
+    const outer = recordingScope();
+    const inner = recordingScope();
+    withScope(outer.scope, () => {
+      expect(() =>
+        withScope(inner.scope, () => {
+          throw new Error("x");
+        }),
+      ).toThrow("x");
+      memo(() => 1, { site: "a.tsx:1:1" });
+    });
+    expect([outer.keys, inner.keys]).toEqual([["a.tsx:1:1#0"], []]);
+  });
+});
+
+describe("シード", () => {
+  it("isSeeding は、runSeeding の関数を実行している間だけ true を返す", () => {
+    const seen: boolean[] = [isSeeding()];
+    runSeeding(() => seen.push(isSeeding()));
+    seen.push(isSeeding());
+    expect(seen).toEqual([false, true, false]);
+  });
+});

@@ -5,13 +5,25 @@ import {
   createSignal,
   isPending,
   refresh,
+  type SourceAccessor,
 } from "@solidjs/signals";
+
+import { scopedKey, type MemoOptions } from "./scope.ts";
 
 /** 読み取りの関数と書き込みの関数の組を作成する。書き込んだ値は、flush されるまで読み取りに反映されない。 */
 export const signal = createSignal;
 
-/** ほかの signal や memo から計算する値を作成する。関数は Promise を返してもよい。 */
-export const memo = createMemo;
+/**
+ * ほかの signal や memo から計算する値を作成する。関数は Promise を返してもよい。
+ * 要素の描画の範囲の中で、`options` にキーか呼び出し箇所があれば、描画の範囲が memo を作成する。
+ */
+export function memo<T>(
+  fn: (prev: T | undefined) => T | PromiseLike<T>,
+  options?: MemoOptions,
+): SourceAccessor<T> {
+  const scoped = scopedKey(options);
+  return scoped ? scoped[0].memo(scoped[1], fn) : createMemo(fn);
+}
 
 /**
  * action の中で書き込むとすぐに反映され、action が終わると元の値に戻る値を作成する。
