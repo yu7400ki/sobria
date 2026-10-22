@@ -32,7 +32,7 @@ const properties: Readonly<Record<string, readonly string[]>> = {
 export const isFunction = (value: unknown): value is (...args: unknown[]) => unknown =>
   typeof value === "function";
 
-/** 実行時の DOM のノードを、`ClientNode` の型として扱う。 */
+/** JSX を評価した実行時の値（DOM のノードと、挿入できる値）を、`ClientNode` の型として扱う。 */
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion
 export const asClientNode = (value: unknown): ClientNode => value as ClientNode;
 

@@ -55,7 +55,6 @@ export function registerSlot(name: string): void {
 /**
  * `insert` で挿入する内容と、その中で作成した子要素を、`slots` のホストの、props の名前 `prop` のスロットに配置する。
  * `children` は名前の無いスロットになる。`insert` は、挿入するノードを変換する関数を受け取る。
- * 名前付きのスロットでは、その関数は要素に `slot` 属性を付与し、テキストを `<span slot>` で包む。
  */
 export function placeInSlot(
   slots: HostSlots,
