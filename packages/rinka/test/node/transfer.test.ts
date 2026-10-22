@@ -287,6 +287,21 @@ describe("開始タグの後に加わったキー", () => {
     ]);
   });
 
+  it("後送りにした中身の中のホストに値を送り、外側のホストに @b を送る", async () => {
+    const Inner = defineAsync("x-tr-late-inner", "i.tsx:1:1", async () => 7);
+    const Host = defineElement(
+      "x-tr-late-outer",
+      () => jsx(Loading, { fallback: "f", children: jsx(after(10, jsx(Inner, {})), {}) }),
+      { props: [] },
+    );
+    const { html, sent } = await render(jsx(Host, {}));
+    expect(html).toContain('<x-tr-late-inner data-oh="h3" data-om="i.tsx:1:1#0">');
+    expect(sent.toSorted(([a], [b]) => a.localeCompare(b))).toEqual([
+      ["h1", { "@b": 1 }],
+      ["h3", { "i.tsx:1:1#0": 7 }],
+    ]);
+  });
+
   it("開始タグの後に初めて非同期になった memo の値は送らない", async () => {
     const Host = defineElement(
       "x-tr-sealed-memo",
