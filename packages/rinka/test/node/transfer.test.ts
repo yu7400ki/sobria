@@ -243,6 +243,50 @@ describe("開始タグの後に加わったキー", () => {
     ]);
   });
 
+  it("後送りにした <Loading> の中で、中身を出力した <Errored> の中に作成した子要素も、@b より前に @c:キーを送る", async () => {
+    const Leaf = defineElement("x-tr-late-errored-leaf", () => null, { props: [] });
+    const Host = defineElement(
+      "x-tr-late-errored",
+      () => {
+        const leaf = jsx(Leaf, {}, undefined, "s.tsx:1:1");
+        return jsx(Loading, {
+          fallback: "f",
+          children: jsx(Errored, { fallback: "fb", children: jsx(after(10, leaf), {}) }),
+        });
+      },
+      { props: [] },
+    );
+    const { sent } = await render(jsx(Host, {}));
+    expect(sent).toEqual([
+      ["h1", { "@c:s.tsx:1:1#0": "h3" }],
+      ["h1", { "@b": 1 }],
+    ]);
+  });
+
+  it("後送りにした差し替えの中で作成した子要素も、@b より前に @c:キーを送る", async () => {
+    const Leaf = defineElement("x-tr-late-slot-leaf", () => null, { props: [] });
+    const Inner = defineElement(
+      "x-tr-late-slot-inner",
+      () => jsx(Loading, { fallback: "f", children: jsx("slot", {}) }),
+      { props: [] },
+    );
+    const Host = defineElement(
+      "x-tr-late-slot",
+      () => {
+        const leaf = jsx(Leaf, {}, undefined, "s.tsx:1:1");
+        return jsx(Inner, { children: jsx(after(10, leaf), {}) });
+      },
+      { props: [] },
+    );
+    const { html, sent } = await render(jsx(Host, {}));
+    expect(html).toContain('<template data-op="p4"><x-tr-late-slot-leaf data-oh="h5">');
+    expect(sent).toEqual([
+      ["h1", { "@c:s.tsx:1:1#0": "h5" }],
+      ["h1", { "@b": 1 }],
+      ["h2", { "@b": 1 }],
+    ]);
+  });
+
   it("開始タグの後に初めて非同期になった memo の値は送らない", async () => {
     const Host = defineElement(
       "x-tr-sealed-memo",
