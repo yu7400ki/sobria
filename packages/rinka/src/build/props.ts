@@ -37,7 +37,11 @@ export function analyzeProps(
     );
   }
   const annotation = param.typeAnnotation?.typeAnnotation;
-  if (!annotation) throw fail("要素の関数の第 1 引数に、Props の型注釈を記述してください。");
+  if (!annotation) {
+    throw fail(
+      "要素の関数の第 1 引数に、Props の型注釈を記述してください。props を受け取る要素は、TypeScript のファイル（.tsx）に記述してください。",
+    );
+  }
   const members = propsMembers(program, annotation, rinkaTypes(program), fail);
   const errors = checkPropNames([...members.keys()]);
   if (errors.length > 0) throw fail(errors.join("\n"));
