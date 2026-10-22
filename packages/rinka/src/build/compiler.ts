@@ -43,16 +43,16 @@ export interface SourceResult extends Transformed {
   readonly element: ElementInfo | undefined;
 }
 
-/** 関門を取得する関数を、変換したコードの中で呼ぶ名前である。 */
-const TAKE_GATE = "__rinka_takeGate";
-/** async 関数が取得した関門を保持する変数の名前である。 */
-const GATE = "__rinka_gate";
+/** 変換したコードで `stopIfSeeding` を呼ぶときの名前である。 */
+const STOP_IF_SEEDING = "__rinka_stopIfSeeding";
+/** async 関数が開始した時点で受け取った `stopIfSeeding` の戻り値を保持する変数の名前である。 */
+const STOP = "__rinka_stop";
 /** 要素を登録する関数を、変換したコードの中で呼ぶ名前である。 */
 const DEFINE = "__rinka_defineElement";
 
 /**
  * 元のソースに、`rinka` の `memo` の呼び出し箇所の ID を付与する。
- * クライアント向けのコードでは、async 関数の `await` を関門で包む。
+ * クライアント向けのコードでは、シード中に開始した async 関数を、最初の `await` で停止させる。
  * 要素のファイルでは、default export した関数を、要素を登録する呼び出しに書き換え、関数の中の JSX のスロットを `<slot>` にする。
  */
 export function transformSource(code: string, options: SourceOptions): SourceResult {
@@ -62,8 +62,8 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
   const element =
     options.element &&
     registerElement(program, output, options.element.tag, options.file, options.client);
-  if (options.client && gateAwaits(program, output)) {
-    output.prepend(`import { takeGate as ${TAKE_GATE} } from "${entries.internal}";\n`);
+  if (options.client && stopAwaits(program, output)) {
+    output.prepend(`import { stopIfSeeding as ${STOP_IF_SEEDING} } from "${entries.internal}";\n`);
   }
   return {
     code: output.toString(),
@@ -134,18 +134,19 @@ function addMemoSites(
 }
 
 /**
- * async 関数（generator を除く）の直接の `await` を、その関数の関門で包む。包んだら真を返す。
- * `for await` の文は、反復する値を関門に渡す。
+ * async 関数（generator を除く）の本体にある `await` が待つ値を、その関数が開始した時点で受け取った `stopIfSeeding` の戻り値に渡す。
+ * 内側の関数の `await` は、内側の関数の戻り値に渡す。1 つでも書き換えたら真を返す。
+ * `for await` の文は、反復する値をその戻り値の `iterate` に渡す。
  */
-function gateAwaits(program: ESTree.Program, output: MagicString): boolean {
-  let gated = false;
+function stopAwaits(program: ESTree.Program, output: MagicString): boolean {
+  let stopped = false;
   const visit = (node: Node, owner: { used: boolean } | null): void => {
     if (isFunction(node)) {
       const own = node.async && !node.generator ? { used: false } : null;
       for (const child of children(node)) visit(child, own);
       if (own?.used) {
-        insertGate(node, output);
-        gated = true;
+        insertStop(node, output);
+        stopped = true;
       }
       return;
     }
@@ -153,21 +154,21 @@ function gateAwaits(program: ESTree.Program, output: MagicString): boolean {
     if (!owner) return;
     if (node.type === "AwaitExpression") {
       owner.used = true;
-      surround(output, node.argument, `${GATE}(`, ")");
+      surround(output, node.argument, `${STOP}(`, ")");
     } else if (node.type === "ForOfStatement" && node.await) {
       owner.used = true;
-      surround(output, node.right, `${GATE}.iterate(`, ")");
+      surround(output, node.right, `${STOP}.iterate(`, ")");
     }
   };
   visit(program, null);
-  return gated;
+  return stopped;
 }
 
-/** 関数の本体の先頭で、関門を取得する。 */
-function insertGate(fn: FunctionNode, output: MagicString): void {
+/** 関数の本体の先頭で `stopIfSeeding` を呼び、戻り値を `STOP` の名前の変数に保持する。 */
+function insertStop(fn: FunctionNode, output: MagicString): void {
   const { body } = fn;
   if (!body) return;
-  const declaration = `const ${GATE} = ${TAKE_GATE}();`;
+  const declaration = `const ${STOP} = ${STOP_IF_SEEDING}();`;
   if (body.type === "BlockStatement") {
     output.appendLeft(body.start + 1, ` ${declaration}`);
   } else {

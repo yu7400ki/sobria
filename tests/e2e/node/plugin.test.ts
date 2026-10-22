@@ -44,10 +44,10 @@ describe("Vite プラグイン", () => {
     expect(html).toContain("</template>body</app-counter>");
   });
 
-  it("client の環境で変換した要素のモジュールは、要素を登録し、await を関門で包む", async () => {
+  it("client の環境で変換した要素のモジュールは、要素を登録し、await する値を stopIfSeeding の戻り値に渡す", async () => {
     const result = await server.environments.client.transformRequest("/src/elements/counter.tsx");
     expect(result?.code).toContain('__rinka_defineElement("app-counter", Counter,');
-    expect(result?.code).toContain("await __rinka_gate(Promise.resolve())");
+    expect(result?.code).toContain("await __rinka_stop(Promise.resolve())");
     expect(result?.code).toContain('site: "src/elements/counter.tsx:');
   });
 
@@ -155,7 +155,7 @@ describe("変換の対象", () => {
       async (dev) => {
         const widget = dev.environments.widget!;
         const result = await widget.transformRequest("/src/elements/card.tsx");
-        expect(result?.code).toContain("__rinka_gate(0)");
+        expect(result?.code).toContain("__rinka_stop(0)");
         const resolved = await widget.pluginContainer.resolveId("rinka");
         expect(resolved?.id.split(sep).join("/")).toMatch(/\/lib\/client\/index\.js$/);
       },

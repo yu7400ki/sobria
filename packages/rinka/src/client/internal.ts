@@ -1,7 +1,7 @@
 import { isSeeding } from "../shared/scope.ts";
 
-/** `await` する値を受け取り、`await` させる値を返す関門を表す。 */
-export interface Gate {
+/** `await` する値を受け取り、シード中なら解決しない Promise を、それ以外では値をそのまま返す関数を表す。 */
+export interface SeedingStop {
   <T>(value: T): T | Promise<never>;
   /** `for await` で反復する値を受け取り、反復させる値を返す。 */
   iterate<T>(source: T): T | AsyncIterable<never>;
@@ -12,8 +12,12 @@ const silent: AsyncIterable<never> = {
   [Symbol.asyncIterator]: () => ({ next: () => new Promise<never>(() => {}) }),
 };
 
-const pass: Gate = Object.assign(<T>(value: T) => value, { iterate: <T>(source: T) => source });
-const halt: Gate = Object.assign(() => new Promise<never>(() => {}), { iterate: () => silent });
+const pass: SeedingStop = Object.assign(<T>(value: T) => value, {
+  iterate: <T>(source: T) => source,
+});
+const halt: SeedingStop = Object.assign(() => new Promise<never>(() => {}), {
+  iterate: () => silent,
+});
 
-/** シード中に呼び出したら、値の代わりに解決しない Promise を返す関門を返す。それ以外では、値をそのまま返す関門を返す。 */
-export const takeGate = (): Gate => (isSeeding() ? halt : pass);
+/** 呼び出した時点でシード中なら、値の代わりに解決しない Promise を返す関数を返す。シード中でなければ、値をそのまま返す関数を返す。 */
+export const stopIfSeeding = (): SeedingStop => (isSeeding() ? halt : pass);

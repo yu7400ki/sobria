@@ -177,7 +177,7 @@ class Out {
    * この位置のうち、この位置の `shown` が `true` に解決した時点で `kept` が真を返すときだけ、ページに現れる位置を作成する。
    * 戻り値の位置の `scripts` は、呼び出し側がこの位置の `scripts` に追加したときだけ書き込む。
    */
-  gate(kept: () => boolean): Out {
+  conditional(kept: () => boolean): Out {
     return new Out(
       this.flush,
       this.shown.then((output) => output && kept()),
@@ -718,10 +718,10 @@ class Renderer {
       case "errored": {
         const { chunks, node, ctx } = chunk.errored;
         let failed = false;
-        const gated = out.gate(() => !failed);
+        const kept = out.conditional(() => !failed);
         try {
-          const html = await this.serialize(chunks, gated);
-          out.scripts.push(...gated.scripts);
+          const html = await this.serialize(chunks, kept);
+          out.scripts.push(...kept.scripts);
           return html;
         } catch (error) {
           failed = true;

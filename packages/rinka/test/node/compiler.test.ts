@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { CompileError, transformSource, type SourceOptions } from "../../src/build/compiler.ts";
 import { oxc } from "../../src/build/entries.ts";
 import { transformJsx } from "../../src/build/jsx.ts";
-import { takeGate } from "../../src/client/internal.ts";
+import { stopIfSeeding } from "../../src/client/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToString } from "../../src/server/render.ts";
 import { runSeeding } from "../../src/shared/scope.ts";
@@ -37,14 +37,14 @@ const d = m(() => 4, {});`);
     expect(code).toContain('m(() => 4, { site: "src/lib/a.ts:5:11" })');
   });
 
-  it("クライアント向けのコードでも、式の本体の async 関数に付与する ID は、関門の外の memo の引数にする", () => {
+  it("クライアント向けのコードでも、式の本体の async 関数に付与する ID は、stopIfSeeding を呼ぶ関数の外の memo の引数にする", () => {
     const code = module(
       `import { memo } from "rinka";
 const a = memo(async () => get(await id()));`,
       true,
     );
     expect(code).toContain(
-      'const a = memo(async () => { const __rinka_gate = __rinka_takeGate(); return get(await __rinka_gate(id())); }, { site: "src/lib/a.ts:2:11" });',
+      'const a = memo(async () => { const __rinka_stop = __rinka_stopIfSeeding(); return get(await __rinka_stop(id())); }, { site: "src/lib/a.ts:2:11" });',
     );
   });
 
@@ -64,7 +64,7 @@ memo(() => 2);`);
   });
 });
 
-describe("await の関門", () => {
+describe("シード中の await の停止", () => {
   const source = `export async function load(id: number) {
   const token = await read();
   const inner = async () => await other();
@@ -76,40 +76,42 @@ export async function* stream() { await y(); }
 export async function none() { return 1; }
 export async function each() { for await (const v of source()) use(v); }`;
 
-  it("クライアント向けのコードでは、async 関数の直接の await を、その関数の関門で包む", () => {
+  it("クライアント向けのコードでは、async 関数の直接の await を、その関数が開始した時点で受け取った stopIfSeeding の戻り値に渡す", () => {
     const code = module(source, true);
-    expect(code).toContain('import { takeGate as __rinka_takeGate } from "rinka/internal";');
     expect(code).toContain(
-      "async function load(id: number) { const __rinka_gate = __rinka_takeGate(); const token = await __rinka_gate(read());",
+      'import { stopIfSeeding as __rinka_stopIfSeeding } from "rinka/internal";',
     );
     expect(code).toContain(
-      "const inner = async () => { const __rinka_gate = __rinka_takeGate(); return await __rinka_gate(other()); };",
+      "async function load(id: number) { const __rinka_stop = __rinka_stopIfSeeding(); const token = await __rinka_stop(read());",
     );
-    expect(code).toContain("return get(id, await __rinka_gate(token.id));");
     expect(code).toContain(
-      "export const arrow = async () => { const __rinka_gate = __rinka_takeGate(); return await __rinka_gate(x()); };",
+      "const inner = async () => { const __rinka_stop = __rinka_stopIfSeeding(); return await __rinka_stop(other()); };",
+    );
+    expect(code).toContain("return get(id, await __rinka_stop(token.id));");
+    expect(code).toContain(
+      "export const arrow = async () => { const __rinka_stop = __rinka_stopIfSeeding(); return await __rinka_stop(x()); };",
     );
     expect(code).toContain("export async function* stream() { await y(); }");
     expect(code).toContain("export async function none() { return 1; }");
     expect(code).toContain(
-      "export async function each() { const __rinka_gate = __rinka_takeGate(); for await (const v of __rinka_gate.iterate(source())) use(v); }",
+      "export async function each() { const __rinka_stop = __rinka_stopIfSeeding(); for await (const v of __rinka_stop.iterate(source())) use(v); }",
     );
   });
 
-  it("サーバー向けのコードと、async 関数の無いコードは関門で包まない", () => {
+  it("サーバー向けのコードと、async 関数の無いコードでは stopIfSeeding を呼ばない", () => {
     expect(module(source)).not.toContain("__rinka");
     expect(module("export const x = 1;", true)).toBe("export const x = 1;");
   });
 
-  it("関門は、シード中に取得したら解決しない Promise と、最初の値を返さない async iterable を返し、それ以外では値をそのまま返す", async () => {
+  it("stopIfSeeding は、シード中に呼び出したら解決しない Promise と、最初の値を返さない async iterable を返し、それ以外では値をそのまま返す", async () => {
     const value = Promise.resolve(1);
-    expect(takeGate()(value)).toBe(value);
-    const seeded = runSeeding(() => takeGate())(value);
+    expect(stopIfSeeding()(value)).toBe(value);
+    const seeded = runSeeding(() => stopIfSeeding())(value);
     const later = new Promise((done) => setTimeout(() => done("pending"), 10));
     expect(await Promise.race([seeded.then(() => "settled"), later])).toBe("pending");
     const items = [1];
-    expect(takeGate().iterate(items)).toBe(items);
-    const iterator = runSeeding(() => takeGate()).iterate(items);
+    expect(stopIfSeeding().iterate(items)).toBe(items);
+    const iterator = runSeeding(() => stopIfSeeding()).iterate(items);
     const first = (iterator as AsyncIterable<never>)[Symbol.asyncIterator]().next();
     const waited = new Promise((done) => setTimeout(() => done("pending"), 10));
     expect(await Promise.race([first.then(() => "settled"), waited])).toBe("pending");
@@ -482,13 +484,13 @@ describe("スロット化の範囲", () => {
 describe("括弧で囲んだ式", () => {
   it("括弧で囲んだ式の本体、await、memo の引数を、括弧ごと変換する", () => {
     const body = module("export const f = async () => ({ a: await x });", true);
-    expect(body).toContain("return ({ a: await __rinka_gate(x) }); }");
+    expect(body).toContain("return ({ a: await __rinka_stop(x) }); }");
     expect(module("export const f = async () => { await (a, b); };", true)).toContain(
-      "await __rinka_gate((a, b))",
+      "await __rinka_stop((a, b))",
     );
     expect(
       module("export const f = async () => { for await (const v of (a, b)); };", true),
-    ).toContain("__rinka_gate.iterate((a, b))");
+    ).toContain("__rinka_stop.iterate((a, b))");
     const memoCall = 'import { memo } from "rinka"; memo((a, b)); memo(f, (a, b));';
     expect(module(memoCall)).toContain('memo((a, b), { site: "src/lib/a.ts:1:31" })');
     expect(module(memoCall)).toContain('memo(f, { ...(a, b), site: "src/lib/a.ts:1:45" })');
