@@ -595,9 +595,12 @@ class Renderer {
             return;
           }
           const location = redirectLocation(error);
-          if (location === undefined || !isSafeLocation(location)) {
+          if (location === undefined) {
+            const requested = requestedLocation(error);
             console.error(
-              "[rinka] シェルを送った後に、<Loading> の中身の描画に失敗しました。フォールバックのまま残します。",
+              requested === undefined
+                ? "[rinka] シェルを送った後に、<Loading> の中身の描画に失敗しました。フォールバックのまま残します。"
+                : `[rinka] 移動先 ${JSON.stringify(requested)} は、相対 URL でも http や https の URL でもないので、移動させずにフォールバックのまま残します。`,
               error,
             );
           } else {
@@ -695,13 +698,19 @@ function lateBoundary(boundary: Boundary): Boundary | undefined {
   return undefined;
 }
 
-/** `redirect()` か、3xx の Response なら、移動先を返す。 */
-function redirectLocation(error: unknown): string | undefined {
+/** `Redirect` か、3xx の Response なら、規則を確認する前の移動先を返す。 */
+function requestedLocation(error: unknown): string | undefined {
   if (error instanceof Redirect) return error.location;
   if (error instanceof Response && error.status >= 300 && error.status < 400) {
     return error.headers.get("location") ?? undefined;
   }
   return undefined;
+}
+
+/** `Redirect` か 3xx の Response で、移動先が相対 URL か http か https の URL なら、移動先を返す。 */
+function redirectLocation(error: unknown): string | undefined {
+  const location = requestedLocation(error);
+  return location !== undefined && isSafeLocation(location) ? location : undefined;
 }
 
 /** `<Errored>` が受け止めずに通過させる値かどうかを返す。`late` は、シェルの後に出力する位置かどうかである。 */

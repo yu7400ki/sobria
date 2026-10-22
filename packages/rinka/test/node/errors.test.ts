@@ -205,6 +205,20 @@ describe("シェルの後", () => {
     expect(error).toHaveBeenCalledTimes(1);
   });
 
+  it("移動先が規則に合わない 3xx の Response は、Errored が受け止める", async () => {
+    const unsafe = deferredThrow(
+      new Response(null, { status: 302, headers: { location: "javascript:alert(1)" } }),
+    );
+    const response = await renderToResponse(
+      jsx(Loading, {
+        fallback: "wait",
+        children: jsx(Errored, { fallback: "caught", children: jsx(unsafe.Slow, {}) }),
+      }),
+    );
+    unsafe.resolve();
+    expect(await response.text()).toContain('<template data-os="b1">caught</template>');
+  });
+
   it("Errored がフォールバックに切り替えた領域の中の境界は、移動させない", async () => {
     const moving = deferredThrow(redirect("/r"));
     const failing = deferredThrow(new Error("e"));
