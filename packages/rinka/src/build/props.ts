@@ -2,7 +2,7 @@ import type { ESTree } from "vite";
 
 import type { AttributeType, ElementOptions } from "../shared/element.ts";
 import { checkPropNames } from "../shared/prop-names.ts";
-import { moduleExportName } from "./ast.ts";
+import { importedNames } from "./ast.ts";
 import { CompileError } from "./errors.ts";
 
 /** Props のメンバーの分類を表す。 */
@@ -107,18 +107,8 @@ function propsMembers(
 
 /** `rinka` から import した `Props` と `Slot` の、ファイルの中の名前を返す。 */
 function rinkaTypes(program: ESTree.Program): Helpers {
-  const props = new Set<string>();
-  const slot = new Set<string>();
-  for (const statement of program.body) {
-    if (statement.type !== "ImportDeclaration" || statement.source.value !== "rinka") continue;
-    for (const specifier of statement.specifiers) {
-      if (specifier.type !== "ImportSpecifier") continue;
-      const imported = moduleExportName(specifier.imported);
-      if (imported === "Props") props.add(specifier.local.name);
-      if (imported === "Slot") slot.add(specifier.local.name);
-    }
-  }
-  return { props, slot };
+  const names = importedNames(program, "rinka");
+  return { props: names.get("Props") ?? new Set(), slot: names.get("Slot") ?? new Set() };
 }
 
 /** ファイルのトップレベルで宣言した type と interface を返す。 */

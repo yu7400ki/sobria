@@ -88,3 +88,22 @@ export function surround(output: MagicString, node: Span, open: string, close: s
 export function follow(output: MagicString, node: Span, text: string): void {
   output.appendRight(node.end, text);
 }
+
+/** `source` から名前で import した指定子を、import した名前ごとに、ファイルの中の名前の集合にして返す。 */
+export function importedNames(
+  program: ESTree.Program,
+  source: string,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const names = new Map<string, Set<string>>();
+  for (const statement of program.body) {
+    if (statement.type !== "ImportDeclaration" || statement.source.value !== source) continue;
+    for (const specifier of statement.specifiers) {
+      if (specifier.type !== "ImportSpecifier") continue;
+      const imported = moduleExportName(specifier.imported);
+      const locals = names.get(imported) ?? new Set();
+      locals.add(specifier.local.name);
+      names.set(imported, locals);
+    }
+  }
+  return names;
+}

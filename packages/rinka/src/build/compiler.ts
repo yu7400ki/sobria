@@ -8,7 +8,7 @@ import {
   lineColumn,
   lineStarts,
   follow,
-  moduleExportName,
+  importedNames,
   surround,
   walk,
   type FunctionNode,
@@ -118,16 +118,8 @@ function addMemoSites(
   code: string,
   file: string,
 ): void {
-  const names = new Set<string>();
-  for (const statement of program.body) {
-    if (statement.type !== "ImportDeclaration" || statement.source.value !== "rinka") continue;
-    for (const specifier of statement.specifiers) {
-      if (specifier.type === "ImportSpecifier" && moduleExportName(specifier.imported) === "memo") {
-        names.add(specifier.local.name);
-      }
-    }
-  }
-  if (names.size === 0) return;
+  const names = importedNames(program, "rinka").get("memo");
+  if (!names) return;
   const starts = lineStarts(code);
   walk(program, (node) => {
     if (node.type !== "CallExpression") return;

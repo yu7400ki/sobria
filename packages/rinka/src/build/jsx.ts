@@ -2,7 +2,7 @@ import { MagicString } from "magic-string";
 import { parseSync, type ESTree } from "vite";
 
 import { isEventProp } from "../shared/names.ts";
-import { children, isFunction, moduleExportName, surround, type Node } from "./ast.ts";
+import { children, importedNames, isFunction, surround, type Node } from "./ast.ts";
 import type { Transformed } from "./compiler.ts";
 import { CompileError } from "./errors.ts";
 
@@ -30,7 +30,12 @@ export function transformJsx(code: string, file: string): Transformed {
   const [error] = errors;
   if (error) throw new CompileError(`${file} を解析できません: ${error.message}`);
   const output = new MagicString(code);
-  const runtime = runtimeNames(program, file);
+  if (importedNames(program, "rinka").has("createElement")) {
+    throw new CompileError(
+      `${file}: スプレッドの後に記述した key は変換できません。key をスプレッドより前に記述してください。`,
+    );
+  }
+  const runtime = runtimeNames(program);
   const visit = (node: Node): void => {
     for (const child of children(node)) visit(child);
     if (isJsxCall(node, runtime)) applyRules(node, runtime, output, code);
@@ -43,27 +48,14 @@ export function transformJsx(code: string, file: string): Transformed {
 }
 
 /** `rinka/jsx-runtime` から import した名前を返す。 */
-function runtimeNames(program: ESTree.Program, file: string): Runtime {
-  const single = new Set<string>();
-  const multiple = new Set<string>();
-  const fragments = new Set<string>();
-  for (const statement of program.body) {
-    if (statement.type !== "ImportDeclaration") continue;
-    for (const specifier of statement.specifiers) {
-      if (specifier.type !== "ImportSpecifier") continue;
-      const imported = moduleExportName(specifier.imported);
-      if (statement.source.value === "rinka" && imported === "createElement") {
-        throw new CompileError(
-          `${file}: スプレッドの後に記述した key は変換できません。key をスプレッドより前に記述してください。`,
-        );
-      }
-      if (statement.source.value !== "rinka/jsx-runtime") continue;
-      if (imported === "jsx") single.add(specifier.local.name);
-      if (imported === "jsxs") multiple.add(specifier.local.name);
-      if (imported === "Fragment") fragments.add(specifier.local.name);
-    }
-  }
-  return { single, multiple, fragments };
+function runtimeNames(program: ESTree.Program): Runtime {
+  const names = importedNames(program, "rinka/jsx-runtime");
+  const none = new Set<string>();
+  return {
+    single: names.get("jsx") ?? none,
+    multiple: names.get("jsxs") ?? none,
+    fragments: names.get("Fragment") ?? none,
+  };
 }
 
 /** `node` が `rinka/jsx-runtime` の `jsx` か `jsxs` の呼び出しかどうかを返す。 */
