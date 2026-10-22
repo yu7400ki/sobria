@@ -182,6 +182,19 @@ describe("値を送る範囲", () => {
     expect(async.sent).toEqual([]);
   });
 
+  it("出力しないホストの memo が、境界をすべて出力した後で解決しても、ストリームを閉じる", async () => {
+    const Slow = defineAsync(
+      "x-tr-slow",
+      "s.tsx:3:1",
+      () => new Promise((resolve) => setTimeout(() => resolve("v"), 30)),
+    );
+    const { html, sent } = await render(
+      jsx(Errored, { fallback: "fb", children: [jsx(Slow, {}), jsx(Sync, {})] }),
+    );
+    expect(html.endsWith("</body></html>")).toBe(true);
+    expect(sent).toEqual([]);
+  });
+
   it("値とキーに含まれる </script> は、スクリプトを閉じない", async () => {
     const Card2 = defineAsync("x-tr-escape", "e.tsx:</script>", () =>
       Promise.resolve("</script><b>"),

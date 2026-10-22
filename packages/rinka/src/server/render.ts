@@ -221,7 +221,7 @@ class Renderer {
   /** 要素の描画の範囲ごとに、範囲を作成したホストの ID と、子要素のホストの ID を送るキーの列を保持する。 */
   private readonly scopeHosts = new WeakMap<
     MemoScope,
-    { readonly id: string; readonly keys: string[] }
+    { readonly id: string; readonly childKeys: string[] }
   >();
   /** ホストの ID ごとに、ホストをページに出力したら `true` に、出力しないことが決まったら `false` に解決する Promise を保持する。 */
   private readonly shown = new Map<string, PromiseWithResolvers<boolean>>();
@@ -411,7 +411,7 @@ class Renderer {
     const creator = child && this.scopeHosts.get(child.scope);
     if (child && creator) {
       const mapKey = `@c:${child.key}`;
-      creator.keys.push(mapKey);
+      creator.childKeys.push(mapKey);
       this.send(creator.id, mapKey, Promise.resolve(scriptJson(id)));
     }
     const slotNames = new Set(["children", ...(options.slots ?? [])]);
@@ -484,8 +484,8 @@ class Renderer {
           return result;
         }),
     );
-    const children: string[] = [];
-    this.scopeHosts.set(scope, { id, keys: children });
+    const childKeys: string[] = [];
+    this.scopeHosts.set(scope, { id, childKeys });
     createRoot((dispose) => {
       this.disposers.push(dispose);
       owner = getOwner();
@@ -518,7 +518,7 @@ class Renderer {
     }
     chunks.push(`</${tag}>`);
     const open = ({ text, transfer }: HostAttributes, waits: readonly string[]): string => {
-      const keys = [...memoKeys, ...children, ...waits, ...(transfer ? ["@p"] : [])];
+      const keys = [...memoKeys, ...childKeys, ...waits, ...(transfer ? ["@p"] : [])];
       const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
       return `<${tag}${attribute("data-oh", id)}${text}${om}><template shadowrootmode="open">`;
     };
@@ -717,9 +717,10 @@ class Renderer {
 
   /** `expression` が解決した JS の式を、ホストをページに出力した後に、`$rinka.d` でホストの `key` の値として送る。ホストを出力しなければ送らない。 */
   private send(host: string, key: string, expression: Promise<string>): void {
+    const shown = this.host(host).promise;
     const task = (async () => {
       const value = await expression;
-      if (!(await this.host(host).promise)) return;
+      if (!(await shown)) return;
       this.write(`<script>$rinka.d(${scriptJson(host)},{${scriptJson(key)}:${value}})</script>`);
     })();
     this.values.add(task);
