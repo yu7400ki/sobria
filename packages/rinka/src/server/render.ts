@@ -190,7 +190,7 @@ const serverHost = new Proxy(
 );
 
 /**
- * 出力の単位の列に、穴があるかどうかを返す。`<Errored>` の領域と要素のホストの中を含め、後送りにする境界とスロットの内容の中を除く。
+ * 出力の単位の列に、穴があるかどうかを返す。`<Errored>` の領域と要素のホストの中を含め、`<Loading>` の中とスロットの内容の中を除く。
  */
 function hasHole(chunks: readonly Chunk[]): boolean {
   return chunks.some((chunk) => {

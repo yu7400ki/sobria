@@ -295,6 +295,32 @@ describe("境界の失敗と順序", () => {
     expect(error).toHaveBeenCalledTimes(1);
   });
 
+  it("目印を囲む Errored がフォールバックに切り替わった境界は、中身を送らない", async () => {
+    const { Fail, reject } = failing();
+    const slow = deferred("slow-done");
+    const reading = read(
+      renderToStream(
+        jsx(Loading, {
+          fallback: "o",
+          children: jsx(Errored, {
+            fallback: "EB",
+            children: [
+              jsx(Fail, {}),
+              jsx(Loading, { fallback: "i", children: jsx(slow.Slow, {}) }),
+            ],
+          }),
+        }),
+      ),
+    );
+    await tick();
+    reject();
+    await tick();
+    slow.resolve();
+    const html = (await reading).join("");
+    expect(html).toContain('<template data-os="b1">EB</template>');
+    expect(html).not.toContain("slow-done");
+  });
+
   it("保留中でない境界の中にある保留中の境界も、送り終えてからストリームを閉じる", async () => {
     const inner = deferred("in");
     const reading = read(
