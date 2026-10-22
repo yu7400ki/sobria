@@ -273,26 +273,46 @@ export function defineElement<P, M extends object = object>(
   return Object.assign(component, { [elementInfo]: { tag, options } });
 }
 
+/** 要素を配置するスロットを表す。`host` は定義済みの要素のインスタンス、`name` はスロットの名前である。 */
+interface Placement {
+  readonly host: Instance;
+  readonly name: string;
+}
+
 /**
- * owner の無い場所で作成して接続した要素を起動する。表示されている位置から上へ、定義済みの要素を探索する。
- * 見つけた要素の子のうち `el` を含む子の `slot` 属性の名前で、見つけた要素の `<slot>` の owner の下で起動する。
- * `<slot>` が無いか、見つけた要素が起動していなければ、その `<slot>` を作成した時点で、接続していれば起動する。
- * Shadow DOM の中にあるか、上に定義済みの要素が無ければ、最上位の要素として起動する。
+ * `el` が表示されている位置から上へ、定義済みの要素を探索する。
+ * 見つけた要素と、見つけた要素の子のうち `el` を含む子の `slot` 属性の名前を返す。
+ * Shadow DOM の中にあるか、上に定義済みの要素が無ければ、`undefined` を返す。
+ */
+function locate(el: HTMLElement): Placement | undefined {
+  let child: Element = el;
+  for (let node = el.parentNode; node && !(node instanceof ShadowRoot); node = node.parentNode) {
+    const host = instanceOf(node);
+    if (host) return { host, name: child.slot };
+    if (node instanceof Element) child = node;
+  }
+  return undefined;
+}
+
+/**
+ * owner の無い場所で作成して接続した要素を起動する。
+ * 表示されている位置の上に定義済みの要素があれば、そのスロットの `<slot>` の owner の下で起動する。
+ * `<slot>` が無ければ、その `<slot>` を作成した時点で、接続していて同じスロットの位置にあれば起動する。
+ * 上に定義済みの要素が無ければ、最上位の要素として起動する。
  * 起動を待っていれば、待つのをやめる関数を返す。
  */
 function attach(el: HTMLElement, instance: Instance): (() => void) | undefined {
-  let child: Element = el;
-  for (let node = el.parentNode; node && !(node instanceof ShadowRoot); node = node.parentNode) {
-    const parent = instanceOf(node);
-    if (parent) {
-      return addChild(parent.slots, child.slot, (owner) => {
-        if (el.isConnected) instance.activate(owner);
-      });
-    }
-    if (node instanceof Element) child = node;
+  const placement = locate(el);
+  if (!placement) {
+    instance.activate(null);
+    return undefined;
   }
-  instance.activate(null);
-  return undefined;
+  return addChild(placement.host.slots, placement.name, (owner) => {
+    const current = el.isConnected ? locate(el) : undefined;
+    if (current?.host === placement.host && current.name === placement.name) {
+      instance.activate(owner);
+    }
+  });
 }
 
 const instanceOf = (node: Node): Instance | undefined =>

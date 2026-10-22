@@ -249,20 +249,24 @@ describe("owner の無い場所で作成した要素の境界", () => {
     expect(counts.runs).toBe(0);
   });
 
-  it("途中の要素が <slot> を待っていれば、子要素は、その要素が起動してから境界を探す", async () => {
+  it("<slot> を待っている間に別の要素の Light DOM へ移動した子要素は、移動した先の要素の <slot> の下で起動する", async () => {
     const [show, setShow] = signal(false);
     const Outer = defineGuard(show, "outer");
     const Inner = defineGuard(() => true, "inner");
+    const Other = defineGuard(() => true, "other");
     const Throwing = defineThrowing(() => true);
-    const [o, i, t] = [Outer, Inner, Throwing].map(tagOf);
-    document.body.innerHTML = `<${o}><${i}><${t}></${t}></${i}></${o}>`;
+    const [o, i, x, t] = [Outer, Inner, Other, Throwing].map(tagOf);
+    document.body.innerHTML = `<${o}><${i}><${t}></${t}></${i}></${o}><${x}></${x}>`;
     await tick();
-    flush();
+    const inner = document.body.firstElementChild!.firstElementChild!;
+    const other = document.body.lastElementChild!;
+    other.append(inner.firstElementChild!);
     setShow(true);
     flush();
-    const outer = document.body.firstElementChild!;
-    expect(html(outer.shadowRoot!)).toBe("<slot></slot>");
-    expect(html(outer.firstElementChild!.shadowRoot!)).toBe("inner");
+    await tick();
+    flush();
+    expect(html(inner.shadowRoot!)).toBe("<slot></slot>");
+    expect(html(other.shadowRoot!)).toBe("other");
   });
 
   it("途中の要素が <slot> を待っていれば、子要素は、その要素が <slot> を作成した時点で起動し、その要素の Loading がフォールバックを表示する", async () => {
