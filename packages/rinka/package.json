@@ -26,6 +26,10 @@
     "./server": {
       "types": "./lib/server/api.d.ts",
       "default": "./lib/server/api.js"
+    },
+    "./vite": {
+      "types": "./lib/build/plugin.d.ts",
+      "default": "./lib/build/plugin.js"
     }
   },
   "scripts": {
