@@ -111,7 +111,7 @@ interface Definition {
 
 /** Vite の `import.meta.hot` のうち、要素の登録が呼び出すメンバーを表す。 */
 export interface HotContext {
-  readonly send: (event: string) => void;
+  readonly send: (event: typeof reloadEvent) => void;
 }
 
 const definitions = new Map<string, Definition>();
