@@ -65,6 +65,8 @@ function viewWith(h: H, label: string, site: string, fetch: () => Promise<string
 
 /** `"ann"` に解決する Promise を返す。 */
 const fetchAnn = () => Promise.resolve("ann");
+/** 呼び出し箇所が `t:11` の memo を作成し、その値を読む。 */
+const inner = () => memo(() => "row", { site: "t:11" })();
 
 /** props の `data` の `name` を表示する要素の関数を作成する。 */
 const dataView = (h: H) => (props: { data?: { name: string } }) =>
@@ -113,30 +115,33 @@ describe("値の引き継ぎ", () => {
     expect(html(host?.shadowRoot)).toBe("<p>v1</p>");
   });
 
-  it("関数のコンポーネントの中の memo にはキーを付けず、要素の関数の中の memo の回数をずらさない", async () => {
-    const tag = nextTag();
-    let fetched = 0;
-    const fetch = () => {
-      if (!isSeeding()) fetched++;
-      return Promise.resolve("direct");
-    };
-    const view = (h: H) => () => {
-      const Row = () => {
-        const inner = memo(() => "row", { site: "t:11" });
-        return h("i", { children: () => inner() });
+  it.each([
+    ["関数のコンポーネント", (h: H) => h(() => h("i", { children: inner() }), {}), "<i>row</i>"],
+    ["サンク", (h: H) => h("i", { children: () => inner() }), "<i>row</i>"],
+    ["属性の関数", (h: H) => h("i", { title: () => inner() }), '<i title="row"></i>'],
+  ])(
+    "%sの中の memo にはキーを付けず、要素の関数の中の memo の回数をずらさない",
+    async (_, row, expected) => {
+      const tag = nextTag();
+      let fetched = 0;
+      const fetch = () => {
+        if (!isSeeding()) fetched++;
+        return Promise.resolve("direct");
       };
-      const row = h(Row, {});
-      const direct = memo(fetch, { site: "t:11" });
-      return [row, h("p", { children: () => direct() })];
-    };
-    const scripts = await serve(server(defineServer(tag, view(server), { props: [] }), {}));
-    scripts.forEach(run);
-    fetched = 0;
-    defineClient(tag, view(client), { props: [] });
-    await tick();
-    expect(html(document.querySelector(tag)?.shadowRoot)).toBe("<i>row</i><p>direct</p>");
-    expect(fetched).toBe(0);
-  });
+      const view = (h: H) => () => {
+        const first = row(h);
+        const direct = memo(fetch, { site: "t:11" });
+        return [first, h("p", { children: () => direct() })];
+      };
+      const scripts = await serve(server(defineServer(tag, view(server), { props: [] }), {}));
+      scripts.forEach(run);
+      fetched = 0;
+      defineClient(tag, view(client), { props: [] });
+      await tick();
+      expect(html(document.querySelector(tag)?.shadowRoot)).toBe(`${expected}<p>direct</p>`);
+      expect(fetched).toBe(0);
+    },
+  );
 
   it("data-om の値がすべて届くまで起動しない", async () => {
     const tag = nextTag();
