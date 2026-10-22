@@ -1,4 +1,4 @@
-import type { LoadTiming } from "./names.ts";
+import type { defaultLoads } from "./names.ts";
 import type { ClientNode, Slot } from "./nodes.ts";
 
 /** 属性の値から変換する props の型を表す。 */
@@ -30,7 +30,7 @@ export interface Ctx<M extends object = object> {
 export const elementInfo = Symbol.for("rinka.element");
 
 /** 要素のファイルの `export const load` に記述できる、デフォルトの起動タイミングを表す。 */
-export type DefaultLoad = Exclude<LoadTiming, "media">;
+export type DefaultLoad = (typeof defaultLoads)[number];
 
 /** ブラウザが読み込む要素のモジュールの URL と、要素のデフォルトの起動タイミングを表す。 */
 export interface Delivery {

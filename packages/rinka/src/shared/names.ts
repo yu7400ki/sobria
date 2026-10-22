@@ -79,8 +79,11 @@ export type ReservedPropOf<K extends string> = K extends LoadPropName
   ? "load:"
   : Extract<K, ReservedProp>;
 
+/** 要素のファイルの `export const load` に記述できる、デフォルトの起動タイミングの名前を列挙する。 */
+export const defaultLoads = ["load", "idle", "visible"] as const;
+
 /** 要素の起動のタイミングの名前を列挙する。 */
-export const loadTimings = ["load", "idle", "visible", "media"] as const;
+export const loadTimings = [...defaultLoads, "media"] as const;
 
 /** 要素の起動のタイミングの名前を表す。 */
 export type LoadTiming = (typeof loadTimings)[number];

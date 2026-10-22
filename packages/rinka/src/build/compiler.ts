@@ -2,12 +2,14 @@ import { MagicString, type SourceMap } from "magic-string";
 import type { ESTree } from "vite";
 
 import type { DefaultLoad, Delivery, ElementInfo, ElementOptions } from "../shared/element.ts";
+import { defaultLoads } from "../shared/names.ts";
 import {
   children,
   isFunction,
   lineColumn,
   lineStarts,
   follow,
+  moduleExportName,
   importedNames,
   insertInside,
   parseModule,
@@ -115,7 +117,7 @@ function defaultLoad(program: ESTree.Program, file: string): DefaultLoad {
     );
   for (const statement of program.body) {
     if (statement.type !== "ExportNamedDeclaration") continue;
-    if (statement.specifiers.some((specifier) => exportedName(specifier.exported) === "load")) {
+    if (statement.specifiers.some((specifier) => moduleExportName(specifier.exported) === "load")) {
       throw form();
     }
     const declaration = statement.declaration;
@@ -130,16 +132,12 @@ function defaultLoad(program: ESTree.Program, file: string): DefaultLoad {
       const init = declarator.init && literalOf(declarator.init);
       if (init?.type === "Literal" && isDefaultLoad(init.value)) return init.value;
       throw new CompileError(
-        `${file}: export const load には、"load"、"idle"、"visible" のどれかの文字列を記述してください。メディアクエリは、要素を配置するページで load:media に指定してください。`,
+        `${file}: export const load には、${defaultLoads.map((value) => `"${value}"`).join("、")} のどれかの文字列を記述してください。メディアクエリは、要素を配置するページで load:media に指定してください。`,
       );
     }
   }
   return "load";
 }
-
-/** export の指定子の、export する名前を返す。 */
-const exportedName = (node: ESTree.ModuleExportName): string =>
-  node.type === "Identifier" ? node.name : node.value;
 
 /** 分割代入のパターンが、`load` という名前の変数を宣言するかどうかを返す。 */
 function bindsLoad(pattern: ESTree.BindingPattern | ESTree.BindingRestElement): boolean {
@@ -174,7 +172,7 @@ function literalOf(node: ESTree.Expression): ESTree.Node {
 
 /** `value` が、`export const load` に記述できる起動タイミングかどうかを返す。 */
 const isDefaultLoad = (value: unknown): value is DefaultLoad =>
-  value === "load" || value === "idle" || value === "visible";
+  defaultLoads.some((load) => load === value);
 
 /** `rinka` から import した `memo` の呼び出しに、`{ site: "ファイル:行:列" }` を付与する。 */
 function addMemoSites(
