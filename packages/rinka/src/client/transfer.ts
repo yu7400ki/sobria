@@ -1,6 +1,7 @@
 import { createMemo, type SourceAccessor } from "@solidjs/signals";
 
-import { runSeeding } from "../shared/scope.ts";
+import { isPlainObject } from "../shared/objects.ts";
+import { runSeeding, type ScopedMemo } from "../shared/scope.ts";
 
 /** 起動スクリプトが `window.$rinka` に定義する受け口のうち、値の引き継ぎで使用するものを表す。 */
 interface Receiver {
@@ -86,21 +87,55 @@ export function whenArrived(
   return cancel;
 }
 
-/** ホストに引き継いだ値のうち、値が無いことを表すオブジェクトを除いたものを、キーごとに返す。 */
-export function transferredValues(id: string): Map<string, unknown> {
+/** サーバーから引き継いだ値と、その値を使用する関数を表す。 */
+export interface Transferred {
+  /** 引き継いだ値のうち、値が無いことを表すオブジェクトを除いたものを、キーごとに保持する。 */
+  readonly values: ReadonlyMap<string, unknown>;
+  /** 引き継いだ、属性にできない props の値を、props の名前ごとに保持する。 */
+  readonly props: object;
+  /** キーの値を引き継いでいれば、その値を最初の値にする memo を作成し、引き継いでいなければ memo を作成する。 */
+  readonly memo: ScopedMemo;
+  /** 開発時に、引き継いだ memo の値のうち、`memo` で使用しなかったものを警告する。 */
+  readonly finish: () => void;
+}
+
+/** ホストの ID が `id` の SSR したホストから、`<tag>` の要素に値を引き継ぐ。`id` が `null` なら、引き継ぐ値を空にする。 */
+export function beginTakeover(id: string | null, tag: string): Transferred {
   const store = receiver();
   const values = new Map<string, unknown>();
-  for (const [key, value] of Object.entries(store?.v[id] ?? {})) {
-    if (value !== store?.n) values.set(key, value);
+  if (id !== null) {
+    for (const [key, value] of Object.entries(store?.v[id] ?? {})) {
+      if (value !== store?.n) values.set(key, value);
+    }
   }
-  return values;
+  const passed = values.get("@p");
+  const used = new Set<string>();
+  return {
+    values,
+    props: isPlainObject(passed) ? passed : {},
+    memo: <T>(key: string, compute: (prev: T | undefined) => T | PromiseLike<T>) => {
+      if (!values.has(key)) return createMemo(compute);
+      used.add(key);
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+      return seededMemo(values.get(key) as T, compute);
+    },
+    finish: () => {
+      if (!import.meta.env?.DEV) return;
+      const unused = [...values.keys()].filter((key) => !key.startsWith("@") && !used.has(key));
+      if (unused.length > 0) {
+        console.warn(
+          `[rinka] <${tag}> は、サーバーから引き継いだ memo の値 ${unused.join(", ")} を使用しませんでした。サーバーとクライアントで描画が異なる可能性があります。`,
+        );
+      }
+    },
+  };
 }
 
 /**
  * 引き継いだ `value` を最初の値にする memo を作成する。最初の計算では、`compute` に直前の値として `undefined` を渡してシードとして 1 回呼び、
  * 戻り値と、投げた値を使用しない。2 回目以降の計算では、`compute` の戻り値を使用する。
  */
-export function seededMemo<T>(
+function seededMemo<T>(
   value: T,
   compute: (prev: T | undefined) => T | PromiseLike<T>,
 ): SourceAccessor<T> {

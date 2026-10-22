@@ -23,7 +23,7 @@ import {
 import { checkExposeName } from "../shared/expose-names.ts";
 import { customEventName, isEventProp, propToAttribute } from "../shared/names.ts";
 import type { ClientNode } from "../shared/nodes.ts";
-import { isFunction, isPlainObject } from "../shared/objects.ts";
+import { isFunction } from "../shared/objects.ts";
 import { createScope, scopedChild, withScope } from "../shared/scope.ts";
 import { applyAttribute, asClientNode, bind, callRef, insert, setter } from "./dom.ts";
 import {
@@ -34,7 +34,7 @@ import {
   placeInSlot,
   type HostSlots,
 } from "./slots.ts";
-import { seededMemo, transferredValues, whenArrived } from "./transfer.ts";
+import { beginTakeover, whenArrived } from "./transfer.ts";
 
 /** 要素を描画する関数を表す。 */
 export type ElementFn<P, M extends object> = (props: P, ctx: Ctx<M>) => unknown;
@@ -79,13 +79,19 @@ interface Instance {
   cancel?: () => void;
   /** 起動した後に呼ぶ、要素への `ref`。 */
   ref?: (host: HTMLElement) => unknown;
-  /** 一度起動したかどうか。SSR したホストは、最初の起動でだけ、サーバーから値を引き継ぐ。 */
-  started: boolean;
-  /** SSR したホストの Shadow DOM の中身を、描画の結果に置き換えたかどうか。 */
-  replaced: boolean;
-  /** 親が作り直した子要素なら、値を引き継ぐ SSR したホストの ID。 */
-  transfer?: string;
+  /** 値の引き継ぎの段階。 */
+  takeover: Takeover;
 }
+
+/**
+ * 値の引き継ぎの段階を表す。
+ * `waiting` はまだ起動していない段階で、SSR したホストは、最初の起動でだけサーバーから値を引き継ぐ。`from` は、親が作り直した子要素が値を引き継ぐ SSR したホストの ID である。
+ * `building` は、引き継いだ値で描画を組み立てている段階で、`done` は、Shadow DOM の中身を描画の結果に置き換えた後の段階である。
+ */
+type Takeover =
+  | { readonly phase: "waiting"; from?: string }
+  | { readonly phase: "building" }
+  | { readonly phase: "done" };
 
 const instances = new WeakMap<HTMLElement, Instance>();
 
@@ -177,30 +183,20 @@ export function defineElement<P, M extends object = object>(
     instance.run?.dispose();
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
     const id = transferId(host, instance);
-    instance.started = true;
-    const values = id === null ? new Map<string, unknown>() : transferredValues(id);
-    const passed = values.get("@p");
-    if (isPlainObject(passed)) {
-      for (const [name, value] of Object.entries(passed)) {
-        const prop = instance.props.get(name);
-        if (prop) write(prop, { value });
-      }
+    const transferred = beginTakeover(id, tag);
+    for (const [name, value] of Object.entries(transferred.props)) {
+      const prop = instance.props.get(name);
+      if (prop) write(prop, { value });
     }
-    const used = new Set<string>();
-    const scope = createScope(
-      <T>(key: string, compute: (prev: T | undefined) => T | PromiseLike<T>) => {
-        if (!values.has(key)) return createMemo(compute);
-        used.add(key);
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-        return seededMemo(values.get(key) as T, compute);
-      },
-      values,
-    );
+    const scope = createScope(transferred.memo, transferred.values);
     let target: ParentNode = shadow;
     if (id === null) {
       shadow.replaceChildren();
-      instance.replaced = true;
-    } else target = document.createDocumentFragment();
+      instance.takeover = { phase: "done" };
+    } else {
+      target = document.createDocumentFragment();
+      instance.takeover = { phase: "building" };
+    }
     runWithOwner(owner, () =>
       createRoot((dispose) => {
         const run: Run = { dispose, mounts: [], settled: false };
@@ -232,17 +228,8 @@ export function defineElement<P, M extends object = object>(
             if (target !== shadow) {
               shadow.replaceChildren(target);
               target = shadow;
-              instance.replaced = true;
-              if (import.meta.env?.DEV) {
-                const unused = [...values.keys()].filter(
-                  (key) => !key.startsWith("@") && !used.has(key),
-                );
-                if (unused.length > 0) {
-                  console.warn(
-                    `[rinka] <${tag}> は、サーバーから引き継いだ memo の値 ${unused.join(", ")} を使用しませんでした。サーバーとクライアントで描画が異なる可能性があります。`,
-                  );
-                }
-              }
+              instance.takeover = { phase: "done" };
+              transferred.finish();
             }
             run.settled = true;
             runMounts(host, run);
@@ -281,8 +268,7 @@ export function defineElement<P, M extends object = object>(
         slots: createHostSlots(),
         activate: (owner) => activate(this, instance, owner),
         owned: false,
-        started: false,
-        replaced: false,
+        takeover: { phase: "waiting" },
       };
       instances.set(this, instance);
     }
@@ -344,7 +330,7 @@ function locate(el: HTMLElement): Position {
 
 /**
  * owner の無い場所で作成して接続した要素を起動する。
- * SSR したホストは、`data-om` と、起動スクリプトが追加したキーの値がすべて届くまで起動しない。
+ * SSR したホストは、自分の `data-om` のキーと、`@c:キー` の値が指す子要素のホストの `data-om` のキーの値が、すべて届くまで起動しない。
  * 表示されている位置の上に定義済みの要素があれば、そのスロットの `<slot>` の owner の下で起動する。
  * `<slot>` が無ければ、その `<slot>` を作成した時点で、接続していれば起動する。その時点でスロットの位置が変わっていれば、今の位置のスロットに登録し直す。
  * SSR したホストの Shadow DOM の中にあり、そのホストが Shadow DOM の中身をまだ置き換えていなければ、起動しない。そのホストが中身を置き換えるときに、子要素も作り直す。
@@ -367,7 +353,12 @@ function attach(el: HTMLElement, instance: Instance): void {
   }
   const position = locate(el);
   if (position.kind === "shadow") {
-    if (position.host.hasAttribute("data-oh") && !instanceOf(position.host)?.replaced) return;
+    if (
+      position.host.hasAttribute("data-oh") &&
+      instanceOf(position.host)?.takeover.phase !== "done"
+    ) {
+      return;
+    }
     instance.activate(null);
     return;
   }
@@ -391,8 +382,8 @@ function attach(el: HTMLElement, instance: Instance): void {
 }
 
 /** 要素がまだ起動しておらず、SSR したホストか、親が作り直した子要素なら、値を引き継ぐホストの ID を返す。 */
-const transferId = (host: HTMLElement, instance: Instance): string | null =>
-  instance.started ? null : (host.getAttribute("data-oh") ?? instance.transfer ?? null);
+const transferId = (host: HTMLElement, { takeover }: Instance): string | null =>
+  takeover.phase === "waiting" ? (host.getAttribute("data-oh") ?? takeover.from ?? null) : null;
 
 const instanceOf = (node: Node): Instance | undefined =>
   node instanceof HTMLElement ? instances.get(node) : undefined;
@@ -417,7 +408,7 @@ export function createElementInstance(
   const child = scopedChild(site);
   const transfer: unknown =
     child?.data instanceof Map ? child.data.get(`@c:${child.key}`) : undefined;
-  if (typeof transfer === "string") instance.transfer = transfer;
+  if (typeof transfer === "string") instance.takeover = { phase: "waiting", from: transfer };
   const owner = getOwner();
   const derive = (read: () => unknown): Source => ({ read: owner ? createMemo(read) : read });
   for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(props))) {

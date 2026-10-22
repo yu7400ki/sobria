@@ -350,6 +350,40 @@ describe("Shadow DOM の中の子要素（親の描画が保留中か、起動�
     await tick();
     expect(rendered).toBe(1);
   });
+
+  it("最初の描画が保留中のまま起動し直した要素は、サーバーの値を引き継がずに計算する", async () => {
+    const tag = nextTag();
+    const scripts = await serve(
+      server(defineServer(tag, viewWith(server, "", "t:20", fetchAnn), { props: [] }), {}),
+    );
+    scripts.forEach(run);
+    let fetched = 0;
+    const fetch = () => {
+      if (!isSeeding()) fetched++;
+      return Promise.resolve("cli");
+    };
+    const { promise, resolve } = Promise.withResolvers<string>();
+    defineClient(
+      tag,
+      () => {
+        const value = memo(fetch, { site: "t:20" });
+        const pending = memo(() => promise);
+        return client("p", { children: () => `${value()} ${pending()}` });
+      },
+      { props: [] },
+    );
+    await tick();
+    const host = document.querySelector(tag);
+    const container = host?.parentElement;
+    host?.remove();
+    await tick();
+    if (host) container?.append(host);
+    await tick();
+    resolve("p");
+    await tick();
+    expect(fetched).toBe(1);
+    expect(html(host?.shadowRoot)).toBe("<p>cli p</p>");
+  });
 });
 
 describe("入れ子の子要素の引き継ぎ", () => {
