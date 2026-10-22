@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { transformSource } from "../../src/build/compiler.ts";
+import { CompileError, transformSource } from "../../src/build/compiler.ts";
 import { takeGate } from "../../src/client/internal.ts";
 import { runSeeding } from "../../src/shared/scope.ts";
 
@@ -73,5 +73,123 @@ export async function none() { return 1; }`;
     const seeded = runSeeding(() => takeGate())(value);
     const settled = await Promise.race([seeded.then(() => "settled"), Promise.resolve("pending")]);
     expect(settled).toBe("pending");
+  });
+});
+
+/** 要素のファイル `src/elements/x.tsx`（タグ名 `app-x`）として `code` を変換する。 */
+function element(code: string) {
+  return transformSource(code, {
+    file: "src/elements/x.tsx",
+    lang: "tsx",
+    client: false,
+    element: { tag: "app-x" },
+  });
+}
+
+/** 要素のファイルとして `code` を変換し、受け付ける props の名前の一覧を返す。 */
+const props = (code: string) => element(code).element?.options.props;
+
+/** 要素のファイルとして `code` を変換する関数を返す。 */
+const fails = (code: string) => () => element(code);
+
+describe("Props の型の解析", () => {
+  it("Props の各メンバーを、型の記述から分類する", () => {
+    const { element: info } = element(`import type { Slot } from "rinka";
+type Props = {
+  userId: number;
+  compact?: boolean;
+  label: string;
+  data?: { a: 1 };
+  onSelect?: (user: string) => void;
+  open(): void;
+  header?: JSX.Element;
+  footer?: Slot;
+  children?: JSX.Element;
+  mode?: "a" | "b";
+  size?: 1 | 2 | undefined | null;
+  mixed?: string | number;
+  handler?: Handler;
+};
+export default function X(props: Props) { return <p />; }`);
+    expect(info?.options).toEqual({
+      props: [
+        "userId",
+        "compact",
+        "label",
+        "data",
+        "onSelect",
+        "open",
+        "mode",
+        "size",
+        "mixed",
+        "handler",
+      ],
+      types: {
+        userId: "number",
+        compact: "boolean",
+        label: "string",
+        mode: "string",
+        size: "number",
+      },
+      slots: ["header", "footer"],
+      functionProps: ["onSelect", "open"],
+    });
+  });
+
+  it("interface と、引数の型リテラルと、rinka の Props<T> で包んだ型を解析する", () => {
+    expect(
+      props(`export interface Props { a: string }
+export default function X(props: Props) { return <p />; }`),
+    ).toEqual(["a"]);
+    expect(props(`export default function X(props: { b: number }) { return <p />; }`)).toEqual([
+      "b",
+    ]);
+    expect(
+      props(`import type { Props as P } from "rinka";
+type CardProps = P<{ c: boolean }>;
+export default function X(props: CardProps) { return <p />; }`),
+    ).toEqual(["c"]);
+    expect(props(`export default function X() { return <p />; }`)).toEqual([]);
+  });
+
+  it("解析できない型と、props にできない名前は、ビルドのエラーにする", () => {
+    const end = "export default function X(props: Props) { return <p />; }";
+    expect(fails(`import type { Props } from "./props.ts";\n${end}`)).toThrow(CompileError);
+    expect(fails(`type A = { a: string }; type Props = A & { b: number };\n${end}`)).toThrow(
+      /Props/,
+    );
+    expect(
+      fails(
+        `import type { Props as P } from "rinka"; type Base = { a: string }; type Props = P<Base>;\n${end}`,
+      ),
+    ).toThrow(/型リテラル/);
+    expect(fails(`export default function X({ a }: { a: string }) { return <p />; }`)).toThrow(
+      /分割代入/,
+    );
+    expect(fails(`type Props = { ref: string };\n${end}`)).toThrow(/"ref"/);
+    expect(fails(`type Props = { title: string };\n${end}`)).toThrow(/"title"/);
+  });
+});
+
+describe("要素の登録", () => {
+  it("default export した関数を、タグ名と Props の解析の結果を渡して要素を登録する呼び出しにする", () => {
+    const { code } = element(`type Props = { a: string; onPick?: () => void };
+export default function X(props: Props) { return <p />; }`);
+    expect(code).toContain('import { defineElement as __rinka_defineElement } from "rinka";');
+    expect(code).toContain("function X(props: Props) { return <p />; }");
+    expect(code).not.toContain("export default function");
+    expect(code).toContain(
+      'export default __rinka_defineElement("app-x", X, {"props":["a","onPick"],"types":{"a":"string"},"functionProps":["onPick"]});',
+    );
+  });
+
+  it("関数の宣言を default export していない要素のファイルは、ビルドのエラーにする", () => {
+    expect(() => element("export default (props: {}) => <p />;")).toThrow(
+      /export default function/,
+    );
+    expect(() => element("export default function (props: {}) { return <p />; }")).toThrow(
+      /export default function/,
+    );
+    expect(() => element("export const x = 1;")).toThrow(/export default function/);
   });
 });
