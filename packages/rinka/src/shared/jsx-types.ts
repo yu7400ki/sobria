@@ -4,6 +4,7 @@ import type {
   NativeAttributes,
   SvgTag,
 } from "./jsx-attributes.ts";
+import type { EventPropName } from "./names.ts";
 import type { ClientNode, ServerNode, Slot, SlotContent } from "./nodes.ts";
 
 /** HTML のタグの名前を表す。 */
@@ -27,40 +28,9 @@ export interface ElementOnlyRef {
   ref?: "ref は、要素のファイルでだけ使用できます。";
 }
 
-/** 英字の大文字を表す。 */
-type UpperLetter =
-  | "A"
-  | "B"
-  | "C"
-  | "D"
-  | "E"
-  | "F"
-  | "G"
-  | "H"
-  | "I"
-  | "J"
-  | "K"
-  | "L"
-  | "M"
-  | "N"
-  | "O"
-  | "P"
-  | "Q"
-  | "R"
-  | "S"
-  | "T"
-  | "U"
-  | "V"
-  | "W"
-  | "X"
-  | "Y"
-  | "Z";
-
 /** 属性の名前を検査しないタグで、`ref` と、`on` と英字の大文字で始まる名前の型を、要素のファイルでだけ記述できることを示すメッセージの型にする。 */
 export type ElementOnlyLoose = ElementOnlyRef & {
-  readonly [
-    handler: `on${UpperLetter}${string}`
-  ]: "イベントハンドラーは、要素のファイルでだけ使用できます。";
+  readonly [handler: EventPropName]: "イベントハンドラーは、要素のファイルでだけ使用できます。";
 };
 
 /** 要素のファイルの外の JSX で、HTML と SVG のタグの `ref` と、SVG のタグのイベントハンドラーを型エラーにする型を表す。 */

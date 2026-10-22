@@ -1,12 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   customEventName,
+  isAriaOrDataProp,
   isEventProp,
   listenerEventName,
   propToAttribute,
   reservedProp,
   tagFromPath,
+  type AriaOrDataPropName,
+  type EventPropName,
 } from "../../src/shared/names.ts";
 
 describe("propToAttribute", () => {
@@ -59,5 +62,31 @@ describe("特別な props の名前", () => {
 
   it("要素のディレクトリの直下の index のファイルはエラーにする", () => {
     expect(() => tagFromPath("app", "index.tsx")).toThrow("要素のファイル index.tsx");
+  });
+});
+
+describe("名前の規則の実行時の判定と型", () => {
+  const names = [
+    "onClick",
+    "on",
+    "on1",
+    "on_x",
+    "once",
+    "ariaLabel",
+    "aria1",
+    "ariaÉ",
+    "dataId",
+    "database",
+  ] as const;
+  type Name = (typeof names)[number];
+
+  it("isEventProp と EventPropName は、on と英字の大文字で始まる名前だけを選ぶ", () => {
+    expect(names.filter((name) => isEventProp(name))).toEqual(["onClick"]);
+    expectTypeOf<Extract<Name, EventPropName>>().toEqualTypeOf<"onClick">();
+  });
+
+  it("isAriaOrDataProp と AriaOrDataPropName は、aria か data と英字の大文字で始まる名前だけを選ぶ", () => {
+    expect(names.filter((name) => isAriaOrDataProp(name))).toEqual(["ariaLabel", "dataId"]);
+    expectTypeOf<Extract<Name, AriaOrDataPropName>>().toEqualTypeOf<"ariaLabel" | "dataId">();
   });
 });

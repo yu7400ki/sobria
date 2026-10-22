@@ -33,8 +33,46 @@ export function tagFromPath(prefix: string, path: string): string {
   return tag;
 }
 
+/** 英字の大文字を表す。 */
+export type UpperLetter =
+  | "A"
+  | "B"
+  | "C"
+  | "D"
+  | "E"
+  | "F"
+  | "G"
+  | "H"
+  | "I"
+  | "J"
+  | "K"
+  | "L"
+  | "M"
+  | "N"
+  | "O"
+  | "P"
+  | "Q"
+  | "R"
+  | "S"
+  | "T"
+  | "U"
+  | "V"
+  | "W"
+  | "X"
+  | "Y"
+  | "Z";
+
 /** rinka が予約している props の名前の種類を表す。`load:` は `load:` で始まるすべての名前を表す。 */
 export type ReservedProp = "ref" | "key" | "load:";
+
+/** 要素の起動のタイミングの名前である。`media` だけがメディアクエリの値を受け取る。 */
+export const loadTimings = ["load", "idle", "visible", "media"] as const;
+
+/** 要素の起動のタイミングの名前を表す。 */
+export type LoadTiming = (typeof loadTimings)[number];
+
+/** `load:` で始まる props の名前を表す。 */
+export type LoadPropName = `load:${string}`;
 
 /** 予約された props の名前なら、その種類を返す。 */
 export function reservedProp(name: string): ReservedProp | undefined {
@@ -42,8 +80,23 @@ export function reservedProp(name: string): ReservedProp | undefined {
   return name.startsWith("load:") ? "load:" : undefined;
 }
 
-/** `on` の直後に大文字が続く、イベントの props の名前かどうかを返す。 */
-export const isEventProp = (name: string): boolean => /^on[A-Z]/.test(name);
+/** 名前 `K` の予約された props の種類を表す。予約されていなければ `never` を表す。 */
+export type ReservedPropOf<K extends string> = K extends LoadPropName
+  ? "load:"
+  : Extract<K, ReservedProp>;
+
+/** `on` と英字の大文字で始まる、イベントの props の名前を表す。 */
+export type EventPropName = `on${UpperLetter}${string}`;
+
+/** `on` と英字の大文字で始まる、イベントの props の名前かどうかを返す。 */
+export const isEventProp = (name: string): name is EventPropName => /^on[A-Z]/.test(name);
+
+/** `aria` か `data` と英字の大文字で始まる名前を表す。 */
+export type AriaOrDataPropName = `${"aria" | "data"}${UpperLetter}${string}`;
+
+/** `aria` か `data` と英字の大文字で始まる名前かどうかを返す。 */
+export const isAriaOrDataProp = (name: string): name is AriaOrDataPropName =>
+  /^(aria|data)[A-Z]/.test(name);
 
 /** 要素が発行する `CustomEvent` の名前を、イベントの props の名前から返す。`onSelect` は `select`、`onLikeClick` は `like-click` になる。 */
 export const customEventName = (prop: string): string => toKebabCase(prop.slice(2));

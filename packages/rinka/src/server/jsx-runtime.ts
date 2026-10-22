@@ -9,6 +9,7 @@ import type {
   ManagedAttributes,
   ServerChild,
 } from "../shared/jsx-types.ts";
+import type { LoadTiming } from "../shared/names.ts";
 import type { ClientNode, ServerNode } from "../shared/nodes.ts";
 import { scopedChild } from "../shared/scope.ts";
 import { asNode, asServerNode, createNode } from "./tree.ts";
@@ -33,12 +34,9 @@ export function Fragment(props: { children?: unknown }): ServerNode {
 }
 
 /** サーバーの JSX で、要素が Props とホストの属性に加えて受け付ける、起動のタイミングの props を表す。 */
-interface LoadAttributes {
-  "load:load"?: true;
-  "load:idle"?: true;
-  "load:visible"?: true;
-  "load:media"?: string;
-}
+type LoadAttributes = {
+  [K in LoadTiming as `load:${K}`]?: K extends "media" ? string : true;
+};
 
 /** サーバーの JSX で、要素が Props とホストの属性に加えて受け付ける props を表す。 */
 type ServerHost = ElementOnlyRef & LoadAttributes;

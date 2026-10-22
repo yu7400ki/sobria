@@ -16,7 +16,7 @@ import {
   type Ctx,
   type ElementComponent,
 } from "../shared/element.ts";
-import { isEventProp, propToAttribute } from "../shared/names.ts";
+import { isEventProp, propToAttribute, reservedProp } from "../shared/names.ts";
 import { isFunction } from "../shared/objects.ts";
 import { createScope, withScope, type ScopedChild } from "../shared/scope.ts";
 import { BOUNDARIES_KEY, childKey, PROPS_KEY } from "../shared/transfer-keys.ts";
@@ -593,7 +593,7 @@ class Renderer {
       }
       for (const name of Object.keys(descriptors)) {
         if (options.props.includes(name) || slotNames.has(name) || name === "ref") continue;
-        if (name.startsWith("load:") || (name === "slot" && ctx.slot !== undefined)) continue;
+        if (reservedProp(name) === "load:" || (name === "slot" && ctx.slot !== undefined)) continue;
         const raw = read(name);
         if (isEventProp(name) && isFunction(raw)) continue;
         text += attribute(name, this.value(raw, ctx, tracked));

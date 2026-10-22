@@ -1,6 +1,13 @@
 import { formMembers, lifecycleCallbacks } from "./host-members.ts";
 import { htmlElementMembers } from "./html-element-members.generated.ts";
-import { propToAttribute, reservedProp, type ReservedProp } from "./names.ts";
+import {
+  isAriaOrDataProp,
+  propToAttribute,
+  reservedProp,
+  type AriaOrDataPropName,
+  type ReservedProp,
+  type ReservedPropOf,
+} from "./names.ts";
 
 /** ホストで意味を持つ属性の名前を、props にできない理由と代わりの名前の例に対応させる。名前は小文字で照合する。 */
 const hostAttributes = {
@@ -90,7 +97,7 @@ const hostMembers = new Map<string, string>([
 function reasonOf(name: string): readonly [reason: string, alternative?: string] | undefined {
   const reserved = reservedProp(name);
   if (reserved) return reservedProps[reserved];
-  if (/^(aria|data)[A-Z]/.test(name)) return ariaOrData;
+  if (isAriaOrDataProp(name)) return ariaOrData;
   const lower = name.toLowerCase();
   if (isHostAttribute(lower)) return hostAttributes[lower];
   const member = hostMembers.get(name);
@@ -125,16 +132,6 @@ type HostMember =
   | (typeof formMembers)[number]
   | (typeof lifecycleCallbacks)[number];
 
-/** 名前 `K` の予約された props の種類を表す。予約されていなければ `never` を表す。 */
-type ReservedOf<K extends string> = K extends `load:${string}` ? "load:" : Extract<K, ReservedProp>;
-
-/** 名前 `K` が `aria` か `data` と大文字で始まるなら `true` を表す。 */
-type IsAriaOrData<K extends string> = K extends `${"aria" | "data"}${infer First}${string}`
-  ? First extends Lowercase<First>
-    ? false
-    : true
-  : false;
-
 /** 名前 `K` がホストのプロパティになる理由を表す。ホストのプロパティにならなければ `never` を表す。 */
 type MemberReason<K extends string> = K extends (typeof lifecycleCallbacks)[number]
   ? typeof lifecycleReason
@@ -145,15 +142,15 @@ type MemberReason<K extends string> = K extends (typeof lifecycleCallbacks)[numb
       : never;
 
 /** 名前 `K` を props にできない理由と、代わりの名前の例を表す。props にできる名前なら `never` を表す。 */
-type ReasonOf<K extends string> = [ReservedOf<K>] extends [never]
-  ? IsAriaOrData<K> extends true
+type ReasonOf<K extends string> = [ReservedPropOf<K>] extends [never]
+  ? K extends AriaOrDataPropName
     ? typeof ariaOrData
     : Lowercase<K> extends HostAttribute
       ? (typeof hostAttributes)[Lowercase<K>]
       : [MemberReason<K>] extends [never]
         ? never
         : readonly [MemberReason<K>]
-  : (typeof reservedProps)[ReservedOf<K>];
+  : (typeof reservedProps)[ReservedPropOf<K>];
 
 /** 理由 `R` から、props にできない名前 `K` のメッセージを作成する。 */
 type ReasonMessage<K extends string, R> = R extends readonly [

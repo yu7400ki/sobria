@@ -9,6 +9,7 @@ import type {
   KeyAttribute,
   ManagedAttributes,
 } from "../shared/jsx-types.ts";
+import type { LoadPropName } from "../shared/names.ts";
 import type { ClientNode } from "../shared/nodes.ts";
 import { asClientNode, createNode, type Child, type Component } from "./dom.ts";
 import { createElementInstance } from "./element.ts";
@@ -58,7 +59,7 @@ type ClientHost<C, P> = ("ref" extends keyof P
   ? unknown
   : { ref?: (el: ElementRef<C>) => unknown } & Omit<EventHandlers<ElementRef<C>>, keyof P>) & {
   readonly [
-    load: `load:${string}`
+    load: LoadPropName
   ]: "load:* は、サーバーのファイルでだけ記述できます。要素の起動のタイミングは、要素を配置したページで指定してください。";
 };
 
