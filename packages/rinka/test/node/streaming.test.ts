@@ -419,3 +419,32 @@ describe("isBot", () => {
     expect(isBot(undefined)).toBe(false);
   });
 });
+
+describe("出力の順序", () => {
+  it("シェルの中の Errored が、要素の中の後送りの境界が解決した後で受け止めても、文書の先頭から出力する", async () => {
+    const slow = deferred("s");
+    const { Fail, reject } = failing();
+    const Card = defineElement(
+      "x-caught",
+      () => jsx(Loading, { fallback: "f", children: jsx(slow.Slow, {}) }),
+      { props: [] },
+    );
+    const reading = read(
+      renderToStream(
+        jsx("main", {
+          children: jsx(Errored, {
+            fallback: () => "caught",
+            children: [jsx(Card, {}), jsx(Fail, {})],
+          }),
+        }),
+      ),
+    );
+    await tick();
+    slow.resolve();
+    await tick();
+    reject();
+    const chunks = await reading;
+    expect(chunks[0]).toMatch(/^<!doctype html>/);
+    expect(chunks.join("")).toContain("<main>caught</main>");
+  });
+});
