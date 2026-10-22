@@ -64,3 +64,17 @@ export type ElementRef<C> =
   C extends ElementComponent<infer P, infer M>
     ? Omit<HTMLElement, keyof M> & M & Omit<P, SlotKeys<P>>
     : never;
+
+/** `fn` に、タグ名と `defineElement` に渡したオプションを付与した要素コンポーネントを作成する。 */
+export function createElementComponent<P, M extends object>(
+  tag: string,
+  fn: (props: P, ctx: Ctx<M>) => unknown,
+  options: ElementOptions,
+): ElementComponent<P, M> {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  const component = ((props: P, ctx: Ctx<M>) => fn(props, ctx)) as (
+    props: P,
+    ctx: Ctx<M>,
+  ) => ClientNode;
+  return Object.assign(component, { [elementInfo]: { tag, options } });
+}

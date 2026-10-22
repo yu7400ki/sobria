@@ -13,6 +13,7 @@ import {
 } from "@solidjs/signals";
 
 import {
+  createElementComponent,
   elementInfo,
   type AttributeType,
   type Ctx,
@@ -22,7 +23,8 @@ import {
 import { checkExposeName } from "../shared/expose-names.ts";
 import { customEventName, isEventProp, propToAttribute } from "../shared/names.ts";
 import type { ClientNode } from "../shared/nodes.ts";
-import { applyAttribute, asClientNode, bind, callRef, insert, isFunction, setter } from "./dom.ts";
+import { isFunction } from "../shared/objects.ts";
+import { applyAttribute, asClientNode, bind, callRef, insert, setter } from "./dom.ts";
 import {
   activateInSlot,
   addChild,
@@ -264,12 +266,7 @@ export function defineElement<P, M extends object = object>(
   }
 
   customElements.define(tag, RinkaElement);
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-  const component = ((props: P, ctx: Ctx<M>) => fn(props, ctx)) as (
-    props: P,
-    ctx: Ctx<M>,
-  ) => ClientNode;
-  return Object.assign(component, { [elementInfo]: { tag, options } });
+  return createElementComponent(tag, fn, options);
 }
 
 /** 要素を配置するスロットを表す。`parent` は定義済みの要素のインスタンス、`name` はスロットの名前である。 */

@@ -1,7 +1,8 @@
 import { createErrorBoundary, createLoadingBoundary } from "@solidjs/signals";
 
 import type { ClientNode } from "../shared/nodes.ts";
-import { asClientNode, isFunction, type Child } from "./dom.ts";
+import { isFunction } from "../shared/objects.ts";
+import { asClientNode, type Child } from "./dom.ts";
 
 /** 関数で渡された内容は、境界の中で呼び出して評価する。 */
 const read = (value: Child): Child => (isFunction(value) ? value() : value);

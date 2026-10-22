@@ -3,6 +3,7 @@ import { createRenderEffect, onCleanup, runWithOwner, untrack } from "@solidjs/s
 import { attributeValue, tagAttributeName } from "../shared/attributes.ts";
 import { isEventProp, listenerEventName } from "../shared/names.ts";
 import type { ClientNode } from "../shared/nodes.ts";
+import { isFunction } from "../shared/objects.ts";
 import { registerSlot } from "./slots.ts";
 
 /** DOM に挿入できる値を表す。関数は、値が変化するたびに挿入し直す領域になる。 */
@@ -27,10 +28,6 @@ const properties: Readonly<Record<string, readonly string[]>> = {
   select: ["value"],
   option: ["selected"],
 };
-
-/** 関数かどうかを返す。 */
-export const isFunction = (value: unknown): value is (...args: unknown[]) => unknown =>
-  typeof value === "function";
 
 /** JSX を評価した実行時の値（DOM のノードと、挿入できる値）を、`ClientNode` の型として扱う。 */
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion
