@@ -1,17 +1,17 @@
 import type { SourceAccessor } from "@solidjs/signals";
 
-/** キーで識別する memo を作成する関数を表す。`fn` は memo の関数である。 */
+/** キーで識別する memo を作成する関数を表す。`fn` は、直前の値を受け取って、memo の新しい値を返す。 */
 export type ScopedMemo = <T>(
   key: string,
   fn: (prev: T | undefined) => T | PromiseLike<T>,
 ) => SourceAccessor<T>;
 
-/** 要素のインスタンスの描画の範囲を表す。範囲の中で作成する、キーのある memo の作り方を決める。 */
+/** 要素のインスタンスの描画の範囲を表す。範囲の中で作成する、キーのある memo の作り方を決定する。 */
 export interface MemoScope {
   readonly memo: ScopedMemo;
 }
 
-/** 描画の範囲ごとに、呼び出し箇所ごとの作成した memo の数を保持する。 */
+/** 描画の範囲ごとに、呼び出し箇所ごとに作成した memo の数を保持する。 */
 const counts = new WeakMap<MemoScope, Map<string, number>>();
 
 /** `memo` でキーのある memo を作成する、描画の範囲を作成する。 */
@@ -40,7 +40,7 @@ export interface MemoOptions {
 }
 
 /**
- * 描画の範囲の中なら、範囲の作り方で memo を作成して返す。キーは、明示的なキーか、呼び出し箇所とその箇所で何回目に作成したかである。
+ * 描画の範囲の中なら、キーを決定し、範囲の `memo` で memo を作成して返す。キーは、明示的なキーか、呼び出し箇所とその箇所で何回目に作成したかである。
  * 範囲の外か、キーも呼び出し箇所も無ければ `undefined` を返す。
  */
 export function scopedMemo<T>(
@@ -57,10 +57,12 @@ export function scopedMemo<T>(
   return current.memo(`${options.site}#${count}`, fn);
 }
 
-/** 引き継いだ値を使う memo の、最初の計算（シード）の最中かどうかを返す。 */
+/**
+ * シードの最中かどうかを返す。シードは、サーバーから引き継いだ値を最初の値にした memo で、関数を 1 回実行して依存を登録する計算である。
+ */
 export const isSeeding = (): boolean => seeding;
 
-/** `fn` をシードとして実行する。 */
+/** `fn` を実行する。実行している間は、`isSeeding` が真を返す。 */
 export function runSeeding<T>(fn: () => T): T {
   const previous = seeding;
   seeding = true;

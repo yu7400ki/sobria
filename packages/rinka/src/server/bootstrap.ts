@@ -1,6 +1,6 @@
 /**
- * ページの `<head>` に出力する起動スクリプト。`window.$rinka` に受け口を定義する。既に `$rinka` があれば、受け口を追加する。
- * `d(ホストの ID, 値)` はホストに引き継ぐ値を保持して、待っている関数に知らせる。`r(spec)` は 1 つの境界の差し替えの集合を適用する。
+ * ページの `<head>` に出力する起動スクリプトである。`window.$rinka` に受け口を定義する。既に `$rinka` があれば、受け口を追加する。
+ * `d(ホストの ID, 値のオブジェクト)` は、ホストに引き継ぐ値を保持して、待っている関数に通知する。`r(spec)` は、1 つの境界の中身と、その境界に属する差し替えを適用する。
  */
 export const bootstrap = `<script>window.$rinka=Object.assign(window.$rinka||{},{v:{},l:{},
 d(id,o){Object.assign(this.v[id]||(this.v[id]={}),o);(this.l[id]||[]).slice().forEach(f=>f())},
