@@ -109,3 +109,34 @@ export function checkPropNames(names: readonly string[]): string[] {
   }
   return errors;
 }
+
+/** ホストのプロパティになる名前を表す。`children` は含めない。 */
+type HostMember =
+  | Exclude<(typeof htmlElementMembers)[number], "children">
+  | (typeof formMembers)[number]
+  | (typeof lifecycleCallbacks)[number];
+
+/** `K` が props にできない名前なら `true` を表す。 */
+type Forbidden<K extends string> = K extends `load:${string}` | "ref" | "key"
+  ? true
+  : Lowercase<K> extends HostAttribute
+    ? true
+    : K extends HostMember
+      ? true
+      : K extends `${"aria" | "data"}${infer First}${string}`
+        ? First extends Lowercase<First>
+          ? false
+          : true
+        : false;
+
+/** Props の型 `T` のうち、props にできない名前のキーの型を、理由を示すメッセージの型にする。 */
+type CheckedProps<T> = {
+  [K in keyof T]: K extends string
+    ? Forbidden<K> extends true
+      ? `"${K}" は props の名前にできません。`
+      : T[K]
+    : T[K];
+};
+
+/** 要素の Props の型 `T` を表す。`T` のキーに props にできない名前があると、型エラーになる。 */
+export type Props<T extends CheckedProps<T>> = T;
