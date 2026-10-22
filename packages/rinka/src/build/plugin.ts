@@ -163,7 +163,9 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
 /** `path` が `dir` の中にあれば、`dir` からの `/` で区切った相対パスを返す。 */
 function inside(dir: string, path: string): string | undefined {
   const inner = relative(dir, path);
-  return isAbsolute(inner) || inner.startsWith("..") ? undefined : inner.split(sep).join("/");
+  return isAbsolute(inner) || inner === ".." || inner.startsWith(`..${sep}`)
+    ? undefined
+    : inner.split(sep).join("/");
 }
 
 /** `dir` の中の要素のファイルを走査し、2 つのファイルが同じタグになればエラーにする。 */
@@ -180,7 +182,7 @@ function checkTags(dir: string, tagOf: (path: string, lang: Lang) => string | un
     const other = owners.get(tag);
     if (other !== undefined) {
       throw new Error(
-        `要素のディレクトリの ${other} と ${file} は、どちらもタグ名 ${tag} になります。どちらかのファイル名を変更してください。`,
+        `要素のファイル ${other} と ${file} は、どちらもタグ名 ${tag} になります。どちらかのファイル名を変更してください。`,
       );
     }
     owners.set(tag, file);

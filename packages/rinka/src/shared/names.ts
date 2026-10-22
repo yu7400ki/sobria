@@ -19,7 +19,7 @@ export function tagFromPath(prefix: string, path: string): string {
   if (segments.at(-1) === "index") {
     if (segments.length === 1) {
       throw new Error(
-        `要素のディレクトリの ${path} は、ディレクトリの名前が無いので、タグ名を決定できません。ファイル名を変更してください。`,
+        `要素のファイル ${path} は、ディレクトリの名前が無いので、タグ名を決定できません。ファイル名を変更してください。`,
       );
     }
     segments.pop();
@@ -27,7 +27,7 @@ export function tagFromPath(prefix: string, path: string): string {
   const tag = [prefix, ...segments.map(toKebabCase)].join("-");
   if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(tag)) {
     throw new Error(
-      `要素のディレクトリの ${path} のタグ名 ${tag} は、Custom Element の名前にできません。ファイル名とディレクトリ名には、英数字、-、_ だけを使用してください。`,
+      `タグ名 ${tag}（要素のファイル ${path}）は、Custom Element の名前にできません。ファイル名とディレクトリ名には、英数字、-、_ だけを使用してください。`,
     );
   }
   return tag;

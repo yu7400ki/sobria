@@ -30,7 +30,7 @@ describe("tagFromPath", () => {
 
   it("Custom Element の名前にできないファイル名では、パスとタグ名を示すエラーを投げる", () => {
     expect(() => tagFromPath("app", "カード.tsx")).toThrow(
-      "要素のディレクトリの カード.tsx のタグ名 app-カード は、Custom Element の名前にできません。",
+      "タグ名 app-カード（要素のファイル カード.tsx）は、Custom Element の名前にできません。",
     );
     expect(() => tagFromPath("app", "user card.tsx")).toThrow("user card.tsx");
   });
@@ -58,6 +58,6 @@ describe("特別な props の名前", () => {
   });
 
   it("要素のディレクトリの直下の index のファイルはエラーにする", () => {
-    expect(() => tagFromPath("app", "index.tsx")).toThrow("要素のディレクトリの index.tsx");
+    expect(() => tagFromPath("app", "index.tsx")).toThrow("要素のファイル index.tsx");
   });
 });

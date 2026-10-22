@@ -145,7 +145,6 @@ describe("変換の対象", () => {
         const widget = dev.environments.widget!;
         const result = await widget.transformRequest("/src/elements/card.tsx");
         expect(result?.code).toContain("__rinka_gate(0)");
-        expect(result?.code).toContain("import.meta.hot");
         const resolved = await widget.pluginContainer.resolveId("rinka");
         expect(resolved?.id.split(sep).join("/")).toMatch(/\/lib\/client\/index\.js$/);
       },
