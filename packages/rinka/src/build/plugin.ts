@@ -8,6 +8,7 @@ import { isRunnableDevEnvironment, type Environment, type Plugin, type ViteDevSe
 
 import { reloadEvent } from "../shared/hmr.ts";
 import { tagFromPath } from "../shared/names.ts";
+import type { CreateApp, Route } from "../shared/routes.ts";
 import type { Lang } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
 import { entries, oxc } from "./entries.ts";
@@ -22,7 +23,7 @@ export interface RinkaOptions {
 }
 
 /** 環境ごとの実行時のコードの入口を、`lib/` からの相対パスで表す。 */
-const runtimes: Readonly<Record<"client" | "server", Readonly<Record<string, string>>>> = {
+export const runtimes: Readonly<Record<"client" | "server", Readonly<Record<string, string>>>> = {
   client: {
     [entries.main]: "client/index.js",
     [entries.jsxRuntime]: "client/jsx-runtime.js",
@@ -51,14 +52,6 @@ const ROUTES = `\0${entries.routes}`;
 
 /** 開発中のページの `<head>` に出力する、Vite のクライアントを読み込むスクリプトである。 */
 const VITE_CLIENT = '<script type="module" src="/@vite/client"></script>';
-
-/** `ssr` の環境で読み込んだ `rinka/internal` の、アプリを作成する関数を表す。 */
-interface InternalModule {
-  readonly createApp: (
-    routes: unknown,
-    options: { readonly head: string; readonly onError: (error: unknown) => Response },
-  ) => { readonly fetch: (request: Request) => Response | Promise<Response> };
-}
 
 /** 変換するプロジェクトのファイルの、モジュールのパス、ルートからの相対パス、言語を表す。 */
 interface ProjectFile {
@@ -238,10 +231,10 @@ function appMiddleware(
     }
     const { runner } = environment;
     (async () => {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const { routes } = (await runner.import(entries.routes)) as { readonly routes: unknown };
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const { createApp } = (await runner.import(entries.internal)) as InternalModule;
+      const { routes } = await runner.import<{ readonly routes: readonly Route[] }>(entries.routes);
+      const { createApp } = await runner.import<{ readonly createApp: CreateApp }>(
+        entries.internal,
+      );
       let failure: { readonly error: unknown } | undefined;
       const app = createApp(routes, {
         head: VITE_CLIENT,

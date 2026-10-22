@@ -2,8 +2,13 @@ import { existsSync, readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { runtimes } from "../../src/build/plugin.ts";
 import * as client from "../../src/client/index.ts";
 import * as server from "../../src/server/index.ts";
+
+/** ビルドした lib の中の `path` のモジュールを読み込む。 */
+const lib = (path: string): Promise<Record<string, unknown>> =>
+  import(new URL(`../../lib/${path}`, import.meta.url).href);
 
 describe("入口", () => {
   it("クライアントとサーバーの rinka は、同じ名前を export する", () => {
@@ -22,6 +27,19 @@ describe("入口", () => {
     collect((manifest as { exports: unknown }).exports);
     const missing = paths.filter((path) => !existsSync(new URL(`../../${path}`, import.meta.url)));
     expect(missing).toEqual([]);
+  });
+
+  it("プラグインが環境ごとに解決する入口のファイルは、ビルドした lib にある", () => {
+    const paths = [...Object.values(runtimes.client), ...Object.values(runtimes.server)];
+    const missing = paths.filter(
+      (path) => !existsSync(new URL(`../../lib/${path}`, import.meta.url)),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  it("内部の入口は、コンパイラと開発サーバーが使用する関数を export する", async () => {
+    expect(Object.keys(await lib(runtimes.client["rinka/internal"]!))).toContain("stopIfSeeding");
+    expect(Object.keys(await lib(runtimes.server["rinka/internal"]!))).toContain("createApp");
   });
 
   it("サーバーの effect は、read と apply を呼ばない", () => {
