@@ -8,31 +8,35 @@ import { CompileError } from "./errors.ts";
 
 /** `rinka/jsx-runtime` から import した名前を表す。 */
 interface Runtime {
-  /** `jsx` と `jsxs` の、ファイルの中の名前である。 */
-  readonly calls: ReadonlySet<string>;
+  /** `jsx` の、ファイルの中の名前である。 */
+  readonly single: ReadonlySet<string>;
+  /** 子の配列を受け取る `jsxs` の、ファイルの中の名前である。 */
+  readonly multiple: ReadonlySet<string>;
   /** `Fragment` の、ファイルの中の名前である。 */
   readonly fragments: ReadonlySet<string>;
 }
 
 /**
  * oxc が JSX を変換した後のコードの、`rinka/jsx-runtime` の呼び出しに規則を適用する。
- * ネイティブのタグと Fragment の属性と子は、関数呼び出しかプロパティ参照を含む式を関数で包む。
+ * ネイティブのタグと Fragment の属性と子は、関数呼び出し、プロパティ参照、タグ付きテンプレートを含む式を関数で包む。
  * コンポーネントに渡す props と children は、リテラルと関数を除いて getter にする。
  */
 export function transformJsx(code: string, file: string): Transformed {
-  const { program, errors } = parseSync(file, code, { lang: "js", sourceType: "module" });
+  const { program, errors } = parseSync(file, code, {
+    lang: "js",
+    sourceType: "module",
+    preserveParens: false,
+  });
   const [error] = errors;
   if (error) throw new CompileError(`${file} を解析できません: ${error.message}`);
   const output = new MagicString(code);
   const runtime = runtimeNames(program, file);
-  if (runtime.calls.size > 0) {
-    // 内側の呼び出しから順に書き換えるので、開く括弧は prependRight で、閉じる括弧は appendLeft で挿入する
-    const visit = (node: Node): void => {
-      for (const child of children(node)) visit(child);
-      if (isJsxCall(node, runtime)) applyRules(node, runtime, output, code);
-    };
-    visit(program);
-  }
+  // 内側の呼び出しから順に書き換えるので、開く括弧は prependRight で、閉じる括弧は appendLeft で挿入する
+  const visit = (node: Node): void => {
+    for (const child of children(node)) visit(child);
+    if (isJsxCall(node, runtime)) applyRules(node, runtime, output, code);
+  };
+  visit(program);
   return {
     code: output.toString(),
     map: output.generateMap({ hires: true, source: file, includeContent: true }),
@@ -41,7 +45,8 @@ export function transformJsx(code: string, file: string): Transformed {
 
 /** `rinka/jsx-runtime` から import した名前を返す。 */
 function runtimeNames(program: ESTree.Program, file: string): Runtime {
-  const calls = new Set<string>();
+  const single = new Set<string>();
+  const multiple = new Set<string>();
   const fragments = new Set<string>();
   for (const statement of program.body) {
     if (statement.type !== "ImportDeclaration") continue;
@@ -54,20 +59,19 @@ function runtimeNames(program: ESTree.Program, file: string): Runtime {
         );
       }
       if (statement.source.value !== "rinka/jsx-runtime") continue;
-      if (imported === "jsx" || imported === "jsxs") calls.add(specifier.local.name);
+      if (imported === "jsx") single.add(specifier.local.name);
+      if (imported === "jsxs") multiple.add(specifier.local.name);
       if (imported === "Fragment") fragments.add(specifier.local.name);
     }
   }
-  return { calls, fragments };
+  return { single, multiple, fragments };
 }
 
 /** `node` が `rinka/jsx-runtime` の `jsx` か `jsxs` の呼び出しかどうかを返す。 */
 function isJsxCall(node: Node, runtime: Runtime): node is ESTree.CallExpression {
-  return (
-    node.type === "CallExpression" &&
-    node.callee.type === "Identifier" &&
-    runtime.calls.has(node.callee.name)
-  );
+  if (node.type !== "CallExpression" || node.callee.type !== "Identifier") return false;
+  const { name } = node.callee;
+  return runtime.single.has(name) || runtime.multiple.has(name);
 }
 
 /** JSX の呼び出し `call` の props に、リアクティブ化か getter 化の規則を適用する。 */
@@ -82,29 +86,26 @@ function applyRules(
   const native =
     (type.type === "Literal" && typeof type.value === "string") ||
     (type.type === "Identifier" && runtime.fragments.has(type.name));
+  const multiple = call.callee.type === "Identifier" && runtime.multiple.has(call.callee.name);
   for (const property of props.properties) {
     if (property.type !== "Property" || property.computed || property.kind !== "init") continue;
     const name = propertyName(property.key);
     if (name === undefined) continue;
     const { value } = property;
     if (native) {
-      if (name === "children" && value.type === "ArrayExpression") {
+      if (name === "children" && multiple && value.type === "ArrayExpression") {
         for (const item of value.elements) {
-          if (item && item.type !== "SpreadElement" && isReactive(item, runtime))
+          if (item && item.type !== "SpreadElement" && isReactive(item, runtime)) {
             wrap(item, output);
+          }
         }
-      } else if (
-        name !== "ref" &&
-        name !== "key" &&
-        !isEventProp(name) &&
-        isReactive(value, runtime)
-      ) {
+      } else if (name !== "ref" && !isEventProp(name) && isReactive(value, runtime)) {
         wrap(value, output);
       }
       continue;
     }
-    if (name === "ref" || name === "key" || name.startsWith("load:")) continue;
-    if (isLiteral(value) || isFunction(value) || hasAwait(value)) continue;
+    if (name === "ref" || name.startsWith("load:")) continue;
+    if (isLiteral(value) || isFunction(value) || hasAwait(value) || usesCallee(value)) continue;
     const key = code.slice(property.key.start, property.key.end);
     if (property.shorthand) output.prependRight(value.start, `get ${key}() { return (`);
     else output.overwrite(property.start, value.start, `get ${key}() { return (`);
@@ -124,8 +125,11 @@ function wrap(expression: Node, output: MagicString): void {
   output.appendLeft(expression.end, ")");
 }
 
-/** 値がリテラルかどうかを返す。 */
+/** 値がリテラルかどうかを返す。負の数はリテラルとして扱う。 */
 function isLiteral(node: Node): boolean {
+  if (node.type === "UnaryExpression") {
+    return node.operator === "-" && node.argument.type === "Literal";
+  }
   return (
     node.type === "Literal" || (node.type === "TemplateLiteral" && node.expressions.length === 0)
   );
@@ -151,4 +155,16 @@ function hasAwait(node: Node): boolean {
   if (isFunction(node)) return false;
   if (node.type === "AwaitExpression" || node.type === "YieldExpression") return true;
   return children(node).some(hasAwait);
+}
+
+/**
+ * 内側の通常の関数を除いて、式の中に `this`、`arguments`、`super`、`new.target` があるかどうかを返す。
+ * getter の中では、これらが別の値を指す。
+ */
+function usesCallee(node: Node): boolean {
+  if (node.type === "FunctionDeclaration" || node.type === "FunctionExpression") return false;
+  if (node.type === "ThisExpression" || node.type === "Super") return true;
+  if (node.type === "MetaProperty" && node.meta.name === "new") return true;
+  if (node.type === "Identifier" && node.name === "arguments") return true;
+  return children(node).some(usesCallee);
 }

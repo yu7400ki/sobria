@@ -187,7 +187,10 @@ function insertGate(fn: FunctionNode, output: MagicString): void {
   }
 }
 
-/** 要素の関数の JSX の子に置いた `{props.children}`、`{props.X}`、`{props.X ?? 既定の中身}` を `<slot>` にする。 */
+/**
+ * 要素の関数の JSX の子に置いた `{props.children}`、`{props.X}`、`{props.X ?? 既定の中身}` を `<slot>` にする。
+ * 要素の関数の中の関数にスロットを置くと、ビルドのエラーにする。props と同じ名前の引数を持つ関数の中は変換しない。
+ */
 function convertSlots(
   fn: ESTree.Function,
   elementOptions: ElementOptions,
@@ -198,8 +201,18 @@ function convertSlots(
   if (param?.type !== "Identifier" || !fn.body) return;
   const names = new Set(["children", ...(elementOptions.slots ?? [])]);
   const placed = new Set<string>();
-  walk(fn.body, (node) => {
-    if (node.type !== "JSXElement" && node.type !== "JSXFragment") return;
+  const visit = (node: Node, nested: boolean): void => {
+    if (isFunction(node)) {
+      const rebinds = node.params.some(
+        (other) => other.type === "Identifier" && other.name === param.name,
+      );
+      if (!rebinds) for (const child of children(node)) visit(child, true);
+      return;
+    }
+    if (node.type === "JSXElement" || node.type === "JSXFragment") placeSlots(node, nested);
+    for (const child of children(node)) visit(child, nested);
+  };
+  const placeSlots = (node: ESTree.JSXElement | ESTree.JSXFragment, nested: boolean): void => {
     for (const child of node.children) {
       if (
         child.type !== "JSXExpressionContainer" ||
@@ -209,6 +222,11 @@ function convertSlots(
       }
       const slot = slotOf(child.expression, param.name, names);
       if (!slot) continue;
+      if (nested) {
+        throw new CompileError(
+          `${file}: スロット ${slot.name} は、要素の関数の中の関数に置けません。要素の関数が返す JSX に直接置いてください。`,
+        );
+      }
       if (placed.has(slot.name)) {
         throw new CompileError(
           `${file}: スロット ${slot.name} を 2 回置いています。スロットは 1 回だけ置いてください。`,
@@ -225,7 +243,8 @@ function convertSlots(
       output.overwrite(child.start, fallback.start, `<slot${name}>${jsx ? "" : "{"}`);
       output.overwrite(fallback.end, child.end, `${jsx ? "" : "}"}</slot>`);
     }
-  });
+  };
+  visit(fn.body, false);
 }
 
 /** 式が `props` のスロットの参照なら、スロットの名前と既定の中身を返す。 */

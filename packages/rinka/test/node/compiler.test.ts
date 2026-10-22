@@ -98,7 +98,7 @@ export async function each() { for await (const v of source()) use(v); }`;
     expect(module("export const x = 1;", true)).toBe("export const x = 1;");
   });
 
-  it("関門は、シード中に取得したら解決しない Promise を返し、それ以外では値をそのまま返す", async () => {
+  it("関門は、シード中に取得したら解決しない Promise と、最初の値を返さない async iterable を返し、それ以外では値をそのまま返す", async () => {
     const value = Promise.resolve(1);
     expect(takeGate()(value)).toBe(value);
     const seeded = runSeeding(() => takeGate())(value);
@@ -393,5 +393,57 @@ export default function Page() { return <main><Card heading={"h" + 1}>body</Card
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("JSX の規則の細部", () => {
+  it("内側の関数の中の呼び出しと await は、判定に含めない", async () => {
+    const code = await compile(
+      `const view = <div data-f={() => f()}>{items.map(async (x) => await f(x))}</div>;`,
+    );
+    expect(code).toContain('"data-f": () => f()');
+    expect(code).toContain("children: () => (items.map(async (x) => await f(x)))");
+  });
+
+  it("this と arguments を含む値と、括弧で囲んだ関数と、負の数は getter にしない", async () => {
+    const code = await compile(
+      `function F() { return <C v={this.x} a={arguments[0]} w={() => this.y} f={(() => 1)} n={-1} />; }`,
+    );
+    expect(code).toContain("v: this.x");
+    expect(code).toContain("a: arguments[0]");
+    expect(code).toContain("w: () => this.y");
+    expect(code).toContain("f: (() => 1)");
+    expect(code).toContain("n: -1");
+  });
+
+  it("jsx に渡す 1 つの子の配列は、配列の全体で判定する", async () => {
+    expect(await compile(`const view = <div>{[a(), b]}</div>;`)).toContain(
+      "children: () => ([a(), b])",
+    );
+  });
+
+  it("スプレッドの後に記述した key は、ビルドのエラーにする", async () => {
+    await expect(compile(`const view = <C {...p} key={k} />;`)).rejects.toThrow(/key/);
+  });
+});
+
+/** `body` を本体に持つ要素の関数のファイルを変換したコードを返す。 */
+const slotted = (body: string) =>
+  element(`type Props = { children?: JSX.Element };
+export default function X(props: Props) { ${body} }`).code;
+
+describe("スロット化の範囲", () => {
+  it("props と同じ名前の引数を持つ内側の関数の中は変換しない", () => {
+    const code = slotted(
+      "const Inner = (props: { children?: unknown }) => <b>{props.children}</b>; return <p><Inner>hi</Inner>{props.children}</p>;",
+    );
+    expect(code).toContain("<b>{props.children}</b>");
+    expect(code).toContain("<Inner>hi</Inner><slot /></p>");
+  });
+
+  it("要素の関数の中の関数にスロットを置くと、ビルドのエラーにする", () => {
+    expect(() => slotted("return <ul>{items.map((i) => <li>{props.children}</li>)}</ul>;")).toThrow(
+      /関数の中の関数/,
+    );
   });
 });
