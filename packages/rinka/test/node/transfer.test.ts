@@ -178,6 +178,111 @@ const shownValues = (host: string) => [
   [host, { "@p": { data: { a: 1 } } }],
 ];
 
+/** `ms` ミリ秒後に解決する Promise を返す。 */
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** `ms` ミリ秒待ってから `content` を返す、async のコンポーネントを作成する。 */
+const after = (ms: number, content: unknown) => async () => {
+  await wait(ms);
+  return content;
+};
+
+/** 中身を 100 ミリ秒後に出力する `<Loading>` を作成する。ストリームは、それまで閉じない。 */
+const holding = () => jsx(Loading, { fallback: "w", children: jsx(after(100, "done"), {}) });
+
+describe("開始タグの後に加わったキー", () => {
+  it("Errored が捨てた領域の中で後から後送りにした境界は、外側のホストに @b を送らない", async () => {
+    const Host = defineElement(
+      "x-tr-sealed-b",
+      () =>
+        jsx(Errored, {
+          fallback: "fb",
+          children: [
+            jsx(late, {}),
+            jsx(after(10, jsx(Loading, { fallback: "f", children: jsx(after(20, "x"), {}) })), {}),
+          ],
+        }),
+      { props: [] },
+    );
+    const { sent } = await render([jsx(Host, {}), holding()]);
+    expect(sent).toEqual([]);
+  });
+
+  it("Errored が捨てた領域の中で後から描画した子要素は、外側のホストに @c:キーを送らない", async () => {
+    const Leaf = defineElement("x-tr-sealed-leaf", () => null, { props: [] });
+    const Host = defineElement(
+      "x-tr-sealed-c",
+      () => {
+        const leaf = jsx(Leaf, {}, undefined, "s.tsx:9:1");
+        return jsx(Errored, {
+          fallback: "fb",
+          children: [jsx(late, {}), jsx(after(10, leaf), {})],
+        });
+      },
+      { props: [] },
+    );
+    const { sent } = await render([jsx(Host, {}), holding()]);
+    expect(sent).toEqual([]);
+  });
+
+  it("後送りにした中身の中で作成した子要素は、外側のホストの @b より前に @c:キーを送る", async () => {
+    const Leaf = defineElement("x-tr-late-leaf", () => null, { props: [] });
+    const Host = defineElement(
+      "x-tr-late-c",
+      () => {
+        const leaf = jsx(Leaf, {}, undefined, "s.tsx:1:1");
+        return jsx(Loading, { fallback: "f", children: jsx(after(10, leaf), {}) });
+      },
+      { props: [] },
+    );
+    const { html, sent } = await render(jsx(Host, {}));
+    expect(html).toContain('<template data-os="b2"><x-tr-late-leaf data-oh="h3">');
+    expect(sent).toEqual([
+      ["h1", { "@c:s.tsx:1:1#0": "h3" }],
+      ["h1", { "@b": 1 }],
+    ]);
+  });
+
+  it("開始タグの後に初めて非同期になった memo の値は送らない", async () => {
+    const Host = defineElement(
+      "x-tr-sealed-memo",
+      () => {
+        const source = memo(() => wait(5).then(() => "v"));
+        memo(() => Promise.resolve(source()), { key: "b" });
+        return "x";
+      },
+      { props: [] },
+    );
+    const { sent } = await render([jsx(Host, {}), holding()]);
+    expect(sent).toEqual([]);
+  });
+
+  it("ほかに後送りの境界が無くても、ストリームを閉じた後に書き込まない", async () => {
+    const Host = defineElement(
+      "x-tr-sealed-closed",
+      () =>
+        jsx(Errored, {
+          fallback: "fb",
+          children: [
+            jsx(late, {}),
+            jsx(after(10, jsx(Loading, { fallback: "f", children: jsx(after(20, "x"), {}) })), {}),
+          ],
+        }),
+      { props: [] },
+    );
+    const rejected: unknown[] = [];
+    const listener = (reason: unknown) => rejected.push(reason);
+    process.on("unhandledRejection", listener);
+    try {
+      await render(jsx(Host, {}));
+      await wait(60);
+    } finally {
+      process.off("unhandledRejection", listener);
+    }
+    expect(rejected).toEqual([]);
+  });
+});
+
 describe("値を送る範囲", () => {
   const Card = defineElement(
     "x-tr-shown",

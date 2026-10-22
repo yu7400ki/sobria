@@ -8,6 +8,8 @@ const host =
 const swap =
   '<template data-os="b2">s</template><script>$rinka.r({"b":"b2","bp":["h1"],"p":[]})</script>';
 const value = '<script>$rinka.d("h1",{"k":"v"})</script>';
+/** 開始タグの後に作成した子要素のホスト `child` の ID を、h1 に `@c:キー` で送るスクリプトを返す。 */
+const late = (child: string) => `<script>$rinka.d("h1",{"@c:s#0":"${child}"})</script>`;
 const done = '<script>$rinka.d("h1",{"@b":1})</script>';
 
 describe("出力の順序の検査", () => {
@@ -16,8 +18,25 @@ describe("出力の順序の検査", () => {
   });
 
   it("data-om のキーの値を送らないか、2 回送れば、エラーを投げる", () => {
-    expect(() => checkOrder([head + host, swap, done])).toThrow("0 回");
+    expect(() => checkOrder([head + host, swap, done])).toThrow("送りませんでした");
     expect(() => checkOrder([head + host, value, value, swap, done])).toThrow("2 回");
+  });
+
+  it("data-om のキーが重複していれば、エラーを投げる", () => {
+    const twice = host.replace('data-om="k @b"', 'data-om="k k @b"');
+    expect(() => checkOrder([head + twice, value, swap, done])).toThrow("重複");
+  });
+
+  it("data-om に無い @c:キーは、値が出力したホストの ID で、@b より前に送るときだけ受け入れる", () => {
+    const leaf = '<template data-os="b2"><x-c data-oh="h3"></x-c></template>';
+    const reveal = '<script>$rinka.r({"b":"b2","bp":["h1"],"p":[]})</script>';
+    expect(() => checkOrder([head + host, value, leaf + late("h3") + reveal, done])).not.toThrow();
+    expect(() => checkOrder([head + host, value, leaf + late("h9") + reveal, done])).toThrow(
+      "data-om",
+    );
+    expect(() => checkOrder([head + host, value, leaf + reveal, done, late("h3")])).toThrow(
+      "@b より前",
+    );
   });
 
   it("チャンクが無いか、最初のチャンクが文書の先頭でなければ、エラーを投げる", () => {

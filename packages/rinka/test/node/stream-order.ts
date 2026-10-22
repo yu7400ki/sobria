@@ -46,11 +46,34 @@ function hostTags(html: string): Map<string, { at: number; keys: string[] }> {
   return tags;
 }
 
+/** `data-om` に無いキー `key` の値を送る `$rinka.d` について、キーが `@c:` で始まり、値がページに出力したホストの ID であり、送る先のホストの `@b` より前にあることを確認する。 */
+function checkLateChild(
+  call: Extract<Call, { kind: "d" }>,
+  key: string,
+  found: readonly Call[],
+  tags: ReadonlyMap<string, unknown>,
+): void {
+  const child = call.values[key];
+  if (!key.startsWith("@c:") || typeof child !== "string" || !tags.has(child)) {
+    throw new Error(`$rinka.d のキー ${key} が、ホスト ${call.host} の data-om にありません。`);
+  }
+  const boundaries = found.find(
+    (other) => other.kind === "d" && other.host === call.host && Object.hasOwn(other.values, "@b"),
+  );
+  if (!boundaries || boundaries.at < call.at) {
+    throw new Error(
+      `data-om に無いキー ${key} を、ホスト ${call.host} の @b より前に送っていません。`,
+    );
+  }
+}
+
 /**
  * ストリームのチャンクの列が、出力の順序の前提に合うことを確認する。合わなければ、合わない条件と位置を含むエラーを投げる。
- * 前提は、最初のチャンクが文書の先頭であること、`$rinka.r` が境界の目印より後にあること、`$rinka.d` がホストの開始タグより後にあり、
- * キーがそのホストの `data-om` に列挙されていること、出力したホストの `data-om` の各キーの値を 1 回ずつ送ること、
+ * 前提は、最初のチャンクが文書の先頭であること、`$rinka.r` が境界の目印より後にあること、`$rinka.d` がホストの開始タグより後にあること、
+ * `data-om` のキーが重複しないこと、どのキーの値も 1 回だけ送ること、出力したホストの `data-om` の各キーの値を送ること、
  * `@b` が、そのホストを含むすべての `$rinka.r` より後にあることである。
+ * 送るキーは、そのホストの `data-om` に列挙したキーか、開始タグの後に作成した子要素の `@c:キー` である。
+ * `@c:キー` は、値がページに出力したホストの ID であり、送る先のホストの `@b` より前に送るときだけ受け入れる。
  */
 export function checkOrder(chunks: readonly string[]): void {
   if (!chunks[0]?.startsWith("<!doctype html>")) {
@@ -59,7 +82,7 @@ export function checkOrder(chunks: readonly string[]): void {
   const html = chunks.join("");
   const found = calls(html);
   const tags = hostTags(html);
-  const sent = new Map<string, number>();
+  const sent = new Set<string>();
   for (const call of found) {
     if (call.kind === "r") {
       const marker = html.indexOf(`<template data-ob="${call.spec.b}">`);
@@ -77,10 +100,11 @@ export function checkOrder(chunks: readonly string[]): void {
       );
     }
     for (const key of Object.keys(call.values)) {
-      sent.set(`${call.host} ${key}`, (sent.get(`${call.host} ${key}`) ?? 0) + 1);
-      if (!tag.keys.includes(key)) {
-        throw new Error(`$rinka.d のキー ${key} が、ホスト ${call.host} の data-om にありません。`);
+      if (sent.has(`${call.host} ${key}`)) {
+        throw new Error(`ホスト ${call.host} のキー ${key} の値を、2 回以上送りました。`);
       }
+      sent.add(`${call.host} ${key}`);
+      if (!tag.keys.includes(key)) checkLateChild(call, key, found, tags);
       if (key !== "@b") continue;
       const later = found.find(
         (other) =>
@@ -97,10 +121,12 @@ export function checkOrder(chunks: readonly string[]): void {
     }
   }
   for (const [host, { keys }] of tags) {
+    if (new Set(keys).size !== keys.length) {
+      throw new Error(`ホスト ${host} の data-om のキーが重複しています: ${keys.join(" ")}`);
+    }
     for (const key of keys) {
-      const count = sent.get(`${host} ${key}`) ?? 0;
-      if (count !== 1) {
-        throw new Error(`ホスト ${host} の data-om のキー ${key} の値を、${count} 回送りました。`);
+      if (!sent.has(`${host} ${key}`)) {
+        throw new Error(`ホスト ${host} の data-om のキー ${key} の値を送りませんでした。`);
       }
     }
   }

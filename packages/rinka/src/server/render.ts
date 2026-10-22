@@ -86,6 +86,8 @@ interface Host {
     readonly attributes: HostAttributes | Promise<HostAttributes>;
     readonly open: (attributes: HostAttributes, waiting: boolean) => string;
     readonly chunks: Chunk[];
+    /** 要素を作成したホストに、開始タグの後で `@c:キー` を送るスクリプトである。 */
+    readonly announce: string | undefined;
   };
 }
 
@@ -95,6 +97,8 @@ interface Patch {
   /** 目印を含む Shadow DOM のホストを、外側から順に列挙する。 */
   readonly path: readonly HostRecord[];
   readonly html: Promise<string>;
+  /** 差し替えの中身を出力する位置である。 */
+  readonly out: Out;
 }
 
 /** `<Loading>` の境界と、シェルを表す。 */
@@ -148,6 +152,8 @@ function resolvable(): Resolvable {
 class Out {
   /** `Out` を、同じ形のオブジェクトと区別する。 */
   declare private readonly nominal: never;
+  /** この位置の出力と同じ書き込みで、出力の後に書き込むスクリプトである。 */
+  readonly scripts: string[] = [];
 
   private constructor(
     readonly flush: Flush,
@@ -167,7 +173,10 @@ class Out {
     );
   }
 
-  /** この位置のうち、この位置の `shown` が `true` に解決した時点で `kept` が真を返すときだけ、ページに現れる位置を作成する。 */
+  /**
+   * この位置のうち、この位置の `shown` が `true` に解決した時点で `kept` が真を返すときだけ、ページに現れる位置を作成する。
+   * 戻り値の位置の `scripts` は、呼び出し側がこの位置の `scripts` に追加したときだけ書き込む。
+   */
   gate(kept: () => boolean): Out {
     return new Out(
       this.flush,
@@ -196,6 +205,8 @@ class HostRecord {
   readonly memoKeys: string[] = [];
   /** `data-om` に列挙する、子要素のホストの ID を送る `@c:キー` である。 */
   readonly childKeys: string[] = [];
+  /** 開始タグの `data-om` に列挙したキーのうち、まだ値を送っていないものである。開始タグを作成するまでは `undefined` である。 */
+  unsent: Set<string> | undefined;
   /** Shadow DOM の中で後送りにして、まだ送り終えていない境界の数である。 */
   deferred = 0;
   /** ホストをページに出力したら `true` に、出力しないことが決まったら `false` に解決する。 */
@@ -206,6 +217,10 @@ class HostRecord {
     readonly tag: string,
   ) {}
 }
+
+/** JS の式 `value` を、ホスト `host` の `key` の値として送るスクリプトを返す。 */
+const dataScript = (host: HostRecord, key: string, value: string): string =>
+  `<script>$rinka.d(${scriptJson(host.id)},{${scriptJson(key)}:${value}})</script>`;
 
 /** ホストの列を、ホストの ID の列にする。 */
 const hostIds = (path: readonly HostRecord[]): string[] => path.map((host) => host.id);
@@ -471,10 +486,16 @@ class Renderer {
     const id = `h${++this.seq}`;
     const record = new HostRecord(id, tag);
     this.hosts.add(record);
+    let announce: string | undefined;
     if (child?.data instanceof HostRecord && this.hosts.has(child.data)) {
+      const creator = child.data;
       const mapKey = childKey(child.key);
-      child.data.childKeys.push(mapKey);
-      this.send(child.data, mapKey, Promise.resolve(scriptJson(id)));
+      if (creator.unsent) {
+        announce = dataScript(creator, mapKey, scriptJson(id));
+      } else {
+        creator.childKeys.push(mapKey);
+        this.send(creator, mapKey, Promise.resolve(scriptJson(id)));
+      }
     }
     const slotNames = new Set(["children", ...(options.slots ?? [])]);
     const functionProps = new Set(options.functionProps);
@@ -585,10 +606,11 @@ class Renderer {
         ...(waiting ? [BOUNDARIES_KEY] : []),
         ...(transfer ? [PROPS_KEY] : []),
       ];
+      record.unsent = new Set(keys);
       const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
       return `<${tag}${attribute("data-oh", id)}${text}${om}><template shadowrootmode="open">`;
     };
-    out.push({ kind: "host", host: { record, attributes, open, chunks } });
+    out.push({ kind: "host", host: { record, attributes, open, chunks, announce } });
   }
 
   /**
@@ -624,13 +646,14 @@ class Renderer {
         const { flush } = boundary;
         if (!flush || !hasHole(chunks)) return this.serialize(chunks, out);
         const id = `p${++this.seq}`;
-        const html = this.serialize(chunks, out.into(flush));
+        const into = out.into(flush);
+        const html = this.serialize(chunks, into);
         html.catch(() => {});
-        boundary.patches.push({ id, path, html });
+        boundary.patches.push({ id, path, html, out: into });
         return marker(id);
       }
       case "host": {
-        const { record, attributes, open, chunks } = chunk.host;
+        const { record, attributes, open, chunks, announce } = chunk.host;
         const inner = await this.serialize(chunks, out);
         const resolved = await attributes;
         if (resolved.transfer) {
@@ -641,16 +664,17 @@ class Renderer {
           );
         }
         record.shown.resolve(out.shown);
+        if (announce) out.scripts.push(announce);
         return open(resolved, record.deferred > 0) + inner;
       }
       case "errored": {
         const { chunks, node, ctx } = chunk.errored;
         let failed = false;
+        const gated = out.gate(() => !failed);
         try {
-          return await this.serialize(
-            chunks,
-            out.gate(() => !failed),
-          );
+          const html = await this.serialize(chunks, gated);
+          out.scripts.push(...gated.scripts);
+          return html;
         } catch (error) {
           failed = true;
           const { flush } = out;
@@ -688,7 +712,8 @@ class Renderer {
     for (const host of boundary.path) host.deferred++;
     this.track(
       (async () => {
-        const content = this.serialize(boundary.region, Out.of(flush));
+        const regionOut = Out.of(flush);
+        const content = this.serialize(boundary.region, regionOut);
         await content.catch(() => {});
         if (!(await out.shown)) {
           this.abandon(boundary, flush);
@@ -738,6 +763,9 @@ class Renderer {
             patches
               .map(([patch, html]) => `<template data-op="${patch.id}">${html}</template>`)
               .join("") +
+            [regionOut, ...patches.map(([patch]) => patch.out)]
+              .flatMap((position) => position.scripts)
+              .join("") +
             `<script>$rinka.r(${scriptJson(spec)})</script>`,
         );
         this.finishBoundary(boundary);
@@ -776,12 +804,15 @@ class Renderer {
     );
   }
 
-  /** `expression` が解決した JS の式を、ホストをページに出力した後に、`$rinka.d` でホストの `key` の値として送る。ホストを出力しなければ送らない。 */
+  /**
+   * `expression` が解決した JS の式を、ホストをページに出力した後に、`$rinka.d` でホストの `key` の値として送る。
+   * 送るのは、開始タグの `data-om` に列挙したキーの値だけで、キーごとに 1 回だけ送る。ホストを出力しなければ送らない。
+   */
   private send(host: HostRecord, key: string, expression: Promise<string>): void {
     const task = (async () => {
       const value = await expression;
-      if (!(await host.shown.promise)) return;
-      this.write(`<script>$rinka.d(${scriptJson(host.id)},{${scriptJson(key)}:${value}})</script>`);
+      if (!(await host.shown.promise) || !host.unsent?.delete(key)) return;
+      this.write(dataScript(host, key, value));
     })();
     this.values.add(task);
   }
