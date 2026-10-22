@@ -938,8 +938,6 @@ const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
 export interface RenderOptions {
   /** すべての `<Loading>` の中身を待ち、中身を埋め込んだ HTML を送る。 */
   readonly blocking?: boolean;
-  /** 文書の `<head>` の末尾に出力するマークアップである。 */
-  readonly head?: string;
 }
 
 /** `node` を描画し、すべての非同期の内容を待ってから、`node` の HTML の文字列を返す。 */
@@ -963,7 +961,6 @@ export function renderToStream(
       const renderer = new Renderer(
         (text) => controller.enqueue(encoder.encode(text)),
         options.blocking ?? false,
-        options.head,
       );
       try {
         await renderer.finish(await renderer.shell(asNode(node)));
@@ -996,8 +993,19 @@ export function renderToResponse(node: unknown, options: ResponseOptions = {}): 
   return respond(node, options, 200);
 }
 
+/** 開発サーバーが使用する、レスポンスのオプションを表す。 */
+export interface DocumentOptions extends ResponseOptions {
+  /** 文書の `<head>` の末尾に出力するマークアップである。 */
+  readonly head?: string;
+}
+
+/** `renderToResponse` と同じ規則で、`options.head` を `<head>` の末尾に出力した Response を返す。 */
+export function renderDocument(node: unknown, options: DocumentOptions): Promise<Response> {
+  return respond(node, options, 200);
+}
+
 /** `node` を描画した Response を返す。ステータスは、`status` と、シェルの中の `<Errored>` が決めたステータスのうち大きいほうである。 */
-async function respond(node: unknown, options: ResponseOptions, status: number): Promise<Response> {
+async function respond(node: unknown, options: DocumentOptions, status: number): Promise<Response> {
   const encoder = new TextEncoder();
   let controller!: ReadableStreamDefaultController<Uint8Array>;
   const body = new ReadableStream<Uint8Array>({
@@ -1028,7 +1036,7 @@ async function respond(node: unknown, options: ResponseOptions, status: number):
 }
 
 /** シェルの中で投げられた値から、レスポンスを作成する。 */
-function failure(error: unknown, options: ResponseOptions): Response | Promise<Response> {
+function failure(error: unknown, options: DocumentOptions): Response | Promise<Response> {
   const thrown = classify(error);
   switch (thrown.kind) {
     case "redirect":

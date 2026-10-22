@@ -65,7 +65,7 @@ const VITE_CLIENT = '<script type="module" src="/@vite/client"></script>';
 interface InternalModule {
   readonly createApp: (
     routes: unknown,
-    options: { readonly head: string },
+    options: { readonly head: string; readonly onError: (error: unknown) => Response },
   ) => { readonly fetch: (request: Request) => Response | Promise<Response> };
 }
 
@@ -188,7 +188,7 @@ function checkTags(dir: string, tagOf: (path: string, lang: Lang) => string | un
 }
 
 /**
- * `dir` を走査し、`page.tsx` と `page.jsx` を静的なパスに対応させるルートの表を export するモジュールのコードを返す。
+ * `dir` を走査し、`page.tsx` を静的なパスに対応させるルートの表を export するモジュールのコードを返す。
  * 名前が `[` か `(` で始まるディレクトリは走査しない。
  */
 function routesModule(dir: string, root: string): string {
@@ -199,7 +199,7 @@ function routesModule(dir: string, root: string): string {
         if (!entry.name.startsWith("[") && !entry.name.startsWith("(")) {
           visit(join(current, entry.name), [...segments, entry.name]);
         }
-      } else if (entry.name === "page.tsx" || entry.name === "page.jsx") {
+      } else if (entry.name === "page.tsx") {
         const path = `/${segments.join("/")}`;
         const module = `/${relative(root, join(current, entry.name)).split(sep).join("/")}`;
         routes.push(
@@ -214,14 +214,11 @@ function routesModule(dir: string, root: string): string {
 
 /**
  * `ssr` の環境のランナーで読み込んだ `rinka/routes` からアプリを作成し、リクエストを渡すミドルウェアを返す。
- * `rinka/routes` を評価し直したら、アプリを作成し直す。
+ * アプリはリクエストごとに作成する。ページの読み込みか描画で投げたエラーは `next` に渡す。
  */
 function appMiddleware(
   server: ViteDevServer,
 ): (request: IncomingMessage, response: ServerResponse, next: (error?: unknown) => void) => void {
-  let current:
-    | { readonly routes: unknown; readonly listener: ReturnType<typeof getRequestListener> }
-    | undefined;
   return (request, response, next) => {
     const environment = server.environments.ssr;
     if (!environment || !isRunnableDevEnvironment(environment)) {
@@ -230,16 +227,30 @@ function appMiddleware(
     }
     const { runner } = environment;
     (async () => {
-      const routes: unknown = await runner.import("rinka/routes");
-      let listener = current && current.routes === routes ? current.listener : undefined;
-      if (!listener) {
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-        const { createApp } = (await runner.import("rinka/internal")) as InternalModule;
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-        const table = (routes as { readonly routes: unknown }).routes;
-        listener = getRequestListener(createApp(table, { head: VITE_CLIENT }).fetch);
-        current = { routes, listener };
-      }
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+      const { routes } = (await runner.import("rinka/routes")) as { readonly routes: unknown };
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+      const { createApp } = (await runner.import("rinka/internal")) as InternalModule;
+      let failure: { readonly error: unknown } | undefined;
+      const app = createApp(routes, {
+        head: VITE_CLIENT,
+        onError: (error) => {
+          failure = { error };
+          return new Response(null, { status: 500 });
+        },
+      });
+      const listener = getRequestListener(
+        async (incoming) => {
+          const result = await app.fetch(incoming);
+          if (failure) throw failure.error;
+          return result;
+        },
+        {
+          errorHandler: (error) => {
+            next(error);
+          },
+        },
+      );
       await listener(request, response);
     })().catch(next);
   };

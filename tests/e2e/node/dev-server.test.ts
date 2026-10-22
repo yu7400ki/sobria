@@ -46,6 +46,14 @@ describe("開発サーバー", () => {
     expect(response.status).toBe(404);
   });
 
+  it("ページの描画で投げたエラーは、Vite のエラーの処理に渡す", async () => {
+    const response = await fetch(`${origin}/boom`);
+    expect(response.status).toBe(500);
+    const body = await response.text();
+    expect(body).not.toBe("Internal Server Error");
+    expect(body).toContain("ページの描画に失敗しました");
+  });
+
   it("Vite が処理するリクエストは、Vite が返す", async () => {
     const response = await fetch(`${origin}/src/elements/counter.tsx`);
     expect(response.status).toBe(200);
