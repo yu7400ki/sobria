@@ -8,8 +8,6 @@ interface Receiver {
   readonly v: Record<string, Record<string, unknown> | undefined>;
   /** ホストの ID ごとに、値が届いたときに呼ぶ関数を保持する。 */
   readonly l: Record<string, (() => void)[] | undefined>;
-  /** ホストの ID ごとに、`data-om` に加えて待つキーを保持する。 */
-  readonly w: Record<string, string[] | undefined>;
   /** 値が無いことを表すオブジェクトである。 */
   readonly n: object;
 }
@@ -22,10 +20,9 @@ declare global {
 /** `window.$rinka` を返す。起動スクリプトを読み込んでいなければ `undefined` を返す。 */
 const receiver = (): Receiver | undefined => globalThis.$rinka;
 
-/** ホストが起動の前に待つキーを返す。`data-om` のキーと、起動スクリプトが追加したキーである。 */
-function waitedKeys(host: Element, id: string): string[] {
-  const keys = (host.getAttribute("data-om") ?? "").split(" ").filter(Boolean);
-  return [...keys, ...(receiver()?.w[id] ?? [])];
+/** ホストが起動の前に待つ、`data-om` のキーを返す。 */
+function waitedKeys(host: Element): string[] {
+  return (host.getAttribute("data-om") ?? "").split(" ").filter(Boolean);
 }
 
 /**
@@ -45,7 +42,7 @@ function related(host: Element, id: string): [Element, string][] {
 function arrived(host: Element, id: string): boolean {
   return related(host, id).every(([el, target]) => {
     const values = receiver()?.v[target] ?? {};
-    return waitedKeys(el, target).every((key) => Object.hasOwn(values, key));
+    return waitedKeys(el).every((key) => Object.hasOwn(values, key));
   });
 }
 

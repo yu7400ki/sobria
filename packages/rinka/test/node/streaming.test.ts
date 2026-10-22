@@ -46,7 +46,7 @@ describe("シェルと後送り", () => {
     expect(chunks[0]).toContain('<main><template data-ob="b1"></template>wait<!--/ob:b1--></main>');
     expect(chunks[0]).toContain("window.$rinka");
     expect(html).toContain(
-      '<template data-os="b1"><b>done</b></template><script>$rinka.r({"b":"b1","bp":[],"p":[],"h":[]})</script>',
+      '<template data-os="b1"><b>done</b></template><script>$rinka.r({"b":"b1","bp":[],"p":[]})</script>',
     );
     expect(html.endsWith("</body></html>")).toBe(true);
   });
@@ -111,10 +111,10 @@ describe("要素の中の境界", () => {
     resolve("v");
     const html = (await reading).join("");
     expect(html).toContain(
-      '<x-card data-oh="h1" data-om="@b2"><template shadowrootmode="open"><template data-ob="b2"></template>wait<!--/ob:b2--></template></x-card>',
+      '<x-card data-oh="h1" data-om="@b"><template shadowrootmode="open"><template data-ob="b2"></template>wait<!--/ob:b2--></template></x-card>',
     );
     expect(html).toContain(
-      '<template data-os="b2"><b>v</b></template><script>$rinka.r({"b":"b2","bp":["h1"],"p":[],"h":["h1"]})</script>',
+      '<template data-os="b2"><b>v</b></template><script>$rinka.r({"b":"b2","bp":["h1"],"p":[]})</script><script>$rinka.d("h1",{"@b":1})</script>',
     );
   });
 
@@ -138,10 +138,10 @@ describe("要素の中の境界", () => {
     resolve("v");
     const html = (await reading).join("");
     expect(html).toContain(
-      '<x-container data-oh="h1" data-om="@b2"><template shadowrootmode="open"><template data-ob="b2"></template>wait<!--/ob:b2--></template><template data-ob="p4"></template><!--/ob:p4--></x-container>',
+      '<x-container data-oh="h1" data-om="@b"><template shadowrootmode="open"><template data-ob="b2"></template>wait<!--/ob:b2--></template><template data-ob="p4"></template><!--/ob:p4--></x-container>',
     );
     expect(html).toContain(
-      '<template data-os="b2"><slot></slot></template><template data-op="p4"><x-child data-oh="h3"><template shadowrootmode="open"><i>v</i></template></x-child></template><script>$rinka.r({"b":"b2","bp":["h1"],"p":[["p4",[]]],"h":["h1"]})</script>',
+      '<template data-os="b2"><slot></slot></template><template data-op="p4"><x-child data-oh="h3"><template shadowrootmode="open"><i>v</i></template></x-child></template><script>$rinka.r({"b":"b2","bp":["h1"],"p":[["p4",[]]]})</script><script>$rinka.d("h1",{"@b":1})</script>',
     );
   });
 });
@@ -164,7 +164,7 @@ describe("スロットの内容の保留中のタグ", () => {
     resolve("v");
     const html = (await reading).join("");
     expect(html).toContain(
-      '<x-wrap data-oh="h1" data-om="@b2"><template shadowrootmode="open"><template data-ob="b2"></template>wait<!--/ob:b2--></template><template data-ob="p3"></template><!--/ob:p3--></x-wrap>',
+      '<x-wrap data-oh="h1" data-om="@b"><template shadowrootmode="open"><template data-ob="b2"></template>wait<!--/ob:b2--></template><template data-ob="p3"></template><!--/ob:p3--></x-wrap>',
     );
     expect(html).toContain('<template data-op="p3"><b title="v">t</b></template>');
   });
@@ -208,7 +208,7 @@ describe("境界を待つホスト", () => {
     await tick();
     slow.resolve();
     const html = (await reading).join("");
-    expect(html).toContain('<x-later data-oh="h1" data-om="@b2">');
+    expect(html).toContain('<x-later data-oh="h1" data-om="@b">');
   });
 
   it("フォールバックの中の境界はホストに待たせず、使わないフォールバックは描画しない", async () => {
@@ -230,7 +230,7 @@ describe("境界を待つホスト", () => {
     expect(rendered).toBe(0);
   });
 
-  it("開始タグを出力した後に現れた入れ子の境界は、親の境界の差し替えでホストに待たせる", async () => {
+  it("開始タグを出力した後に現れた入れ子の境界も、送り終えてからホストに @b を送る", async () => {
     const inner = deferred("in");
     const outer = deferred(jsx(Loading, { fallback: "i", children: jsx(inner.Slow, {}) }));
     const Nested = defineElement(
@@ -244,12 +244,16 @@ describe("境界を待つホスト", () => {
     await tick();
     inner.resolve();
     const html = (await reading).join("");
-    expect(html).toContain('<x-nested data-oh="h1" data-om="@b2">');
-    expect(html).toContain('$rinka.r({"b":"b2","bp":["h1"],"p":[],"h":["h1"],"w":[["h1","@b3"]]})');
-    expect(html).toContain('$rinka.r({"b":"b3","bp":["h1"],"p":[],"h":["h1"]})');
+    expect(html).toContain('<x-nested data-oh="h1" data-om="@b">');
+    const outerAt = html.indexOf('$rinka.r({"b":"b2","bp":["h1"],"p":[]})');
+    const innerAt = html.indexOf('$rinka.r({"b":"b3","bp":["h1"],"p":[]})');
+    expect(outerAt).toBeGreaterThan(0);
+    expect(innerAt).toBeGreaterThan(outerAt);
+    expect(html.split('$rinka.d("h1",{"@b":1})')).toHaveLength(2);
+    expect(html.indexOf('$rinka.d("h1",{"@b":1})')).toBeGreaterThan(innerAt);
   });
 
-  it("失敗して送らない境界は、待っているホストに境界の完了を通知する", async () => {
+  it("失敗して送らない境界も、送り終えた境界として数え、ホストに @b を送る", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const { Fail, reject } = failing();
     const Broken = defineElement(
@@ -262,7 +266,7 @@ describe("境界を待つホスト", () => {
     reject();
     const html = (await reading).join("");
     expect(html).not.toContain('<template data-os="b2"');
-    expect(html).toContain('<script>$rinka.d("h1",{"@b2":1})</script>');
+    expect(html).toContain('<script>$rinka.d("h1",{"@b":1})</script>');
     expect(error).toHaveBeenCalledTimes(1);
   });
 });

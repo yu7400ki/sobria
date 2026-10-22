@@ -84,7 +84,7 @@ interface Host {
     readonly id: string;
     readonly tag: string;
     readonly attributes: HostAttributes | Promise<HostAttributes>;
-    readonly open: (attributes: HostAttributes, waits: readonly string[]) => string;
+    readonly open: (attributes: HostAttributes, waiting: boolean) => string;
     readonly chunks: Chunk[];
   };
 }
@@ -122,8 +122,6 @@ interface Boundary {
   late: boolean;
   /** 境界の中で `notFound()` を受け止めたことを表す。 */
   noindex: boolean;
-  /** 開始タグを出力したホストに境界を待たせるための、ホストの ID と境界のキーの組を表す。 */
-  readonly waits: [host: string, key: string][];
 }
 
 /** 描画している位置の状態を表す。 */
@@ -226,10 +224,8 @@ class Renderer {
   private readonly disposers: (() => void)[] = [];
   /** シェルの後に後送りの境界を出力する処理のうち、終わっていないものを保持する。 */
   private readonly pending = new Set<Promise<void>>();
-  /** 後送りにした境界を、後送りにした順に保持する。 */
-  private readonly scheduled: Boundary[] = [];
-  /** 開始タグを出力したホストの ID を保持する。 */
-  private readonly opened = new Set<string>();
+  /** ホストの ID ごとに、Shadow DOM の中で後送りにして、まだ送り終えていない境界の数を保持する。 */
+  private readonly deferred = new Map<string, number>();
   /** 要素の描画の範囲ごとに、範囲を作成したホストの ID と、子要素のホストの ID を送るキーの列を保持する。 */
   private readonly scopeHosts = new WeakMap<
     MemoScope,
@@ -275,7 +271,6 @@ class Renderer {
       regions: [],
       late: false,
       noindex: false,
-      waits: [],
     };
   }
 
@@ -529,8 +524,13 @@ class Renderer {
       }
     }
     chunks.push(`</${tag}>`);
-    const open = ({ text, transfer }: HostAttributes, waits: readonly string[]): string => {
-      const keys = [...memoKeys, ...childKeys, ...waits, ...(transfer ? ["@p"] : [])];
+    const open = ({ text, transfer }: HostAttributes, waiting: boolean): string => {
+      const keys = [
+        ...memoKeys,
+        ...childKeys,
+        ...(waiting ? ["@b"] : []),
+        ...(transfer ? ["@p"] : []),
+      ];
       const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
       return `<${tag}${attribute("data-oh", id)}${text}${om}><template shadowrootmode="open">`;
     };
@@ -592,10 +592,6 @@ class Renderer {
         const { id, tag, attributes, open, chunks } = chunk.host;
         const inner = await this.serialize(chunks, parent, regions);
         const resolved = await attributes;
-        const waits = this.scheduled
-          .filter((boundary) => boundary.path.includes(id))
-          .map((boundary) => `@${boundary.id}`);
-        this.opened.add(id);
         if (resolved.transfer) {
           this.send(id, "@p", Promise.resolve(toScript(resolved.transfer, `<${tag}>`)));
         }
@@ -603,7 +599,7 @@ class Renderer {
         void sent.then((output) =>
           this.host(id).resolve(output && !regions.some((r) => r.discarded)),
         );
-        return open(resolved, waits) + inner;
+        return open(resolved, (this.deferred.get(id) ?? 0) > 0) + inner;
       }
       case "errored": {
         const { chunks, node, ctx } = chunk.errored;
@@ -626,18 +622,14 @@ class Renderer {
   /**
    * 境界の中身と差し替えを、親の境界を出力した後に出力する。
    * 中身の出力に失敗したときは、規則に合う移動先への移動なら移動させ、それ以外ならエラーを記録する。
-   * 中身の出力に失敗したとき、親の境界を出力しないとき、目印を囲む `<Errored>` がフォールバックに切り替わったときは、中身と差し替えを出力せずに、
-   * 境界を待つホストに境界の完了を通知する。
+   * 中身の出力に失敗したとき、親の境界を出力しないとき、目印を囲む `<Errored>` がフォールバックに切り替わったときは、中身と差し替えを出力しない。
    */
   private schedule(boundary: Boundary): void {
     const parent = boundary.parent;
     if (!parent) return;
     this.interactive = true;
     boundary.late = true;
-    this.scheduled.push(boundary);
-    for (const host of boundary.path) {
-      if (this.opened.has(host)) lateBoundary(parent)?.waits.push([host, `@${boundary.id}`]);
-    }
+    for (const host of boundary.path) this.deferred.set(host, (this.deferred.get(host) ?? 0) + 1);
     this.track(
       (async () => {
         let region: string;
@@ -679,8 +671,6 @@ class Renderer {
           b: boundary.id,
           bp: boundary.path,
           p: patches.map(([patch]) => [patch.id, patch.path]),
-          h: boundary.path,
-          ...(boundary.waits.length > 0 && { w: boundary.waits }),
         };
         let noindex = "";
         if (boundary.noindex && !this.noindexSent) {
@@ -696,6 +686,7 @@ class Renderer {
               .join("") +
             `<script>$rinka.r(${scriptJson(spec)})</script>`,
         );
+        this.finishBoundary(boundary);
         boundary.send(true);
       })(),
     );
@@ -744,14 +735,19 @@ class Renderer {
     this.values.add(task);
   }
 
-  /** 境界の中身を出力しないことを決め、境界を待つホストに境界の完了を通知する。 */
+  /** 境界の中身を出力しないことを決める。 */
   private abandon(boundary: Boundary): void {
+    this.finishBoundary(boundary);
     boundary.send(false);
-    if (boundary.path.length === 0) return;
-    const calls = boundary.path
-      .map((host) => `$rinka.d(${scriptJson(host)},${scriptJson({ [`@${boundary.id}`]: 1 })})`)
-      .join(";");
-    this.write(`<script>${calls}</script>`);
+  }
+
+  /** 境界を送り終えたものとして数え、Shadow DOM の中の後送りの境界をすべて送り終えたホストに、`@b` の値を送る。 */
+  private finishBoundary(boundary: Boundary): void {
+    for (const host of boundary.path) {
+      const rest = (this.deferred.get(host) ?? 0) - 1;
+      this.deferred.set(host, rest);
+      if (rest === 0) this.write(`<script>$rinka.d(${scriptJson(host)},{"@b":1})</script>`);
+    }
   }
 
   private track(task: Promise<void>): void {

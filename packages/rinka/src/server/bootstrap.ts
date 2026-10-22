@@ -2,10 +2,9 @@
  * 起動スクリプトである。`window.$rinka` に受け口を定義する。既に `$rinka` があれば、保持している値を残して受け口を追加する。
  * `d(ホストの ID, 値のオブジェクト)` は、ホストに引き継ぐ値を保持して、待っている関数に通知する。
  * `r(spec)` は、1 つの境界の中身と、その境界の差し替えを適用する。開始と終了の目印がそろわない差し替えは、適用せずに除去する。
- * `spec.w` の各組（ホストの ID とキー）は、境界の完了を通知する前に、受け口の `w` のそのホストの配列に追加する。
  * `n` は、memo の値が無いことを表すオブジェクトである。
  */
-export const bootstrap = `<script>(R=>{window.$rinka=Object.assign(R,{v:R.v||{},l:R.l||{},w:R.w||{},n:R.n||{},
+export const bootstrap = `<script>(R=>{window.$rinka=Object.assign(R,{v:R.v||{},l:R.l||{},n:R.n||{},
 d(id,o){Object.assign(this.v[id]||(this.v[id]={}),o);(this.l[id]||[]).slice().forEach(f=>f())},
 r(s){const me=document.currentScript;me&&me.remove();
 const fix=root=>{for(const t of root.querySelectorAll('template[shadowrootmode]')){fix(t.content);const host=t.parentElement;
@@ -17,6 +16,4 @@ while(end&&!(end.nodeType===8&&end.data==='/ob:'+id))end=end.nextSibling;
 if(!src)return;if(!end){src.remove();return}
 while(start.nextSibling!==end)start.nextSibling.remove();
 fix(src.content);end.parentNode.insertBefore(src.content,end);start.remove();end.remove();src.remove()};
-apply(s.b,s.bp,'template[data-os="'+s.b+'"]');for(const p of s.p)apply(p[0],p[1],'template[data-op="'+p[0]+'"]');
-for(const [h,k] of s.w||[])(this.w[h]||(this.w[h]=[])).push(k);
-for(const h of s.h)this.d(h,{['@'+s.b]:1})}})})(window.$rinka||{})</script>`;
+apply(s.b,s.bp,'template[data-os="'+s.b+'"]');for(const p of s.p)apply(p[0],p[1],'template[data-op="'+p[0]+'"]')}})})(window.$rinka||{})</script>`;
