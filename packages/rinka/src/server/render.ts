@@ -256,8 +256,6 @@ class Renderer {
   private readonly hosts = new Set<HostRecord>();
   /** ホストに値を送る処理のうち、終わっていないものを保持する。 */
   private readonly values = new Set<Promise<void>>();
-  /** 文字列にしたホストごとに、ページに出力したかどうかをホストの Promise に反映する処理を保持する。 */
-  private readonly placed: Promise<void>[] = [];
   /** 要素を描画したか、`<Loading>` の中身を後送りにしたときに真になる。真になったページにだけ、起動スクリプトを出力する。 */
   private interactive = false;
   /** `noindex` の `<meta>` を出力したことを表す。 */
@@ -599,7 +597,7 @@ class Renderer {
             Promise.resolve(toScript(resolved.transfer, `<${record.tag}>`)),
           );
         }
-        this.placed.push(out.shown.then((output) => record.shown.resolve(output)));
+        record.shown.resolve(out.shown);
         return open(resolved, record.deferred > 0) + inner;
       }
       case "errored": {
@@ -785,7 +783,6 @@ class Renderer {
       this.write(`<!doctype html><html><head><meta charset="utf-8">${script}</head><body>${shell}`);
       this.shellShown.resolve(true);
       await this.drain();
-      await Promise.all(this.placed);
       for (const host of this.hosts) host.shown.resolve(false);
       await Promise.all(this.values);
       this.write("</body></html>");
