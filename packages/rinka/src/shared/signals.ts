@@ -53,8 +53,9 @@ export function memo<T>(
   fn: (prev: T | undefined) => T | PromiseLike<T>,
   options?: MemoOptions,
 ): Memo<T> {
+  const read: Accessor<T> = scopedMemo(fn, options) ?? createMemo(fn);
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-  return (scopedMemo(fn, options) ?? createMemo(fn)) as unknown as Memo<T>;
+  return read as Memo<T>;
 }
 
 /**
@@ -67,7 +68,10 @@ export const optimistic: {
   <T>(fn: (prev: T | undefined) => T | PromiseLike<T>, options?: SignalOptions<T>): Signal<T>;
 } = createOptimistic;
 
-/** memo が一度解決した後に、値を取り直している間、`true` を返す。 */
+/**
+ * memo が一度解決した後に、依存する値が変化して値を取り直している間、`true` を返す。
+ * `refresh` で取り直している間は `false` を返す。
+ */
 export const isPending: (target: Accessor<unknown>) => boolean = solidIsPending;
 
 /** memo を取り直す。取り直した値が解決すると解決する Promise を返す。 */

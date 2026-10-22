@@ -1,11 +1,15 @@
-import { Errored, effect, type Effect } from "rinka";
+import { Errored, type ServerNode } from "rinka";
+import { jsx } from "rinka/jsx-runtime";
 import { redirect, renderToString } from "rinka/server";
 import { describe, expectTypeOf, it } from "vitest";
 
 describe("rinka-server の条件", () => {
   it("rinka は、サーバーの実装の型に解決する", () => {
     expectTypeOf(Errored).parameter(0).toHaveProperty("status");
-    expectTypeOf(effect).toEqualTypeOf<Effect>();
+  });
+
+  it("rinka/jsx-runtime は、サーバーの JSX ランタイムに解決する", () => {
+    expectTypeOf(jsx).returns.toEqualTypeOf<ServerNode>();
   });
 
   it("rinka/server は、サーバーの API の型に解決する", () => {
