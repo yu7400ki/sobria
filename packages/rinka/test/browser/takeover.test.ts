@@ -113,6 +113,31 @@ describe("値の引き継ぎ", () => {
     expect(html(host?.shadowRoot)).toBe("<p>v1</p>");
   });
 
+  it("関数のコンポーネントの中の memo にはキーを付けず、要素の関数の中の memo の回数をずらさない", async () => {
+    const tag = nextTag();
+    let fetched = 0;
+    const fetch = () => {
+      if (!isSeeding()) fetched++;
+      return Promise.resolve("direct");
+    };
+    const view = (h: H) => () => {
+      const Row = () => {
+        const inner = memo(() => "row", { site: "t:11" });
+        return h("i", { children: () => inner() });
+      };
+      const row = h(Row, {});
+      const direct = memo(fetch, { site: "t:11" });
+      return [row, h("p", { children: () => direct() })];
+    };
+    const scripts = await serve(server(defineServer(tag, view(server), { props: [] }), {}));
+    scripts.forEach(run);
+    fetched = 0;
+    defineClient(tag, view(client), { props: [] });
+    await tick();
+    expect(html(document.querySelector(tag)?.shadowRoot)).toBe("<i>row</i><p>direct</p>");
+    expect(fetched).toBe(0);
+  });
+
   it("data-om の値がすべて届くまで起動しない", async () => {
     const tag = nextTag();
     const scripts = await serve(
@@ -240,7 +265,7 @@ describe("Shadow DOM の中の子要素", () => {
   });
 });
 
-describe("Shadow DOM の中の子要素（親の描画が保留中）", () => {
+describe("Shadow DOM の中の子要素（親の描画が保留中か、起動し直した後）", () => {
   it("親が SSR した中身をまだ置き換えていない間は、値が届いても子要素は起動しない", async () => {
     const parentTag = nextTag();
     const childTag = nextTag();
@@ -275,6 +300,48 @@ describe("Shadow DOM の中の子要素（親の描画が保留中）", () => {
     scripts.forEach(run);
     await tick();
     resolve("p");
+    await tick();
+    expect(rendered).toBe(1);
+  });
+
+  it("最初の起動が保留中のまま切断され、起動し直した親の Shadow DOM に追加した要素は、最上位として起動する", async () => {
+    const parentTag = nextTag();
+    const childTag = nextTag();
+    await serve(
+      server(
+        defineServer(parentTag, () => server("p", { children: "ssr" }), { props: [] }),
+        {},
+      ),
+    );
+    let rendered = 0;
+    defineClient(
+      childTag,
+      () => {
+        rendered++;
+        return null;
+      },
+      { props: [] },
+    );
+    const { promise, resolve } = Promise.withResolvers<string>();
+    defineClient(
+      parentTag,
+      () => {
+        const pending = memo(() => promise);
+        return client("p", { children: () => pending() });
+      },
+      { props: [] },
+    );
+    await tick();
+    const host = document.querySelector(parentTag);
+    const container = host?.parentElement;
+    host?.remove();
+    await tick();
+    if (host) container?.append(host);
+    await tick();
+    resolve("client");
+    await tick();
+    expect(html(host?.shadowRoot)).toBe("<p>client</p>");
+    host?.shadowRoot?.append(document.createElement(childTag));
     await tick();
     expect(rendered).toBe(1);
   });
@@ -329,6 +396,36 @@ describe("入れ子の子要素の引き継ぎ", () => {
     const ssrChild = document.querySelector(parentTag)?.shadowRoot?.querySelector(childTag);
     expect(html(ssrChild?.shadowRoot)).toBe("<p> ann</p>");
     rest.forEach(run);
+    await tick();
+    const child = document.querySelector(parentTag)?.shadowRoot?.querySelector(childTag);
+    expect(child).not.toBe(ssrChild);
+    expect(html(child?.shadowRoot)).toBe("<p>client ann</p>");
+  });
+
+  it("子要素のホストの ID が後から届いても、その子要素のホストの値を待つ", async () => {
+    const parentTag = nextTag();
+    const childTag = nextTag();
+    const childServer = defineServer(childTag, viewWith(server, "", "t:12", fetchAnn), {
+      props: [],
+    });
+    const scripts = await serve(
+      server(
+        defineServer(parentTag, () => server(childServer, {}, undefined, "p:4"), { props: [] }),
+        {},
+      ),
+    );
+    const mapping = scripts.filter((script) => script.includes("@c:"));
+    const childValues = scripts.filter((script) => script.startsWith('$rinka.d("h2"'));
+    const childClient = defineClient(childTag, viewWith(client, "client", "t:12", fetchAnn), {
+      props: [],
+    });
+    defineClient(parentTag, () => client(childClient, {}, undefined, "p:4"), { props: [] });
+    await tick();
+    mapping.forEach(run);
+    await tick();
+    const ssrChild = document.querySelector(parentTag)?.shadowRoot?.querySelector(childTag);
+    expect(html(ssrChild?.shadowRoot)).toBe("<p> ann</p>");
+    childValues.forEach(run);
     await tick();
     const child = document.querySelector(parentTag)?.shadowRoot?.querySelector(childTag);
     expect(child).not.toBe(ssrChild);

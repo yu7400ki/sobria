@@ -111,11 +111,13 @@ export function seededMemo<T>(
   return createMemo<T>((prev) => {
     if (!seeding) return compute(prev);
     seeding = false;
+    let result: unknown;
     try {
-      void Promise.resolve(runSeeding(() => compute(undefined))).catch(() => {});
+      result = runSeeding(() => compute(undefined));
     } catch {
-      // シードで投げた値は、引き継いだ値があるので使用しない
+      return value;
     }
+    void Promise.resolve(result).catch(() => {});
     return value;
   });
 }

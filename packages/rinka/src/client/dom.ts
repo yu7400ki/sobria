@@ -4,6 +4,7 @@ import { attributeValue, tagAttributeName } from "../shared/attributes.ts";
 import { isEventProp, listenerEventName } from "../shared/names.ts";
 import type { ClientNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
+import { outsideScope } from "../shared/scope.ts";
 import { registerSlot } from "./slots.ts";
 
 /** DOM に挿入できる値を表す。関数は、値が変化するたびに挿入し直す領域になる。 */
@@ -56,7 +57,7 @@ export function setter(el: Element, name: string, isProperty: boolean): (value: 
 
 /** `value` を `set` に渡す。関数の値は、値が変化するたびに渡し直す。 */
 export function bind(value: unknown, set: (value: unknown) => void): void {
-  if (isFunction(value)) createRenderEffect(() => value(), set);
+  if (isFunction(value)) createRenderEffect(() => outsideScope(value), set);
   else set(value);
 }
 
@@ -102,7 +103,7 @@ export function insert(
     createRenderEffect(
       () => {
         const fragment = document.createDocumentFragment();
-        insert(fragment, value(), place);
+        insert(fragment, outsideScope(value), place);
         return fragment;
       },
       (fragment) => {
@@ -126,5 +127,5 @@ export function createNode(
   if (typeof type === "string") {
     return asClientNode(createTag(type, key === undefined ? props : { ...props, key }));
   }
-  return asClientNode(untrack(() => type(props)));
+  return asClientNode(untrack(() => outsideScope(() => type(props))));
 }

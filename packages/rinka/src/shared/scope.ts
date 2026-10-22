@@ -31,6 +31,17 @@ export function withScope<T>(scope: MemoScope, fn: () => T): T {
   }
 }
 
+/** `fn` を、描画の範囲の外で実行する。 */
+export function outsideScope<T>(fn: () => T): T {
+  const previous = current;
+  current = undefined;
+  try {
+    return fn();
+  } finally {
+    current = previous;
+  }
+}
+
 /** `memo` の 2 番目の引数を表す。 */
 export interface MemoOptions {
   /** 描画の範囲の中で、memo を識別するキーを表す。 */

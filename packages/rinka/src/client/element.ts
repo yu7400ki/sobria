@@ -200,8 +200,10 @@ export function defineElement<P, M extends object = object>(
     );
     scopeValues.set(scope, values);
     let target: ParentNode = shadow;
-    if (id === null) shadow.replaceChildren();
-    else target = document.createDocumentFragment();
+    if (id === null) {
+      shadow.replaceChildren();
+      instance.replaced = true;
+    } else target = document.createDocumentFragment();
     runWithOwner(owner, () =>
       createRoot((dispose) => {
         const run: Run = { dispose, mounts: [], settled: false };
