@@ -125,7 +125,7 @@ function element(code: string) {
     file: "src/elements/x.tsx",
     lang: "tsx",
     client: false,
-    element: { tag: "app-x" },
+    element: { tag: "app-x", module: "/src/elements/x.tsx" },
   });
 }
 
@@ -241,12 +241,33 @@ describe("要素の登録", () => {
   it("default export した関数を、タグ名と Props の解析の結果を渡して要素を登録する呼び出しにする", () => {
     const { code } = element(`type Props = { a: string; onPick?: () => void };
 export default function X(props: Props) { return <p />; }`);
-    expect(code).toContain('import { defineElement as __rinka_defineElement } from "rinka";');
+    expect(code).toContain(
+      'import { defineElement as __rinka_defineElement } from "rinka/internal";',
+    );
     expect(code).toContain("function X(props: Props) { return <p />; }");
     expect(code).not.toContain("export default function");
     expect(code).toContain(
-      'export default __rinka_defineElement("app-x", X, {"props":["a","onPick"],"types":{"a":"string"},"functionProps":["onPick"]});',
+      'export default __rinka_defineElement("app-x", X, {"props":["a","onPick"],"types":{"a":"string"},"functionProps":["onPick"]}, {"module":"/src/elements/x.tsx","load":"load"});',
     );
+  });
+
+  it("サーバー向けの要素の登録には、要素のファイルの export const load の値をデフォルトの起動タイミングとして渡す", () => {
+    const end = "export default function X(props: {}) { return <p />; }";
+    for (const load of ["load", "idle", "visible"]) {
+      expect(element(`export const load = "${load}";\n${end}`).code).toContain(
+        `{"module":"/src/elements/x.tsx","load":"${load}"}`,
+      );
+    }
+    expect(element(`export const load = 'idle';\n${end}`).code).toContain('"load":"idle"');
+  });
+
+  it("export const load の値が load、idle、visible の文字列のリテラルでなければ、ビルドのエラーにする", () => {
+    const end = "export default function X(props: {}) { return <p />; }";
+    for (const value of ['"media"', '"media:(min-width: 800px)"', '"later"', "mode", "`idle`"]) {
+      expect(() => element(`const mode = "idle";\nexport const load = ${value};\n${end}`)).toThrow(
+        /export const load/,
+      );
+    }
   });
 
   it("クライアント向けの要素のモジュールは、内部の入口の登録の関数に import.meta.hot を渡し、自身の更新を受け入れる", () => {
@@ -256,7 +277,7 @@ export default function X(props: Props) { return <p />; }`);
       file: "src/elements/x.tsx",
       lang: "tsx",
       client: true,
-      element: { tag: "app-x" },
+      element: { tag: "app-x", module: "/src/elements/x.tsx" },
     }).code;
     expect(client).toContain(
       'export default __rinka_defineElement("app-x", X, {"props":["a"],"types":{"a":"string"}}, import.meta.hot);',
@@ -351,7 +372,11 @@ describe("スロット化", () => {
 export default function X(props: Props) {
   return <section><header>{props.header ?? <h2>t</h2>}</header><Loading>{props.children}</Loading><div>{props.footer}</div></section>;
 }`,
-      { id: "src/elements/x.tsx", file: "src/elements/x.tsx", element: { tag: "app-x" } },
+      {
+        id: "src/elements/x.tsx",
+        file: "src/elements/x.tsx",
+        element: { tag: "app-x", module: "/src/elements/x.tsx" },
+      },
     );
     expect(code).toContain(
       '_jsx("slot", { name: "header", children: _jsx("h2", { children: "t" }) })',
@@ -384,6 +409,7 @@ describe("変換したコードの描画", () => {
         path,
         code
           .replaceAll('"rinka/jsx-runtime"', runtime("src/server/jsx-runtime.ts"))
+          .replaceAll('"rinka/internal"', runtime("src/server/internal.ts"))
           .replaceAll('"rinka"', runtime("src/server/index.ts")),
       );
       return (await import(pathToFileURL(path).href)) as { default: unknown };
@@ -401,7 +427,7 @@ export default function Card(props: Props) {
           file: "src/elements/card.tsx",
           lang: "tsx",
           client: false,
-          element: { tag: "app-card" },
+          element: { tag: "app-card", module: "/src/elements/card.tsx" },
         },
       );
       await load(await lower(card.code, "src/elements/card.tsx"), "card.js");

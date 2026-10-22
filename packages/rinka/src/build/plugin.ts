@@ -131,7 +131,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           file: target.file,
           lang: target.lang,
           client: isClient(this.environment),
-          ...(tag !== undefined && { element: { tag } }),
+          ...(tag !== undefined && { element: { tag, module: `/${target.file}` } }),
         });
         return { code: result.code, map: result.map };
       },

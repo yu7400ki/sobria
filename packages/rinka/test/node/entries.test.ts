@@ -43,6 +43,7 @@ describe("入口", () => {
     expect(typeof clientInternal.stopIfSeeding).toBe("function");
     expect(typeof clientInternal.defineElement).toBe("function");
     expect(typeof serverInternal.createApp).toBe("function");
+    expect(typeof serverInternal.defineElement).toBe("function");
   });
 
   it("サーバーの effect は、read と apply を呼ばない", () => {

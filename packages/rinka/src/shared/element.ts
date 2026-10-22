@@ -1,3 +1,4 @@
+import type { LoadTiming } from "./names.ts";
 import type { ClientNode, Slot } from "./nodes.ts";
 
 /** 属性の値から変換する props の型を表す。 */
@@ -28,10 +29,20 @@ export interface Ctx<M extends object = object> {
 /** 要素コンポーネントに要素の情報を付与するときの、プロパティのキーを表す。 */
 export const elementInfo = Symbol.for("rinka.element");
 
-/** 要素のタグ名と、`defineElement` に渡したオプションを表す。 */
+/** 要素のファイルの `export const load` に記述できる、デフォルトの起動タイミングを表す。 */
+export type DefaultLoad = Exclude<LoadTiming, "media">;
+
+/** ブラウザが読み込む要素のモジュールの URL と、要素のデフォルトの起動タイミングを表す。 */
+export interface Delivery {
+  readonly module: string;
+  readonly load: DefaultLoad;
+}
+
+/** 要素のタグ名と、`defineElement` に渡したオプションを表す。`delivery` は、Vite プラグインがコンパイルしたサーバー向けの要素だけが持つ。 */
 export interface ElementInfo {
   readonly tag: string;
   readonly options: ElementOptions;
+  readonly delivery?: Delivery;
 }
 
 /** `defineElement` が返す要素コンポーネントを表す。 */
@@ -64,16 +75,18 @@ export type ElementRef<C> = C extends (props: infer P, ctx: Ctx<infer M>) => unk
   ? Omit<HTMLElement, keyof M> & M & Omit<P, SlotKeys<P>>
   : never;
 
-/** `fn` に、タグ名と `defineElement` に渡したオプションを付与した要素コンポーネントを作成する。 */
+/** `fn` に、タグ名と `defineElement` に渡したオプションと配信の情報を付与した要素コンポーネントを作成する。 */
 export function createElementComponent<P, M extends object>(
   tag: string,
   fn: (props: P, ctx: Ctx<M>) => unknown,
   options: ElementOptions,
+  delivery?: Delivery,
 ): ElementComponent<P, M> {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   const component = ((props: P, ctx: Ctx<M>) => fn(props, ctx)) as (
     props: P,
     ctx: Ctx<M>,
   ) => ClientNode;
-  return Object.assign(component, { [elementInfo]: { tag, options } });
+  const info: ElementInfo = delivery ? { tag, options, delivery } : { tag, options };
+  return Object.assign(component, { [elementInfo]: info });
 }

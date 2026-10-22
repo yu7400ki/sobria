@@ -1,8 +1,25 @@
 import { Hono } from "hono";
 
+import {
+  createElementComponent,
+  type Ctx,
+  type Delivery,
+  type ElementComponent,
+  type ElementOptions,
+} from "../shared/element.ts";
 import type { AppOptions, CreateApp, Route } from "../shared/routes.ts";
 import { jsx } from "./jsx-runtime.ts";
 import { renderDocument } from "./render.ts";
+
+/** `fn` を、`tag` の名前の要素として、ブラウザが読み込むモジュールの URL とデフォルトの起動タイミングとともに登録する。 */
+export function defineElement<P, M extends object = object>(
+  tag: string,
+  fn: (props: P, ctx: Ctx<M>) => unknown,
+  options: ElementOptions,
+  delivery: Delivery,
+): ElementComponent<P, M> {
+  return createElementComponent(tag, fn, options, delivery);
+}
 
 /** ルートの表から、各ページを描画する Hono のアプリを作成する。 */
 export const createApp = ((routes: readonly Route[], options: AppOptions = {}): Hono => {

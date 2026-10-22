@@ -1,7 +1,7 @@
 import { MagicString, type SourceMap } from "magic-string";
 import type { ESTree } from "vite";
 
-import type { ElementInfo, ElementOptions } from "../shared/element.ts";
+import type { DefaultLoad, Delivery, ElementInfo, ElementOptions } from "../shared/element.ts";
 import {
   children,
   isFunction,
@@ -28,8 +28,8 @@ export { CompileError } from "./errors.ts";
 export interface SourceOptions extends ModuleSource {
   /** クライアント向けのコードなら真である。 */
   readonly client: boolean;
-  /** 要素のファイルなら、要素のタグ名を持つ。 */
-  readonly element?: { readonly tag: string };
+  /** 要素のファイルなら、要素のタグ名と、ブラウザが読み込むモジュールの URL を持つ。 */
+  readonly element?: { readonly tag: string; readonly module: string };
 }
 
 /** 変換したコードと、元のコードへのソースマップを表す。 */
@@ -62,7 +62,7 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
   addMemoSites(program, output, code, options.file);
   const element =
     options.element &&
-    registerElement(program, output, options.element.tag, options.file, options.client);
+    registerElement(program, output, options.element, options.file, options.client);
   if (options.client && stopAwaits(program, output)) {
     output.prepend(`import { stopIfSeeding as ${STOP_IF_SEEDING} } from "${entries.internal}";\n`);
   }
@@ -74,13 +74,14 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
 }
 
 /**
- * default export した要素の関数を、`tag` と Props の解析の結果を渡して要素を登録する呼び出しにする。
+ * default export した要素の関数を、タグ名と Props の解析の結果を渡して要素を登録する呼び出しにする。
  * クライアント向けなら、登録に `import.meta.hot` を渡し、モジュール自身の更新を受け入れる。
+ * サーバー向けなら、登録にモジュールの URL と、`export const load` の値のデフォルトの起動タイミングを渡す。
  */
 function registerElement(
   program: ESTree.Program,
   output: MagicString,
-  tag: string,
+  { tag, module }: { readonly tag: string; readonly module: string },
   file: string,
   client: boolean,
 ): ElementInfo {
@@ -96,14 +97,37 @@ function registerElement(
   output.remove(exported.start, fn.start);
   const args = [JSON.stringify(tag), fn.id.name, JSON.stringify(elementOptions)];
   if (client) args.push("import.meta.hot");
+  else args.push(JSON.stringify({ module, load: defaultLoad(program, file) } satisfies Delivery));
   output.append(`
 export default ${DEFINE}(${args.join(", ")});
 `);
   if (client) output.append("if (import.meta.hot) import.meta.hot.accept();\n");
-  output.prepend(`import { defineElement as ${DEFINE} } from "${client ? entries.internal : entries.main}";
+  output.prepend(`import { defineElement as ${DEFINE} } from "${entries.internal}";
 `);
   return { tag, options: elementOptions };
 }
+
+/** 要素のファイルの最上位の `export const load` の値を返す。記述が無ければ `load` を返す。 */
+function defaultLoad(program: ESTree.Program, file: string): DefaultLoad {
+  for (const statement of program.body) {
+    if (statement.type !== "ExportNamedDeclaration") continue;
+    const declaration = statement.declaration;
+    if (declaration?.type !== "VariableDeclaration") continue;
+    for (const declarator of declaration.declarations) {
+      if (declarator.id.type !== "Identifier" || declarator.id.name !== "load") continue;
+      const init = declarator.init && unwrap(declarator.init);
+      if (init?.type === "Literal" && isDefaultLoad(init.value)) return init.value;
+      throw new CompileError(
+        `${file}: export const load には、"load"、"idle"、"visible" のどれかの文字列を記述してください。メディアクエリは、要素を配置するページで load:media に指定してください。`,
+      );
+    }
+  }
+  return "load";
+}
+
+/** `value` が、`export const load` に記述できる起動タイミングかどうかを返す。 */
+const isDefaultLoad = (value: unknown): value is DefaultLoad =>
+  value === "load" || value === "idle" || value === "visible";
 
 /** `rinka` から import した `memo` の呼び出しに、`{ site: "ファイル:行:列" }` を付与する。 */
 function addMemoSites(
