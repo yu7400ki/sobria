@@ -66,12 +66,23 @@ export function insertIntoSlot(slots: HostSlots, name: string, insert: () => voi
 export function activateInSlot(activate: (owner: Owner) => void): boolean {
   const target = getContext(TargetContext);
   if (!target) return false;
-  const { slots, name } = target;
+  onCleanup(addChild(target.slots, target.name, activate));
+  return true;
+}
+
+/**
+ * `slots` のホストの `name` のスロットに配置した子要素を、そのスロットの `<slot>` を作成した時点の owner の下で起動する。
+ * `<slot>` を作成済みなら `activate` をすぐに呼ぶ。戻り値の関数を呼ぶと、`activate` を呼ばなくなる。
+ */
+export function addChild(
+  slots: HostSlots,
+  name: string,
+  activate: (owner: Owner) => void,
+): () => void {
   let children = slots.children.get(name);
   if (!children) slots.children.set(name, (children = new Set()));
   children.add(activate);
-  onCleanup(() => children.delete(activate));
   const owner = slots.owners.get(name);
   if (owner) activate(owner);
-  return true;
+  return () => children.delete(activate);
 }

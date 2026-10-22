@@ -1,4 +1,5 @@
 import {
+  createLoadingBoundary,
   createMemo,
   createRoot,
   createSignal,
@@ -29,6 +30,7 @@ import type { ClientNode } from "../shared/nodes.ts";
 import { bind, callRef, insert, isFunction, setter } from "./dom.ts";
 import {
   activateInSlot,
+  addChild,
   createHostSlots,
   enterHost,
   insertIntoSlot,
@@ -60,10 +62,14 @@ interface Instance {
   readonly slots: HostSlots;
   /** `owner` の下でインスタンスを起動する。 */
   readonly activate: (owner: Owner | null) => void;
-  /** 親の owner の下で起動したかどうか。 */
+  /** owner のある場所で作成したかどうか。作成した場所の owner が、起動と破棄を管理する。 */
   owned: boolean;
   /** 起動していれば、描画の範囲を破棄する関数。 */
   dispose?: () => void;
+  /** 起動を待っていれば、待つのをやめる関数。 */
+  cancel?: () => void;
+  /** 次に起動した後に呼ぶ関数。 */
+  readonly waiters: Set<() => void>;
   /** 起動した後に呼ぶ、要素への `ref`。 */
   ref?: (host: HTMLElement) => unknown;
   /** まだ呼んでいない `onMount` の関数。 */
@@ -152,12 +158,13 @@ export function defineElement<P, M extends object = object>(
 
   /**
    * `owner` の下に root を作成して要素の関数を描画し、要素への `ref` を呼ぶ。
+   * `owner` が `null` なら、描画の全体を、フォールバックが空の `<Loading>` で包む。
    * root を破棄すると、`instance.dispose` を `undefined` にし、まだ呼んでいない `onMount` の関数を捨てる。
+   * 起動した後に、`instance.waiters` の関数を呼んで空にする。
    */
   function activate(host: HTMLElement, instance: Instance, owner: Owner | null): void {
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
     shadow.replaceChildren();
-    instance.owned = owner !== null;
     instance.settled = false;
     runWithOwner(owner, () =>
       createRoot((dispose) => {
@@ -183,17 +190,21 @@ export function defineElement<P, M extends object = object>(
         };
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion
         const props = createProps(host, instance) as P;
-        insert(
-          shadow,
-          untrack(() => fn(props, ctx)),
-        );
+        const render = () => {
+          const content = untrack(() => fn(props, ctx));
+          onSettled(() => {
+            instance.settled = true;
+            runMounts(host, instance);
+          });
+          return content;
+        };
+        insert(shadow, owner ? render() : createLoadingBoundary(render, () => undefined));
         if (instance.ref) callRef(instance.ref, host);
-        onSettled(() => {
-          instance.settled = true;
-          runMounts(host, instance);
-        });
       }),
     );
+    const waiters = [...instance.waiters];
+    instance.waiters.clear();
+    for (const waiter of waiters) waiter();
   }
 
   class RinkaElement extends HTMLElement {
@@ -224,6 +235,7 @@ export function defineElement<P, M extends object = object>(
         owned: false,
         mounts: [],
         settled: false,
+        waiters: new Set(),
       };
       instances.set(this, instance);
     }
@@ -239,7 +251,9 @@ export function defineElement<P, M extends object = object>(
       if (instance.dispose) runMounts(this, instance);
       else if (!instance.owned) {
         queueMicrotask(() => {
-          if (this.isConnected && !instance.dispose) instance.activate(null);
+          if (!this.isConnected || instance.dispose) return;
+          instance.cancel?.();
+          instance.cancel = attach(this, instance);
         });
       }
     }
@@ -248,7 +262,10 @@ export function defineElement<P, M extends object = object>(
       const instance = instances.get(this)!;
       if (instance.owned) return;
       queueMicrotask(() => {
-        if (!this.isConnected) instance.dispose?.();
+        if (this.isConnected) return;
+        instance.cancel?.();
+        instance.cancel = undefined;
+        instance.dispose?.();
       });
     }
   }
@@ -263,11 +280,39 @@ export function defineElement<P, M extends object = object>(
 }
 
 /**
+ * owner の無い場所で作成して接続した要素を起動する。表示されている位置から上へ、定義済みの要素を探索する。
+ * 見つけた要素が起動していれば、見つけた要素の子のうち `el` を含む子の `slot` 属性の名前で、`<slot>` の owner の下で起動する。`<slot>` が無ければ、その `<slot>` を作成した時点で起動する。
+ * 見つけた要素が起動していなければ、その要素が起動した後に、接続していれば探索し直す。
+ * Shadow DOM の中にあるか、上に定義済みの要素が無ければ、最上位の要素として起動する。
+ * 起動を待っていれば、待つのをやめる関数を返す。
+ */
+function attach(el: HTMLElement, instance: Instance): (() => void) | undefined {
+  let child: Element = el;
+  for (let node = el.parentNode; node && !(node instanceof ShadowRoot); node = node.parentNode) {
+    const parent = instanceOf(node);
+    if (parent?.dispose) return addChild(parent.slots, child.slot, instance.activate);
+    if (parent) {
+      const retry = () => {
+        instance.cancel = el.isConnected ? attach(el, instance) : undefined;
+      };
+      parent.waiters.add(retry);
+      return () => parent.waiters.delete(retry);
+    }
+    if (node instanceof Element) child = node;
+  }
+  instance.activate(null);
+  return undefined;
+}
+
+const instanceOf = (node: Node): Instance | undefined =>
+  node instanceof HTMLElement ? instances.get(node) : undefined;
+
+/**
  * JSX の中で、要素のインスタンスを作成する。
  * `options.props` に名前がある値は props に設定し、関数の値（関数の props を除く）と getter は、owner があれば親の owner の memo にする。
  * それ以外の値と `key` はホストの属性にし、props に無い `onX` の関数はホストのリスナーにする。
  * `children` とスロットの props の内容は Light DOM に配置し、その中の子要素は、ホストがそのスロットの `<slot>` を作成した後に起動する。
- * スロットに配置する内容でなければ、owner があればその owner の下で同期的に起動する。owner が無ければ、接続した後に最上位の要素として起動する。
+ * スロットに配置する内容でなければ、owner があればその owner の下で同期的に起動する。owner が無ければ、接続した後に、表示されている位置から探索した定義済みの要素の下で起動する。見つからなければ、最上位の要素として起動する。
  * 要素への `ref` は、起動した後に呼ぶ。
  */
 export function createElementInstance(
