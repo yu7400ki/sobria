@@ -28,6 +28,7 @@ const rules = new Map([
   ["eslint(no-undef)", "global"],
   ["unicorn(prefer-node-protocol)", "node"],
   ["rinka(no-static-wire-codec)", "wire-codec"],
+  ["import(no-cycle)", "cycle"],
 ]);
 
 type Diagnostic = { code: string; labels: { span: { line: number } }[] };
@@ -187,6 +188,13 @@ describe("src/ の lint の規則", () => {
         'import { toJSON } from "seroval";',
       ]),
     ).toEqual([[2, "import"]]);
+  });
+});
+
+describe("import の循環", () => {
+  it("互いを import するモジュールを報告する", () => {
+    expect(reports("src/client/cycle-b.ts", ['import "./cycle-a.ts";'])).toEqual([]);
+    expect(reports("src/client/cycle-a.ts", ['import "./cycle-b.ts";'])).toEqual([[1, "cycle"]]);
   });
 });
 

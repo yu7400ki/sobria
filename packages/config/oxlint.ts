@@ -4,13 +4,14 @@ export { defineConfig };
 
 /** すべてのパッケージに適用する oxlint の設定。 */
 export const base = defineConfig({
-  plugins: ["typescript", "unicorn", "oxc"],
+  plugins: ["typescript", "unicorn", "oxc", "import"],
   categories: {
     correctness: "error",
     perf: "warn",
     suspicious: "error",
   },
   rules: {
+    "import/no-cycle": "error",
     "typescript/consistent-return": "off",
     "typescript/no-unsafe-unary-minus": "off",
     "typescript/no-deprecated": "error",
