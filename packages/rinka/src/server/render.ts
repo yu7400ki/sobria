@@ -112,24 +112,68 @@ interface Boundary {
 }
 
 /** 出力を送るチャンクを表す。シェルか、後送りの境界の中身である。 */
-type Flush = { readonly kind: "shell" } | DeferredFlush;
+type Flush = ShellFlush | DeferredFlush;
 
-/** 後送りの境界の中身を送るチャンクを表す。 */
-interface DeferredFlush {
-  readonly kind: "deferred";
-  /** 中身を出力したら `true` に、出力しないことが決まったら `false` に解決する。 */
+/** チャンクがページに現れるかどうかを表す `shown` と、それを解決する `resolve` の組を表す。 */
+interface Resolvable {
+  /** チャンクを書き込んだら `true` に、書き込まないことが決まったら `false` に解決する。 */
   readonly shown: Promise<boolean>;
   readonly resolve: (shown: boolean) => void;
+}
+
+/** シェルを送るチャンクを表す。 */
+interface ShellFlush extends Resolvable {
+  readonly kind: "shell";
+}
+
+/** 後送りの境界の中身を送るチャンクを表す。 */
+interface DeferredFlush extends Resolvable {
+  readonly kind: "deferred";
   /** 中身の中で `notFound()` を受け止めたことを表す。 */
   noindex: boolean;
 }
 
-/** 出力の位置を表す。 */
-interface Out {
-  /** この位置の出力を送るチャンクを表す。 */
-  readonly flush: Flush;
-  /** この位置の出力がページに現れたら `true` に、現れないことが決まったら `false` に解決する。外側の位置の `shown` より先には解決しない。 */
-  readonly shown: Promise<boolean>;
+/** 解決していない `Resolvable` を作成する。 */
+function resolvable(): Resolvable {
+  const resolvers = Promise.withResolvers<boolean>();
+  return { shown: resolvers.promise, resolve: resolvers.resolve };
+}
+
+/**
+ * 出力の位置を表す。`flush` は、この位置の出力を送るチャンクである。
+ * `shown` は、この位置の出力がページに現れたら `true` に、現れないことが決まったら `false` に解決する。
+ * どの位置の `shown` も、外側の位置の `shown` より先には解決しない。
+ * `shown` が `true` に解決する時点で、この位置の文字列化は終わっている。
+ */
+class Out {
+  /** `Out` を、同じ形のオブジェクトと区別する。 */
+  declare private readonly nominal: never;
+
+  private constructor(
+    readonly flush: Flush,
+    readonly shown: Promise<boolean>,
+  ) {}
+
+  /** `flush` で送る出力の、最も外側の位置を作成する。 */
+  static of(flush: Flush): Out {
+    return new Out(flush, flush.shown);
+  }
+
+  /** この位置にあり、出力を `flush` で送る位置を作成する。この位置がページに現れ、`flush` のチャンクを書き込んだときに、ページに現れる。 */
+  into(flush: Flush): Out {
+    return new Out(
+      flush,
+      this.shown.then(async (output) => output && (await flush.shown)),
+    );
+  }
+
+  /** この位置のうち、この位置の `shown` が `true` に解決した時点で `kept` が真を返すときだけ、ページに現れる位置を作成する。 */
+  gate(kept: () => boolean): Out {
+    return new Out(
+      this.flush,
+      this.shown.then((output) => output && kept()),
+    );
+  }
 }
 
 /** 描画している位置の状態を表す。 */
@@ -262,8 +306,8 @@ class Renderer {
   private noindexSent = false;
   /** シェルを表す境界である。 */
   private readonly root = this.newBoundary("", []);
-  /** シェルを書き込んだら `true` に解決する。 */
-  private readonly shellShown = Promise.withResolvers<boolean>();
+  /** シェルを送るチャンクである。 */
+  private readonly shellFlush: ShellFlush = { ...resolvable(), kind: "shell" };
   /** シェルの中の `<Errored>` が受け止めたときのステータスのうち、最も大きいものを表す。 */
   private caught = 200;
 
@@ -580,8 +624,7 @@ class Renderer {
         const { flush } = boundary;
         if (!flush || !hasHole(chunks)) return this.serialize(chunks, out);
         const id = `p${++this.seq}`;
-        const shown = out.shown.then(async (output) => output && (await flush.shown));
-        const html = this.serialize(chunks, { flush, shown });
+        const html = this.serialize(chunks, out.into(flush));
         html.catch(() => {});
         boundary.patches.push({ id, path, html });
         return marker(id);
@@ -603,9 +646,11 @@ class Renderer {
       case "errored": {
         const { chunks, node, ctx } = chunk.errored;
         let failed = false;
-        const shown = out.shown.then((output) => output && !failed);
         try {
-          return await this.serialize(chunks, { ...out, shown });
+          return await this.serialize(
+            chunks,
+            out.gate(() => !failed),
+          );
         } catch (error) {
           failed = true;
           const { flush } = out;
@@ -626,19 +671,12 @@ class Renderer {
    */
   private schedule(boundary: Boundary, out: Out): void {
     this.interactive = true;
-    const resolvers = Promise.withResolvers<boolean>();
-    const { promise: shown } = resolvers;
-    const flush: DeferredFlush = {
-      kind: "deferred",
-      shown,
-      resolve: resolvers.resolve,
-      noindex: false,
-    };
+    const flush: DeferredFlush = { ...resolvable(), kind: "deferred", noindex: false };
     boundary.flush = flush;
     for (const host of boundary.path) host.deferred++;
     this.track(
       (async () => {
-        const content = await this.serialize(boundary.region, { flush, shown }).then(
+        const content = await this.serialize(boundary.region, Out.of(flush)).then(
           (region) => ({ region }),
           (error: unknown) => ({ error }),
         );
@@ -770,10 +808,10 @@ class Renderer {
 
   /** シェルを描画し、シェルの HTML を返す。 */
   async shell(node: Node): Promise<string> {
-    return this.serialize(this.chunks(node, { owner: null, path: [], boundary: this.root }), {
-      flush: { kind: "shell" },
-      shown: this.shellShown.promise,
-    });
+    return this.serialize(
+      this.chunks(node, { owner: null, path: [], boundary: this.root }),
+      Out.of(this.shellFlush),
+    );
   }
 
   /** 文書の先頭と `shell` を出力し、後送りの境界をすべて出力してから、文書を閉じる。 */
@@ -781,7 +819,7 @@ class Renderer {
     try {
       const script = this.interactive ? bootstrap : "";
       this.write(`<!doctype html><html><head><meta charset="utf-8">${script}</head><body>${shell}`);
-      this.shellShown.resolve(true);
+      this.shellFlush.resolve(true);
       await this.drain();
       for (const host of this.hosts) host.shown.resolve(false);
       await Promise.all(this.values);
