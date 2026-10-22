@@ -21,64 +21,68 @@ import { checkSerializable } from "../shared/wire.ts";
 import { bootstrap } from "./bootstrap.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
 
-/** 出力の単位を表す。文字列、後から内容が決まる穴、`<Loading>` の位置、`<Errored>` の領域のいずれかである。 */
+/**
+ * 出力の単位を表す。文字列、穴、`<Loading>` の位置、`<Errored>` の領域のいずれかである。
+ * 穴は、描画した時点では内容が決まらず、値が解決してから内容が決まる位置である。
+ * 後送りの境界は、シェルにはフォールバックを目印で囲んで出力し、中身はシェルの後に出力して、起動スクリプトが目印の間と差し替える。
+ */
 type Chunk = string | Hole | Mark | ErroredRegion;
 
-/** 内容が決まると、出力の単位の列に解決する Promise を表す。 */
+/** 穴を表す。`hole` は、内容が決まると出力の単位の列に解決する。 */
 interface Hole {
   readonly hole: Promise<Chunk[]>;
 }
 
-/** `<Loading>` の位置を表す。中身を埋め込むか、フォールバックを出力して後送りにするかは、文字列にする時点で決める。 */
+/** `<Loading>` の位置を表す。中身を埋め込むか、フォールバックを出力して後送りにするかは、文字列にする時点で決定する。 */
 interface Mark {
   readonly mark: Boundary;
   readonly fallback: Chunk[];
 }
 
-/** `<Errored>` の領域を表す。中身の穴が失敗すると、`fallback` を出力する。 */
+/** `<Errored>` の領域を表す。中身の穴が失敗すると、`node.fallback` が返した内容を出力する。 */
 interface ErroredRegion {
   readonly errored: { readonly chunks: Chunk[]; readonly node: ErroredNode; readonly ctx: WalkCtx };
 }
 
-/** 境界に属する、別の場所の差し替えを表す。 */
+/** 境界の中身と同時に出力する、境界の領域の外にある位置の差し替えを表す。 */
 interface Patch {
   readonly id: string;
-  /** 目印を Shadow DOM の中に持つホストの ID の列。 */
+  /** 目印を含む Shadow DOM のホストの ID を、外側から順に列挙する。 */
   readonly path: readonly string[];
   readonly chunks: Chunk[];
-  /** 目印を出力する境界。 */
+  /** 目印を出力する境界を表す。 */
   readonly sink: Boundary;
 }
 
 /** `<Loading>` の境界と、シェルを表す。 */
 interface Boundary {
   readonly id: string;
-  /** 目印を Shadow DOM の中に持つホストの ID の列。 */
+  /** 目印を含む Shadow DOM のホストの ID を、外側から順に列挙する。 */
   readonly path: readonly string[];
-  /** 境界自身の領域の中身。 */
+  /** 境界の領域に出力する単位の列を表す。 */
   readonly region: Chunk[];
   readonly patches: Patch[];
   readonly parent: Boundary | null;
   /** 境界の中身を出力した時点で解決する。中身を埋め込んだ境界では、親の境界の Promise である。 */
   emitted: Promise<void>;
   markEmitted: () => void;
-  /** 中身の出力に失敗し、目印をページに出力していない。 */
+  /** 中身の出力に失敗したか、親の境界が失敗したので、この境界の中身と差し替えを出力していないことを表す。 */
   failed: boolean;
 }
 
 /** 描画している位置の状態を表す。 */
 interface WalkCtx {
-  /** 要素の描画の範囲の owner。要素の外では `null` である。 */
+  /** 要素の描画の範囲を表す owner である。要素の外では `null` である。 */
   readonly owner: Owner | null;
-  /** この位置を Shadow DOM の中に持つホストの ID の列。 */
+  /** この位置を含む Shadow DOM のホストの ID を、外側から順に列挙する。 */
   readonly path: readonly string[];
-  /** この位置の保留中の状態を受け止める境界。 */
+  /** この位置の保留中の状態を受け止める境界を表す。 */
   readonly boundary: Boundary;
-  /** この位置の出力を含む境界。 */
+  /** この位置の出力を含む境界を表す。 */
   readonly sink: Boundary;
   /** 要素の Shadow DOM の中なら、`<slot>` の名前ごとに、その `<slot>` を囲む境界を記録する。 */
   readonly slots?: Map<string, Boundary>;
-  /** 名前付きのスロットに配置する内容の最上位なら、そのスロットの名前。 */
+  /** 名前付きのスロットに配置する内容のうち、最上位のノードを描画しているときは、そのスロットの名前を表す。 */
   readonly slot?: string;
 }
 
@@ -106,14 +110,23 @@ const escapeText = (text: string): string =>
 const escapeAttribute = (text: string): string =>
   text.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
 
-/** 属性の出力の規則で、`value` を `name` の属性として出力する文字列を返す。`true` は値の無い属性にする。 */
+/** HTML の属性の名前に一致する正規表現である。 */
+const attributeName = /^[^\s"'>/=\p{Cc}]+$/u;
+
+/**
+ * 属性の出力の規則で、`value` を `name` の属性として出力する文字列を返す。`true` は値の無い属性にする。
+ * 名前に属性の名前として使用できない文字があれば、エラーを投げる。
+ */
 function attribute(name: string, value: unknown): string {
+  if (!attributeName.test(name)) {
+    throw new Error(`属性の名前 ${JSON.stringify(name)} には、使用できない文字が含まれています。`);
+  }
   const text = attributeValue(name, value);
   if (text === null) return "";
   return value === true && text === "" ? ` ${name}` : ` ${name}="${escapeAttribute(text)}"`;
 }
 
-/** サーバーの描画で、`ctx.host` の代わりに渡す値。プロパティを参照すると、エラーを投げる。 */
+/** サーバーの描画で、`ctx.host` の代わりに渡す値である。プロパティを参照すると、エラーを投げる。 */
 const serverHost = new Proxy(
   {},
   {
@@ -129,11 +142,11 @@ const serverHost = new Proxy(
 class Renderer {
   private seq = 0;
   private readonly disposers: (() => void)[] = [];
-  /** シェルの後に出力する、後送りの境界と値の処理。 */
+  /** シェルの後に後送りの境界を出力する処理のうち、終わっていないものを保持する。 */
   private readonly pending = new Set<Promise<void>>();
-  /** シェルの外の境界。 */
+  /** シェルの外の境界を、作成した順に保持する。 */
   private readonly boundaries: Boundary[] = [];
-  /** 要素を描画したか、`<Loading>` の中身を後送りにしたかどうか。どちらも無いページには、起動スクリプトを出力しない。 */
+  /** 要素を描画したか、`<Loading>` の中身を後送りにしたときに真になる。真のページにだけ、起動スクリプトを出力する。 */
   private interactive = false;
 
   /**
@@ -160,7 +173,6 @@ class Renderer {
     return boundary;
   }
 
-  /** `node` を描画した、出力の単位の列を返す。 */
   private chunks(node: Node, ctx: WalkCtx): Chunk[] {
     const out: Chunk[] = [];
     this.walk(node, ctx, out);
@@ -204,8 +216,12 @@ class Renderer {
         }
         const result = node.fn(node.props);
         if (result instanceof Promise) {
-          this.hole(
-            result.then((value) => this.chunks(asNode(value), { ...ctx, sink: ctx.boundary })),
+          this.defer(
+            [
+              this.hole(
+                result.then((value) => this.chunks(asNode(value), { ...ctx, sink: ctx.boundary })),
+              ),
+            ],
             ctx,
             out,
           );
@@ -216,39 +232,41 @@ class Renderer {
     }
   }
 
-  /** 関数を呼び出した値を描画する。未解決の値を読むと、値が解決してから描画する穴にする。 */
+  /** 関数を呼び出した値を描画する。関数が未解決の値を参照すると、値が解決してから描画する穴にする。 */
   private thunk(fn: () => Node, ctx: WalkCtx, out: Chunk[]): void {
-    let value: Node;
-    try {
-      value = runWithOwner(ctx.owner, () => untrack(fn));
-    } catch (error) {
-      if (!(error instanceof NotReadyError)) throw error;
-      const settled = runWithOwner(ctx.owner, () => resolve(fn));
-      this.hole(
-        settled.then((resolved) => this.chunks(resolved, { ...ctx, sink: ctx.boundary })),
-        ctx,
-        out,
-      );
+    const value = this.settle(ctx, fn);
+    if (!(value instanceof Promise)) {
+      this.walk(value, ctx, out);
       return;
     }
-    this.walk(value, ctx, out);
+    this.defer(
+      [this.hole(value.then((resolved) => this.chunks(resolved, { ...ctx, sink: ctx.boundary })))],
+      ctx,
+      out,
+    );
+  }
+
+  /** `promise` の穴を作成する。描画を中断して穴を捨てても、`promise` の reject は処理されないままにならない。 */
+  private hole(promise: Promise<Chunk[]>): Hole {
+    promise.catch(() => {});
+    return { hole: promise };
   }
 
   /**
-   * 穴を出力する。この位置の出力が、保留中の状態を受け止める境界とは別の境界に属するときは、
-   * 目印を出力し、境界に属する差し替えとして穴を後から送る。
+   * 保留中の値を含む出力の単位の列を出力する。この位置の出力が、保留中の状態を受け止める境界とは別の境界に属するときは、
+   * 目印を出力し、境界に属する差し替えとして列を後から送る。`chunks` の中の位置の出力は、受け止める境界に属するものとして描画する。
    */
-  private hole(promise: Promise<Chunk[]>, ctx: WalkCtx, out: Chunk[]): void {
+  private defer(chunks: Chunk[], ctx: WalkCtx, out: Chunk[]): void {
     if (this.blocking || ctx.boundary === ctx.sink) {
-      out.push({ hole: promise });
+      out.push(...chunks);
       return;
     }
     const id = `p${++this.seq}`;
     out.push(`<template data-ob="${id}"></template><!--/ob:${id}-->`);
-    ctx.boundary.patches.push({ id, path: ctx.path, chunks: [{ hole: promise }], sink: ctx.sink });
+    ctx.boundary.patches.push({ id, path: ctx.path, chunks, sink: ctx.sink });
   }
 
-  /** `props` の値を読み取る。関数は、追跡せずに呼び出した値にする。`tracked` なら追跡したまま呼び出す。 */
+  /** `props` の値を返す。関数は、追跡せずに呼び出して、戻り値を返す。`tracked` なら、追跡して呼び出す。 */
   private value(raw: unknown, ctx: WalkCtx, tracked: boolean): unknown {
     if (!isFunction(raw)) return raw;
     return tracked ? raw() : runWithOwner(ctx.owner, () => untrack(raw));
@@ -261,11 +279,12 @@ class Renderer {
     ctx: WalkCtx,
     out: Chunk[],
   ): void {
-    const open = (tracked: boolean): string => {
+    const openTag = (tracked: boolean): string => {
       let attributes = "";
       for (const [name, raw] of Object.entries(props)) {
         if (name === "children" || name === "ref") continue;
-        if (isEventProp(name) && typeof raw === "function") continue;
+        if (name === "slot" && ctx.slot !== undefined) continue;
+        if (isEventProp(name) && isFunction(raw)) continue;
         attributes += attribute(name, this.value(raw, ctx, tracked));
       }
       if (key !== undefined) attributes += attribute(tagAttributeName("key"), key);
@@ -276,21 +295,26 @@ class Renderer {
       const name = this.value(props.name, ctx, false);
       ctx.slots?.set(typeof name === "string" ? name : "", ctx.boundary);
     }
+    const open = this.settle(ctx, openTag);
+    const pending = typeof open !== "string";
+    const own: Chunk[] = [pending ? this.hole(open.then((text) => [text])) : open];
+    if (!voidTags.has(tag)) {
+      const { slot: _, ...inner } = ctx;
+      this.walk(asNode(props.children), pending ? { ...inner, sink: ctx.boundary } : inner, own);
+      own.push(`</${tag}>`);
+    }
+    if (pending) this.defer(own, ctx, out);
+    else out.push(...own);
+  }
+
+  /** `compute` を追跡せずに呼び出した値を返す。未解決の値を参照したときは、追跡して呼び出した値が解決する Promise を返す。 */
+  private settle<T>(ctx: WalkCtx, compute: (tracked: boolean) => T): T | Promise<T> {
     try {
-      out.push(open(false));
+      return runWithOwner(ctx.owner, () => untrack(() => compute(false)));
     } catch (error) {
       if (!(error instanceof NotReadyError)) throw error;
-      const settled = runWithOwner(ctx.owner, () => resolve(() => open(true)));
-      this.hole(
-        settled.then((text) => [text]),
-        ctx,
-        out,
-      );
+      return runWithOwner(ctx.owner, () => resolve(() => compute(true)));
     }
-    if (voidTags.has(tag)) return;
-    const { slot: _, ...inner } = ctx;
-    this.walk(asNode(props.children), inner, out);
-    out.push(`</${tag}>`);
   }
 
   private errored(node: ErroredNode, ctx: WalkCtx, out: Chunk[]): void {
@@ -316,40 +340,62 @@ class Renderer {
     const { tag, options } = component[elementInfo];
     const id = `h${++this.seq}`;
     const slotNames = new Set(["children", ...(options.slots ?? [])]);
+    const functionProps = new Set(options.functionProps);
     const descriptors = Object.getOwnPropertyDescriptors(props);
     const read = (name: string): unknown => {
       const descriptor = descriptors[name];
       const getter = descriptor?.get;
-      if (!getter) return descriptor?.value;
-      return runWithOwner(ctx.owner, () => untrack(() => getter.call(props) as unknown));
+      return getter ? (getter.call(props) as unknown) : descriptor?.value;
+    };
+    /** 要素の関数に渡す値を返す。関数の props でない props に渡した関数は、呼び出した値にする。 */
+    const propValue = (name: string): unknown => {
+      const value = read(name);
+      return isFunction(value) && !functionProps.has(name) ? value() : value;
     };
 
-    let attributes = attribute("data-oh", id);
-    let transferred: Record<string, unknown> | undefined;
     const elementProps = {};
     for (const name of options.props) {
       if (slotNames.has(name)) continue;
       Object.defineProperty(elementProps, name, {
         enumerable: true,
-        get: () => read(name) ?? (isEventProp(name) ? () => {} : undefined),
+        get: () =>
+          propValue(name) ?? (functionProps.has(name) && isEventProp(name) ? () => {} : undefined),
       });
-      const value = read(name);
-      if ((typeof value === "object" && value !== null) || typeof value === "function") {
-        checkSerializable(value, `<${tag}> ${name}`);
-        (transferred ??= {})[name] = value;
-        continue;
+    }
+    const hostAttributes = (tracked: boolean) => {
+      let text = "";
+      let transfer = false;
+      for (const name of options.props) {
+        if (slotNames.has(name)) continue;
+        const value = propValue(name);
+        if ((typeof value === "object" && value !== null) || typeof value === "function") {
+          checkSerializable(value, `<${tag}> ${name}`);
+          transfer = true;
+          continue;
+        }
+        text += attribute(propToAttribute(name), value);
       }
-      attributes += attribute(propToAttribute(name), value);
-    }
-    for (const name of Object.keys(descriptors)) {
-      if (options.props.includes(name) || slotNames.has(name) || name === "ref") continue;
-      if (name.startsWith("load:")) continue;
-      const value = this.value(read(name), ctx, false);
-      if (isEventProp(name) && typeof value === "function") continue;
-      attributes += attribute(name, value);
-    }
-    if (key !== undefined) attributes += attribute(tagAttributeName("key"), key);
-    if (ctx.slot !== undefined) attributes += attribute("slot", ctx.slot);
+      for (const name of Object.keys(descriptors)) {
+        if (options.props.includes(name) || slotNames.has(name) || name === "ref") continue;
+        if (name.startsWith("load:") || (name === "slot" && ctx.slot !== undefined)) continue;
+        const raw = read(name);
+        if (isEventProp(name) && isFunction(raw)) continue;
+        text += attribute(name, this.value(raw, ctx, tracked));
+      }
+      if (key !== undefined) text += attribute(tagAttributeName("key"), key);
+      if (ctx.slot !== undefined) text += attribute("slot", ctx.slot);
+      return { text, transfer };
+    };
+    let waits: string[] = [];
+    const open = ({ text, transfer }: { text: string; transfer: boolean }): string => {
+      const keys = transfer ? [...waits, "@p"] : waits;
+      const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
+      return `<${tag}${attribute("data-oh", id)}${text}${om}><template shadowrootmode="open">`;
+    };
+    const host = this.settle(ctx, hostAttributes);
+    const pending = host instanceof Promise;
+    const sink = pending ? ctx.boundary : ctx.sink;
+    const own: Chunk[] = [pending ? this.hole(host.then((attributes) => [open(attributes)])) : ""];
 
     let owner: Owner | null = null;
     let tree: Node = null;
@@ -365,14 +411,9 @@ class Renderer {
       tree = asNode(untrack(() => component(elementProps, elementCtx)));
     });
 
-    const openIndex = out.push("") - 1;
     const slots = new Map<string, Boundary>();
-    this.walk(
-      tree,
-      { owner, path: [...ctx.path, id], boundary: ctx.boundary, sink: ctx.sink, slots },
-      out,
-    );
-    out.push("</template>");
+    this.walk(tree, { owner, path: [...ctx.path, id], boundary: ctx.boundary, sink, slots }, own);
+    own.push("</template>");
     for (const name of Object.keys(descriptors)) {
       if (!slotNames.has(name)) continue;
       const slot = name === "children" ? "" : name;
@@ -380,24 +421,31 @@ class Renderer {
         owner: ctx.owner,
         path: ctx.path,
         boundary: slots.get(slot) ?? ctx.boundary,
-        sink: ctx.sink,
+        sink,
       };
-      this.walk(asNode(read(name)), slot === "" ? light : { ...light, slot }, out);
+      const content = asNode(runWithOwner(ctx.owner, () => untrack(() => read(name))));
+      this.walk(content, slot === "" ? light : { ...light, slot }, own);
     }
-    const waits = this.boundaries
+    own.push(`</${tag}>`);
+    waits = this.boundaries
       .filter(
         (boundary) =>
           this.isPending(boundary) &&
           (boundary.path.includes(id) || boundary.patches.some((patch) => patch.path.includes(id))),
       )
       .map((boundary) => `@${boundary.id}`);
-    if (transferred) waits.push("@p");
-    if (waits.length > 0) attributes += attribute("data-om", waits.join(" "));
-    out[openIndex] = `<${tag}${attributes}><template shadowrootmode="open">`;
-    out.push(`</${tag}>`);
+    if (pending) {
+      this.defer(own, ctx, out);
+    } else {
+      own[0] = open(host);
+      out.push(...own);
+    }
   }
 
-  /** 境界が保留中かどうかを返す。領域の中（`<Errored>` の領域の中を含む）に穴があるか、境界に属する差し替えがあれば保留中である。 */
+  /**
+   * 境界が保留中かどうかを返す。領域の中（`<Errored>` の領域の中を含む）に穴があるか、境界に属する差し替えがあれば保留中である。
+   * `blocking` では、常に偽を返す。
+   */
   private isPending(boundary: Boundary): boolean {
     const hasHole = (chunks: Chunk[]): boolean =>
       chunks.some(
@@ -408,12 +456,13 @@ class Renderer {
     return !this.blocking && (hasHole(boundary.region) || boundary.patches.length > 0);
   }
 
-  /** 出力の単位の列を、穴の内容を待ってから文字列にする。保留中の境界は、フォールバックを出力して後送りにする。 */
+  /** 出力の単位の列を、穴の内容を待ってから文字列にする。 */
   private async serialize(chunks: Chunk[], parent: Boundary): Promise<string> {
     const parts = await Promise.all(chunks.map((chunk) => this.serializeChunk(chunk, parent)));
     return parts.join("");
   }
 
+  /** 出力の単位を文字列にする。保留中の境界は、フォールバックを目印で囲んで出力し、中身を後送りにする。 */
   private async serializeChunk(chunk: Chunk, parent: Boundary): Promise<string> {
     if (typeof chunk === "string") return chunk;
     if ("hole" in chunk) return this.serialize(await chunk.hole, parent);
@@ -435,7 +484,10 @@ class Renderer {
     }
   }
 
-  /** 境界の中身と、境界に属する差し替えを、親の境界と差し替えの目印を出力した後に出力する。 */
+  /**
+   * 境界の中身と、境界に属する差し替えを出力する。出力するのは、親の境界と、差し替えの目印を含む境界を、すべて出力した後である。
+   * 中身か親の境界の出力に失敗したら、中身と差し替えを出力しない。
+   */
   private schedule(boundary: Boundary): void {
     const parent = boundary.parent;
     if (!parent) return;
@@ -491,7 +543,6 @@ class Renderer {
     );
   }
 
-  /** シェルの後の処理を、すべてが終わるまで待つ対象に加える。 */
   private track(task: Promise<void>): void {
     this.pending.add(task);
     const done = () => {
@@ -500,11 +551,11 @@ class Renderer {
     task.then(done, done);
   }
 
-  /** シェルの後の処理が、処理の中で加えたものを含めて、すべて終わるまで待つ。 */
-  private async settle(): Promise<void> {
+  /** シェルの後の処理を、処理の中で加えた処理も含めて、すべて終わるまで待つ。 */
+  private async drain(): Promise<void> {
     if (this.pending.size === 0) return;
     await Promise.all(this.pending);
-    return this.settle();
+    return this.drain();
   }
 
   /** `node` の HTML を返す。`document` なら、文書の全体を出力し、シェルの後の処理が終わるまで待つ。 */
@@ -519,7 +570,7 @@ class Renderer {
       const script = this.interactive ? bootstrap : "";
       this.write(`<!doctype html><html><head><meta charset="utf-8">${script}</head><body>${html}`);
       shell.markEmitted();
-      await this.settle();
+      await this.drain();
       this.write("</body></html>");
       return html;
     } finally {

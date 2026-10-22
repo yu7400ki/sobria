@@ -1,3 +1,4 @@
+import { createRoot } from "@solidjs/signals";
 import { describe, expect, it } from "vitest";
 
 import { isBot } from "../../src/server/bots.ts";
@@ -139,6 +140,30 @@ describe("要素の中の境界", () => {
     expect(html).toContain(
       '<template data-os="b2"><slot></slot></template><template data-op="p4">v</template><script>$rinka.r({"b":"b2","bp":["h1"],"p":[["p4",["h3"]]],"h":["h1","h3"]})</script>',
     );
+  });
+});
+
+describe("スロットの内容の保留中のタグ", () => {
+  it("属性が保留中のタグは、タグの全体を <slot> を囲む境界の差し替えにする", async () => {
+    const { promise, resolve } = Promise.withResolvers<string>();
+    const Container = defineElement(
+      "x-wrap",
+      () => jsx(Loading, { fallback: "wait", children: jsx("slot", {}) }),
+      { props: ["children"] },
+    );
+    const value = createRoot(() => memo(() => promise));
+    const reading = read(
+      renderToStream(
+        jsx(Container, { children: jsx("b", { title: () => value(), children: "t" }) }),
+      ),
+    );
+    await tick();
+    resolve("v");
+    const html = (await reading).join("");
+    expect(html).toContain(
+      '<x-wrap data-oh="h1" data-om="@b2"><template shadowrootmode="open"><template data-ob="b2"></template>wait<!--/ob:b2--></template><template data-ob="p3"></template><!--/ob:p3--></x-wrap>',
+    );
+    expect(html).toContain('<template data-op="p3"><b title="v">t</b></template>');
   });
 });
 

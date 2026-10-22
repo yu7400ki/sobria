@@ -169,3 +169,102 @@ describe("要素の SSR", () => {
     );
   });
 });
+
+describe("要素の props とホストの属性", () => {
+  const Sale = defineElement(
+    "x-sale",
+    (props: { onSale?: boolean; onPick?: () => void; label?: string }) =>
+      jsx("p", {
+        children: () => `${props.onSale ? "sale" : "normal"} ${typeof props.onPick} ${props.label}`,
+      }),
+    { props: ["onSale", "onPick", "label"], functionProps: ["onPick"] },
+  );
+
+  it("ホストに渡した onX の関数は、呼び出さずに出力しない", async () => {
+    let called = 0;
+    const html = await renderToString(jsx(Card, { onClick: () => called++ }));
+    expect(called).toBe(0);
+    expect(html).toBe(
+      '<x-card data-oh="h1"><template shadowrootmode="open"><p></p></template></x-card>',
+    );
+  });
+
+  it("値の無い onX の props は、関数の props だけを何もしない関数にする", async () => {
+    expect(await renderToString(jsx(Sale, {}))).toContain("<p>normal function undefined</p>");
+  });
+
+  it("関数の props でない props に渡した関数は、呼び出した値にする", async () => {
+    expect(await renderToString(jsx(Sale, { label: () => "x" }))).toBe(
+      '<x-sale data-oh="h1" label="x"><template shadowrootmode="open"><p>normal function x</p></template></x-sale>',
+    );
+  });
+
+  it("未解決の値を読む props は、値が解決してからホストを出力する", async () => {
+    const Outer = defineElement(
+      "x-outer-pending",
+      () => {
+        const name = memo(() => Promise.resolve("ann"));
+        return jsx(Card, {
+          get label() {
+            return name();
+          },
+        });
+      },
+      { props: [] },
+    );
+    expect(await renderToString(jsx(Outer, {}))).toBe(
+      '<x-outer-pending data-oh="h1"><template shadowrootmode="open"><x-card data-oh="h2" label="ann"><template shadowrootmode="open"><p>ann</p></template></x-card></template></x-outer-pending>',
+    );
+  });
+
+  it("スロットの内容に記述した slot 属性は、スロットの名前で置き換える", async () => {
+    const html = await renderToString(
+      jsx(Card, { header: jsx("h1", { slot: "x", children: "a" }) }),
+    );
+    expect(html).toContain('<h1 slot="header">a</h1>');
+  });
+
+  it("スロットの内容に置いた要素の slot 属性も、スロットの名前で置き換える", async () => {
+    const html = await renderToString(jsx(Card, { header: jsx(Card, { slot: "x" }) }));
+    expect(html).toContain('<x-card data-oh="h2" slot="header">');
+  });
+
+  it("属性の名前に使用できない文字があれば、エラーにする", async () => {
+    await expect(renderToString(jsx("p", { 'x"><b': "v" }))).rejects.toThrow(
+      "使用できない文字が含まれています",
+    );
+  });
+
+  it("描画を中断して捨てた穴の失敗は、処理されない reject にならない", async () => {
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", record);
+    try {
+      const html = await renderToString(
+        jsx(Errored, { fallback, children: [jsx(Async, {}), jsx(Sync, {})] }),
+      );
+      expect(html).toBe("failed: sync");
+      await expect(renderToString([jsx(Async, {}), jsx(Sync, {})])).rejects.toThrow("sync");
+      const Boom = defineElement("x-boom", () => jsx(Sync, {}), { props: ["label"] });
+      const Pending = defineElement(
+        "x-pending-host",
+        () => {
+          const failing = memo(() => Promise.reject(new Error("late")));
+          return jsx(Boom, {
+            get label() {
+              return failing();
+            },
+          });
+        },
+        { props: [] },
+      );
+      expect(await renderToString(jsx(Errored, { fallback, children: jsx(Pending, {}) }))).toBe(
+        "failed: sync",
+      );
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    } finally {
+      process.off("unhandledRejection", record);
+    }
+    expect(unhandled).toEqual([]);
+  });
+});
