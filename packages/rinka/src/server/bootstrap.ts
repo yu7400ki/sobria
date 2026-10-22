@@ -1,3 +1,6 @@
+import { loadTimings } from "../shared/names.ts";
+import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
+
 /** インスタンスの起動のタイミングを指定する属性の名前である。 */
 export const loadAttributeName = "data-rinka-load";
 
@@ -43,3 +46,35 @@ w(el,f){const e=E[el.localName];e?when(el,e.l,f):f()}})})(window.$rinka||{})`;
 
 /** `<script>` で囲んだ起動スクリプトである。 */
 export const bootstrap = `<script>${bootstrapSource}</script>`;
+
+/** `value` を、`<script>` の中に埋め込める JSON にする。 */
+export const scriptJson = (value: unknown): string =>
+  JSON.stringify(value).replaceAll("<", "\\u003c");
+
+/** 値が無いことを表す JS の式である。 */
+export const noValue = "$rinka.n";
+
+/** JS の式 `value` を、ID が `id` のホストの `key` の値として送るスクリプトを返す。 */
+export const dataScript = (id: string, key: string, value: string): string =>
+  `<script>$rinka.d(${scriptJson(id)},{${scriptJson(key)}:${value}})</script>`;
+
+/** 要素の一覧を起動スクリプトに伝えるスクリプトを返す。一覧が空なら空の文字列を返す。 */
+export const listScript = (list: readonly ListedElement[]): string =>
+  list.length === 0 ? "" : `<script>$rinka.m(${scriptJson(list)})</script>`;
+
+/** 1 つの境界の中身と、その境界の中の差し替えを適用するスクリプトを返す。 */
+export const swapScript = (spec: SwapSpec): string =>
+  `<script>$rinka.r(${scriptJson(spec)})</script>`;
+
+/**
+ * 要素の props の `load:*` から、起動のタイミングの属性の値を返す。`load:media` は、`media:` にメディアクエリを連結する。
+ * 名前が `loadTimings` に含まれる `load:*` が無ければ `undefined` を返す。
+ */
+export function loadAttributeValue(props: Record<string, unknown>): string | undefined {
+  for (const name of Object.keys(props)) {
+    const timing = loadTimings.find((candidate) => name === `load:${candidate}`);
+    if (timing === undefined) continue;
+    return timing === "media" ? `${mediaPrefix}${String(props[name])}` : timing;
+  }
+  return undefined;
+}

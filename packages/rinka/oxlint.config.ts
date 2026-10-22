@@ -64,6 +64,7 @@ export default defineConfig({
   },
   overrides: [
     { files: ["src/**"], rules: { "rinka/no-transfer-key-literal": "error" } },
+    { files: ["src/**"], rules: { "rinka/no-receiver-literal": "error" } },
     {
       files: ["src/shared/**"],
       env: { "shared-node-browser": true },
@@ -106,6 +107,7 @@ export default defineConfig({
     { files: ["src/build/ast.ts"], rules: { "rinka/no-directional-insert": "off" } },
     { files: ["src/build/entries.ts"], rules: { "rinka/no-entry-literal": "off" } },
     { files: ["src/shared/transfer-keys.ts"], rules: { "rinka/no-transfer-key-literal": "off" } },
+    { files: ["src/server/bootstrap.ts"], rules: { "rinka/no-receiver-literal": "off" } },
     { files: ["test/**"], rules: testRelaxations },
   ],
 });

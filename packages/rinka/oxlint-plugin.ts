@@ -33,6 +33,12 @@ const directionalInserts = new Set(["prependLeft", "prependRight", "appendLeft",
 const leadingText = (node: StringNode): string | undefined =>
   typeof node.value === "string" ? node.value : (node.quasis?.[0]?.value.cooked ?? undefined);
 
+/** 文字列のリテラルの値か、テンプレートリテラルの文字列の部分をすべて連結した文字列を返す。 */
+const fullText = (node: StringNode): string | undefined =>
+  typeof node.value === "string"
+    ? node.value
+    : node.quasis?.map((quasi) => quasi.value.cooked ?? "").join("");
+
 /** 呼び出すメソッドの名前を返す。``s["name"]`` と ``s[`name`]`` の形の名前も返す。 */
 const methodName = ({ callee }: CallNode): string | undefined =>
   callee.computed && callee.property ? leadingText(callee.property) : callee.property?.name;
@@ -86,6 +92,26 @@ export default {
         const check = (node: StringNode) => {
           if (!leadingText(node)?.startsWith("@") || isModuleSource(node)) return;
           context.report({ node, message });
+        };
+        return { Literal: check, TemplateLiteral: check };
+      },
+    },
+    /** `$rinka.` か `data-rinka-load` を含む、文字列のリテラルとテンプレートリテラルを報告する。 */
+    "no-receiver-literal": {
+      create(context: Context) {
+        const check = (node: StringNode) => {
+          const text = fullText(node);
+          if (
+            text === undefined ||
+            !(text.includes("$rinka.") || text.includes("data-rinka-load"))
+          ) {
+            return;
+          }
+          context.report({
+            node,
+            message:
+              "起動スクリプトの受け口を呼ぶスクリプトと、起動のタイミングの属性は、src/server/bootstrap.ts の関数と定数で記述してください。",
+          });
         };
         return { Literal: check, TemplateLiteral: check };
       },

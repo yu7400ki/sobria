@@ -66,6 +66,13 @@ describe("要素の配信", () => {
     expect(document).toContain('<x-a data-oh="h3">');
   });
 
+  it("loadTimings に無い load:* は属性にせず、要素のデフォルトの起動タイミングで先読みを判定する", async () => {
+    const A = element("x-a");
+    const document = await html(jsx(A, { "load:soon": true }));
+    expect(document).toContain('<x-a data-oh="h1">');
+    expect(head(document)).toContain('<link rel="modulepreload" href="/src/elements/x-a.tsx">');
+  });
+
   it("同じタグは 1 度だけ伝え、先読みも 1 度だけ出力する", async () => {
     const A = element("x-a");
     const document = await html(jsx("main", { children: [jsx(A, {}), jsx(A, {})] }));

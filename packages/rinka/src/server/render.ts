@@ -19,10 +19,20 @@ import {
 } from "../shared/element.ts";
 import { isEventProp, propToAttribute, reservedProp } from "../shared/names.ts";
 import { isFunction } from "../shared/objects.ts";
+import type { SwapSpec } from "../shared/receiver.ts";
 import { createScope, withScope, type ScopedChild } from "../shared/scope.ts";
 import { BOUNDARIES_KEY, childKey, PROPS_KEY } from "../shared/transfer-keys.ts";
 import { checkSerializable } from "../shared/wire.ts";
-import { bootstrap } from "./bootstrap.ts";
+import {
+  bootstrap,
+  dataScript,
+  listScript,
+  loadAttributeName,
+  loadAttributeValue,
+  noValue,
+  scriptJson,
+  swapScript,
+} from "./bootstrap.ts";
 import { classify } from "./errors.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
 import { toScript } from "./wire.ts";
@@ -306,10 +316,6 @@ class HostRecord {
   }
 }
 
-/** JS の式 `value` を、ホスト `host` の `key` の値として送るスクリプトを返す。 */
-const dataScript = (host: HostRecord, key: string, value: string): string =>
-  `<script>$rinka.d(${scriptJson(host.id)},{${scriptJson(key)}:${value}})</script>`;
-
 /** ホストの列を、ホストの ID の列にする。 */
 const hostIds = (path: readonly HostRecord[]): string[] => path.map((host) => host.id);
 
@@ -353,9 +359,6 @@ function attribute(name: string, value: unknown): string {
   return value === true && text === "" ? ` ${name}` : ` ${name}="${escapeAttribute(text)}"`;
 }
 
-/** `value` を、`<script>` の中に埋め込める JSON にする。 */
-const scriptJson = (value: unknown): string => JSON.stringify(value).replaceAll("<", "\\u003c");
-
 /** 目印の開始と終了の HTML を返す。 */
 const marker = (id: string, inner = ""): string =>
   `<template data-ob="${id}"></template>${inner}<!--/ob:${id}-->`;
@@ -393,26 +396,9 @@ function hasHole(chunks: readonly Chunk[]): boolean {
   });
 }
 
-/**
- * 要素の props の `load:*` から、`data-rinka-load` の属性の値を返す。`load:media` は、`media:` にメディアクエリを連結する。
- * `load:*` が無ければ `undefined` を返す。
- */
-function loadAttribute(props: Record<string, unknown>): string | undefined {
-  for (const name of Object.keys(props)) {
-    if (reservedProp(name) !== "load:") continue;
-    const value = props[name];
-    const timing = name.slice("load:".length);
-    return timing === "media" ? `media:${String(value)}` : timing;
-  }
-  return undefined;
-}
-
-/** `elements` を起動スクリプトに伝える `$rinka.m` を返す。要素が無ければ空の文字列を返す。 */
-function listScript(elements: readonly [string, Listed][]): string {
-  if (elements.length === 0) return "";
-  const list = elements.map(([tag, { delivery }]) => [tag, delivery.module, delivery.load]);
-  return `<script>$rinka.m(${scriptJson(list)})</script>`;
-}
+/** `elements` を起動スクリプトに伝えるスクリプトを返す。要素が無ければ空の文字列を返す。 */
+const announceScript = (elements: readonly [string, Listed][]): string =>
+  listScript(elements.map(([tag, { delivery }]) => [tag, delivery.module, delivery.load] as const));
 
 /** `elements` のうち、すぐ起動するインスタンスがある要素の `modulepreload` を返す。 */
 const preloadLinks = (elements: readonly [string, Listed][]): string =>
@@ -608,7 +594,7 @@ class Renderer {
   ): void {
     this.interactive = true;
     const { tag, options, delivery } = component[elementInfo];
-    const load = loadAttribute(props);
+    const load = loadAttributeValue(props);
     const delivered: Delivered | undefined =
       delivery && ctx.owner === null
         ? { tag, delivery, immediate: (load ?? delivery.load) === "load" }
@@ -623,7 +609,7 @@ class Renderer {
       if (creator.listChild(mapKey)) {
         this.send(creator, mapKey, Promise.resolve(scriptJson(id)));
       } else {
-        announce = dataScript(creator, mapKey, scriptJson(id));
+        announce = dataScript(creator.id, mapKey, scriptJson(id));
       }
     }
     const slotNames = new Set(["children", ...(options.slots ?? [])]);
@@ -729,7 +715,7 @@ class Renderer {
     const open = ({ text, transfer }: HostAttributes, shown: Promise<boolean>): string => {
       const keys = record.seal(transfer ? [PROPS_KEY] : [], shown);
       const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
-      return `<${tag}${attribute("data-oh", id)}${attribute("data-rinka-load", load)}${text}${om}><template shadowrootmode="open">`;
+      return `<${tag}${attribute("data-oh", id)}${attribute(loadAttributeName, load)}${text}${om}><template shadowrootmode="open">`;
     };
     out.push({ kind: "host", host: { record, attributes, open, chunks, announce, delivered } });
   }
@@ -876,7 +862,7 @@ class Renderer {
           this.abandon(boundary, flush);
           return;
         }
-        const spec = {
+        const spec: SwapSpec = {
           b: boundary.id,
           bp: hostIds(boundary.path),
           p: patches.map(([patch]) => [patch.id, hostIds(patch.path)]),
@@ -897,8 +883,8 @@ class Renderer {
             [regionOut, ...patches.map(([patch]) => patch.out)]
               .flatMap((position) => position.scripts)
               .join("") +
-            listScript(this.announce([regionOut, ...patches.map(([patch]) => patch.out)])) +
-            `<script>$rinka.r(${scriptJson(spec)})</script>`,
+            announceScript(this.announce([regionOut, ...patches.map(([patch]) => patch.out)])) +
+            swapScript(spec),
         );
         this.finishBoundary(boundary);
       })(),
@@ -923,13 +909,13 @@ class Renderer {
         try {
           resolved = await promise;
         } catch {
-          return "$rinka.n";
+          return noValue;
         }
         try {
           return toScript(resolved, path);
         } catch (error) {
           console.error("[rinka] memo の値を送れないので、要素がブラウザで計算し直します。", error);
-          return "$rinka.n";
+          return noValue;
         }
       })(),
     );
@@ -943,7 +929,7 @@ class Renderer {
     const task = (async () => {
       const value = await expression;
       if (!(await host.take(key))) return;
-      this.write(dataScript(host, key, value));
+      this.write(dataScript(host.id, key, value));
     })();
     this.values.add(task);
   }
@@ -1003,7 +989,9 @@ class Renderer {
   async finish(shell: string): Promise<void> {
     try {
       const fresh = this.interactive ? this.announce([this.shellOut]) : [];
-      const script = this.interactive ? bootstrap + preloadLinks(fresh) + listScript(fresh) : "";
+      const script = this.interactive
+        ? bootstrap + preloadLinks(fresh) + announceScript(fresh)
+        : "";
       this.reveal(
         this.shellOut.flush,
         `<!doctype html><html><head><meta charset="utf-8">${script}${this.head}</head><body>${shell}${this.shellOut.scripts.join("")}`,

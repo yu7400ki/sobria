@@ -32,6 +32,7 @@ const rules = new Map([
   ["rinka(no-transfer-key-literal)", "key"],
   ["rinka(no-directional-insert)", "insert"],
   ["rinka(no-entry-literal)", "entry"],
+  ["rinka(no-receiver-literal)", "receiver"],
 ]);
 
 type Diagnostic = { code: string; labels: { span: { line: number } }[] };
@@ -223,6 +224,28 @@ describe("値の受け渡しのキー", () => {
 
   it("src/shared/transfer-keys.ts のキーの定義は報告しない", () => {
     expect(reports("src/shared/transfer-keys.ts", ['export const a = "@b";'])).toEqual([]);
+  });
+});
+
+describe("起動スクリプトの受け口の文字列", () => {
+  it("src/ の中の、$rinka. か data-rinka-load を含む文字列のリテラルとテンプレートリテラルを報告する", () => {
+    expect(
+      reports("src/server/receiver-use.ts", [
+        'export const a = "$rinka.n";',
+        "export const b = (x: string) => `<script>$rinka.d(${x})</script>`;",
+        'export const c = (x: string) => `<p ${x} data-rinka-load="idle">`;',
+        'export const d = "rinka";',
+        'export const e = "data-oh";',
+      ]),
+    ).toEqual([
+      [1, "receiver"],
+      [2, "receiver"],
+      [3, "receiver"],
+    ]);
+  });
+
+  it("src/server/bootstrap.ts は報告しない", () => {
+    expect(reports("src/server/bootstrap.ts", ['export const a = "$rinka.n";'])).toEqual([]);
   });
 });
 
