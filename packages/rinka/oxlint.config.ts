@@ -14,11 +14,12 @@ const directory = (dir: string): Pattern => ({
   message: `このディレクトリのファイルは、src/${dir}/ を import できません。`,
 });
 
-/** props の名前の検査と、HTMLElement のメンバーの一覧の import に一致するパターンを表す。 */
+/** props の名前の検査と、HTMLElement のメンバーの一覧の値の import に一致するパターンを表す。 */
 const propNameList: Pattern = {
   regex: String.raw`/(prop-names|html-element-members\.generated)(\.[jt]s)?$`,
   message:
-    "props の名前の検査と、HTMLElement のメンバーの一覧を import できるのは、src/server/ と src/shared/prop-names.ts です。",
+    "props の名前の検査と、HTMLElement のメンバーの一覧を値として import できるのは、src/build/ と src/shared/prop-names.ts です。",
+  allowTypeImports: true,
 };
 
 /** パッケージ自身の名前での import に一致するパターンを表す。 */
@@ -42,12 +43,21 @@ const seroval: Pattern = {
     "seroval を import できるのは、src/server/wire.ts と src/client/wire-codec.ts です。src/shared/wire.ts は型だけを import できます。値のシリアライズには、これらのモジュールを使用してください。",
 };
 
-const shared = [directory("client"), directory("server"), self, nodeBuiltin, propNameList];
-const client = [directory("server"), self, nodeBuiltin, propNameList];
-const server = [directory("client"), self];
+const shared = [
+  directory("client"),
+  directory("server"),
+  directory("build"),
+  self,
+  nodeBuiltin,
+  propNameList,
+];
+const client = [directory("server"), directory("build"), self, nodeBuiltin, propNameList];
+const server = [directory("client"), directory("build"), self, propNameList];
+const build = [directory("client"), directory("server"), self];
 
 export default defineConfig({
   ...base,
+  jsPlugins: ["./oxlint-plugin.ts"],
   rules: {
     ...base.rules,
     "unicorn/prefer-node-protocol": "error",
@@ -69,7 +79,11 @@ export default defineConfig({
     {
       files: ["src/client/**"],
       env: { browser: true },
-      rules: { ...restrict(...client, seroval), "no-undef": "error" },
+      rules: {
+        ...restrict(...client, seroval),
+        "no-undef": "error",
+        "rinka/no-static-wire-codec": "error",
+      },
     },
     { files: ["src/client/wire-codec.ts"], rules: restrict(...client) },
     {
@@ -78,6 +92,11 @@ export default defineConfig({
       rules: { ...restrict(...server, seroval), "no-undef": "error" },
     },
     { files: ["src/server/wire.ts"], rules: restrict(...server) },
+    {
+      files: ["src/build/**"],
+      env: { node: true },
+      rules: { ...restrict(...build, seroval), "no-undef": "error" },
+    },
     { files: ["test/**"], rules: testRelaxations },
   ],
 });

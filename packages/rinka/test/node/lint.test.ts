@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 
@@ -14,7 +14,9 @@ const oxlint = join(
 
 /** パッケージの oxlint の設定を一時的なディレクトリにコピーする。テストのファイルは、このディレクトリの `src/` に配置する。 */
 const workspace = mkdtempSync(join(root, ".lint-probe-"));
-copyFileSync(join(root, "oxlint.config.ts"), join(workspace, "oxlint.config.ts"));
+for (const file of ["oxlint.config.ts", "oxlint-plugin.ts"]) {
+  copyFileSync(join(root, file), join(workspace, file));
+}
 
 afterAll(() => {
   rmSync(workspace, { recursive: true, force: true });
@@ -25,6 +27,7 @@ const rules = new Map([
   ["eslint(no-restricted-imports)", "import"],
   ["eslint(no-undef)", "global"],
   ["unicorn(prefer-node-protocol)", "node"],
+  ["rinka(no-static-wire-codec)", "wire-codec"],
 ]);
 
 type Diagnostic = { code: string; labels: { span: { line: number } }[] };
@@ -53,7 +56,7 @@ function reports(path: string, lines: string[]): [number, string][] {
 }
 
 describe("src/ の lint の規則", () => {
-  it("src/shared/ は、client と server、rinka、Node.js の組み込みモジュール、実行環境に固有のグローバル、props の名前の一覧を参照できない", () => {
+  it("src/shared/ は、client、server、build、rinka、seroval、Node.js の組み込みモジュール、実行環境に固有のグローバル、props の名前の一覧の値を参照できない", () => {
     expect(
       reports("src/shared/probe.ts", [
         'import "../client/effect.ts";',
@@ -68,6 +71,9 @@ describe("src/ の lint の規則", () => {
         "export const c = process;",
         'import "./names.ts";',
         "export const d = setTimeout;",
+        'import type { HostAttribute } from "./prop-names.ts";',
+        'import "../build/plugin.ts";',
+        'import "seroval";',
       ]),
     ).toEqual([
       [1, "import"],
@@ -80,10 +86,12 @@ describe("src/ の lint の規則", () => {
       [8, "global"],
       [9, "global"],
       [10, "global"],
+      [14, "import"],
+      [15, "import"],
     ]);
   });
 
-  it("src/client/ は、server、rinka、Node.js の組み込みモジュール、props の名前の一覧を参照できず、ブラウザのグローバルを参照できる", () => {
+  it("src/client/ は、server、build、rinka、seroval、Node.js の組み込みモジュール、props の名前の一覧の値を参照できず、wire-codec は型の import と動的な import() でだけ読み込め、ブラウザのグローバルを参照できる", () => {
     expect(
       reports("src/client/probe.ts", [
         'import "../server/wire.ts";',
@@ -96,6 +104,14 @@ describe("src/ の lint の規則", () => {
         "export const b = document;",
         "export const c = ElementInternals;",
         'import "../shared/expose-names.ts";',
+        'import type { HostAttribute } from "../shared/prop-names.ts";',
+        'import "../build/plugin.ts";',
+        'import "seroval";',
+        'import "./wire-codec.ts";',
+        'export const d = () => import("./wire-codec.ts");',
+        'export * from "./wire-codec.ts";',
+        'export { toJSON } from "./wire-codec.ts";',
+        'import type { toJSON as T } from "./wire-codec.ts";',
       ]),
     ).toEqual([
       [1, "import"],
@@ -105,10 +121,15 @@ describe("src/ の lint の規則", () => {
       [5, "node"],
       [6, "import"],
       [7, "global"],
+      [12, "import"],
+      [13, "import"],
+      [14, "wire-codec"],
+      [16, "wire-codec"],
+      [17, "wire-codec"],
     ]);
   });
 
-  it("src/server/ は、client、rinka、ブラウザのグローバルを参照できず、Node.js の組み込みモジュールを参照できる", () => {
+  it("src/server/ は、client、build、rinka、props の名前の一覧の値、seroval、ブラウザのグローバルを参照できず、Node.js の組み込みモジュールを参照できる", () => {
     expect(
       reports("src/server/probe.ts", [
         'import "../client/effect.ts";',
@@ -119,6 +140,9 @@ describe("src/ の lint の規則", () => {
         'import "node:fs";',
         "export const c = process;",
         'import "../shared/prop-names.ts";',
+        'import type { HostAttribute } from "../shared/prop-names.ts";',
+        'import "../build/plugin.ts";',
+        'import "seroval";',
       ]),
     ).toEqual([
       [1, "import"],
@@ -126,6 +150,54 @@ describe("src/ の lint の規則", () => {
       [3, "import"],
       [4, "global"],
       [5, "global"],
+      [8, "import"],
+      [10, "import"],
+      [11, "import"],
     ]);
+  });
+
+  it("src/build/ は、client、server、rinka、seroval、ブラウザのグローバルを参照できず、shared、props の名前の一覧、Node.js の組み込みモジュールを参照できる", () => {
+    expect(
+      reports("src/build/probe.ts", [
+        'import "../client/effect.ts";',
+        'import "../server/wire.ts";',
+        'import "rinka";',
+        'import "seroval";',
+        "export const a = document;",
+        'import "../shared/prop-names.ts";',
+        'import "../shared/names.ts";',
+        'import "node:fs";',
+        "export const b = process;",
+      ]),
+    ).toEqual([
+      [1, "import"],
+      [2, "import"],
+      [3, "import"],
+      [4, "import"],
+      [5, "global"],
+    ]);
+  });
+
+  it("seroval を値として import できるのは src/server/wire.ts と src/client/wire-codec.ts で、src/shared/wire.ts は型だけを import できる", () => {
+    expect(reports("src/server/wire.ts", ['import "seroval";'])).toEqual([]);
+    expect(reports("src/client/wire-codec.ts", ['import "seroval";'])).toEqual([]);
+    expect(
+      reports("src/shared/wire.ts", [
+        'import type { SerovalJSON } from "seroval";',
+        'import { toJSON } from "seroval";',
+      ]),
+    ).toEqual([[2, "import"]]);
+  });
+});
+
+describe("src/ のディレクトリ", () => {
+  it("src/ の直下には、shared、client、server、build のディレクトリだけを配置する", () => {
+    const entries = readdirSync(join(root, "src"), { withFileTypes: true });
+    const allowed = new Set(["shared", "client", "server", "build"]);
+    expect(
+      entries
+        .filter((entry) => !entry.isDirectory() || !allowed.has(entry.name))
+        .map((entry) => entry.name),
+    ).toEqual([]);
   });
 });
