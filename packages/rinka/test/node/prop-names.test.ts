@@ -96,10 +96,10 @@ describe("PropNameError", () => {
       '"ref" は props の名前にできません。rinka が要素への ref として扱うためです。内側のノードを受け取る関数には inputRef のような名前を使用してください。' as const;
     expectTypeOf<PropNameError<"ref">>().toEqualTypeOf<typeof ref>();
     expect(checkPropNames(["ref"])).toEqual([ref]);
-    const load_idle =
+    const loadIdle =
       '"load:idle" は props の名前にできません。rinka が要素を読み込むタイミングの指定として扱うためです。読み込みの状態には loadState のような名前を使用してください。' as const;
-    expectTypeOf<PropNameError<"load:idle">>().toEqualTypeOf<typeof load_idle>();
-    expect(checkPropNames(["load:idle"])).toEqual([load_idle]);
+    expectTypeOf<PropNameError<"load:idle">>().toEqualTypeOf<typeof loadIdle>();
+    expect(checkPropNames(["load:idle"])).toEqual([loadIdle]);
     const ariaLabel =
       '"ariaLabel" は props の名前にできません。rinka が aria-* と data-* の属性を、そのままホストに渡すためです。代わりに label のような名前を使用してください。' as const;
     expectTypeOf<PropNameError<"ariaLabel">>().toEqualTypeOf<typeof ariaLabel>();
