@@ -273,9 +273,9 @@ export function defineElement<P, M extends object = object>(
   return Object.assign(component, { [elementInfo]: { tag, options } });
 }
 
-/** 要素を配置するスロットを表す。`host` は定義済みの要素のインスタンス、`name` はスロットの名前である。 */
+/** 要素を配置するスロットを表す。`parent` は定義済みの要素のインスタンス、`name` はスロットの名前である。 */
 interface Placement {
-  readonly host: Instance;
+  readonly parent: Instance;
   readonly name: string;
 }
 
@@ -287,8 +287,8 @@ interface Placement {
 function locate(el: HTMLElement): Placement | undefined {
   let child: Element = el;
   for (let node = el.parentNode; node && !(node instanceof ShadowRoot); node = node.parentNode) {
-    const host = instanceOf(node);
-    if (host) return { host, name: child.slot };
+    const parent = instanceOf(node);
+    if (parent) return { parent, name: child.slot };
     if (node instanceof Element) child = node;
   }
   return undefined;
@@ -297,7 +297,7 @@ function locate(el: HTMLElement): Placement | undefined {
 /**
  * owner の無い場所で作成して接続した要素を起動する。
  * 表示されている位置の上に定義済みの要素があれば、そのスロットの `<slot>` の owner の下で起動する。
- * `<slot>` が無ければ、その `<slot>` を作成した時点で、接続していて同じスロットの位置にあれば起動する。
+ * `<slot>` が無ければ、その `<slot>` を作成した時点で、接続していれば起動する。その時点でスロットの位置が変わっていれば、今の位置のスロットに登録し直す。
  * 上に定義済みの要素が無ければ、最上位の要素として起動する。
  * 起動を待っていれば、待つのをやめる関数を返す。
  */
@@ -307,10 +307,14 @@ function attach(el: HTMLElement, instance: Instance): (() => void) | undefined {
     instance.activate(null);
     return undefined;
   }
-  return addChild(placement.host.slots, placement.name, (owner) => {
-    const current = el.isConnected ? locate(el) : undefined;
-    if (current?.host === placement.host && current.name === placement.name) {
+  return addChild(placement.parent.slots, placement.name, (owner) => {
+    if (!el.isConnected) return;
+    const current = locate(el);
+    if (current?.parent === placement.parent && current.name === placement.name) {
       instance.activate(owner);
+    } else {
+      instance.cancel?.();
+      instance.cancel = attach(el, instance);
     }
   });
 }

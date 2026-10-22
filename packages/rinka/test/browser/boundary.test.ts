@@ -269,6 +269,25 @@ describe("owner の無い場所で作成した要素の境界", () => {
     expect(html(other.shadowRoot!)).toBe("other");
   });
 
+  it("<slot> を待っている間に slot 属性を変更した子要素は、変更した名前の <slot> の下で起動する", async () => {
+    const [show, setShow] = signal(false);
+    const Host = defineElement(
+      nextTag(),
+      () => () => (show() ? [jsx("slot", { name: "a" }), jsx("slot", { name: "b" })] : null),
+      { props: ["a", "b"], slots: ["a", "b"] },
+    );
+    const { Counting, counts } = defineCounting();
+    const [h, c] = [Host, Counting].map(tagOf);
+    document.body.innerHTML = `<${h}><${c} slot="a"></${c}></${h}>`;
+    await tick();
+    document.body.firstElementChild!.firstElementChild!.setAttribute("slot", "b");
+    setShow(true);
+    flush();
+    await tick();
+    flush();
+    expect(counts).toEqual({ runs: 1, cleanups: 0 });
+  });
+
   it("途中の要素が <slot> を待っていれば、子要素は、その要素が <slot> を作成した時点で起動し、その要素の Loading がフォールバックを表示する", async () => {
     const [show, setShow] = signal(false);
     const Outer = defineGuard(show);
