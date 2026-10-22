@@ -1,7 +1,10 @@
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
 
+import { oxc } from "./src/build/entries.ts";
+
 const types = (name: string) => ({
+  oxc: { jsx: oxc.jsx },
   test: {
     name: `types-${name}`,
     typecheck: {

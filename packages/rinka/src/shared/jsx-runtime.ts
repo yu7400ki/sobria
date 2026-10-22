@@ -1,3 +1,10 @@
+import type {
+  ChildrenAttribute,
+  IntrinsicElementsOf,
+  KeyAttribute,
+  NoExtras,
+  SharedChild,
+} from "./jsx-types.ts";
 import type { ClientNode, ServerNode } from "./nodes.ts";
 
 /** 共通のコンポーネントの JSX の要素を作成する。要素の中ではブラウザで、ページの中ではサーバーで描画する。 */
@@ -12,3 +19,12 @@ export declare const jsxs: typeof jsx;
 
 /** 子をそのまま返す。 */
 export declare function Fragment(props: { children?: unknown }): ClientNode & ServerNode;
+
+/** 共通のコンポーネントの JSX の型を表す。 */
+export declare namespace JSX {
+  type Element = ClientNode & ServerNode;
+  type ElementType = string | ((props: never, ctx: never) => ClientNode & ServerNode);
+  interface ElementChildrenAttribute extends ChildrenAttribute {}
+  interface IntrinsicAttributes extends KeyAttribute {}
+  interface IntrinsicElements extends IntrinsicElementsOf<SharedChild, NoExtras> {}
+}

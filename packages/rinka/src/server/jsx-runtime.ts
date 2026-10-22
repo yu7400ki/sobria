@@ -1,5 +1,12 @@
 import { isElementComponent } from "../shared/element.ts";
-import type { ServerNode } from "../shared/nodes.ts";
+import type {
+  ChildrenAttribute,
+  HtmlTag,
+  IntrinsicElementsOf,
+  KeyAttribute,
+  ServerChild,
+} from "../shared/jsx-types.ts";
+import type { ClientNode, ServerNode } from "../shared/nodes.ts";
 import { scopedChild } from "../shared/scope.ts";
 import { asNode, asServerNode, createNode } from "./tree.ts";
 
@@ -20,4 +27,21 @@ export { jsx as jsxs };
 /** 子をそのまま返す。 */
 export function Fragment(props: { children?: unknown }): ServerNode {
   return asServerNode(asNode(props.children));
+}
+
+/** サーバーの JSX のネイティブのタグが、属性に加えて受け付ける props を表す。 */
+type ServerExtras = Record<
+  HtmlTag,
+  { ref?: "ref は、サーバーのファイルでは使用できません。要素のファイルで使用してください。" }
+>;
+
+/** サーバーのファイルの JSX の型を表す。 */
+export declare namespace JSX {
+  type Element = ServerNode;
+  type ElementType =
+    | string
+    | ((props: never, ctx: never) => ServerNode | ClientNode | Promise<ServerNode>);
+  interface ElementChildrenAttribute extends ChildrenAttribute {}
+  interface IntrinsicAttributes extends KeyAttribute {}
+  interface IntrinsicElements extends IntrinsicElementsOf<ServerChild, ServerExtras> {}
 }
