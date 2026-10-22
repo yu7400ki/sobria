@@ -22,7 +22,7 @@ function calls(html: string): Call[] {
     const at = match.index;
     const receiver = {
       n: {},
-      // 要素の一覧は、受け口の順序の検査の対象にしない
+      // 要素の一覧の受け口は、受け口の順序の検査に関係しないので、空の関数にする
       m: () => {},
       r: (spec: Spec) => found.push({ kind: "r", at, spec }),
       d: (host: string, values: Record<string, unknown>) =>

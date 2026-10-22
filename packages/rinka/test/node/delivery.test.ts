@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Loading } from "../../src/server/control.ts";
+import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement as definePlain } from "../../src/server/element.ts";
 import { defineElement } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
@@ -119,5 +119,30 @@ describe("要素の配信", () => {
     const document = await html(jsx(Plain, {}));
     expect(document).not.toContain("$rinka.m(");
     expect(document).not.toContain("modulepreload");
+  });
+});
+
+/** 描画に失敗するコンポーネントである。 */
+const Boom = async () => {
+  await Promise.resolve();
+  throw new Error("boom");
+};
+
+describe("Errored の中の要素の配信", () => {
+  it("Errored の中身が失敗して出力しなかった要素は伝えず、成功した中身の要素は伝える", async () => {
+    const A = element("x-a");
+    const B = element("x-b");
+    const document = await html(
+      jsx("main", {
+        children: [
+          jsx(Errored, { fallback: "err", children: [jsx(A, {}), jsx(Boom, {})] }),
+          jsx(Errored, { fallback: "err", children: jsx(B, {}) }),
+        ],
+      }),
+    );
+    expect(head(document)).not.toContain("x-a");
+    expect(head(document)).toContain(
+      '<link rel="modulepreload" href="/src/elements/x-b.tsx"><script>$rinka.m([["x-b","/src/elements/x-b.tsx","load"]])</script>',
+    );
   });
 });

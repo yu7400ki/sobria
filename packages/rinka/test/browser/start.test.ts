@@ -98,3 +98,30 @@ describe("SSR したインスタンスの起動", () => {
     expect(document.querySelector(tag)?.hasAttribute("data-started")).toBe(true);
   });
 });
+
+describe("Shadow DOM の中の子要素", () => {
+  it("SSR した親の Shadow DOM の中の子要素は、起動スクリプトに起動の条件を問い合わせない", async () => {
+    const inner = nextTag();
+    const outer = nextTag();
+    const delivery = { module: "data:text/javascript,", load: "idle" } as const;
+    const InnerServer = defineServer(inner, startedView(server), { props: [] }, delivery);
+    const OuterServer = defineServer(
+      outer,
+      () => server("div", { children: server(InnerServer, {}) }),
+      { props: [] },
+      { ...delivery, load: "load" },
+    );
+    await serve(server("main", { children: [server(OuterServer, {}), server(InnerServer, {})] }));
+    const asked: string[] = [];
+    const rinka = (globalThis as unknown as { $rinka: { w: (el: Element, f: () => void) => void } })
+      .$rinka;
+    const w = rinka.w.bind(rinka);
+    rinka.w = (el, f) => {
+      asked.push(el.getRootNode() instanceof ShadowRoot ? "shadow" : "light");
+      w(el, f);
+    };
+    defineClient(inner, startedView(client), { props: [] });
+    await tick();
+    expect(asked).toEqual(["light"]);
+  });
+});

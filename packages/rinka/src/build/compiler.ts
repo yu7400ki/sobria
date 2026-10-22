@@ -107,15 +107,27 @@ export default ${DEFINE}(${args.join(", ")});
   return { tag, options: elementOptions };
 }
 
-/** 要素のファイルの最上位の `export const load` の値を返す。記述が無ければ `load` を返す。 */
+/** 要素のファイルの最上位の `export const load` の値を返す。記述が無ければ `load` を返す。ほかの形で `load` を export すると、ビルドのエラーにする。 */
 function defaultLoad(program: ESTree.Program, file: string): DefaultLoad {
+  const form = () =>
+    new CompileError(
+      `${file}: load は、export const load = "visible" の形で export してください。`,
+    );
   for (const statement of program.body) {
     if (statement.type !== "ExportNamedDeclaration") continue;
+    if (statement.specifiers.some((specifier) => exportedName(specifier.exported) === "load")) {
+      throw form();
+    }
     const declaration = statement.declaration;
     if (declaration?.type !== "VariableDeclaration") continue;
     for (const declarator of declaration.declarations) {
-      if (declarator.id.type !== "Identifier" || declarator.id.name !== "load") continue;
-      const init = declarator.init && unwrap(declarator.init);
+      if (declarator.id.type !== "Identifier") {
+        if (bindsLoad(declarator.id)) throw form();
+        continue;
+      }
+      if (declarator.id.name !== "load") continue;
+      if (declaration.kind !== "const") throw form();
+      const init = declarator.init && literalOf(declarator.init);
       if (init?.type === "Literal" && isDefaultLoad(init.value)) return init.value;
       throw new CompileError(
         `${file}: export const load には、"load"、"idle"、"visible" のどれかの文字列を記述してください。メディアクエリは、要素を配置するページで load:media に指定してください。`,
@@ -123,6 +135,41 @@ function defaultLoad(program: ESTree.Program, file: string): DefaultLoad {
     }
   }
   return "load";
+}
+
+/** export の指定子の、export する名前を返す。 */
+const exportedName = (node: ESTree.ModuleExportName): string =>
+  node.type === "Identifier" ? node.name : node.value;
+
+/** 分割代入のパターンが、`load` という名前の変数を宣言するかどうかを返す。 */
+function bindsLoad(pattern: ESTree.BindingPattern | ESTree.BindingRestElement): boolean {
+  switch (pattern.type) {
+    case "Identifier":
+      return pattern.name === "load";
+    case "ObjectPattern":
+      return pattern.properties.some((property) =>
+        bindsLoad(property.type === "RestElement" ? property : property.value),
+      );
+    case "ArrayPattern":
+      return pattern.elements.some((element) => element !== null && bindsLoad(element));
+    case "AssignmentPattern":
+      return bindsLoad(pattern.left);
+    case "RestElement":
+      return bindsLoad(pattern.argument);
+  }
+}
+
+/** 括弧と、`as` と `satisfies` の型の記述を外した式を返す。 */
+function literalOf(node: ESTree.Expression): ESTree.Node {
+  let current: ESTree.Node = node;
+  while (
+    current.type === "ParenthesizedExpression" ||
+    current.type === "TSAsExpression" ||
+    current.type === "TSSatisfiesExpression"
+  ) {
+    current = current.expression;
+  }
+  return current;
 }
 
 /** `value` が、`export const load` に記述できる起動タイミングかどうかを返す。 */

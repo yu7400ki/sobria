@@ -144,8 +144,6 @@ interface Resolvable {
 /** シェルを送るチャンクを表す。 */
 interface ShellFlush extends Resolvable {
   readonly kind: "shell";
-  /** シェルに出力した要素を、タグ名ごとに表す。 */
-  readonly elements: Map<string, Listed>;
 }
 
 /** 後送りの境界の中身を送るチャンクを表す。 */
@@ -153,8 +151,15 @@ interface DeferredFlush extends Resolvable {
   readonly kind: "deferred";
   /** 中身の中で `notFound()` を受け止めたことを表す。 */
   noindex: boolean;
-  /** 中身に出力した要素を、タグ名ごとに表す。 */
-  readonly elements: Map<string, Listed>;
+}
+
+/** `source` の要素を `target` に加える。同じタグなら、どちらかがすぐ起動するインスタンスを持つときに先読みする。 */
+function mergeListed(target: Map<string, Listed>, source: Iterable<[string, Listed]>): void {
+  for (const [tag, listed] of source) {
+    const current = target.get(tag);
+    if (current) current.preload ||= listed.preload;
+    else target.set(tag, { ...listed });
+  }
 }
 
 /** 解決していない `Resolvable` を作成する。 */
@@ -174,6 +179,13 @@ class Out {
   declare private readonly nominal: never;
   /** この位置の出力と同じ書き込みで、出力の後に書き込むスクリプトである。 */
   readonly scripts: string[] = [];
+  /** この位置に出力した、起動スクリプトに伝える要素を、タグ名ごとに表す。 */
+  readonly elements = new Map<string, Listed>();
+
+  /** `elements` を、この位置の要素に加える。 */
+  merge(elements: Iterable<[string, Listed]>): void {
+    mergeListed(this.elements, elements);
+  }
 
   private constructor(
     readonly flush: Flush,
@@ -395,6 +407,22 @@ function loadAttribute(props: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
+/** `elements` を起動スクリプトに伝える `$rinka.m` を返す。要素が無ければ空の文字列を返す。 */
+function listScript(elements: readonly [string, Listed][]): string {
+  if (elements.length === 0) return "";
+  const list = elements.map(([tag, { delivery }]) => [tag, delivery.module, delivery.load]);
+  return `<script>$rinka.m(${scriptJson(list)})</script>`;
+}
+
+/** `elements` のうち、すぐ起動するインスタンスがある要素の `modulepreload` を返す。 */
+const preloadLinks = (elements: readonly [string, Listed][]): string =>
+  elements
+    .filter(([, listed]) => listed.preload)
+    .map(
+      ([, { delivery }]) => `<link rel="modulepreload" href="${escapeAttribute(delivery.module)}">`,
+    )
+    .join("");
+
 /** サーバーで木を描画する。 */
 class Renderer {
   private seq = 0;
@@ -415,7 +443,6 @@ class Renderer {
   private readonly shellOut = Out.of({
     ...resolvable(),
     kind: "shell",
-    elements: new Map(),
   } satisfies ShellFlush);
   /** 起動スクリプトに伝えた要素のタグ名を保持する。 */
   private readonly listed = new Set<string>();
@@ -749,14 +776,9 @@ class Renderer {
       case "host": {
         const { record, attributes, open, chunks, announce, delivered } = chunk.host;
         if (delivered) {
-          const listed = out.flush.elements.get(delivered.tag);
-          if (listed) listed.preload ||= delivered.immediate;
-          else {
-            out.flush.elements.set(delivered.tag, {
-              delivery: delivered.delivery,
-              preload: delivered.immediate,
-            });
-          }
+          out.merge([
+            [delivered.tag, { delivery: delivered.delivery, preload: delivered.immediate }],
+          ]);
         }
         const inner = await this.serialize(chunks, out);
         const resolved = await attributes;
@@ -777,6 +799,7 @@ class Renderer {
         try {
           const html = await this.serialize(chunks, kept);
           out.scripts.push(...kept.scripts);
+          out.merge(kept.elements);
           return html;
         } catch (error) {
           failed = true;
@@ -814,7 +837,6 @@ class Renderer {
       ...resolvable(),
       kind: "deferred",
       noindex: false,
-      elements: new Map(),
     };
     boundary.flush = flush;
     for (const host of boundary.path) host.defer();
@@ -875,7 +897,7 @@ class Renderer {
             [regionOut, ...patches.map(([patch]) => patch.out)]
               .flatMap((position) => position.scripts)
               .join("") +
-            this.list(flush.elements, false) +
+            listScript(this.announce([regionOut, ...patches.map(([patch]) => patch.out)])) +
             `<script>$rinka.r(${scriptJson(spec)})</script>`,
         );
         this.finishBoundary(boundary);
@@ -968,33 +990,20 @@ class Renderer {
     );
   }
 
-  /**
-   * `elements` のうち、まだ起動スクリプトに伝えていない要素の `$rinka.m` を返す。
-   * `preload` が真なら、すぐ起動するインスタンスがある要素の `modulepreload` を前に置く。
-   */
-  private list(elements: ReadonlyMap<string, Listed>, preload: boolean): string {
-    const fresh = [...elements].filter(([tag]) => !this.listed.has(tag));
-    if (fresh.length === 0) return "";
+  /** `outs` に出力した要素のうち、まだ起動スクリプトに伝えていない要素を、伝えたものとして記録して返す。 */
+  private announce(outs: readonly Out[]): [string, Listed][] {
+    const merged = new Map<string, Listed>();
+    for (const out of outs) mergeListed(merged, out.elements);
+    const fresh = [...merged].filter(([tag]) => !this.listed.has(tag));
     for (const [tag] of fresh) this.listed.add(tag);
-    const links = preload
-      ? fresh
-          .filter(([, listed]) => listed.preload)
-          .map(
-            ([, { delivery }]) =>
-              `<link rel="modulepreload" href="${escapeAttribute(delivery.module)}">`,
-          )
-          .join("")
-      : "";
-    const list = fresh.map(([tag, { delivery }]) => [tag, delivery.module, delivery.load]);
-    return `${links}<script>$rinka.m(${scriptJson(list)})</script>`;
+    return fresh;
   }
 
   /** 文書の先頭と `shell` を出力し、後送りの境界をすべて出力してから、文書を閉じる。 */
   async finish(shell: string): Promise<void> {
     try {
-      const script = this.interactive
-        ? bootstrap + this.list(this.shellOut.flush.elements, true)
-        : "";
+      const fresh = this.interactive ? this.announce([this.shellOut]) : [];
+      const script = this.interactive ? bootstrap + preloadLinks(fresh) + listScript(fresh) : "";
       this.reveal(
         this.shellOut.flush,
         `<!doctype html><html><head><meta charset="utf-8">${script}${this.head}</head><body>${shell}${this.shellOut.scripts.join("")}`,

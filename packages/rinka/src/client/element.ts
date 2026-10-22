@@ -388,6 +388,7 @@ function locate(el: HTMLElement): Position {
 
 /**
  * owner の無い場所で作成して接続した要素を起動する。
+ * Shadow DOM の外にある SSR したホストは、起動スクリプトが起動の条件を満たしたと通知するまで起動しない。
  * SSR したホストは、自分の `data-om` のキーと、`@c:キー` の値が指す子要素のホストの `data-om` のキーの値が、すべて届くまで起動しない。
  * 表示されている位置の上に定義済みの要素があれば、そのスロットの `<slot>` の owner の下で起動する。
  * `<slot>` が無ければ、その `<slot>` を作成した時点で、接続していれば起動する。その時点でスロットの位置が変わっていれば、今の位置のスロットに登録し直す。
@@ -401,15 +402,11 @@ function attach(el: HTMLElement, instance: Instance): void {
   if (instance.gate !== "open" && el.hasAttribute("data-oh") && locate(el).kind !== "shadow") {
     if (instance.gate === "waiting") return;
     instance.gate = "waiting";
-    let synchronous = true;
-    let opened = false;
     whenStartable(el, () => {
       instance.gate = "open";
-      opened = true;
-      if (!synchronous && el.isConnected) attach(el, instance);
+      if (el.isConnected) attach(el, instance);
     });
-    synchronous = false;
-    if (!opened) return;
+    return;
   }
   const id = transferId(el, instance);
   if (id !== null) {

@@ -259,6 +259,24 @@ export default function X(props: Props) { return <p />; }`);
       );
     }
     expect(element(`export const load = 'idle';\n${end}`).code).toContain('"load":"idle"');
+    expect(element(`export const load = "idle" as const;\n${end}`).code).toContain('"load":"idle"');
+    expect(element(`export const load = "idle" satisfies string;\n${end}`).code).toContain(
+      '"load":"idle"',
+    );
+  });
+
+  it("export const load 以外の形で load を export すると、ビルドのエラーにする", () => {
+    const end = "export default function X(props: {}) { return <p />; }";
+    for (const source of [
+      'const load = "idle";\nexport { load };',
+      'const mode = "idle";\nexport { mode as load };',
+      'export { load } from "./mode.ts";',
+      'export let load = "idle";',
+      'export var load = "idle";',
+      'const mode = { load: "idle" };\nexport const { load } = mode;',
+    ]) {
+      expect(() => element(`${source}\n${end}`)).toThrow(/export const load/);
+    }
   });
 
   it("export const load の値が load、idle、visible の文字列のリテラルでなければ、ビルドのエラーにする", () => {
