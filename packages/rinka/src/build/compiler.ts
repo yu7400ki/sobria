@@ -7,7 +7,9 @@ import {
   isFunction,
   lineColumn,
   lineStarts,
+  follow,
   moduleExportName,
+  surround,
   walk,
   type FunctionNode,
   type Node,
@@ -134,15 +136,14 @@ function addMemoSites(
     if (!fn || fn.type === "SpreadElement" || options?.type === "SpreadElement") return;
     const site = `site: ${JSON.stringify(`${file}:${lineColumn(starts, node.start)}`)}`;
     if (!options) {
-      output.appendRight(fn.end, `, { ${site} }`);
+      follow(output, fn, `, { ${site} }`);
     } else if (options.type === "ObjectExpression") {
       output.appendLeft(
         options.start + 1,
         options.properties.length > 0 ? ` ${site},` : ` ${site} `,
       );
     } else {
-      output.prependRight(options.start, "{ ...");
-      output.appendLeft(options.end, `, ${site} }`);
+      surround(output, options, "{ ...", `, ${site} }`);
     }
   });
 }
@@ -153,7 +154,6 @@ function addMemoSites(
  */
 function gateAwaits(program: ESTree.Program, output: MagicString): boolean {
   let gated = false;
-  // 内側のノードから順に書き換えるので、開く括弧は prependRight で、閉じる括弧は appendLeft で挿入する
   const visit = (node: Node, owner: { used: boolean } | null): void => {
     if (isFunction(node)) {
       const own = node.async && !node.generator ? { used: false } : null;
@@ -168,12 +168,10 @@ function gateAwaits(program: ESTree.Program, output: MagicString): boolean {
     if (!owner) return;
     if (node.type === "AwaitExpression") {
       owner.used = true;
-      output.prependRight(node.argument.start, `${GATE}(`);
-      output.appendLeft(node.argument.end, ")");
+      surround(output, node.argument, `${GATE}(`, ")");
     } else if (node.type === "ForOfStatement" && node.await) {
       owner.used = true;
-      output.prependRight(node.right.start, `${GATE}.iterate(`);
-      output.appendLeft(node.right.end, ")");
+      surround(output, node.right, `${GATE}.iterate(`, ")");
     }
   };
   visit(program, null);
@@ -188,8 +186,7 @@ function insertGate(fn: FunctionNode, output: MagicString): void {
   if (body.type === "BlockStatement") {
     output.appendLeft(body.start + 1, ` ${declaration}`);
   } else {
-    output.prependRight(body.start, `{ ${declaration} return `);
-    output.appendLeft(body.end, "; }");
+    surround(output, body, `{ ${declaration} return `, "; }");
   }
 }
 

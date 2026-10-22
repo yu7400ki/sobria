@@ -1,3 +1,4 @@
+import type { MagicString } from "magic-string";
 import type { ESTree } from "vite";
 
 /** oxc のパーサーが返す AST のノードを表す。 */
@@ -66,4 +67,24 @@ export function lineColumn(starts: readonly number[], offset: number): string {
     else high = middle - 1;
   }
   return `${low + 1}:${offset - (starts[low] ?? 0) + 1}`;
+}
+
+/** 位置の範囲を持つ値を表す。 */
+interface Span {
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * `node` の範囲を `open` と `close` で囲む。
+ * 内側のノードから順に呼び出すと、外側のノードを囲む文字列は、内側のノードを囲む文字列の外に並ぶ。
+ */
+export function surround(output: MagicString, node: Span, open: string, close: string): void {
+  output.prependRight(node.start, open);
+  output.appendLeft(node.end, close);
+}
+
+/** `node` の直後に `text` を挿入する。`text` は、`node` の末尾に `surround` で挿入した文字列より後ろに並ぶ。 */
+export function follow(output: MagicString, node: Span, text: string): void {
+  output.appendRight(node.end, text);
 }

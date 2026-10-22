@@ -2,7 +2,7 @@ import { MagicString } from "magic-string";
 import { parseSync, type ESTree } from "vite";
 
 import { isEventProp } from "../shared/names.ts";
-import { children, isFunction, moduleExportName, type Node } from "./ast.ts";
+import { children, isFunction, moduleExportName, surround, type Node } from "./ast.ts";
 import type { Transformed } from "./compiler.ts";
 import { CompileError } from "./errors.ts";
 
@@ -31,7 +31,6 @@ export function transformJsx(code: string, file: string): Transformed {
   if (error) throw new CompileError(`${file} を解析できません: ${error.message}`);
   const output = new MagicString(code);
   const runtime = runtimeNames(program, file);
-  // 内側の呼び出しから順に書き換えるので、開く括弧は prependRight で、閉じる括弧は appendLeft で挿入する
   const visit = (node: Node): void => {
     for (const child of children(node)) visit(child);
     if (isJsxCall(node, runtime)) applyRules(node, runtime, output, code);
@@ -107,9 +106,8 @@ function applyRules(
     if (name === "ref" || name.startsWith("load:")) continue;
     if (isLiteral(value) || isFunction(value) || hasAwait(value) || usesCallee(value)) continue;
     const key = code.slice(property.key.start, property.key.end);
-    if (property.shorthand) output.prependRight(value.start, `get ${key}() { return (`);
-    else output.overwrite(property.start, value.start, `get ${key}() { return (`);
-    output.appendLeft(value.end, "); }");
+    if (!property.shorthand) output.remove(property.start, value.start);
+    surround(output, value, `get ${key}() { return (`, "); }");
   }
 }
 
@@ -121,8 +119,7 @@ function propertyName(key: ESTree.PropertyKey): string | undefined {
 
 /** `expression` を `() => (expression)` にする。 */
 function wrap(expression: Node, output: MagicString): void {
-  output.prependRight(expression.start, "() => (");
-  output.appendLeft(expression.end, ")");
+  surround(output, expression, "() => (", ")");
 }
 
 /** 値がリテラルかどうかを返す。負の数はリテラルとして扱う。 */
