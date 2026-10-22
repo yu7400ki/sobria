@@ -993,7 +993,7 @@ export function renderToResponse(node: unknown, options: ResponseOptions = {}): 
   return respond(node, options, 200);
 }
 
-/** 開発サーバーが使用する、レスポンスのオプションを表す。 */
+/** `<head>` に出力するマークアップを加えた、レスポンスのオプションを表す。 */
 export interface DocumentOptions extends ResponseOptions {
   /** 文書の `<head>` の末尾に出力するマークアップである。 */
   readonly head?: string;

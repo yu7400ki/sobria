@@ -13,7 +13,7 @@ export interface Route {
 export interface AppOptions {
   /** ページの `<head>` の末尾に出力するマークアップである。 */
   readonly head?: string;
-  /** ページの読み込みか描画で投げたエラーを受け取り、返す Response を返す。 */
+  /** ページの読み込みか描画で投げたエラーを受け取り、アプリが返す Response を返す。 */
   readonly onError?: (error: unknown) => Response;
 }
 
