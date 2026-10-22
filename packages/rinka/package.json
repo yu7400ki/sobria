@@ -35,15 +35,23 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@hono/node-server": "catalog:",
     "@solidjs/signals": "catalog:",
+    "magic-string": "catalog:",
     "seroval": "catalog:"
   },
   "devDependencies": {
     "@rinka/config": "workspace:*",
     "@types/node": "catalog:",
     "@vitest/browser-playwright": "catalog:",
+    "hono": "catalog:",
     "playwright": "catalog:",
     "typescript": "catalog:",
+    "vite": "catalog:",
     "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "hono": "catalog:",
+    "vite": "catalog:"
   }
 }
