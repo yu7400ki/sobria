@@ -1,8 +1,8 @@
 import { createRoot } from "@solidjs/signals";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { isBot } from "../../src/server/bots.ts";
-import { Loading } from "../../src/server/control.ts";
+import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToResponse, renderToStream } from "../../src/server/render.ts";
@@ -27,6 +27,10 @@ function deferred(content: unknown) {
 }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("シェルと後送り", () => {
   it("保留中の Loading は、フォールバックを目印で囲んで送り、中身を後から送る", async () => {
@@ -114,7 +118,7 @@ describe("要素の中の境界", () => {
     );
   });
 
-  it("スロットに置いた子要素の保留中の状態は、<slot> を囲む境界の差し替えに加わる", async () => {
+  it("スロットの内容が保留中なら、<slot> を囲む境界の差し替えとして、内容の全体を送る", async () => {
     const { promise, resolve } = Promise.withResolvers<string>();
     const Container = defineElement(
       "x-container",
@@ -133,12 +137,11 @@ describe("要素の中の境界", () => {
     await tick();
     resolve("v");
     const html = (await reading).join("");
-    expect(html).toContain('<x-container data-oh="h1" data-om="@b2">');
     expect(html).toContain(
-      '<x-child data-oh="h3" data-om="@b2"><template shadowrootmode="open"><i><template data-ob="p4"></template><!--/ob:p4--></i></template></x-child>',
+      '<x-container data-oh="h1" data-om="@b2"><template shadowrootmode="open"><template data-ob="b2"></template>wait<!--/ob:b2--></template><template data-ob="p4"></template><!--/ob:p4--></x-container>',
     );
     expect(html).toContain(
-      '<template data-os="b2"><slot></slot></template><template data-op="p4">v</template><script>$rinka.r({"b":"b2","bp":["h1"],"p":[["p4",["h3"]]],"h":["h1","h3"]})</script>',
+      '<template data-os="b2"><slot></slot></template><template data-op="p4"><x-child data-oh="h3"><template shadowrootmode="open"><i>v</i></template></x-child></template><script>$rinka.r({"b":"b2","bp":["h1"],"p":[["p4",[]]],"h":["h1"]})</script>',
     );
   });
 });
@@ -164,6 +167,199 @@ describe("スロットの内容の保留中のタグ", () => {
       '<x-wrap data-oh="h1" data-om="@b2"><template shadowrootmode="open"><template data-ob="b2"></template>wait<!--/ob:b2--></template><template data-ob="p3"></template><!--/ob:p3--></x-wrap>',
     );
     expect(html).toContain('<template data-op="p3"><b title="v">t</b></template>');
+  });
+});
+
+/** 外から失敗させられる async のコンポーネントを作成する。 */
+function failing(error: unknown = new Error("e")) {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  const Fail = async () => {
+    await promise;
+    throw error;
+  };
+  return { Fail, reject: resolve };
+}
+
+describe("境界を待つホスト", () => {
+  it("保留中でない境界は、ホストに待たせない", async () => {
+    const Now = defineElement("x-now", () => jsx(Loading, { fallback: "f", children: "now" }), {
+      props: [],
+    });
+    const html = (await read(renderToStream(jsx(Now, {})))).join("");
+    expect(html).toContain(
+      '<x-now data-oh="h1"><template shadowrootmode="open">now</template></x-now>',
+    );
+  });
+
+  it("値が解決してから現れた境界も、ホストに待たせる", async () => {
+    const { promise, resolve } = Promise.withResolvers<string>();
+    const slow = deferred("in");
+    const Later = defineElement(
+      "x-later",
+      () => {
+        const value = memo(() => promise);
+        return () => value() && jsx(Loading, { fallback: "f", children: jsx(slow.Slow, {}) });
+      },
+      { props: [] },
+    );
+    const reading = read(renderToStream(jsx(Later, {})));
+    await tick();
+    resolve("v");
+    await tick();
+    slow.resolve();
+    const html = (await reading).join("");
+    expect(html).toContain('<x-later data-oh="h1" data-om="@b2">');
+  });
+
+  it("フォールバックの中の境界はホストに待たせず、使わないフォールバックは描画しない", async () => {
+    let rendered = 0;
+    const Unused = defineElement(
+      "x-unused",
+      () =>
+        jsx(Loading, {
+          fallback: () => {
+            rendered++;
+            return jsx(Loading, { fallback: "ff", children: "x" });
+          },
+          children: "now",
+        }),
+      { props: [] },
+    );
+    const html = (await read(renderToStream(jsx(Unused, {})))).join("");
+    expect(html).toContain('<x-unused data-oh="h1"><template shadowrootmode="open">now</template>');
+    expect(rendered).toBe(0);
+  });
+
+  it("開始タグを出力した後に現れた入れ子の境界は、親の境界の差し替えでホストに待たせる", async () => {
+    const inner = deferred("in");
+    const outer = deferred(jsx(Loading, { fallback: "i", children: jsx(inner.Slow, {}) }));
+    const Nested = defineElement(
+      "x-nested",
+      () => jsx(Loading, { fallback: "o", children: jsx(outer.Slow, {}) }),
+      { props: [] },
+    );
+    const reading = read(renderToStream(jsx(Nested, {})));
+    await tick();
+    outer.resolve();
+    await tick();
+    inner.resolve();
+    const html = (await reading).join("");
+    expect(html).toContain('<x-nested data-oh="h1" data-om="@b2">');
+    expect(html).toContain('$rinka.r({"b":"b2","bp":["h1"],"p":[],"h":["h1"],"w":[["h1","@b3"]]})');
+    expect(html).toContain('$rinka.r({"b":"b3","bp":["h1"],"p":[],"h":["h1"]})');
+  });
+
+  it("失敗して送らない境界は、待っているホストに境界の完了を通知する", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { Fail, reject } = failing();
+    const Broken = defineElement(
+      "x-broken",
+      () => jsx(Loading, { fallback: "f", children: jsx(Fail, {}) }),
+      { props: [] },
+    );
+    const reading = read(renderToStream(jsx(Broken, {})));
+    await tick();
+    reject();
+    const html = (await reading).join("");
+    expect(html).not.toContain('<template data-os="b2"');
+    expect(html).toContain('<script>$rinka.d("h1",{"@b2":1})</script>');
+    expect(error).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("境界の失敗と順序", () => {
+  it("埋め込んだ境界の中の境界は、外側の境界が失敗すると送らない", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { Fail, reject } = failing();
+    const inner = deferred("inner-done");
+    const reading = read(
+      renderToStream(
+        jsx(Loading, {
+          fallback: "o",
+          children: [
+            jsx(Fail, {}),
+            jsx(Loading, {
+              fallback: "m",
+              children: jsx(Loading, { fallback: "i", children: jsx(inner.Slow, {}) }),
+            }),
+          ],
+        }),
+      ),
+    );
+    await tick();
+    inner.resolve();
+    await tick();
+    reject();
+    const html = (await reading).join("");
+    expect(html).not.toContain("inner-done");
+    expect(error).toHaveBeenCalledTimes(1);
+  });
+
+  it("保留中でない境界の中にある保留中の境界も、送り終えてからストリームを閉じる", async () => {
+    const inner = deferred("in");
+    const reading = read(
+      renderToStream(
+        jsx(Loading, {
+          fallback: "o",
+          children: jsx(Loading, { fallback: "i", children: jsx(inner.Slow, {}) }),
+        }),
+      ),
+    );
+    await tick();
+    inner.resolve();
+    const html = (await reading).join("");
+    expect(html).toContain('<template data-os="b2">in</template>');
+    expect(html.endsWith("</body></html>")).toBe(true);
+  });
+
+  it("スロットの内容の中の Errored は、差し替えの中で失敗を受け止める", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { Fail, reject } = failing();
+    const Container = defineElement(
+      "x-catch",
+      () => jsx(Loading, { fallback: "wait", children: jsx("slot", {}) }),
+      { props: ["children"] },
+    );
+    const reading = read(
+      renderToStream(
+        jsx(Container, { children: jsx(Errored, { fallback: "caught", children: jsx(Fail, {}) }) }),
+      ),
+    );
+    await tick();
+    reject();
+    const html = (await reading).join("");
+    expect(html).toContain('<template data-op="p3">caught</template>');
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it("内側の要素の Light DOM に渡した <slot> も、外側の要素の境界に登録する", async () => {
+    const slow = deferred("late");
+    const Inner = defineElement("x-inner", () => jsx("slot", {}), { props: ["children"] });
+    const Outer = defineElement(
+      "x-outer",
+      () => jsx(Loading, { fallback: "wait", children: jsx(Inner, { children: jsx("slot", {}) }) }),
+      { props: ["children"] },
+    );
+    const stream = renderToStream(jsx(Outer, { children: jsx(slow.Slow, {}) }));
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    const first = await Promise.race([
+      reader.read().then(({ value }) => decoder.decode(value)),
+      tick().then(() => "シェルが送られない"),
+    ]);
+    expect(first).toContain('<template data-ob="p4"></template><!--/ob:p4-->');
+    reader.releaseLock();
+    slow.resolve();
+    const rest = (await read(stream)).join("");
+    expect(rest).toContain('<template data-op="p4">late</template>');
+  });
+});
+
+describe("blocking と起動スクリプト", () => {
+  it("blocking でも、要素があれば起動スクリプトを出力する", async () => {
+    const Plain = defineElement("x-plain", () => "p", { props: [] });
+    const html = (await read(renderToStream(jsx(Plain, {}), { blocking: true }))).join("");
+    expect(html).toContain("window.$rinka");
   });
 });
 

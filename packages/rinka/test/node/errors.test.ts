@@ -97,6 +97,60 @@ describe("シェルの中", () => {
   });
 });
 
+describe("シェルの中の判定", () => {
+  it("同期的に投げたエラーは、兄弟の順序に関わらずシェルの中で受け止める", async () => {
+    const orders = [
+      [jsx(throwing("late"), {}), jsx(Sync, {})],
+      [jsx(Sync, {}), jsx(throwing("late"), {})],
+    ];
+    for (const children of orders) {
+      const inner = jsx(Loading, {
+        fallback: "wait",
+        children: jsx(Errored, { fallback: "x", children }),
+      });
+      const outer = jsx(Errored, {
+        fallback: "x",
+        children: jsx(Loading, { fallback: "wait", children }),
+      });
+      for (const node of [inner, outer]) {
+        // oxlint-disable-next-line no-await-in-loop
+        const response = await renderToResponse(node);
+        expect(response.status).toBe(500);
+        // oxlint-disable-next-line no-await-in-loop
+        expect(await response.text()).toContain("<body>x</body>");
+      }
+    }
+  });
+
+  it("複数の Errored が受け止めたら、大きいほうのステータスにする", async () => {
+    const response = await renderToResponse([
+      jsx(Errored, { fallback: "a", status: 403, children: jsx(Sync, {}) }),
+      jsx(Errored, { fallback: "b", children: jsx(Sync, {}) }),
+    ]);
+    expect(response.status).toBe(500);
+  });
+
+  it("入れ子の Errored は、内側が通過させた値を受け止めない", async () => {
+    const response = await renderToResponse(
+      jsx(Errored, { fallback: "o", children: wrap(redirect("/a")) }),
+    );
+    expect(response.status).toBe(303);
+  });
+
+  it("error のページが無ければ、受け止められなかったエラーで reject する", async () => {
+    await expect(renderToResponse(jsx(throwing(new Error("壊れた")), {}))).rejects.toThrow(
+      "壊れた",
+    );
+  });
+
+  it("redirect() は、相対 URL と http と https 以外の移動先をエラーにする", () => {
+    expect(() => redirect("javascript:alert(1)")).toThrow("相対 URL か");
+    expect(() => redirect(" java	script:alert(1)")).toThrow("相対 URL か");
+    expect(redirect("https://example.com/").location).toBe("https://example.com/");
+    expect(redirect("/a?b=c:d").location).toBe("/a?b=c:d");
+  });
+});
+
 describe("シェルの後", () => {
   it("redirect() は、location.replace と meta refresh で移動させ、フォールバックを残す", async () => {
     const { Slow, resolve } = deferredThrow(redirect("/login"));
@@ -115,6 +169,26 @@ describe("シェルの後", () => {
     );
     expect(html).not.toContain("<template data-os");
     expect(html).not.toContain(">x<");
+    expect(html).toContain('<template data-ob="b1"></template>wait<!--/ob:b1-->');
+  });
+
+  it("3xx の Response は移動させ、3xx 以外の Response は Errored が受け止める", async () => {
+    const moved = deferredThrow(
+      new Response(null, { status: 302, headers: { location: "/next" } }),
+    );
+    const denied = deferredThrow(new Response(null, { status: 401 }));
+    const response = await renderToResponse([
+      jsx(Loading, { fallback: "a", children: jsx(moved.Slow, {}) }),
+      jsx(Loading, {
+        fallback: "b",
+        children: jsx(Errored, { fallback: "拒否", children: jsx(denied.Slow, {}) }),
+      }),
+    ]);
+    moved.resolve();
+    denied.resolve();
+    const html = await response.text();
+    expect(html).toContain('<script>location.replace("/next")</script>');
+    expect(html).toContain('<template data-os="b2">拒否</template>');
   });
 
   it("notFound() は Errored が受け止め、noindex を 1 回だけ出力する", async () => {

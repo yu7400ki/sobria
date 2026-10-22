@@ -23,18 +23,18 @@ import { NotFound, Redirect } from "./errors.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
 
 /**
- * 出力の単位を表す。文字列、穴、`<Loading>` の位置、`<Errored>` の領域のいずれかである。
+ * 出力の単位を表す。文字列、穴、投げられた値、`<Loading>` の位置、`<Errored>` の領域、スロットの内容、要素のホストのいずれかである。
  * 穴は、描画した時点では内容が決まらず、値が解決してから内容が決まる位置である。
  * 後送りの境界は、シェルにはフォールバックを目印で囲んで出力し、中身はシェルの後に出力して、起動スクリプトが目印の間と差し替える。
  */
-type Chunk = string | Hole | Mark | ErroredRegion | Fail;
+type Chunk = string | Hole | Fail | Mark | ErroredRegion | Slotted | Host;
 
 /** 穴を表す。`hole` は、内容が決まると出力の単位の列に解決する。 */
 interface Hole {
   readonly hole: Promise<Chunk[]>;
 }
 
-/** 描画の途中で投げられた値を表す。文字列にする時点で、`fail` を投げる。 */
+/** 描画の途中で同期的に投げられた値を表す。文字列にする時点で、`fail` を投げる。 */
 interface Fail {
   readonly fail: unknown;
 }
@@ -42,22 +42,54 @@ interface Fail {
 /** `<Loading>` の位置を表す。中身を埋め込むか、フォールバックを出力して後送りにするかは、文字列にする時点で決定する。 */
 interface Mark {
   readonly mark: Boundary;
-  readonly fallback: Chunk[];
+  readonly fallback: () => Chunk[];
 }
 
-/** `<Errored>` の領域を表す。中身の穴が失敗すると、`node.fallback` が返した内容を出力する。 */
+/** `<Errored>` の領域を表す。中身が失敗すると、`node.fallback` が返した内容を出力する。 */
 interface ErroredRegion {
   readonly errored: { readonly chunks: Chunk[]; readonly node: ErroredNode; readonly ctx: WalkCtx };
 }
 
-/** 境界の中身と同時に出力する、境界の領域の外にある位置の差し替えを表す。 */
+/**
+ * 要素の Light DOM のうち、Shadow DOM の `<Loading>` の中にある `<slot>` に配置する内容を表す。
+ * 境界を後送りにし、内容に穴があれば、目印を出力して、内容の全体を境界の差し替えとして後から出力する。
+ */
+interface Slotted {
+  readonly slotted: {
+    readonly boundary: Boundary;
+    readonly chunks: Chunk[];
+    /** 目印を含む Shadow DOM のホストの ID を、外側から順に列挙する。 */
+    readonly path: readonly string[];
+  };
+}
+
+/** 要素のホストの属性を表す。`transfer` は、属性にできない props があることを表す。 */
+interface HostAttributes {
+  readonly text: string;
+  readonly transfer: boolean;
+}
+
+/** 要素のホストを表す。開始タグは、`chunks` を文字列にした後で、待つ境界を決定してから出力する。 */
+interface Host {
+  readonly host: {
+    readonly id: string;
+    readonly attributes: HostAttributes | Promise<HostAttributes>;
+    readonly open: (attributes: HostAttributes, waits: readonly string[]) => string;
+    readonly chunks: Chunk[];
+  };
+}
+
+/** `<Errored>` の領域が、フォールバックに切り替わったかどうかを表す。 */
+interface Region {
+  discarded: boolean;
+}
+
+/** 境界の差し替えを表す。 */
 interface Patch {
   readonly id: string;
   /** 目印を含む Shadow DOM のホストの ID を、外側から順に列挙する。 */
   readonly path: readonly string[];
-  readonly chunks: Chunk[];
-  /** 目印を出力する境界を表す。 */
-  readonly sink: Boundary;
+  readonly html: Promise<string>;
 }
 
 /** `<Loading>` の境界と、シェルを表す。 */
@@ -67,17 +99,21 @@ interface Boundary {
   readonly path: readonly string[];
   /** 境界の領域に出力する単位の列を表す。 */
   readonly region: Chunk[];
+  /** 境界の中の `<slot>` に配置するスロットの内容を表す。内容に穴があれば、境界は保留中になる。 */
+  readonly slotted: Chunk[][];
   readonly patches: Patch[];
   readonly parent: Boundary | null;
-  /** 境界の中身を出力した時点で解決する。中身を埋め込んだ境界では、親の境界の Promise である。 */
-  emitted: Promise<void>;
-  markEmitted: () => void;
-  /** 中身の出力に失敗したか、親の境界が失敗したので、この境界の中身と差し替えを出力していないことを表す。 */
-  failed: boolean;
+  /** 中身を出力したら `true` に、出力しないことが決まったら `false` に解決する。中身を埋め込んだ境界では、親の境界の Promise である。 */
+  sent: Promise<boolean>;
+  send: (sent: boolean) => void;
+  /** 目印を囲む `<Errored>` の領域を表す。 */
+  regions: readonly Region[];
   /** シェルの後に出力する境界であることを表す。 */
   late: boolean;
   /** 境界の中で `notFound()` を受け止めたことを表す。 */
   noindex: boolean;
+  /** 開始タグを出力した後のホストに、待たせる境界のキーを追加する組を表す。 */
+  readonly waits: [host: string, key: string][];
 }
 
 /** 描画している位置の状態を表す。 */
@@ -86,10 +122,8 @@ interface WalkCtx {
   readonly owner: Owner | null;
   /** この位置を含む Shadow DOM のホストの ID を、外側から順に列挙する。 */
   readonly path: readonly string[];
-  /** この位置の保留中の状態を受け止める境界を表す。 */
+  /** この位置を囲む境界を表す。 */
   readonly boundary: Boundary;
-  /** この位置の出力を含む境界を表す。 */
-  readonly sink: Boundary;
   /** 要素の Shadow DOM の中なら、`<slot>` の名前ごとに、その `<slot>` を囲む境界を記録する。 */
   readonly slots?: Map<string, Boundary>;
   /** 名前付きのスロットに配置する内容のうち、最上位のノードを描画しているときは、そのスロットの名前を表す。 */
@@ -136,6 +170,13 @@ function attribute(name: string, value: unknown): string {
   return value === true && text === "" ? ` ${name}` : ` ${name}="${escapeAttribute(text)}"`;
 }
 
+/** `value` を、`<script>` の中に埋め込める JSON にする。 */
+const scriptJson = (value: unknown): string => JSON.stringify(value).replaceAll("<", "\\u003c");
+
+/** 目印の開始と終了の HTML を返す。 */
+const marker = (id: string, inner = ""): string =>
+  `<template data-ob="${id}"></template>${inner}<!--/ob:${id}-->`;
+
 /** サーバーの描画で、`ctx.host` の代わりに渡す値である。プロパティを参照すると、エラーを投げる。 */
 const serverHost = new Proxy(
   {},
@@ -148,22 +189,39 @@ const serverHost = new Proxy(
   },
 );
 
+/**
+ * 出力の単位の列に、穴があるかどうかを返す。`<Errored>` の領域と要素のホストの中を含め、後送りにする境界とスロットの内容の中を除く。
+ */
+function hasHole(chunks: readonly Chunk[]): boolean {
+  return chunks.some((chunk) => {
+    if (typeof chunk === "string") return false;
+    if ("hole" in chunk) return true;
+    if ("errored" in chunk) return hasHole(chunk.errored.chunks);
+    if ("host" in chunk) {
+      return chunk.host.attributes instanceof Promise || hasHole(chunk.host.chunks);
+    }
+    return false;
+  });
+}
+
 /** サーバーで木を描画する。 */
 class Renderer {
   private seq = 0;
   private readonly disposers: (() => void)[] = [];
   /** シェルの後に後送りの境界を出力する処理のうち、終わっていないものを保持する。 */
   private readonly pending = new Set<Promise<void>>();
-  /** シェルの外の境界を、作成した順に保持する。 */
-  private readonly boundaries: Boundary[] = [];
+  /** 後送りにした境界を、後送りにした順に保持する。 */
+  private readonly scheduled: Boundary[] = [];
+  /** 開始タグを出力したホストの ID を保持する。 */
+  private readonly opened = new Set<string>();
   /** 要素を描画したか、`<Loading>` の中身を後送りにしたときに真になる。真のページにだけ、起動スクリプトを出力する。 */
   private interactive = false;
   /** `noindex` の `<meta>` を出力したことを表す。 */
   private noindexSent = false;
   /** シェルを表す境界である。 */
   private readonly root = this.newBoundary(null, []);
-  /** レスポンスのステータスを表す。シェルの中の `<Errored>` が受け止めると、500 か、`status` に指定した値のうち大きいほうにする。 */
-  status = 200;
+  /** シェルの中の `<Errored>` が受け止めたときのステータスのうち、最も大きいものを表す。 */
+  private caught = 200;
 
   /**
    * `write` は、出力する文字列を受け取る。`blocking` なら、すべての境界を待って、フォールバックと差し替えを出力しない。
@@ -173,22 +231,27 @@ class Renderer {
     private readonly blocking: boolean,
   ) {}
 
+  /** シェルの中の `<Errored>` が受け止めたときのステータスのうち、最も大きいものを返す。受け止めていなければ 200 を返す。 */
+  get status(): number {
+    return this.caught;
+  }
+
   private newBoundary(parent: Boundary | null, path: readonly string[]): Boundary {
-    const { promise, resolve: markEmitted } = Promise.withResolvers<void>();
-    const boundary: Boundary = {
+    const { promise, resolve: send } = Promise.withResolvers<boolean>();
+    return {
       id: parent ? `b${++this.seq}` : "",
       path,
       region: [],
+      slotted: [],
       patches: [],
       parent,
-      emitted: promise,
-      markEmitted,
-      failed: false,
+      sent: promise,
+      send,
+      regions: [],
       late: false,
       noindex: false,
+      waits: [],
     };
-    if (parent) this.boundaries.push(boundary);
-    return boundary;
   }
 
   private chunks(node: Node, ctx: WalkCtx): Chunk[] {
@@ -220,12 +283,8 @@ class Renderer {
         return;
       case "loading": {
         const boundary = this.newBoundary(ctx.boundary, ctx.path);
-        try {
-          this.walk(node.children, { ...ctx, boundary, sink: boundary }, boundary.region);
-        } catch (error) {
-          boundary.region.push({ fail: error });
-        }
-        out.push({ mark: boundary, fallback: this.chunks(node.fallback, ctx) });
+        this.walk(node.children, { ...ctx, boundary }, boundary.region);
+        out.push({ mark: boundary, fallback: () => this.chunks(node.fallback, ctx) });
         return;
       }
       case "errored":
@@ -238,15 +297,7 @@ class Renderer {
         }
         const result = node.fn(node.props);
         if (result instanceof Promise) {
-          this.defer(
-            [
-              this.hole(
-                result.then((value) => this.chunks(asNode(value), { ...ctx, sink: ctx.boundary })),
-              ),
-            ],
-            ctx,
-            out,
-          );
+          out.push(this.hole(result.then((value) => this.chunks(asNode(value), ctx))));
         } else {
           this.walk(asNode(result), ctx, out);
         }
@@ -257,15 +308,11 @@ class Renderer {
   /** 関数を呼び出した値を描画する。関数が未解決の値を参照すると、値が解決してから描画する穴にする。 */
   private thunk(fn: () => Node, ctx: WalkCtx, out: Chunk[]): void {
     const value = this.settle(ctx, fn);
-    if (!(value instanceof Promise)) {
+    if (value instanceof Promise) {
+      out.push(this.hole(value.then((resolved) => this.chunks(resolved, ctx))));
+    } else {
       this.walk(value, ctx, out);
-      return;
     }
-    this.defer(
-      [this.hole(value.then((resolved) => this.chunks(resolved, { ...ctx, sink: ctx.boundary })))],
-      ctx,
-      out,
-    );
   }
 
   /** `promise` の穴を作成する。描画を中断して穴を捨てても、`promise` の reject は処理されないままにならない。 */
@@ -274,24 +321,22 @@ class Renderer {
     return { hole: promise };
   }
 
-  /**
-   * 保留中の値を含む出力の単位の列を出力する。この位置の出力が、保留中の状態を受け止める境界とは別の境界に属するときは、
-   * 目印を出力し、境界に属する差し替えとして列を後から送る。`chunks` の中の位置の出力は、受け止める境界に属するものとして描画する。
-   */
-  private defer(chunks: Chunk[], ctx: WalkCtx, out: Chunk[]): void {
-    if (this.blocking || ctx.boundary === ctx.sink) {
-      out.push(...chunks);
-      return;
-    }
-    const id = `p${++this.seq}`;
-    out.push(`<template data-ob="${id}"></template><!--/ob:${id}-->`);
-    ctx.boundary.patches.push({ id, path: ctx.path, chunks, sink: ctx.sink });
-  }
-
   /** `props` の値を返す。関数は、追跡せずに呼び出して、戻り値を返す。`tracked` なら、追跡して呼び出す。 */
   private value(raw: unknown, ctx: WalkCtx, tracked: boolean): unknown {
     if (!isFunction(raw)) return raw;
     return tracked ? raw() : runWithOwner(ctx.owner, () => untrack(raw));
+  }
+
+  /** `compute` を追跡せずに呼び出した値を返す。未解決の値を参照したときは、追跡して呼び出した値が解決する Promise を返す。 */
+  private settle<T>(ctx: WalkCtx, compute: (tracked: boolean) => T): T | Promise<T> {
+    try {
+      return runWithOwner(ctx.owner, () => untrack(() => compute(false)));
+    } catch (error) {
+      if (!(error instanceof NotReadyError)) throw error;
+      const settled = runWithOwner(ctx.owner, () => resolve(() => compute(true)));
+      settled.catch(() => {});
+      return settled;
+    }
   }
 
   private tag(
@@ -318,33 +363,19 @@ class Renderer {
       ctx.slots?.set(typeof name === "string" ? name : "", ctx.boundary);
     }
     const open = this.settle(ctx, openTag);
-    const pending = typeof open !== "string";
-    const own: Chunk[] = [pending ? this.hole(open.then((text) => [text])) : open];
-    if (!voidTags.has(tag)) {
-      const { slot: _, ...inner } = ctx;
-      this.walk(asNode(props.children), pending ? { ...inner, sink: ctx.boundary } : inner, own);
-      own.push(`</${tag}>`);
-    }
-    if (pending) this.defer(own, ctx, out);
-    else out.push(...own);
-  }
-
-  /** `compute` を追跡せずに呼び出した値を返す。未解決の値を参照したときは、追跡して呼び出した値が解決する Promise を返す。 */
-  private settle<T>(ctx: WalkCtx, compute: (tracked: boolean) => T): T | Promise<T> {
-    try {
-      return runWithOwner(ctx.owner, () => untrack(() => compute(false)));
-    } catch (error) {
-      if (!(error instanceof NotReadyError)) throw error;
-      return runWithOwner(ctx.owner, () => resolve(() => compute(true)));
-    }
+    out.push(typeof open === "string" ? open : this.hole(open.then((text) => [text])));
+    if (voidTags.has(tag)) return;
+    const { slot: _, ...inner } = ctx;
+    this.walk(asNode(props.children), inner, out);
+    out.push(`</${tag}>`);
   }
 
   private errored(node: ErroredNode, ctx: WalkCtx, out: Chunk[]): void {
-    const chunks: Chunk[] = [];
+    let chunks: Chunk[] = [];
     try {
       this.walk(node.children, ctx, chunks);
     } catch (error) {
-      chunks.push({ fail: error });
+      chunks = [{ fail: error }];
     }
     out.push({ errored: { chunks, node, ctx } });
   }
@@ -383,7 +414,7 @@ class Renderer {
           propValue(name) ?? (functionProps.has(name) && isEventProp(name) ? () => {} : undefined),
       });
     }
-    const hostAttributes = (tracked: boolean) => {
+    const hostAttributes = (tracked: boolean): HostAttributes => {
       let text = "";
       let transfer = false;
       for (const name of options.props) {
@@ -407,16 +438,7 @@ class Renderer {
       if (ctx.slot !== undefined) text += attribute("slot", ctx.slot);
       return { text, transfer };
     };
-    let waits: string[] = [];
-    const open = ({ text, transfer }: { text: string; transfer: boolean }): string => {
-      const keys = transfer ? [...waits, "@p"] : waits;
-      const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
-      return `<${tag}${attribute("data-oh", id)}${text}${om}><template shadowrootmode="open">`;
-    };
-    const host = this.settle(ctx, hostAttributes);
-    const pending = host instanceof Promise;
-    const sink = pending ? ctx.boundary : ctx.sink;
-    const own: Chunk[] = [pending ? this.hole(host.then((attributes) => [open(attributes)])) : ""];
+    const attributes = this.settle(ctx, hostAttributes);
 
     let owner: Owner | null = null;
     let tree: Node = null;
@@ -432,109 +454,143 @@ class Renderer {
       tree = asNode(untrack(() => component(elementProps, elementCtx)));
     });
 
+    const chunks: Chunk[] = [];
     const slots = new Map<string, Boundary>();
-    this.walk(tree, { owner, path: [...ctx.path, id], boundary: ctx.boundary, sink, slots }, own);
-    own.push("</template>");
+    this.walk(tree, { owner, path: [...ctx.path, id], boundary: ctx.boundary, slots }, chunks);
+    chunks.push("</template>");
     for (const name of Object.keys(descriptors)) {
       if (!slotNames.has(name)) continue;
       const slot = name === "children" ? "" : name;
+      const content = asNode(runWithOwner(ctx.owner, () => untrack(() => read(name))));
+      const boundary = slots.get(slot) ?? ctx.boundary;
       const light: WalkCtx = {
         owner: ctx.owner,
         path: ctx.path,
-        boundary: slots.get(slot) ?? ctx.boundary,
-        sink,
+        boundary,
+        ...(ctx.slots && { slots: ctx.slots }),
+        ...(slot !== "" && { slot }),
       };
-      const content = asNode(runWithOwner(ctx.owner, () => untrack(() => read(name))));
-      this.walk(content, slot === "" ? light : { ...light, slot }, own);
+      if (boundary === ctx.boundary) {
+        this.walk(content, light, chunks);
+      } else {
+        const own = this.chunks(content, light);
+        boundary.slotted.push(own);
+        chunks.push({ slotted: { boundary, chunks: own, path: ctx.path } });
+      }
     }
-    own.push(`</${tag}>`);
-    waits = this.boundaries
-      .filter(
-        (boundary) =>
-          this.isPending(boundary) &&
-          (boundary.path.includes(id) || boundary.patches.some((patch) => patch.path.includes(id))),
-      )
-      .map((boundary) => `@${boundary.id}`);
-    if (pending) {
-      this.defer(own, ctx, out);
-    } else {
-      own[0] = open(host);
-      out.push(...own);
-    }
+    chunks.push(`</${tag}>`);
+    const open = ({ text, transfer }: HostAttributes, waits: readonly string[]): string => {
+      const keys = transfer ? [...waits, "@p"] : waits;
+      const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
+      return `<${tag}${attribute("data-oh", id)}${text}${om}><template shadowrootmode="open">`;
+    };
+    out.push({ host: { id, attributes, open, chunks } });
   }
 
   /**
-   * 境界が保留中かどうかを返す。領域の中（`<Errored>` の領域の中を含む）に穴があるか、境界に属する差し替えがあれば保留中である。
+   * 境界が保留中かどうかを返す。領域の中に穴があるか、境界の中の `<slot>` に配置するスロットの内容に穴があれば保留中である。
    * `blocking` では、常に偽を返す。
    */
   private isPending(boundary: Boundary): boolean {
-    const hasHole = (chunks: Chunk[]): boolean =>
-      chunks.some(
-        (chunk) =>
-          typeof chunk !== "string" &&
-          ("hole" in chunk || ("errored" in chunk && hasHole(chunk.errored.chunks))),
-      );
-    return !this.blocking && (hasHole(boundary.region) || boundary.patches.length > 0);
+    return !this.blocking && (hasHole(boundary.region) || boundary.slotted.some(hasHole));
   }
 
-  /** 出力の単位の列を、穴の内容を待ってから文字列にする。 */
-  private async serialize(chunks: Chunk[], parent: Boundary): Promise<string> {
-    const parts = await Promise.all(chunks.map((chunk) => this.serializeChunk(chunk, parent)));
+  /** 出力の単位の列を、穴の内容を待ってから文字列にする。`regions` は、列を囲む `<Errored>` の領域である。 */
+  private async serialize(
+    chunks: readonly Chunk[],
+    parent: Boundary,
+    regions: readonly Region[],
+  ): Promise<string> {
+    const parts = await Promise.all(
+      chunks.map((chunk) => this.serializeChunk(chunk, parent, regions)),
+    );
     return parts.join("");
   }
 
   /** 出力の単位を文字列にする。保留中の境界は、フォールバックを目印で囲んで出力し、中身を後送りにする。 */
-  private async serializeChunk(chunk: Chunk, parent: Boundary): Promise<string> {
+  private async serializeChunk(
+    chunk: Chunk,
+    parent: Boundary,
+    regions: readonly Region[],
+  ): Promise<string> {
     if (typeof chunk === "string") return chunk;
     if ("fail" in chunk) throw chunk.fail;
-    if ("hole" in chunk) return this.serialize(await chunk.hole, parent);
+    if ("hole" in chunk) return this.serialize(await chunk.hole, parent, regions);
     if ("mark" in chunk) {
       const boundary = chunk.mark;
+      boundary.regions = regions;
       if (!this.isPending(boundary)) {
-        boundary.emitted = parent.emitted;
-        return this.serialize(boundary.region, boundary);
+        boundary.sent = parent.sent;
+        return this.serialize(boundary.region, boundary, regions);
       }
       this.schedule(boundary);
-      const fallback = await this.serialize(chunk.fallback, parent);
-      return `<template data-ob="${boundary.id}"></template>${fallback}<!--/ob:${boundary.id}-->`;
+      return marker(boundary.id, await this.serialize(chunk.fallback(), parent, regions));
+    }
+    if ("slotted" in chunk) {
+      const { boundary, chunks, path } = chunk.slotted;
+      if (!boundary.late || !hasHole(chunks)) return this.serialize(chunks, parent, regions);
+      const id = `p${++this.seq}`;
+      const html = this.serialize(chunks, boundary, regions);
+      html.catch(() => {});
+      boundary.patches.push({ id, path, html });
+      return marker(id);
+    }
+    if ("host" in chunk) {
+      const { id, attributes, open, chunks } = chunk.host;
+      const inner = await this.serialize(chunks, parent, regions);
+      const resolved = await attributes;
+      const waits = this.scheduled
+        .filter((boundary) => boundary.path.includes(id))
+        .map((boundary) => `@${boundary.id}`);
+      this.opened.add(id);
+      return open(resolved, waits) + inner;
     }
     const { chunks, node, ctx } = chunk.errored;
+    const region: Region = { discarded: false };
     try {
-      return await this.serialize(chunks, parent);
+      return await this.serialize(chunks, parent, [...regions, region]);
     } catch (error) {
       const late = lateBoundary(parent);
       if (passesErrored(error, late !== undefined)) throw error;
-      if (!late) this.status = Math.max(this.status, node.status ?? 500);
+      region.discarded = true;
+      if (!late) this.caught = Math.max(this.caught, node.status ?? 500);
       else if (error instanceof NotFound) late.noindex = true;
-      return this.serialize(this.chunks(node.fallback(error), ctx), parent);
+      return this.serialize(this.chunks(node.fallback(error), ctx), parent, regions);
     }
   }
 
   /**
-   * 境界の中身と、境界に属する差し替えを出力する。出力するのは、親の境界と、差し替えの目印を含む境界を、すべて出力した後である。
-   * 中身か親の境界の出力に失敗したら、中身と差し替えを出力しない。
+   * 境界の中身と差し替えを、親の境界を出力した後に出力する。
+   * 中身の出力に失敗したとき、親の境界を出力しないとき、目印を囲む `<Errored>` がフォールバックに切り替わったときは、中身と差し替えを出力せずに、
+   * 境界を待つホストに境界の完了を通知する。
    */
   private schedule(boundary: Boundary): void {
     const parent = boundary.parent;
     if (!parent) return;
     this.interactive = true;
     boundary.late = true;
+    this.scheduled.push(boundary);
+    for (const host of boundary.path) {
+      if (this.opened.has(host)) lateBoundary(parent)?.waits.push([host, `@${boundary.id}`]);
+    }
     this.track(
       (async () => {
         let region: string;
-        let patches: { readonly patch: Patch; readonly html: string }[];
+        let patches: [Patch, string][];
         try {
-          region = await this.serialize(boundary.region, boundary);
+          region = await this.serialize(boundary.region, boundary, []);
+          if (!(await parent.sent) || boundary.regions.some((r) => r.discarded)) {
+            this.abandon(boundary);
+            return;
+          }
           patches = await Promise.all(
-            boundary.patches.map(async (patch) => ({
+            boundary.patches.map(async (patch): Promise<[Patch, string]> => [
               patch,
-              html: await this.serialize(patch.chunks, boundary),
-            })),
+              await patch.html,
+            ]),
           );
         } catch (error) {
-          await parent.emitted;
-          boundary.failed = true;
-          boundary.markEmitted();
+          await parent.sent;
           const location = redirectLocation(error);
           if (location === undefined) {
             console.error(
@@ -546,24 +602,15 @@ class Renderer {
               `<script>location.replace(${scriptJson(location)})</script><meta http-equiv="refresh" content="0;url=${escapeAttribute(location)}">`,
             );
           }
+          this.abandon(boundary);
           return;
         }
-        await parent.emitted;
-        await Promise.all(boundary.patches.map((patch) => patch.sink.emitted));
-        if (parent.failed) {
-          boundary.failed = true;
-          boundary.markEmitted();
-          return;
-        }
-        const applied = patches.filter(({ patch }) => !patch.sink.failed);
-        const hosts = [
-          ...new Set([...boundary.path, ...boundary.patches.flatMap((patch) => patch.path)]),
-        ];
         const spec = {
           b: boundary.id,
           bp: boundary.path,
-          p: applied.map(({ patch }) => [patch.id, patch.path]),
-          h: hosts,
+          p: patches.map(([patch]) => [patch.id, patch.path]),
+          h: boundary.path,
+          ...(boundary.waits.length > 0 && { w: boundary.waits }),
         };
         let noindex = "";
         if (boundary.noindex && !this.noindexSent) {
@@ -574,14 +621,24 @@ class Renderer {
         this.write(
           noindex +
             `<template data-os="${boundary.id}">${region}</template>` +
-            applied
-              .map(({ patch, html }) => `<template data-op="${patch.id}">${html}</template>`)
+            patches
+              .map(([patch, html]) => `<template data-op="${patch.id}">${html}</template>`)
               .join("") +
-            `<script>$rinka.r(${JSON.stringify(spec)})</script>`,
+            `<script>$rinka.r(${scriptJson(spec)})</script>`,
         );
-        boundary.markEmitted();
+        boundary.send(true);
       })(),
     );
+  }
+
+  /** 境界の中身を出力しないことを決め、境界を待つホストに境界の完了を通知する。 */
+  private abandon(boundary: Boundary): void {
+    boundary.send(false);
+    if (boundary.path.length === 0) return;
+    const calls = boundary.path
+      .map((host) => `$rinka.d(${scriptJson(host)},${scriptJson({ [`@${boundary.id}`]: 1 })})`)
+      .join(";");
+    this.write(`<script>${calls}</script>`);
   }
 
   private track(task: Promise<void>): void {
@@ -602,8 +659,9 @@ class Renderer {
   /** シェルを描画し、シェルの HTML を返す。 */
   async shell(node: Node): Promise<string> {
     return this.serialize(
-      this.chunks(node, { owner: null, path: [], boundary: this.root, sink: this.root }),
+      this.chunks(node, { owner: null, path: [], boundary: this.root }),
       this.root,
+      [],
     );
   }
 
@@ -612,7 +670,7 @@ class Renderer {
     try {
       const script = this.interactive ? bootstrap : "";
       this.write(`<!doctype html><html><head><meta charset="utf-8">${script}</head><body>${shell}`);
-      this.root.markEmitted();
+      this.root.send(true);
       await this.drain();
       this.write("</body></html>");
     } finally {
@@ -648,9 +706,6 @@ function passesErrored(error: unknown, late: boolean): boolean {
   if (late) return redirectLocation(error) !== undefined;
   return error instanceof Redirect || error instanceof NotFound || error instanceof Response;
 }
-
-/** `value` を、`<script>` の中に埋め込める JSON にする。 */
-const scriptJson = (value: unknown): string => JSON.stringify(value).replaceAll("<", "\\u003c");
 
 /** 描画のオプションを表す。 */
 export interface RenderOptions {
@@ -705,12 +760,13 @@ export interface ResponseOptions extends RenderOptions {
  * シェルの中で投げた `redirect()` はリダイレクトのレスポンスにし、Response はそのまま返す。
  * `notFound()` は `notFound` のページを 404 で返し、ページが無ければ本文の無い 404 を返す。
  * どの `<Errored>` も受け止めなかったエラーは、`error` のページを 500 で返し、ページが無ければ reject する。
+ * `notFound` のページの描画で投げたエラーには `error` のページを使用し、`error` のページの描画で投げた値は、ページを使用せずに扱う。
  */
 export function renderToResponse(node: unknown, options: ResponseOptions = {}): Promise<Response> {
   return respond(node, options, 200);
 }
 
-/** `node` を描画した Response を返す。シェルの中の `<Errored>` がステータスを決めなければ、`status` にする。 */
+/** `node` を描画した Response を返す。ステータスは、`status` と、シェルの中の `<Errored>` が決めたステータスのうち大きいほうである。 */
 async function respond(node: unknown, options: ResponseOptions, status: number): Promise<Response> {
   const encoder = new TextEncoder();
   let controller!: ReadableStreamDefaultController<Uint8Array>;
@@ -735,7 +791,7 @@ async function respond(node: unknown, options: ResponseOptions, status: number):
     (error: unknown) => controller.error(error),
   );
   return new Response(body, {
-    status: renderer.status === 200 ? status : renderer.status,
+    status: Math.max(status, renderer.status),
     headers: { "content-type": "text/html; charset=utf-8", ...options.headers },
   });
 }
@@ -746,10 +802,13 @@ function failure(error: unknown, options: ResponseOptions): Response | Promise<R
   if (error instanceof Redirect) {
     return new Response(null, { status: error.status, headers: { location: error.location } });
   }
-  const { notFound, error: errorPage, ...rest } = options;
   if (error instanceof NotFound) {
-    return notFound ? respond(notFound(), rest, 404) : new Response(null, { status: 404 });
+    const page = options.notFound;
+    return page
+      ? respond(page(), { ...options, notFound: undefined }, 404)
+      : new Response(null, { status: 404 });
   }
-  if (errorPage) return respond(errorPage(error), rest, 500);
+  const page = options.error;
+  if (page) return respond(page(error), { ...options, notFound: undefined, error: undefined }, 500);
   throw error;
 }

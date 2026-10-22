@@ -1,21 +1,38 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { bootstrap } from "../../src/server/bootstrap.ts";
+import { Errored, Loading } from "../../src/server/control.ts";
+import { defineElement } from "../../src/server/element.ts";
+import { notFound } from "../../src/server/errors.ts";
+import { jsx } from "../../src/server/jsx-runtime.ts";
+import { renderToStream } from "../../src/server/render.ts";
 
 afterEach(() => {
   document.body.replaceChildren();
 });
 
-/** `body` を、起動スクリプトを含む文書として iframe で解析し、読み込みが終わった文書を返す。 */
-async function load(body: string): Promise<Document> {
+/** `html` の文書を iframe で解析し、読み込みが終わった文書を返す。 */
+async function parse(html: string): Promise<Document> {
   const frame = document.createElement("iframe");
   const loaded = new Promise((resolve) => frame.addEventListener("load", resolve, { once: true }));
-  frame.srcdoc = `<!doctype html><html><head>${bootstrap}</head><body>${body}</body></html>`;
+  frame.srcdoc = html;
   document.body.append(frame);
   await loaded;
   const doc = frame.contentDocument;
   if (!doc) throw new Error("iframe の文書を取得できません");
   return doc;
+}
+
+/** `body` を、`head` の後に起動スクリプトを置いた文書として解析し、読み込みが終わった文書を返す。 */
+const load = (body: string, head = ""): Promise<Document> =>
+  parse(`<!doctype html><html><head>${head}${bootstrap}</head><body>${body}</body></html>`);
+
+/** サーバーが描画した文書を解析し、読み込みが終わった文書を返す。 */
+async function render(node: unknown): Promise<Document> {
+  const decoder = new TextDecoder();
+  let html = "";
+  for await (const chunk of renderToStream(node)) html += decoder.decode(chunk);
+  return parse(html);
 }
 
 /** ホストの ID が `id` の要素の Shadow DOM を返す。 */
@@ -25,13 +42,20 @@ function shadow(doc: Document, id: string): ShadowRoot {
   return root;
 }
 
-/** `$rinka.v` を返す。 */
-function values(doc: Document): Record<string, Record<string, unknown>> {
+/** 文書の `$rinka` を返す。 */
+function rinka(doc: Document) {
   const view = doc.defaultView as unknown as {
-    $rinka: { v: Record<string, Record<string, unknown>> };
+    $rinka: {
+      v: Record<string, Record<string, unknown>>;
+      w: Record<string, string[]>;
+      r: (spec: unknown) => void;
+    };
   };
-  return view.$rinka.v;
+  return view.$rinka;
 }
+
+/** `$rinka.v` を返す。 */
+const values = (doc: Document) => rinka(doc).v;
 
 describe("差し替えのスクリプト", () => {
   it("目印の間のフォールバックを、後送りの境界の中身に差し替え、目印とテンプレートとスクリプトを除く", async () => {
@@ -71,5 +95,77 @@ describe("差し替えのスクリプト", () => {
     expect(shadow(doc, "h1").innerHTML).toBe("<slot></slot>");
     expect(shadow(doc, "h3").innerHTML).toBe("<i>v</i>");
     expect(values(doc).h3).toEqual({ "@b2": 1 });
+  });
+
+  it("終了の目印が無い差し替えは、目印の後の内容を残して、テンプレートだけを除く", async () => {
+    const doc = await load(
+      '<div><template data-ob="b1"></template>wait<span>keep</span></div>' +
+        '<template data-os="b1"><b>x</b></template><script>$rinka.r({"b":"b1","bp":[],"p":[],"h":[]})</script>',
+    );
+    expect(doc.querySelector("div")?.innerHTML).toBe(
+      '<template data-ob="b1"></template>wait<span>keep</span>',
+    );
+    expect(doc.body.querySelectorAll("template[data-os]").length).toBe(0);
+  });
+
+  it("既にある $rinka の値を残し、spec の w をホストが待つキーに加える", async () => {
+    const doc = await load(
+      '<template data-ob="b1"></template><!--/ob:b1-->' +
+        '<template data-os="b1"></template><script>$rinka.r({"b":"b1","bp":[],"p":[],"h":[],"w":[["h1","@b3"]]})</script>',
+      "<script>window.$rinka={v:{h1:{a:1}}}</script>",
+    );
+    expect(values(doc).h1).toEqual({ a: 1 });
+    expect(rinka(doc).w).toEqual({ h1: ["@b3"] });
+  });
+
+  it("Shadow DOM として取り付けられていない DSD を、差し替えの前に取り付ける", async () => {
+    const doc = await load('<template data-ob="b1"></template>wait<!--/ob:b1-->');
+    const holder = doc.createElement("div");
+    holder.innerHTML =
+      '<template data-os="b1"><x-a data-oh="h2"><template shadowrootmode="open"><p>s</p></template></x-a></template>';
+    const template = holder.firstElementChild;
+    if (!template) throw new Error("テンプレートがありません");
+    doc.body.append(template);
+    rinka(doc).r({ b: "b1", bp: [], p: [], h: [] });
+    expect(shadow(doc, "h2").innerHTML).toBe("<p>s</p>");
+  });
+});
+
+/** 10ms 後に解決する Promise を返す。 */
+const later = () => new Promise((resolve) => setTimeout(resolve, 10));
+
+const Slow = async () => {
+  await later();
+  return jsx("b", { children: "late" });
+};
+
+const Missing = async () => {
+  await later();
+  throw notFound();
+};
+
+describe("サーバーの出力", () => {
+  it("スロットの内容の差し替えを、ブラウザで適用する", async () => {
+    const Container = defineElement(
+      "x-swap-container",
+      () => jsx(Loading, { fallback: "wait", children: jsx("slot", {}) }),
+      { props: ["children"] },
+    );
+    const doc = await render(jsx(Container, { children: jsx(Slow, {}) }));
+    const host = doc.querySelector('[data-oh="h1"]');
+    expect(host?.shadowRoot?.innerHTML).toBe("<slot></slot>");
+    expect(host?.innerHTML).toBe("<b>late</b>");
+    expect(values(doc).h1).toEqual({ "@b2": 1 });
+  });
+
+  it("シェルの後の notFound() では、<head> にも noindex を追加する", async () => {
+    const doc = await render(
+      jsx(Loading, {
+        fallback: "wait",
+        children: jsx(Errored, { fallback: "無い", children: jsx(Missing, {}) }),
+      }),
+    );
+    expect(doc.head.querySelector('meta[name="robots"]')?.getAttribute("content")).toBe("noindex");
+    expect(doc.body.textContent).toContain("無い");
   });
 });
