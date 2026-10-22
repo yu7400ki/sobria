@@ -21,6 +21,7 @@ import {
   type ElementOptions,
 } from "../shared/element.ts";
 import { checkExposeName } from "../shared/expose-names.ts";
+import { reloadEvent } from "../shared/hmr.ts";
 import { customEventName, isEventProp, propToAttribute } from "../shared/names.ts";
 import type { ClientNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
@@ -110,7 +111,7 @@ interface Definition {
 
 /** Vite の `import.meta.hot` のうち、要素の登録が呼び出すメンバーを表す。 */
 export interface HotContext {
-  readonly invalidate: (message?: string) => void;
+  readonly send: (event: string) => void;
 }
 
 const definitions = new Map<string, Definition>();
@@ -158,7 +159,7 @@ function runMounts(host: HTMLElement, run: Run): void {
  * `fn` を要素として、`tag` の名前で Custom Element に登録し、JSX で使用する要素コンポーネントを返す。
  * 登録済みの `tag` をもう一度登録するときは、`hot` が無ければエラーにする。
  * `hot` があり、`options` が前の登録と同じなら、要素の関数を `fn` に置換して、起動しているインスタンスを props の値を引き継いで描画し直す。
- * `options` が前の登録と異なれば、関数を置換せずに `hot.invalidate()` を呼ぶ。
+ * `options` が前の登録と異なれば、関数を置換せずに、ページの再読み込みを求めるイベントを開発サーバーに送る。
  */
 export function defineElement<P, M extends object = object>(
   tag: string,
@@ -171,7 +172,7 @@ export function defineElement<P, M extends object = object>(
   if (defined) {
     if (!hot) throw new Error(`<${tag}> は既に登録されています。`);
     if (defined.signature !== signature) {
-      hot.invalidate(`<${tag}> の props の構成が変わりました。`);
+      hot.send(reloadEvent);
     } else {
       defined.fn = fn;
       for (const instance of Array.from(defined.shown)) {

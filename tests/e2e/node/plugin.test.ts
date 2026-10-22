@@ -13,7 +13,7 @@ import {
 } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createDevServer } from "../dev-server.ts";
+import { createDevServer, originOf } from "../dev-server.ts";
 
 const root = fileURLToPath(new URL("../fixtures/basic", import.meta.url));
 
@@ -164,15 +164,27 @@ async function update(dev: ViteDevServer, source: string): Promise<string> {
 describe("開発中の HMR", () => {
   const options = { server: { hmr: true, ws: false as const } };
 
-  it("要素の props の構成が変わると、ページを再読み込みさせる", async () => {
-    await withProject(
-      { "src/elements/card.tsx": card },
-      async (dev) => {
-        const source = `export default function Card(props: { b: number }) { return <p>{props.b}</p>; }\n`;
-        expect(await update(dev, source)).toBe("full-reload");
-      },
-      options,
-    );
+  it("クライアントがページの再読み込みを求めるイベントを送ると、そのクライアントに full-reload を送る", async () => {
+    const dev = await createDevServer(root, { server: { port: 0, hmr: true } });
+    try {
+      await dev.listen();
+      const url = new URL(originOf(dev).replace("http", "ws"));
+      const socket = new WebSocket(url, "vite-hmr");
+      const received = new Promise<string>((resolve) => {
+        socket.addEventListener("message", (message) => {
+          const payload = JSON.parse(String(message.data)) as HotPayload;
+          if (payload.type === "connected") {
+            socket.send(JSON.stringify({ type: "custom", event: "rinka:reload" }));
+          } else {
+            resolve(payload.type);
+          }
+        });
+      });
+      expect(await received).toBe("full-reload");
+      socket.close();
+    } finally {
+      await dev.close();
+    }
   });
 
   it("要素の props の構成が変わらなければ、モジュールを更新する", async () => {

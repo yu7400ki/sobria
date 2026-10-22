@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { defineElement } from "../../src/client/element.ts";
 import { jsx } from "../../src/client/jsx-runtime.ts";
 import type { Ctx } from "../../src/shared/element.ts";
+import { reloadEvent } from "../../src/shared/hmr.ts";
 import { memo, signal } from "../../src/shared/signals.ts";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -592,10 +593,10 @@ describe("起動と破棄", () => {
   });
 });
 
-/** `invalidate` を呼んだ回数を数える、`import.meta.hot` の代わりを作成する。 */
+/** 送ったイベントの名前を記録する、`import.meta.hot` の代わりを作成する。 */
 function createHot() {
-  const hot = { invalidated: 0, invalidate: () => void hot.invalidated++ };
-  return hot;
+  const sent: string[] = [];
+  return { sent, send: (event: string) => void sent.push(event) };
 }
 
 describe("開発中の再登録", () => {
@@ -624,7 +625,7 @@ describe("開発中の再登録", () => {
     expect(shadow(host)).toBe("<p>new:b</p>");
     const later = await connect(document.createElement(tag));
     expect(shadow(later)).toBe("<p>new:undefined</p>");
-    expect(hot.invalidated).toBe(0);
+    expect(hot.sent).toEqual([]);
   });
 
   it("同じタグの要素が入れ子になっていても、すべてのインスタンスを新しい関数で描画する", async () => {
@@ -650,7 +651,7 @@ describe("開発中の再登録", () => {
     expect(shadow(inner())).toBe("<p>new:1</p>");
   });
 
-  it("登録の設定が変わると、関数を置換せずに invalidate を呼ぶ", async () => {
+  it("登録の設定が変わると、関数を置換せずに、ページの再読み込みを求めるイベントを送る", async () => {
     const tag = nextTag();
     defineElement(tag, () => jsx("p", { children: "old" }), {
       props: ["label"],
@@ -659,7 +660,7 @@ describe("開発中の再登録", () => {
     const hot = createHot();
     defineElement(tag, () => jsx("p", { children: "new" }), { props: ["count"] }, hot);
     flush();
-    expect(hot.invalidated).toBe(1);
+    expect(hot.sent).toEqual([reloadEvent]);
     expect(shadow(host)).toBe("<p>old</p>");
   });
 
