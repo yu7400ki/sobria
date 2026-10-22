@@ -142,7 +142,7 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 
-# Vitest attachments and failure screenshots
+# Vitest が生成する添付ファイルと、失敗したときのスクリーンショット
 .vitest/
 
 # Astro generated types

@@ -25,7 +25,9 @@ export default async function setup(project: TestProject): Promise<() => Promise
   });
   try {
     await server.listen();
-    const { port } = server.httpServer!.address() as AddressInfo;
+    const address = server.httpServer?.address() as AddressInfo | null | undefined;
+    if (!address) throw new Error("開発サーバーのアドレスを取得できません。");
+    const { port } = address;
     const origin = `http://localhost:${port}`;
     const response = await fetch(`${origin}/`);
     if (!response.ok)
