@@ -746,8 +746,7 @@ class Renderer {
   private finishBoundary(boundary: Boundary): void {
     for (const host of boundary.path) {
       host.deferred--;
-      if (host.deferred === 0)
-        this.write(`<script>$rinka.d(${scriptJson(host.id)},{"@b":1})</script>`);
+      if (host.deferred === 0) this.send(host, "@b", Promise.resolve("1"));
     }
   }
 

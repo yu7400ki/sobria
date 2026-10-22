@@ -215,6 +215,26 @@ describe("値を送る範囲", () => {
     },
   );
 
+  it("Errored がフォールバックに切り替えた領域の中のホストには、@b を送らない", async () => {
+    const Waiting = defineElement(
+      "x-tr-waiting",
+      () =>
+        jsx(Loading, {
+          fallback: "f",
+          children: jsx(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 1));
+            return "in";
+          }, {}),
+        }),
+      { props: [] },
+    );
+    const { html, sent } = await render(
+      jsx(Errored, { fallback: "fb", children: [jsx(Waiting, {}), jsx(late, {})] }),
+    );
+    expect(html).toContain("<body>fb");
+    expect(sent).toEqual([]);
+  });
+
   it("出力しないホストの memo が、境界をすべて出力した後で解決しても、ストリームを閉じる", async () => {
     const Slow = defineAsync(
       "x-tr-slow",
