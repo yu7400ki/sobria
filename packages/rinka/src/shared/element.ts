@@ -34,11 +34,17 @@ export interface ElementInfo {
   readonly options: ElementOptions;
 }
 
+/** `defineElement` が要素コンポーネントに付与する、要素であることを示す型の印（ブランド）を表す。 */
+export interface ElementBrand {
+  readonly [elementInfo]: ElementInfo;
+}
+
 /** `defineElement` が返す要素コンポーネントを表す。 */
 export type ElementComponent<P, M extends object = object> = ((
   props: P,
   ctx: Ctx<M>,
-) => ClientNode) & { readonly [elementInfo]: ElementInfo };
+) => ClientNode) &
+  ElementBrand;
 
 /** `value` が `defineElement` の返した要素コンポーネントかどうかを返す。 */
 export const isElementComponent = (value: unknown): value is ElementComponent<unknown> =>

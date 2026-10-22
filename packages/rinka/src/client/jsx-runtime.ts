@@ -1,9 +1,8 @@
 import {
   isElementComponent,
   type ElementComponent,
-  type ElementInfo,
+  type ElementBrand,
   type ElementRef,
-  elementInfo,
 } from "../shared/element.ts";
 import type { SvgTag } from "../shared/jsx-attributes.ts";
 import type { EventHandlers } from "../shared/jsx-events.ts";
@@ -60,8 +59,8 @@ type ClientExtras = { [K in HtmlTag]: DomProps<HTMLElementTagNameMap[K]> } & {
  * 要素の JSX で、要素と補助コンポーネントが Props とホストの属性に加えて受け付ける props を表す。
  * 要素は、`ElementRef` を受け取る `ref` と、Props に宣言していない名前のイベントハンドラーを受け付ける。
  */
-type ClientHost<C, P> = (C extends { readonly [elementInfo]: ElementInfo }
-  ? { ref?: (el: ElementRef<C>) => unknown } & Omit<EventHandlers<HTMLElement>, keyof P>
+type ClientHost<C, P> = (C extends ElementBrand
+  ? { ref?: (el: ElementRef<C>) => unknown } & Omit<EventHandlers<ElementRef<C>>, keyof P>
   : unknown) & {
   readonly [
     load: `load:${string}`

@@ -10,7 +10,7 @@ import type { ClientNode, ServerNode, Slot, SlotContent } from "./nodes.ts";
 export type HtmlTag = keyof HTMLElementTagNameMap;
 
 /** HTML と SVG のタグの名前を表す。 */
-export type NativeTag = HtmlTag | SvgTag;
+type NativeTag = HtmlTag | SvgTag;
 
 /**
  * ネイティブのタグの JSX の型を作成する。HTML のタグは、属性と、子の型 `C` の `children` と、タグごとの `X[K]` を受け付ける。
@@ -27,14 +27,43 @@ export interface ElementOnlyRef {
   ref?: "ref は、要素のファイルでだけ使用できます。";
 }
 
-/** 属性の名前を検査しないタグで、`ref` と、`on` と大文字で始まる名前の型を、要素のファイルでだけ記述できることを示すメッセージの型にする。 */
+/** 英字の大文字を表す。 */
+type UpperLetter =
+  | "A"
+  | "B"
+  | "C"
+  | "D"
+  | "E"
+  | "F"
+  | "G"
+  | "H"
+  | "I"
+  | "J"
+  | "K"
+  | "L"
+  | "M"
+  | "N"
+  | "O"
+  | "P"
+  | "Q"
+  | "R"
+  | "S"
+  | "T"
+  | "U"
+  | "V"
+  | "W"
+  | "X"
+  | "Y"
+  | "Z";
+
+/** 属性の名前を検査しないタグで、`ref` と、`on` と英字の大文字で始まる名前の型を、要素のファイルでだけ記述できることを示すメッセージの型にする。 */
 export type ElementOnlyLoose = ElementOnlyRef & {
   readonly [
-    handler: `on${Capitalize<string>}`
+    handler: `on${UpperLetter}${string}`
   ]: "イベントハンドラーは、要素のファイルでだけ使用できます。";
 };
 
-/** 要素のファイルの外の JSX で、HTML と SVG のタグが属性に加えて受け付ける props を表す。 */
+/** 要素のファイルの外の JSX で、HTML と SVG のタグの `ref` と、SVG のタグのイベントハンドラーを型エラーにする型を表す。 */
 export type ElementOnlyExtras = Record<HtmlTag, ElementOnlyRef> & Record<SvgTag, ElementOnlyLoose>;
 
 /** JSX の要素に記述できる `key` を表す。 */

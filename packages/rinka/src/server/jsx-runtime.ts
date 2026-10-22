@@ -1,4 +1,4 @@
-import { isElementComponent, type ElementInfo, elementInfo } from "../shared/element.ts";
+import { isElementComponent, type ElementBrand } from "../shared/element.ts";
 import type {
   ChildrenAttribute,
   ElementOnlyExtras,
@@ -41,8 +41,7 @@ interface LoadAttributes {
 }
 
 /** サーバーの JSX で、要素と補助コンポーネントが Props とホストの属性に加えて受け付ける props を表す。 */
-type ServerHost<C> = ElementOnlyRef &
-  (C extends { readonly [elementInfo]: ElementInfo } ? LoadAttributes : unknown);
+type ServerHost<C> = ElementOnlyRef & (C extends ElementBrand ? LoadAttributes : unknown);
 
 /** サーバーのファイルの JSX の型を表す。 */
 export declare namespace JSX {

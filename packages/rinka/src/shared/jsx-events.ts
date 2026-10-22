@@ -110,8 +110,8 @@ export interface EventNames {
   onWheel: "wheel";
 }
 
-/** 要素 `E` のネイティブのタグが受け付けるイベントハンドラーを表す。`currentTarget` は `E` である。 */
-export type EventHandlers<E extends Element> = {
+/** 要素 `E` が受け付けるイベントハンドラーを表す。`currentTarget` は `E` である。 */
+export type EventHandlers<E> = {
   [K in keyof EventNames]?: (
     event: Omit<HTMLElementEventMap[EventNames[K]], "currentTarget"> & {
       readonly currentTarget: E;

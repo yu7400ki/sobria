@@ -62,7 +62,7 @@ test("サーバーのファイルの SVG と名前に - を含むタグに、イ
   void (<svg onClick={() => {}} />);
   // @ts-expect-error ref は要素の中でだけ記述できる
   void (<custom-widget ref={() => {}} />);
-  void (<custom-widget anything={1} />);
+  void (<custom-widget anything={1} on="x" on1="x" on_x="x" once="x" />);
 });
 
 test("サーバーのファイルの HTML のタグは、イベントハンドラーの名前を props の候補に含めない", () => {

@@ -47,3 +47,18 @@ test("ホストのすべての属性は、props にできない名前である",
   expectTypeOf<Exclude<Named, HostAttribute>>().toEqualTypeOf<never>();
   expectTypeOf<Exclude<HostAttribute, Named>>().toEqualTypeOf<never>();
 });
+
+test("予約された props、aria と data、フォームの部品、ライフサイクルのコールバックの名前のメッセージも、ビルドのエラーと同じである", () => {
+  expectTypeOf<
+    PropNameError<"ref">
+  >().toEqualTypeOf<'"ref" は props の名前にできません。rinka が要素への ref として扱うためです。内側のノードを受け取る関数には inputRef のような名前を使用してください。'>();
+  expectTypeOf<
+    PropNameError<"ariaLabel">
+  >().toEqualTypeOf<'"ariaLabel" は props の名前にできません。rinka が aria-* と data-* の属性を、そのままホストに渡すためです。代わりに label のような名前を使用してください。'>();
+  expectTypeOf<
+    PropNameError<"validity">
+  >().toEqualTypeOf<'"validity" は props の名前にできません。rinka がフォームの部品のホストに validity を付与するためです。要素の役割を表す別の名前を使用してください。'>();
+  expectTypeOf<
+    PropNameError<"connectedCallback">
+  >().toEqualTypeOf<'"connectedCallback" は props の名前にできません。Custom Element のライフサイクルのコールバックと衝突するためです。要素の役割を表す別の名前を使用してください。'>();
+});

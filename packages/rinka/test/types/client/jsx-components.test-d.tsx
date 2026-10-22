@@ -1,4 +1,4 @@
-import { defineElement, type ClientNode, type ServerNode, type Slot } from "rinka";
+import { defineElement, type ClientNode, type ElementRef, type ServerNode, type Slot } from "rinka";
 import type { JSX } from "rinka/jsx-runtime";
 import { expectTypeOf, test } from "vitest";
 
@@ -65,7 +65,11 @@ test("要素の load:* は、記述できない理由を示すメッセージの
 
 test("要素には、Props に宣言していないイベントハンドラーを、ホストのリスナーとして付与できる", () => {
   void (
-    <Dialog onClick={(event) => expectTypeOf(event.currentTarget).toEqualTypeOf<HTMLElement>()} />
+    <Dialog
+      onClick={(event) =>
+        expectTypeOf(event.currentTarget).toEqualTypeOf<ElementRef<typeof Dialog>>()
+      }
+    />
   );
 });
 
