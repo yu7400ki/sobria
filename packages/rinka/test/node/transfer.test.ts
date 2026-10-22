@@ -137,6 +137,19 @@ describe("props の値", () => {
 });
 
 describe("入れ子の子要素", () => {
+  it("前の描画で作成した子要素のノードを再利用しても、前の描画のホストに値を送らない", async () => {
+    const Leaf = defineElement("x-tr-leaf", () => null, { props: [] });
+    let cached: unknown;
+    const Outer = defineElement(
+      "x-tr-outer",
+      () => (cached ??= jsx(Leaf, {}, undefined, "o.tsx:1:1")),
+      { props: [] },
+    );
+    await render(jsx(Outer, {}));
+    const second = await render(jsx(Outer, {}));
+    expect(second.html.startsWith("<!doctype html>")).toBe(true);
+    expect(second.sent).toEqual([]);
+  });
   it("親の描画で作成した子要素のホストの ID を、呼び出し箇所と回数のキーで親に送る", async () => {
     const Child = defineAsync("x-tr-child", "c.tsx:9:1", () => Promise.resolve("v"));
     const Parent = defineElement(
