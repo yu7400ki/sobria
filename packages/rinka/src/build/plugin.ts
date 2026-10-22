@@ -1,10 +1,16 @@
 import { existsSync, readdirSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { extname, join, relative, resolve, sep } from "node:path";
+import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { getRequestListener } from "@hono/node-server";
-import { isRunnableDevEnvironment, type Plugin, type ViteDevServer } from "vite";
+import {
+  isRunnableDevEnvironment,
+  type Environment,
+  type Plugin,
+  type UserConfig,
+  type ViteDevServer,
+} from "vite";
 
 import { tagFromPath } from "../shared/names.ts";
 import { transformSource, type Lang } from "./compiler.ts";
@@ -32,6 +38,12 @@ const runtimes: Readonly<Record<"client" | "server", Readonly<Record<string, str
   },
 };
 
+/** oxc の変換の設定である。`sourceType` は Vite の型に無い項目で、oxc の変換にはそのまま渡される。 */
+const oxc = {
+  jsx: { runtime: "automatic", importSource: "rinka", development: false },
+  sourceType: "module",
+} satisfies UserConfig["oxc"] & { sourceType: "module" };
+
 /** 拡張子ごとの、変換する言語である。 */
 const langs: Readonly<Record<string, Lang>> = {
   ".ts": "ts",
@@ -57,6 +69,9 @@ interface InternalModule {
   ) => { readonly fetch: (request: Request) => Response | Promise<Response> };
 }
 
+/** 環境がブラウザで実行する環境かどうかを返す。 */
+const isClient = (environment: Environment): boolean => environment.config.consumer === "client";
+
 /**
  * rinka の Vite プラグインを作成する。`rinka` の実行時のコードを環境ごとに解決し、
  * プロジェクトのモジュールにコンパイラの変換を適用する。
@@ -66,21 +81,21 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   let root = "";
   let elementsDir = "";
 
-  /** モジュールの ID を、変換するプロジェクトのファイルなら、ルートからの相対パスと言語にする。 */
+  /** モジュールの ID を、クエリの無いプロジェクトのファイルなら、ルートからの相対パスと言語にする。 */
   const projectFile = (id: string): { path: string; file: string; lang: Lang } | undefined => {
-    const [path = ""] = id.split("?");
-    const lang = langs[extname(path)];
-    if (!lang || path.includes("/node_modules/") || path.startsWith("\0")) return undefined;
-    const file = relative(root, path).split(sep).join("/");
-    if (file.startsWith("../")) return undefined;
-    return { path, file, lang };
+    const lang = langs[extname(id)];
+    if (!lang || id.includes("?") || id.includes("/node_modules/") || id.startsWith("\0")) {
+      return undefined;
+    }
+    const file = inside(root, id);
+    return file === undefined ? undefined : { path: id, file, lang };
   };
 
   /** 要素のファイルなら、タグ名を返す。 */
   const tagOf = (path: string, lang: Lang): string | undefined => {
     if (lang !== "tsx" && lang !== "jsx") return undefined;
-    const inner = relative(elementsDir, path).split(sep).join("/");
-    if (inner.startsWith("../") || inner.split("/").some((part) => part.startsWith("_"))) {
+    const inner = inside(elementsDir, path);
+    if (inner === undefined || inner.split("/").some((part) => part.startsWith("_"))) {
       return undefined;
     }
     return tagFromPath(prefix, inner);
@@ -90,11 +105,11 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
     {
       name: NAME,
       enforce: "pre",
-      config: () => ({
-        appType: "custom",
-        oxc: { jsx: { runtime: "automatic", importSource: "rinka", development: false } },
-        ssr: { noExternal: ["rinka"] },
-      }),
+      config: () => ({ appType: "custom", oxc }),
+      configEnvironment(name, config) {
+        const consumer = config.consumer ?? (name === "client" ? "client" : "server");
+        return consumer === "server" ? { resolve: { noExternal: ["rinka"] } } : null;
+      },
       configResolved(config) {
         if (config.plugins.filter((plugin) => plugin.name === NAME).length > 1) {
           throw new Error(
@@ -105,12 +120,11 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         elementsDir = resolve(root, options.elementsDir ?? "src/elements");
       },
       buildStart() {
-        checkTags(elementsDir, prefix, tagOf);
+        checkTags(elementsDir, tagOf);
       },
       resolveId(id) {
         if (id === "rinka/routes") return ROUTES;
-        const side = this.environment.name === "client" ? "client" : "server";
-        const entry = runtimes[side][id];
+        const entry = runtimes[isClient(this.environment) ? "client" : "server"][id];
         return entry === undefined ? null : fileURLToPath(new URL(`../${entry}`, import.meta.url));
       },
       load(id) {
@@ -128,7 +142,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         const result = transformSource(code, {
           file: target.file,
           lang: target.lang,
-          client: this.environment.name === "client",
+          client: isClient(this.environment),
           ...(tag !== undefined && { element: { tag } }),
         });
         return { code: result.code, map: result.map };
@@ -146,20 +160,17 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   ];
 }
 
+/** `path` が `dir` の中にあれば、`dir` からの `/` で区切った相対パスを返す。 */
+function inside(dir: string, path: string): string | undefined {
+  const inner = relative(dir, path);
+  return isAbsolute(inner) || inner.startsWith("..") ? undefined : inner.split(sep).join("/");
+}
+
 /** `dir` の中の要素のファイルを走査し、2 つのファイルが同じタグになればエラーにする。 */
-function checkTags(
-  dir: string,
-  prefix: string,
-  tagOf: (path: string, lang: Lang) => string | undefined,
-): void {
+function checkTags(dir: string, tagOf: (path: string, lang: Lang) => string | undefined): void {
+  if (!existsSync(dir)) return;
   const owners = new Map<string, string>();
-  let entries: string[];
-  try {
-    entries = readdirSync(dir, { recursive: true, encoding: "utf8" });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
+  for (const entry of readdirSync(dir, { recursive: true, encoding: "utf8" })) {
     const path = join(dir, entry);
     const lang = langs[extname(path)];
     if (!lang) continue;
@@ -169,7 +180,7 @@ function checkTags(
     const other = owners.get(tag);
     if (other !== undefined) {
       throw new Error(
-        `${other} と ${file} は、どちらもタグ名 ${tag} になります。どちらかのファイル名を変更してください（接頭辞は ${prefix}）。`,
+        `要素のディレクトリの ${other} と ${file} は、どちらもタグ名 ${tag} になります。どちらかのファイル名を変更してください。`,
       );
     }
     owners.set(tag, file);

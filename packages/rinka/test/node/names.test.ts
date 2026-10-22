@@ -19,7 +19,7 @@ describe("propToAttribute", () => {
 });
 
 describe("tagFromPath", () => {
-  it("プレフィックスと src/elements/ からのパスを - で連結する", () => {
+  it("プレフィックスと要素のディレクトリからのパスを - で連結する", () => {
     expect(tagFromPath("app", "user-card.tsx")).toBe("app-user-card");
     expect(tagFromPath("app", "forms/DatePicker.tsx")).toBe("app-forms-date-picker");
     expect(tagFromPath("app", "forms/index.tsx")).toBe("app-forms");
@@ -30,7 +30,7 @@ describe("tagFromPath", () => {
 
   it("Custom Element の名前にできないファイル名では、パスとタグ名を示すエラーを投げる", () => {
     expect(() => tagFromPath("app", "カード.tsx")).toThrow(
-      "src/elements/カード.tsx のタグ名 app-カード は、Custom Element の名前にできません。",
+      "要素のディレクトリの カード.tsx のタグ名 app-カード は、Custom Element の名前にできません。",
     );
     expect(() => tagFromPath("app", "user card.tsx")).toThrow("user card.tsx");
   });
@@ -57,7 +57,7 @@ describe("特別な props の名前", () => {
     expect(listenerEventName("onDblClick")).toBe("dblclick");
   });
 
-  it("src/elements/ の直下の index のファイルはエラーにする", () => {
-    expect(() => tagFromPath("app", "index.tsx")).toThrow("src/elements/index.tsx");
+  it("要素のディレクトリの直下の index のファイルはエラーにする", () => {
+    expect(() => tagFromPath("app", "index.tsx")).toThrow("要素のディレクトリの index.tsx");
   });
 });

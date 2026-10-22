@@ -1,10 +1,15 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { rinka } from "rinka/vite";
-import { createServer, type RunnableDevEnvironment, type ViteDevServer } from "vite";
+import {
+  createServer,
+  type InlineConfig,
+  type RunnableDevEnvironment,
+  type ViteDevServer,
+} from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const root = fileURLToPath(new URL("../fixtures/basic", import.meta.url));
@@ -77,5 +82,74 @@ describe("タグ名の検査", () => {
     } finally {
       await rm(project, { recursive: true, force: true });
     }
+  });
+});
+
+/** `files` を配置した一時的なプロジェクトで開発サーバーを起動し、`run` を実行する。 */
+async function withProject(
+  files: Readonly<Record<string, string>>,
+  run: (server: ViteDevServer) => Promise<void>,
+  config: InlineConfig = {},
+): Promise<void> {
+  const project = await mkdtemp(join(tmpdir(), "rinka-plugin-"));
+  try {
+    await Promise.all(
+      Object.entries(files).map(async ([file, source]) => {
+        await mkdir(dirname(join(project, file)), { recursive: true });
+        await writeFile(join(project, file), source);
+      }),
+    );
+    const dev = await createServer({
+      root: project,
+      configFile: false,
+      logLevel: "silent",
+      server: { middlewareMode: true, hmr: false },
+      plugins: [rinka({ prefix: "app" })],
+      ...config,
+    });
+    try {
+      await run(dev);
+    } finally {
+      await dev.close();
+    }
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+}
+
+const card = `export default function Card(props: { a: string }) { return <p>{props.a}</p>; }
+export const load = async () => { await 0; };
+`;
+
+describe("変換の対象", () => {
+  it("import と export の無い JSX のモジュールも、ES モジュールとして変換する", async () => {
+    await withProject({ "src/main.tsx": "console.log(<p>1</p>);\n" }, async (dev) => {
+      const result = await dev.environments.client.transformRequest("/src/main.tsx");
+      expect(result?.code).not.toContain("require(");
+      expect(result?.code).toContain("import");
+    });
+  });
+
+  it("クエリの付いた ID には、コンパイラの変換を適用しない", async () => {
+    await withProject({ "src/elements/card.tsx": "export const raw = 1;\n" }, async (dev) => {
+      const result = await dev.environments.client.transformRequest("/src/elements/card.tsx?raw");
+      expect(result?.code).toContain("export const raw = 1;");
+      expect(result?.code).not.toContain("__rinka_defineElement");
+    });
+  });
+
+  it("consumer が client の環境は、名前に関わらずクライアント向けに変換する", async () => {
+    await withProject(
+      { "src/elements/card.tsx": card },
+      async (dev) => {
+        const widget = dev.environments.widget!;
+        const result = await widget.transformRequest("/src/elements/card.tsx");
+        expect(result?.code).toContain("__rinka_gate(0)");
+        expect(result?.code).toContain("import.meta.hot");
+        const resolved = await widget.pluginContainer.resolveId("rinka");
+        expect(resolved?.id.split(sep).join("/")).toMatch(/\/lib\/client\/index\.js$/);
+      },
+      { environments: { widget: { consumer: "client" } } },
+    );
   });
 });
