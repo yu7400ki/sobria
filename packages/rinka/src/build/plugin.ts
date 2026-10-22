@@ -121,7 +121,11 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
     {
       name: NAME,
       enforce: "pre",
-      config: () => ({ appType: "custom", oxc }),
+      config: () => ({
+        appType: "custom",
+        oxc,
+        optimizeDeps: { include: [`${entries.main} > @solidjs/signals`] },
+      }),
       configEnvironment(name, config) {
         const consumer = config.consumer ?? (name === "client" ? "client" : "server");
         return consumer === "server" ? { resolve: { noExternal: [entries.main] } } : null;
