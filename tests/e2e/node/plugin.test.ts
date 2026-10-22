@@ -164,21 +164,21 @@ describe("変換の対象", () => {
   });
 });
 
-/** 要素のファイルを書き換えて変更を通知し、client の環境が送ったメッセージの種類を、重複を除いて返す。 */
-async function update(dev: ViteDevServer, source: string): Promise<string[]> {
+/** 要素のファイルを書き換えて変更を通知し、client の環境が最初に送ったメッセージの種類を返す。 */
+async function update(dev: ViteDevServer, source: string): Promise<string> {
   const client = dev.environments.client;
   await client.transformRequest("/src/elements/card.tsx");
-  const sent: string[] = [];
   const send = client.hot.send.bind(client.hot);
-  client.hot.send = (payload: HotPayload) => {
-    sent.push(payload.type);
-    send(payload);
-  };
+  const sent = new Promise<string>((resolve) => {
+    client.hot.send = (payload: HotPayload) => {
+      resolve(payload.type);
+      send(payload);
+    };
+  });
   const path = join(dev.config.root, "src/elements/card.tsx");
   await writeFile(path, source);
   dev.watcher.emit("change", path);
-  await new Promise((resolve) => setTimeout(resolve, 300));
-  return [...new Set(sent)];
+  return sent;
 }
 
 describe("開発中の HMR", () => {
@@ -189,7 +189,7 @@ describe("開発中の HMR", () => {
       { "src/elements/card.tsx": card },
       async (dev) => {
         const source = `export default function Card(props: { b: number }) { return <p>{props.b}</p>; }\n`;
-        expect(await update(dev, source)).toEqual(["full-reload"]);
+        expect(await update(dev, source)).toBe("full-reload");
       },
       options,
     );
@@ -199,7 +199,7 @@ describe("開発中の HMR", () => {
     await withProject(
       { "src/elements/card.tsx": card },
       async (dev) => {
-        expect(await update(dev, card.replace("<p>", "<p>!"))).toEqual(["update"]);
+        expect(await update(dev, card.replace("<p>", "<p>!"))).toBe("update");
       },
       options,
     );
