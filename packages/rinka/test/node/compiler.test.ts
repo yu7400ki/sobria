@@ -16,10 +16,12 @@ import { runSeeding } from "../../src/shared/scope.ts";
 
 /** `.ts` のモジュール `src/lib/a.ts` として `code` を変換し、空白をまとめたコードを返す。 */
 function module(code: string, client = false): string {
-  return transformSource(code, { file: "src/lib/a.ts", lang: "ts", client }).code.replaceAll(
-    /\s+/g,
-    " ",
-  );
+  return transformSource(code, {
+    id: "src/lib/a.ts",
+    file: "src/lib/a.ts",
+    lang: "ts",
+    client,
+  }).code.replaceAll(/\s+/g, " ");
 }
 
 describe("memo の呼び出し箇所の ID", () => {
@@ -117,6 +119,7 @@ export async function each() { for await (const v of source()) use(v); }`;
 /** 要素のファイル `src/elements/x.tsx`（タグ名 `app-x`）として `code` を変換する。 */
 function element(code: string) {
   return transformSource(code, {
+    id: "src/elements/x.tsx",
     file: "src/elements/x.tsx",
     lang: "tsx",
     client: false,
@@ -247,6 +250,7 @@ export default function X(props: Props) { return <p />; }`);
   it("クライアント向けの要素のモジュールは、import.meta.hot を登録に渡し、自身の更新を受け入れる", () => {
     const code = `export default function X(props: { a: string }) { return <p />; }`;
     const client = transformSource(code, {
+      id: "src/elements/x.tsx",
       file: "src/elements/x.tsx",
       lang: "tsx",
       client: true,
@@ -273,7 +277,7 @@ export default function X(props: Props) { return <p />; }`);
 /** 元のソースを変換したコード `code` に、oxc の JSX の変換と、JSX の規則を適用する。 */
 async function lower(code: string, file: string): Promise<string> {
   const lowered = await transformWithOxc(code, file, { lang: "tsx", ...oxc });
-  return transformJsx(lowered.code, file).code;
+  return transformJsx(lowered.code, { id: file, file }).code;
 }
 
 /** サーバーのソース `path` を import する指定子を、JS の文字列のリテラルにする。 */
@@ -282,7 +286,7 @@ const runtime = (path: string): string => JSON.stringify(pathToFileURL(resolve(p
 /** `code` に、元のソースの変換、oxc の JSX の変換、JSX の規則の順に適用し、注釈を除いて空白をまとめたコードを返す。 */
 async function compile(code: string, options: Partial<SourceOptions> = {}): Promise<string> {
   const file = options.file ?? "src/routes/page.tsx";
-  const source = transformSource(code, { file, lang: "tsx", client: false, ...options });
+  const source = transformSource(code, { id: file, file, lang: "tsx", client: false, ...options });
   return (await lower(source.code, file))
     .replaceAll("/* @__PURE__ */ ", "")
     .replaceAll(/\s+/g, " ");
@@ -342,7 +346,7 @@ describe("スロット化", () => {
 export default function X(props: Props) {
   return <section><header>{props.header ?? <h2>t</h2>}</header><Loading>{props.children}</Loading><div>{props.footer}</div></section>;
 }`,
-      { file: "src/elements/x.tsx", element: { tag: "app-x" } },
+      { id: "src/elements/x.tsx", file: "src/elements/x.tsx", element: { tag: "app-x" } },
     );
     expect(code).toContain(
       '_jsx("slot", { name: "header", children: _jsx("h2", { children: "t" }) })',
@@ -387,13 +391,19 @@ export default function Card(props: Props) {
   const [count] = signal(2);
   return <section><h2>{props.heading}</h2><p>{count() * 2}</p><div>{props.children}</div></section>;
 }`,
-        { file: "src/elements/card.tsx", lang: "tsx", client: false, element: { tag: "app-card" } },
+        {
+          id: "src/elements/card.tsx",
+          file: "src/elements/card.tsx",
+          lang: "tsx",
+          client: false,
+          element: { tag: "app-card" },
+        },
       );
       await load(await lower(card.code, "src/elements/card.tsx"), "card.js");
       const page = transformSource(
         `import Card from "./card.js";
 export default function Page() { return <main><Card heading={"h" + 1}>body</Card></main>; }`,
-        { file: "src/routes/page.tsx", lang: "tsx", client: false },
+        { id: "src/routes/page.tsx", file: "src/routes/page.tsx", lang: "tsx", client: false },
       );
       const { default: Page } = await load(
         await lower(page.code, "src/routes/page.tsx"),

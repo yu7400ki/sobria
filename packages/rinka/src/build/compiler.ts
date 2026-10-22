@@ -25,7 +25,9 @@ export type Lang = "ts" | "tsx" | "js" | "jsx";
 
 /** 元のソースに適用する変換の設定を表す。 */
 export interface SourceOptions {
-  /** ファイルのパスである。プロジェクトのルートからの相対パスを、`/` で区切って記述する。 */
+  /** モジュールのパスである。ソースマップは、このパスのファイルを指す。 */
+  readonly id: string;
+  /** ファイルのパスである。プロジェクトのルートからの相対パスを、`/` で区切って記述する。memo の ID とエラーの文言に使用する。 */
   readonly file: string;
   readonly lang: Lang;
   /** クライアント向けのコードなら真である。 */
@@ -59,7 +61,7 @@ const DEFINE = "__rinka_defineElement";
  * 要素のファイルでは、default export した関数を、要素を登録する呼び出しに書き換え、関数の中の JSX のスロットを `<slot>` にする。
  */
 export function transformSource(code: string, options: SourceOptions): SourceResult {
-  const { program, errors } = parseSync(options.file, code, {
+  const { program, errors } = parseSync(options.id, code, {
     lang: options.lang,
     sourceType: "module",
   });
@@ -75,7 +77,7 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
   }
   return {
     code: output.toString(),
-    map: output.generateMap({ hires: true, source: options.file, includeContent: true }),
+    map: output.generateMap({ hires: true, source: options.id, includeContent: true }),
     element,
   };
 }

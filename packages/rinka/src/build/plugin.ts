@@ -129,6 +129,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         if (!target) return null;
         const tag = tagOf(target.path, target.lang);
         const result = transformSource(code, {
+          id: target.path,
           file: target.file,
           lang: target.lang,
           client: isClient(this.environment),
@@ -142,7 +143,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       transform(code, id) {
         const target = projectFile(id);
         if (target?.lang !== "tsx" && target?.lang !== "jsx") return null;
-        const result = transformJsx(code, target.file);
+        const result = transformJsx(code, { id: target.path, file: target.file });
         return { code: result.code, map: result.map };
       },
     },

@@ -7,6 +7,14 @@ import type { Transformed } from "./compiler.ts";
 import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 
+/** oxc が JSX を変換した後のコードに適用する変換の設定を表す。 */
+export interface JsxOptions {
+  /** モジュールのパスである。ソースマップは、このパスのファイルを指す。 */
+  readonly id: string;
+  /** ファイルのパスである。プロジェクトのルートからの相対パスを、`/` で区切って記述する。エラーの文言に使用する。 */
+  readonly file: string;
+}
+
 /** `rinka/jsx-runtime` から import した名前を表す。 */
 interface Runtime {
   /** `jsx` の、ファイルの中の名前である。 */
@@ -22,8 +30,8 @@ interface Runtime {
  * ネイティブのタグと Fragment の属性と子は、関数呼び出し、プロパティ参照、タグ付きテンプレートを含む式を関数で包む。
  * コンポーネントに渡す props と children は、リテラルと関数を除いて getter にする。
  */
-export function transformJsx(code: string, file: string): Transformed {
-  const { program, errors } = parseSync(file, code, {
+export function transformJsx(code: string, { id, file }: JsxOptions): Transformed {
+  const { program, errors } = parseSync(id, code, {
     lang: "js",
     sourceType: "module",
     preserveParens: false,
@@ -44,7 +52,7 @@ export function transformJsx(code: string, file: string): Transformed {
   visit(program);
   return {
     code: output.toString(),
-    map: output.generateMap({ hires: true, source: file, includeContent: true }),
+    map: output.generateMap({ hires: true, source: id, includeContent: true }),
   };
 }
 

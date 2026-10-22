@@ -50,6 +50,16 @@ describe("Vite プラグイン", () => {
     expect(result?.code).toContain('site: "src/elements/counter.tsx:');
   });
 
+  it("変換したモジュールのソースマップは、モジュールのディレクトリからの相対パスで元のファイルを指す", async () => {
+    for (const name of ["client", "ssr"] as const) {
+      // oxlint-disable-next-line no-await-in-loop
+      const result = await server.environments[name].transformRequest("/src/elements/counter.tsx");
+      expect(result?.map && "sources" in result.map ? result.map.sources : undefined).toEqual([
+        "counter.tsx",
+      ]);
+    }
+  });
+
   it("rinka のプラグインを 2 回登録すると、エラーで停止する", async () => {
     await expect(
       createServer({
