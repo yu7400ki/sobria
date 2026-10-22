@@ -51,6 +51,29 @@ const ariaOrData = [
   "代わりに label",
 ] as const;
 
+/** `HTMLElement` のメンバーの名前 `name` を props にできない理由を返す。 */
+const memberReason = <K extends string>(name: K) =>
+  `props はホストのプロパティになり、ホストの ${name} を上書きするためです。` as const;
+
+/** フォームの部品の API の名前 `name` を props にできない理由を返す。 */
+const formReason = <K extends string>(name: K) =>
+  `rinka がフォームの部品のホストに ${name} を付与するためです。` as const;
+
+/** ライフサイクルのコールバックの名前を props にできない理由である。 */
+const lifecycleReason = "Custom Element のライフサイクルのコールバックと衝突するためです。";
+
+/** props にできない名前 `name` のメッセージを、理由 `why` と代わりの名前の例 `alternative` から作成する。 */
+const adviseAlternative = <K extends string, W extends string, A extends string>(
+  name: K,
+  why: W,
+  alternative: A,
+) =>
+  `"${name}" は props の名前にできません。${why}${alternative} のような名前を使用してください。` as const;
+
+/** props にできない名前 `name` のメッセージを、理由 `why` から作成する。 */
+const adviseRole = <K extends string, W extends string>(name: K, why: W) =>
+  `"${name}" は props の名前にできません。${why}要素の役割を表す別の名前を使用してください。` as const;
+
 /**
  * ホストのプロパティになる名前を、props にできない理由に対応させる。名前は大文字と小文字を区別して照合する。
  * `children` は含めない。
@@ -58,18 +81,9 @@ const ariaOrData = [
 const hostMembers = new Map<string, string>([
   ...htmlElementMembers
     .filter((name) => name !== "children")
-    .map((name): [string, string] => [
-      name,
-      `props はホストのプロパティになり、ホストの ${name} を上書きするためです。`,
-    ]),
-  ...formMembers.map((name): [string, string] => [
-    name,
-    `rinka がフォームの部品のホストに ${name} を付与するためです。`,
-  ]),
-  ...lifecycleCallbacks.map((name): [string, string] => [
-    name,
-    "Custom Element のライフサイクルのコールバックと衝突するためです。",
-  ]),
+    .map((name): [string, string] => [name, memberReason(name)]),
+  ...formMembers.map((name): [string, string] => [name, formReason(name)]),
+  ...lifecycleCallbacks.map((name): [string, string] => [name, lifecycleReason]),
 ]);
 
 /** props にできない理由と、代わりの名前の例を返す。props にできる名前なら `undefined` を返す。 */
@@ -91,10 +105,7 @@ export function checkPropNames(names: readonly string[]): string[] {
     const reason = reasonOf(name);
     if (reason) {
       const [why, alternative] = reason;
-      const advice = alternative
-        ? `${alternative} のような名前を使用してください。`
-        : "要素の役割を表す別の名前を使用してください。";
-      errors.push(`"${name}" は props の名前にできません。${why}${advice}`);
+      errors.push(alternative ? adviseAlternative(name, why, alternative) : adviseRole(name, why));
     }
     const attribute = propToAttribute(name);
     const other = byAttribute.get(attribute);
@@ -126,11 +137,11 @@ type IsAriaOrData<K extends string> = K extends `${"aria" | "data"}${infer First
 
 /** 名前 `K` がホストのプロパティになる理由を表す。ホストのプロパティにならなければ `never` を表す。 */
 type MemberReason<K extends string> = K extends (typeof lifecycleCallbacks)[number]
-  ? "Custom Element のライフサイクルのコールバックと衝突するためです。"
+  ? typeof lifecycleReason
   : K extends (typeof formMembers)[number]
-    ? `rinka がフォームの部品のホストに ${K} を付与するためです。`
+    ? ReturnType<typeof formReason<K>>
     : K extends HostMember
-      ? `props はホストのプロパティになり、ホストの ${K} を上書きするためです。`
+      ? ReturnType<typeof memberReason<K>>
       : never;
 
 /** 名前 `K` を props にできない理由と、代わりの名前の例を表す。props にできる名前なら `never` を表す。 */
@@ -149,11 +160,9 @@ type ReasonMessage<K extends string, R> = R extends readonly [
   infer Why extends string,
   ...infer Rest,
 ]
-  ? `"${K}" は props の名前にできません。${Why}${Rest extends readonly [
-      infer Alternative extends string,
-    ]
-      ? `${Alternative} のような名前を使用してください。`
-      : "要素の役割を表す別の名前を使用してください。"}`
+  ? Rest extends readonly [infer Alternative extends string]
+    ? ReturnType<typeof adviseAlternative<K, Why, Alternative>>
+    : ReturnType<typeof adviseRole<K, Why>>
   : never;
 
 /** 名前 `K` が props にできない名前なら、ビルドのエラーと同じメッセージを表す。props にできる名前なら `never` を表す。 */
