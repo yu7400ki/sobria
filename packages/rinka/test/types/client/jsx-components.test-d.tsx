@@ -1,4 +1,11 @@
-import { defineElement, type ClientNode, type ElementRef, type ServerNode, type Slot } from "rinka";
+import {
+  defineElement,
+  type ClientNode,
+  type Ctx,
+  type ElementRef,
+  type ServerNode,
+  type Slot,
+} from "rinka";
 import type { JSX } from "rinka/jsx-runtime";
 import { expectTypeOf, test } from "vitest";
 
@@ -86,4 +93,21 @@ test("要素の中の SVG と名前に - を含むタグは、タグの要素を
       onClick={(event) => expectTypeOf(event.currentTarget).toEqualTypeOf<HTMLElement>()}
     />
   );
+});
+
+declare function Menu(props: { items: string[] }, ctx: Ctx<{ open(): void }>): ClientNode;
+
+test("要素のファイルの default export と同じ形の関数は、ElementRef を受け取る ref とイベントハンドラーを受け付ける", () => {
+  void (
+    <Menu
+      items={[]}
+      ref={(el) => expectTypeOf(el).toEqualTypeOf<ElementRef<typeof Menu>>()}
+      onClick={(event) => event.currentTarget.open()}
+    />
+  );
+});
+
+test("要素のファイルの default export と同じ形の関数の ElementRef は、expose したメソッドと props を持つ", () => {
+  expectTypeOf<ElementRef<typeof Menu>["open"]>().toEqualTypeOf<() => void>();
+  expectTypeOf<ElementRef<typeof Menu>["items"]>().toEqualTypeOf<string[]>();
 });

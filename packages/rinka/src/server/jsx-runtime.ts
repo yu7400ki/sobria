@@ -1,4 +1,4 @@
-import { isElementComponent, type ElementBrand } from "../shared/element.ts";
+import { isElementComponent } from "../shared/element.ts";
 import type {
   ChildrenAttribute,
   ElementOnlyExtras,
@@ -40,8 +40,8 @@ interface LoadAttributes {
   "load:media"?: string;
 }
 
-/** サーバーの JSX で、要素と補助コンポーネントが Props とホストの属性に加えて受け付ける props を表す。 */
-type ServerHost<C> = ElementOnlyRef & (C extends ElementBrand ? LoadAttributes : unknown);
+/** サーバーの JSX で、要素が Props とホストの属性に加えて受け付ける props を表す。 */
+type ServerHost = ElementOnlyRef & LoadAttributes;
 
 /** サーバーのファイルの JSX の型を表す。 */
 export declare namespace JSX {
@@ -56,5 +56,5 @@ export declare namespace JSX {
     ElementOnlyExtras,
     ElementOnlyLoose
   > {}
-  type LibraryManagedAttributes<C, P> = ManagedAttributes<C, P, ServerHost<C>>;
+  type LibraryManagedAttributes<C, P> = ManagedAttributes<C, P, ServerHost>;
 }

@@ -1,4 +1,4 @@
-import { defineElement, type ClientNode, type ServerNode, type Slot } from "rinka";
+import { defineElement, type ClientNode, type Ctx, type ServerNode, type Slot } from "rinka";
 import type { JSX } from "rinka/jsx-runtime";
 import { expectTypeOf, test } from "vitest";
 
@@ -42,13 +42,6 @@ test("共通のコンポーネントには、load:* とホストの属性を付�
   void (<Card title="t" load:idle />);
 });
 
-const Helper = (_props: { label: string }) => null as unknown as ClientNode;
-
-test("要素ではない、要素のノードを返すコンポーネントには、load:* を付与できない", () => {
-  // @ts-expect-error load:* は要素にだけ付与できる
-  void (<Helper label="l" load:idle />);
-});
-
 test("サーバーのファイルの ref は、記述できない理由を示すメッセージの型である", () => {
   type Message = "ref は、要素のファイルでだけ使用できます。";
   expectTypeOf<JSX.IntrinsicElements["input"]["ref"]>().toEqualTypeOf<Message | undefined>();
@@ -67,4 +60,11 @@ test("サーバーのファイルの SVG と名前に - を含むタグに、イ
 
 test("サーバーのファイルの HTML のタグは、イベントハンドラーの名前を props の候補に含めない", () => {
   expectTypeOf<Extract<keyof JSX.IntrinsicElements["div"], `on${string}`>>().toEqualTypeOf<never>();
+});
+
+declare function Chart(props: { data: number[] }, ctx: Ctx): ClientNode;
+
+test("要素のファイルの default export と同じ形の関数にも、load:* を付与できる", () => {
+  void (<Chart data={[1]} load:visible />);
+  void (<Chart data={[1]} load:media="(min-width: 800px)" />);
 });

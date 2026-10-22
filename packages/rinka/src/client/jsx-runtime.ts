@@ -1,9 +1,4 @@
-import {
-  isElementComponent,
-  type ElementComponent,
-  type ElementBrand,
-  type ElementRef,
-} from "../shared/element.ts";
+import { isElementComponent, type ElementComponent, type ElementRef } from "../shared/element.ts";
 import type { SvgTag } from "../shared/jsx-attributes.ts";
 import type { EventHandlers } from "../shared/jsx-events.ts";
 import type {
@@ -57,11 +52,11 @@ type ClientExtras = { [K in HtmlTag]: DomProps<HTMLElementTagNameMap[K]> } & {
 
 /**
  * 要素の JSX で、要素と補助コンポーネントが Props とホストの属性に加えて受け付ける props を表す。
- * 要素は、`ElementRef` を受け取る `ref` と、Props に宣言していない名前のイベントハンドラーを受け付ける。
+ * Props に `ref` を宣言していないコンポーネントは要素として、`ElementRef` を受け取る `ref` と、Props に宣言していない名前のイベントハンドラーを受け付ける。
  */
-type ClientHost<C, P> = (C extends ElementBrand
-  ? { ref?: (el: ElementRef<C>) => unknown } & Omit<EventHandlers<ElementRef<C>>, keyof P>
-  : unknown) & {
+type ClientHost<C, P> = ("ref" extends keyof P
+  ? unknown
+  : { ref?: (el: ElementRef<C>) => unknown } & Omit<EventHandlers<ElementRef<C>>, keyof P>) & {
   readonly [
     load: `load:${string}`
   ]: "load:* は、サーバーのファイルでだけ記述できます。要素の起動のタイミングは、要素を配置したページで指定してください。";

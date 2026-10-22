@@ -34,17 +34,11 @@ export interface ElementInfo {
   readonly options: ElementOptions;
 }
 
-/** `defineElement` が要素コンポーネントに付与する、要素であることを示す型の印（ブランド）を表す。 */
-export interface ElementBrand {
-  readonly [elementInfo]: ElementInfo;
-}
-
 /** `defineElement` が返す要素コンポーネントを表す。 */
 export type ElementComponent<P, M extends object = object> = ((
   props: P,
   ctx: Ctx<M>,
-) => ClientNode) &
-  ElementBrand;
+) => ClientNode) & { readonly [elementInfo]: ElementInfo };
 
 /** `value` が `defineElement` の返した要素コンポーネントかどうかを返す。 */
 export const isElementComponent = (value: unknown): value is ElementComponent<unknown> =>
@@ -62,14 +56,13 @@ type SlotKeys<P> = {
 }[keyof P];
 
 /**
- * 要素コンポーネント `C` のインスタンスの型を表す。
+ * 要素の関数か要素コンポーネント `C` の、インスタンスの型を表す。
  * `ctx.expose` で公開したメンバーと、スロットになる props を除いた props を持つ。
  * 公開したメンバーと同じ名前の `HTMLElement` のメンバーは、公開した側の型になる。
  */
-export type ElementRef<C> =
-  C extends ElementComponent<infer P, infer M>
-    ? Omit<HTMLElement, keyof M> & M & Omit<P, SlotKeys<P>>
-    : never;
+export type ElementRef<C> = C extends (props: infer P, ctx: Ctx<infer M>) => unknown
+  ? Omit<HTMLElement, keyof M> & M & Omit<P, SlotKeys<P>>
+  : never;
 
 /** `fn` に、タグ名と `defineElement` に渡したオプションを付与した要素コンポーネントを作成する。 */
 export function createElementComponent<P, M extends object>(
