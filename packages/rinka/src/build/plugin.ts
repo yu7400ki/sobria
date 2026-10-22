@@ -7,7 +7,7 @@ import { getRequestListener } from "@hono/node-server";
 import { isRunnableDevEnvironment, type Environment, type Plugin, type ViteDevServer } from "vite";
 
 import { tagFromPath } from "../shared/names.ts";
-import { transformSource, type Lang } from "./compiler.ts";
+import { transformSource, type Lang, type SourceResult } from "./compiler.ts";
 import { entries, oxc } from "./entries.ts";
 import { transformJsx } from "./jsx.ts";
 
@@ -58,6 +58,17 @@ interface InternalModule {
   ) => { readonly fetch: (request: Request) => Response | Promise<Response> };
 }
 
+/** 変換するプロジェクトのファイルの、モジュールのパス、ルートからの相対パス、言語を表す。 */
+interface ProjectFile {
+  readonly path: string;
+  readonly file: string;
+  readonly lang: Lang;
+}
+
+/** 要素のファイルを変換した結果なら、登録の設定を JSON にした文字列を返す。 */
+const signatureOf = (result: SourceResult): string | undefined =>
+  result.element && JSON.stringify(result.element.options);
+
 /** 環境がブラウザで実行する環境かどうかを返す。 */
 const isClient = (environment: Environment): boolean => environment.config.consumer === "client";
 
@@ -71,7 +82,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   let elementsDir = "";
 
   /** モジュールの ID を、クエリの無いプロジェクトのファイルなら、ルートからの相対パスと言語にする。 */
-  const projectFile = (id: string): { path: string; file: string; lang: Lang } | undefined => {
+  const projectFile = (id: string): ProjectFile | undefined => {
     const lang = langs[extname(id)];
     if (!lang || id.includes("?") || id.includes("/node_modules/") || id.startsWith("\0")) {
       return undefined;
@@ -88,6 +99,21 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       return undefined;
     }
     return tagFromPath(prefix, inner);
+  };
+
+  /** クライアントの環境で変換した要素のファイルの、パスごとの登録の設定の JSON である。 */
+  const signatures = new Map<string, string>();
+
+  /** プロジェクトのファイルに、元のソースの変換を適用する。 */
+  const compile = (code: string, target: ProjectFile, client: boolean): SourceResult => {
+    const tag = tagOf(target.path, target.lang);
+    return transformSource(code, {
+      id: target.path,
+      file: target.file,
+      lang: target.lang,
+      client,
+      ...(tag !== undefined && { element: { tag } }),
+    });
   };
 
   return [
@@ -124,17 +150,27 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           server.middlewares.use(appMiddleware(server));
         };
       },
+      async hotUpdate({ file, read }) {
+        const previous = signatures.get(file);
+        const target = projectFile(file);
+        if (previous === undefined || !target || !isClient(this.environment)) return undefined;
+        let next: string | undefined;
+        try {
+          next = signatureOf(compile(await read(), target, true));
+        } catch {
+          return undefined;
+        }
+        if (next === previous) return undefined;
+        this.environment.hot.send({ type: "full-reload" });
+        return [];
+      },
       transform(code, id) {
         const target = projectFile(id);
         if (!target) return null;
-        const tag = tagOf(target.path, target.lang);
-        const result = transformSource(code, {
-          id: target.path,
-          file: target.file,
-          lang: target.lang,
-          client: isClient(this.environment),
-          ...(tag !== undefined && { element: { tag } }),
-        });
+        const client = isClient(this.environment);
+        const result = compile(code, target, client);
+        const signature = signatureOf(result);
+        if (client && signature !== undefined) signatures.set(target.path, signature);
         return { code: result.code, map: result.map };
       },
     },

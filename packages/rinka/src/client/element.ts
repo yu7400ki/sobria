@@ -108,7 +108,7 @@ interface Definition {
   readonly shown: Set<Instance>;
 }
 
-/** 開発中に要素のモジュールを更新したときに使用する、Vite の `import.meta.hot` を表す。 */
+/** Vite の `import.meta.hot` のうち、要素の登録が呼び出すメンバーを表す。 */
 export interface HotContext {
   readonly invalidate: (message?: string) => void;
 }
@@ -156,8 +156,9 @@ function runMounts(host: HTMLElement, run: Run): void {
 
 /**
  * `fn` を要素として、`tag` の名前で Custom Element に登録し、JSX で使用する要素コンポーネントを返す。
- * 登録済みの `tag` をもう一度登録するとき、`hot` があれば、要素の関数を `fn` に置換して、起動しているインスタンスを props の値を引き継いで描画し直す。
- * `options` が前の登録と異なれば、`hot.invalidate()` を呼ぶ。`hot` が無ければエラーにする。
+ * 登録済みの `tag` をもう一度登録するときは、`hot` が無ければエラーにする。
+ * `hot` があり、`options` が前の登録と同じなら、要素の関数を `fn` に置換して、起動しているインスタンスを props の値を引き継いで描画し直す。
+ * `options` が前の登録と異なれば、関数を置換せずに `hot.invalidate()` を呼ぶ。
  */
 export function defineElement<P, M extends object = object>(
   tag: string,
@@ -173,12 +174,13 @@ export function defineElement<P, M extends object = object>(
       hot.invalidate(`<${tag}> の props の構成が変わりました。`);
     } else {
       defined.fn = fn;
-      for (const instance of Array.from(defined.shown)) instance.activate(instance.run!.owner);
+      for (const instance of Array.from(defined.shown)) {
+        if (instance.run) instance.activate(instance.run.owner);
+      }
     }
     return createElementComponent(tag, fn, options);
   }
   const definition: Definition = { fn, signature, shown: new Set() };
-  definitions.set(tag, definition);
   const types = options.types ?? {};
   const functionProps: ReadonlySet<string> = new Set(options.functionProps);
   const slotNames: ReadonlySet<string> = new Set(["children", ...(options.slots ?? [])]);
@@ -346,6 +348,7 @@ export function defineElement<P, M extends object = object>(
   }
 
   customElements.define(tag, RinkaElement);
+  definitions.set(tag, definition);
   return createElementComponent(tag, fn, options);
 }
 

@@ -72,10 +72,7 @@ describe("props と属性", () => {
         const read = () => [props.count, props.on, props.label];
         return jsx("p", { children: () => String(seen.push(read())) });
       },
-      {
-        props: ["count", "on", "label"],
-        types: { count: "number", on: "boolean" },
-      },
+      { props: ["count", "on", "label"], types: { count: "number", on: "boolean" } },
     );
     const el = document.createElement(tag);
     el.setAttribute("count", "3");
@@ -96,9 +93,7 @@ describe("props と属性", () => {
       functionProps: ["onSelect", "render"],
       slots: ["header"],
     });
-    const ctor = customElements.get(tag) as unknown as {
-      observedAttributes: string[];
-    };
+    const ctor = customElements.get(tag) as unknown as { observedAttributes: string[] };
     expect(ctor.observedAttributes).toEqual(["user-id"]);
   });
 
@@ -632,6 +627,29 @@ describe("開発中の再登録", () => {
     expect(hot.invalidated).toBe(0);
   });
 
+  it("同じタグの要素が入れ子になっていても、すべてのインスタンスを新しい関数で描画する", async () => {
+    const tag = nextTag();
+    type TreeProps = { depth?: number };
+    const options = { props: ["depth"] };
+    const tree = (label: string) => (props: TreeProps) =>
+      jsx("p", {
+        children: () => [
+          `${label}:${props.depth}`,
+          (props.depth ?? 0) < 1 ? jsx(Tree, { depth: (props.depth ?? 0) + 1 }) : null,
+        ],
+      });
+    const Tree = defineElement(tag, tree("old"), options);
+    const host = await connect(Object.assign(document.createElement(tag), { depth: 0 }));
+    const inner = () => host.shadowRoot!.querySelector(tag)!;
+    expect(shadow(inner())).toBe("<p>old:1</p>");
+    defineElement(tag, tree("new"), options, createHot());
+    flush();
+    await tick();
+    flush();
+    expect(shadow(host)).toContain("new:0");
+    expect(shadow(inner())).toBe("<p>new:1</p>");
+  });
+
   it("登録の設定が変わると、関数を置換せずに invalidate を呼ぶ", async () => {
     const tag = nextTag();
     defineElement(tag, () => jsx("p", { children: "old" }), {
@@ -648,6 +666,6 @@ describe("開発中の再登録", () => {
   it("import.meta.hot を渡さずに同じタグをもう一度登録すると、エラーにする", () => {
     const tag = nextTag();
     defineElement(tag, empty, { props: [] });
-    expect(() => defineElement(tag, empty, { props: [] })).toThrow(tag);
+    expect(() => defineElement(tag, empty, { props: [] })).toThrow("既に登録されています");
   });
 });

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { rinka } from "rinka/vite";
 import {
   createServer,
+  type HotPayload,
   type InlineConfig,
   type RunnableDevEnvironment,
   type ViteDevServer,
@@ -159,6 +160,48 @@ describe("変換の対象", () => {
         expect(resolved?.id.split(sep).join("/")).toMatch(/\/lib\/client\/index\.js$/);
       },
       { environments: { widget: { consumer: "client" } } },
+    );
+  });
+});
+
+/** 要素のファイルを書き換えて変更を通知し、client の環境が送ったメッセージの種類を、重複を除いて返す。 */
+async function update(dev: ViteDevServer, source: string): Promise<string[]> {
+  const client = dev.environments.client;
+  await client.transformRequest("/src/elements/card.tsx");
+  const sent: string[] = [];
+  const send = client.hot.send.bind(client.hot);
+  client.hot.send = (payload: HotPayload) => {
+    sent.push(payload.type);
+    send(payload);
+  };
+  const path = join(dev.config.root, "src/elements/card.tsx");
+  await writeFile(path, source);
+  dev.watcher.emit("change", path);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  return [...new Set(sent)];
+}
+
+describe("開発中の HMR", () => {
+  const options = { server: { middlewareMode: true, ws: false as const } };
+
+  it("要素の props の構成が変わると、ページを再読み込みさせる", async () => {
+    await withProject(
+      { "src/elements/card.tsx": card },
+      async (dev) => {
+        const source = `export default function Card(props: { b: number }) { return <p>{props.b}</p>; }\n`;
+        expect(await update(dev, source)).toEqual(["full-reload"]);
+      },
+      options,
+    );
+  });
+
+  it("要素の props の構成が変わらなければ、モジュールを更新する", async () => {
+    await withProject(
+      { "src/elements/card.tsx": card },
+      async (dev) => {
+        expect(await update(dev, card.replace("<p>", "<p>!"))).toEqual(["update"]);
+      },
+      options,
     );
   });
 });
