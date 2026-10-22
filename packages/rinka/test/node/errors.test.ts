@@ -1,0 +1,165 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { Errored, Loading } from "../../src/server/control.ts";
+import { NotFound, notFound, redirect } from "../../src/server/errors.ts";
+import { jsx } from "../../src/server/jsx-runtime.ts";
+import { renderToResponse } from "../../src/server/render.ts";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+/** `value` を投げる async のコンポーネントを作成する。 */
+const throwing = (value: unknown) => async () => {
+  await Promise.resolve();
+  throw value;
+};
+
+/** 外から解決できる async のコンポーネントを作成する。解決すると `value` を投げる。 */
+function deferredThrow(value: unknown) {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  const Slow = async () => {
+    await promise;
+    throw value;
+  };
+  return { Slow, resolve };
+}
+
+/** `value` を投げる async のコンポーネントを、Errored で囲む。 */
+const wrap = (value: unknown) =>
+  jsx(Errored, { fallback: "x", children: jsx(throwing(value), {}) });
+
+const Sync = () => {
+  throw new Error("e");
+};
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe("シェルの中", () => {
+  it("redirect() は、デフォルトで 303 の、指定したステータスのリダイレクトにする", async () => {
+    const seeOther = await renderToResponse(jsx(throwing(redirect("/login")), {}));
+    expect(seeOther.status).toBe(303);
+    expect(seeOther.headers.get("location")).toBe("/login");
+    const moved = await renderToResponse(jsx(throwing(redirect("/new", 301)), {}));
+    expect(moved.status).toBe(301);
+  });
+
+  it("notFound() は、notFound のページを 404 で返す", async () => {
+    const response = await renderToResponse(jsx(throwing(notFound()), {}), {
+      notFound: () => jsx("h1", { children: "無い" }),
+    });
+    expect(response.status).toBe(404);
+    expect(await response.text()).toContain("<body><h1>無い</h1></body>");
+    expect((await renderToResponse(jsx(throwing(notFound()), {}))).status).toBe(404);
+  });
+
+  it("受け止められなかったエラーは、エラーを受け取った error のページを 500 で返す", async () => {
+    const response = await renderToResponse(jsx(throwing(new Error("壊れた")), {}), {
+      error: (error) => jsx("h1", { children: error instanceof Error ? error.message : "" }),
+    });
+    expect(response.status).toBe(500);
+    expect(await response.text()).toContain("<body><h1>壊れた</h1></body>");
+  });
+
+  it("投げた Response は、そのままレスポンスにする", async () => {
+    const thrown = new Response("要ログイン", { status: 401 });
+    expect(await renderToResponse(jsx(throwing(thrown), {}))).toBe(thrown);
+  });
+
+  it("Errored が受け止めると、ステータスを 500 か、status に指定した値にする", async () => {
+    const failing = jsx(Errored, { fallback: "x", children: jsx(throwing(new Error("e")), {}) });
+    const response = await renderToResponse(failing);
+    expect(response.status).toBe(500);
+    expect(await response.text()).toContain("<body>x</body>");
+    const ok = jsx(Errored, {
+      fallback: "x",
+      status: 200,
+      children: jsx(throwing(new Error("e")), {}),
+    });
+    expect((await renderToResponse(ok)).status).toBe(200);
+  });
+
+  it("Errored は、redirect() と notFound() と Response を受け止めない", async () => {
+    expect((await renderToResponse(wrap(redirect("/a")))).status).toBe(303);
+    expect((await renderToResponse(wrap(notFound()))).status).toBe(404);
+    expect((await renderToResponse(wrap(new Response(null, { status: 401 })))).status).toBe(401);
+  });
+
+  it("保留中でない Loading の中で受け止めたエラーは、シェルの中として扱う", async () => {
+    const response = await renderToResponse(
+      jsx(Loading, {
+        fallback: "wait",
+        children: jsx(Errored, { fallback: "x", children: jsx(Sync, {}) }),
+      }),
+    );
+    expect(response.status).toBe(500);
+    expect(await response.text()).toContain("<body>x</body>");
+  });
+});
+
+describe("シェルの後", () => {
+  it("redirect() は、location.replace と meta refresh で移動させ、フォールバックを残す", async () => {
+    const { Slow, resolve } = deferredThrow(redirect("/login"));
+    const responding = renderToResponse(
+      jsx(Loading, {
+        fallback: "wait",
+        children: jsx(Errored, { fallback: "x", children: jsx(Slow, {}) }),
+      }),
+    );
+    const response = await responding;
+    resolve();
+    const html = await response.text();
+    expect(response.status).toBe(200);
+    expect(html).toContain(
+      '<script>location.replace("/login")</script><meta http-equiv="refresh" content="0;url=/login">',
+    );
+    expect(html).not.toContain("<template data-os");
+    expect(html).not.toContain(">x<");
+  });
+
+  it("notFound() は Errored が受け止め、noindex を 1 回だけ出力する", async () => {
+    const first = deferredThrow(notFound());
+    const second = deferredThrow(notFound());
+    const seen: unknown[] = [];
+    const fallback = (error: unknown) => {
+      seen.push(error);
+      return "無い";
+    };
+    const region = (Slow: () => Promise<never>) =>
+      jsx(Loading, {
+        fallback: "wait",
+        children: jsx(Errored, { fallback, children: jsx(Slow, {}) }),
+      });
+    const response = await renderToResponse([region(first.Slow), region(second.Slow)]);
+    first.resolve();
+    await tick();
+    second.resolve();
+    const html = await response.text();
+    expect(seen.length).toBe(2);
+    expect(seen.every((error) => error instanceof NotFound)).toBe(true);
+    expect(html.split('<meta name="robots" content="noindex">').length).toBe(2);
+    expect(html).toContain('<template data-os="b1">無い</template>');
+  });
+
+  it("受け止められなかった失敗は、フォールバックを残して記録し、残りの部分を送り続ける", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const failing = deferredThrow(new Error("e"));
+    const { promise, resolve } = Promise.withResolvers<void>();
+    const Later = async () => {
+      await promise;
+      return "後";
+    };
+    const response = await renderToResponse([
+      jsx(Loading, { fallback: "wait", children: jsx(failing.Slow, {}) }),
+      jsx(Loading, { fallback: "…", children: jsx(Later, {}) }),
+    ]);
+    failing.resolve();
+    await tick();
+    resolve();
+    const html = await response.text();
+    expect(response.status).toBe(200);
+    expect(html).not.toContain('data-os="b1"');
+    expect(html).toContain('<template data-os="b2">後</template>');
+    expect(error).toHaveBeenCalledTimes(1);
+  });
+});

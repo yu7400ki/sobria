@@ -19,6 +19,7 @@ import { isEventProp, propToAttribute } from "../shared/names.ts";
 import { isFunction } from "../shared/objects.ts";
 import { checkSerializable } from "../shared/wire.ts";
 import { bootstrap } from "./bootstrap.ts";
+import { NotFound, Redirect } from "./errors.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
 
 /**
@@ -26,11 +27,16 @@ import { asNode, type ErroredNode, type Node } from "./tree.ts";
  * 穴は、描画した時点では内容が決まらず、値が解決してから内容が決まる位置である。
  * 後送りの境界は、シェルにはフォールバックを目印で囲んで出力し、中身はシェルの後に出力して、起動スクリプトが目印の間と差し替える。
  */
-type Chunk = string | Hole | Mark | ErroredRegion;
+type Chunk = string | Hole | Mark | ErroredRegion | Fail;
 
 /** 穴を表す。`hole` は、内容が決まると出力の単位の列に解決する。 */
 interface Hole {
   readonly hole: Promise<Chunk[]>;
+}
+
+/** 描画の途中で投げられた値を表す。文字列にする時点で、`fail` を投げる。 */
+interface Fail {
+  readonly fail: unknown;
 }
 
 /** `<Loading>` の位置を表す。中身を埋め込むか、フォールバックを出力して後送りにするかは、文字列にする時点で決定する。 */
@@ -68,6 +74,10 @@ interface Boundary {
   markEmitted: () => void;
   /** 中身の出力に失敗したか、親の境界が失敗したので、この境界の中身と差し替えを出力していないことを表す。 */
   failed: boolean;
+  /** シェルの後に出力する境界であることを表す。 */
+  late: boolean;
+  /** 境界の中で `notFound()` を受け止めたことを表す。 */
+  noindex: boolean;
 }
 
 /** 描画している位置の状態を表す。 */
@@ -148,6 +158,12 @@ class Renderer {
   private readonly boundaries: Boundary[] = [];
   /** 要素を描画したか、`<Loading>` の中身を後送りにしたときに真になる。真のページにだけ、起動スクリプトを出力する。 */
   private interactive = false;
+  /** `noindex` の `<meta>` を出力したことを表す。 */
+  private noindexSent = false;
+  /** シェルを表す境界である。 */
+  private readonly root = this.newBoundary(null, []);
+  /** レスポンスのステータスを表す。シェルの中の `<Errored>` が受け止めると、500 か、`status` に指定した値のうち大きいほうにする。 */
+  status = 200;
 
   /**
    * `write` は、出力する文字列を受け取る。`blocking` なら、すべての境界を待って、フォールバックと差し替えを出力しない。
@@ -168,6 +184,8 @@ class Renderer {
       emitted: promise,
       markEmitted,
       failed: false,
+      late: false,
+      noindex: false,
     };
     if (parent) this.boundaries.push(boundary);
     return boundary;
@@ -202,7 +220,11 @@ class Renderer {
         return;
       case "loading": {
         const boundary = this.newBoundary(ctx.boundary, ctx.path);
-        this.walk(node.children, { ...ctx, boundary, sink: boundary }, boundary.region);
+        try {
+          this.walk(node.children, { ...ctx, boundary, sink: boundary }, boundary.region);
+        } catch (error) {
+          boundary.region.push({ fail: error });
+        }
         out.push({ mark: boundary, fallback: this.chunks(node.fallback, ctx) });
         return;
       }
@@ -322,8 +344,7 @@ class Renderer {
     try {
       this.walk(node.children, ctx, chunks);
     } catch (error) {
-      this.walk(node.fallback(error), ctx, out);
-      return;
+      chunks.push({ fail: error });
     }
     out.push({ errored: { chunks, node, ctx } });
   }
@@ -465,6 +486,7 @@ class Renderer {
   /** 出力の単位を文字列にする。保留中の境界は、フォールバックを目印で囲んで出力し、中身を後送りにする。 */
   private async serializeChunk(chunk: Chunk, parent: Boundary): Promise<string> {
     if (typeof chunk === "string") return chunk;
+    if ("fail" in chunk) throw chunk.fail;
     if ("hole" in chunk) return this.serialize(await chunk.hole, parent);
     if ("mark" in chunk) {
       const boundary = chunk.mark;
@@ -480,6 +502,10 @@ class Renderer {
     try {
       return await this.serialize(chunks, parent);
     } catch (error) {
+      const late = lateBoundary(parent);
+      if (passesErrored(error, late !== undefined)) throw error;
+      if (!late) this.status = Math.max(this.status, node.status ?? 500);
+      else if (error instanceof NotFound) late.noindex = true;
       return this.serialize(this.chunks(node.fallback(error), ctx), parent);
     }
   }
@@ -492,6 +518,7 @@ class Renderer {
     const parent = boundary.parent;
     if (!parent) return;
     this.interactive = true;
+    boundary.late = true;
     this.track(
       (async () => {
         let region: string;
@@ -508,10 +535,17 @@ class Renderer {
           await parent.emitted;
           boundary.failed = true;
           boundary.markEmitted();
-          console.error(
-            "[rinka] シェルを送った後に、<Loading> の中身の描画に失敗しました。フォールバックのまま残します。",
-            error,
-          );
+          const location = redirectLocation(error);
+          if (location === undefined) {
+            console.error(
+              "[rinka] シェルを送った後に、<Loading> の中身の描画に失敗しました。フォールバックのまま残します。",
+              error,
+            );
+          } else {
+            this.write(
+              `<script>location.replace(${scriptJson(location)})</script><meta http-equiv="refresh" content="0;url=${escapeAttribute(location)}">`,
+            );
+          }
           return;
         }
         await parent.emitted;
@@ -531,8 +565,15 @@ class Renderer {
           p: applied.map(({ patch }) => [patch.id, patch.path]),
           h: hosts,
         };
+        let noindex = "";
+        if (boundary.noindex && !this.noindexSent) {
+          this.noindexSent = true;
+          noindex =
+            '<meta name="robots" content="noindex"><script>document.head.append(document.currentScript.previousSibling.cloneNode())</script>';
+        }
         this.write(
-          `<template data-os="${boundary.id}">${region}</template>` +
+          noindex +
+            `<template data-os="${boundary.id}">${region}</template>` +
             applied
               .map(({ patch, html }) => `<template data-op="${patch.id}">${html}</template>`)
               .join("") +
@@ -558,26 +599,58 @@ class Renderer {
     return this.drain();
   }
 
-  /** `node` の HTML を返す。`document` なら、文書の全体を出力し、シェルの後の処理が終わるまで待つ。 */
-  async run(node: Node, document: boolean): Promise<string> {
-    const shell = this.newBoundary(null, []);
+  /** シェルを描画し、シェルの HTML を返す。 */
+  async shell(node: Node): Promise<string> {
+    return this.serialize(
+      this.chunks(node, { owner: null, path: [], boundary: this.root, sink: this.root }),
+      this.root,
+    );
+  }
+
+  /** 文書の先頭と `shell` を出力し、後送りの境界をすべて出力してから、文書を閉じる。 */
+  async finish(shell: string): Promise<void> {
     try {
-      const html = await this.serialize(
-        this.chunks(node, { owner: null, path: [], boundary: shell, sink: shell }),
-        shell,
-      );
-      if (!document) return html;
       const script = this.interactive ? bootstrap : "";
-      this.write(`<!doctype html><html><head><meta charset="utf-8">${script}</head><body>${html}`);
-      shell.markEmitted();
+      this.write(`<!doctype html><html><head><meta charset="utf-8">${script}</head><body>${shell}`);
+      this.root.markEmitted();
       await this.drain();
       this.write("</body></html>");
-      return html;
     } finally {
-      for (const dispose of this.disposers) dispose();
+      this.dispose();
     }
   }
+
+  /** 要素の描画の範囲を破棄する。 */
+  dispose(): void {
+    for (const dispose of this.disposers.splice(0)) dispose();
+  }
 }
+
+/** 境界と、その祖先のうち、シェルの後に出力する最も内側の境界を返す。 */
+function lateBoundary(boundary: Boundary): Boundary | undefined {
+  for (let current: Boundary | null = boundary; current; current = current.parent) {
+    if (current.late) return current;
+  }
+  return undefined;
+}
+
+/** `redirect()` か、3xx の Response なら、移動先を返す。 */
+function redirectLocation(error: unknown): string | undefined {
+  if (error instanceof Redirect) return error.location;
+  if (error instanceof Response && error.status >= 300 && error.status < 400) {
+    return error.headers.get("location") ?? undefined;
+  }
+  return undefined;
+}
+
+/** `<Errored>` が受け止めずに通過させる値かどうかを返す。`late` は、シェルの後に出力する位置かどうかである。 */
+function passesErrored(error: unknown, late: boolean): boolean {
+  if (late) return redirectLocation(error) !== undefined;
+  return error instanceof Redirect || error instanceof NotFound || error instanceof Response;
+}
+
+/** `value` を、`<script>` の中に埋め込める JSON にする。 */
+const scriptJson = (value: unknown): string => JSON.stringify(value).replaceAll("<", "\\u003c");
 
 /** 描画のオプションを表す。 */
 export interface RenderOptions {
@@ -585,9 +658,14 @@ export interface RenderOptions {
   readonly blocking?: boolean;
 }
 
-/** `node` を描画し、すべての非同期の内容を待ってから、HTML の文字列を返す。文書の全体は出力しない。 */
-export function renderToString(node: unknown): Promise<string> {
-  return new Renderer(() => {}, true).run(asNode(node), false);
+/** `node` を描画し、すべての非同期の内容を待ってから、`node` の HTML の文字列を返す。 */
+export async function renderToString(node: unknown): Promise<string> {
+  const renderer = new Renderer(() => {}, true);
+  try {
+    return await renderer.shell(asNode(node));
+  } finally {
+    renderer.dispose();
+  }
 }
 
 /** `node` を、文書の全体の HTML のストリームとして描画する。シェルを送った後に、後送りの境界を届いた順に送る。 */
@@ -603,9 +681,10 @@ export function renderToStream(
         options.blocking ?? false,
       );
       try {
-        await renderer.run(asNode(node), true);
+        await renderer.finish(await renderer.shell(asNode(node)));
         controller.close();
       } catch (error) {
+        renderer.dispose();
         controller.error(error);
       }
     },
@@ -614,13 +693,25 @@ export function renderToStream(
 
 /** レスポンスのオプションを表す。 */
 export interface ResponseOptions extends RenderOptions {
-  readonly status?: number;
   readonly headers?: Record<string, string>;
+  /** シェルの中で `notFound()` を投げたときに、404 で返すページを返す。 */
+  readonly notFound?: () => unknown;
+  /** シェルの中で、どの `<Errored>` も受け止めなかったエラーを受け取り、500 で返すページを返す。 */
+  readonly error?: (error: unknown) => unknown;
 }
 
-/** `node` を描画し、シェルが揃った時点で、本文を送り続ける Response を返す。 */
+/**
+ * `node` を描画し、シェルが揃った時点で、本文を送り続ける Response を返す。
+ * シェルの中で投げた `redirect()` はリダイレクトのレスポンスにし、Response はそのまま返す。
+ * `notFound()` は `notFound` のページを 404 で返し、ページが無ければ本文の無い 404 を返す。
+ * どの `<Errored>` も受け止めなかったエラーは、`error` のページを 500 で返し、ページが無ければ reject する。
+ */
 export function renderToResponse(node: unknown, options: ResponseOptions = {}): Promise<Response> {
-  const { promise, resolve: respond, reject } = Promise.withResolvers<Response>();
+  return respond(node, options, 200);
+}
+
+/** `node` を描画した Response を返す。シェルの中の `<Errored>` がステータスを決めなければ、`status` にする。 */
+async function respond(node: unknown, options: ResponseOptions, status: number): Promise<Response> {
   const encoder = new TextEncoder();
   let controller!: ReadableStreamDefaultController<Uint8Array>;
   const body = new ReadableStream<Uint8Array>({
@@ -628,25 +719,37 @@ export function renderToResponse(node: unknown, options: ResponseOptions = {}): 
       controller = c;
     },
   });
-  let started = false;
-  const renderer = new Renderer((text) => {
-    if (!started) {
-      started = true;
-      respond(
-        new Response(body, {
-          status: options.status ?? 200,
-          headers: { "content-type": "text/html; charset=utf-8", ...options.headers },
-        }),
-      );
-    }
-    controller.enqueue(encoder.encode(text));
-  }, options.blocking ?? false);
-  renderer.run(asNode(node), true).then(
-    () => controller.close(),
-    (error: unknown) => {
-      if (started) controller.error(error);
-      else reject(error);
-    },
+  const renderer = new Renderer(
+    (text) => controller.enqueue(encoder.encode(text)),
+    options.blocking ?? false,
   );
-  return promise;
+  let shell: string;
+  try {
+    shell = await renderer.shell(asNode(node));
+  } catch (error) {
+    renderer.dispose();
+    return failure(error, options);
+  }
+  renderer.finish(shell).then(
+    () => controller.close(),
+    (error: unknown) => controller.error(error),
+  );
+  return new Response(body, {
+    status: renderer.status === 200 ? status : renderer.status,
+    headers: { "content-type": "text/html; charset=utf-8", ...options.headers },
+  });
+}
+
+/** シェルの中で投げられた値から、レスポンスを作成する。 */
+function failure(error: unknown, options: ResponseOptions): Response | Promise<Response> {
+  if (error instanceof Response) return error;
+  if (error instanceof Redirect) {
+    return new Response(null, { status: error.status, headers: { location: error.location } });
+  }
+  const { notFound, error: errorPage, ...rest } = options;
+  if (error instanceof NotFound) {
+    return notFound ? respond(notFound(), rest, 404) : new Response(null, { status: 404 });
+  }
+  if (errorPage) return respond(errorPage(error), rest, 500);
+  throw error;
 }
