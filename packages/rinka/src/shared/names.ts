@@ -34,7 +34,7 @@ export function tagFromPath(prefix: string, path: string): string {
 }
 
 /** 英字の大文字を表す。 */
-export type UpperLetter =
+type UpperLetter =
   | "A"
   | "B"
   | "C"
@@ -65,25 +65,25 @@ export type UpperLetter =
 /** rinka が予約している props の名前の種類を表す。`load:` は `load:` で始まるすべての名前を表す。 */
 export type ReservedProp = "ref" | "key" | "load:";
 
-/** 要素の起動のタイミングの名前である。`media` だけがメディアクエリの値を受け取る。 */
-export const loadTimings = ["load", "idle", "visible", "media"] as const;
-
-/** 要素の起動のタイミングの名前を表す。 */
-export type LoadTiming = (typeof loadTimings)[number];
-
-/** `load:` で始まる props の名前を表す。 */
-export type LoadPropName = `load:${string}`;
-
 /** 予約された props の名前なら、その種類を返す。 */
 export function reservedProp(name: string): ReservedProp | undefined {
   if (name === "ref" || name === "key") return name;
   return name.startsWith("load:") ? "load:" : undefined;
 }
 
+/** `load:` で始まる props の名前を表す。 */
+export type LoadPropName = `load:${string}`;
+
 /** 名前 `K` の予約された props の種類を表す。予約されていなければ `never` を表す。 */
 export type ReservedPropOf<K extends string> = K extends LoadPropName
   ? "load:"
   : Extract<K, ReservedProp>;
+
+/** 要素の起動のタイミングの名前を列挙する。 */
+export const loadTimings = ["load", "idle", "visible", "media"] as const;
+
+/** 要素の起動のタイミングの名前を表す。 */
+export type LoadTiming = (typeof loadTimings)[number];
 
 /** `on` と英字の大文字で始まる、イベントの props の名前を表す。 */
 export type EventPropName = `on${UpperLetter}${string}`;

@@ -51,11 +51,14 @@ type ClientExtras = { [K in HtmlTag]: DomProps<HTMLElementTagNameMap[K]> } & {
   [K in SvgTag]: DomProps<SVGElementTagNameMap[K]>;
 };
 
+/** Props の型 `P` が `ref` を宣言していれば `true` を表す。`P` が union なら、メンバーごとに判定する。 */
+type DeclaresRef<P> = P extends unknown ? ("ref" extends keyof P ? true : false) : never;
+
 /**
  * 要素の JSX で、要素と補助コンポーネントが Props とホストの属性に加えて受け付ける props を表す。
  * Props に `ref` を宣言していないコンポーネントは要素として、`ElementRef` を受け取る `ref` と、Props に宣言していない名前のイベントハンドラーを受け付ける。
  */
-type ClientHost<C, P> = ("ref" extends keyof P
+type ClientHost<C, P> = (true extends DeclaresRef<P>
   ? unknown
   : { ref?: (el: ElementRef<C>) => unknown } & Omit<EventHandlers<ElementRef<C>>, keyof P>) & {
   readonly [

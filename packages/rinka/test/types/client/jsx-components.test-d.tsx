@@ -111,3 +111,11 @@ test("要素のファイルの default export と同じ形の関数の ElementRe
   expectTypeOf<ElementRef<typeof Menu>["open"]>().toEqualTypeOf<() => void>();
   expectTypeOf<ElementRef<typeof Menu>["items"]>().toEqualTypeOf<string[]>();
 });
+
+function Choice(props: { ref?: (el: HTMLInputElement) => void; a: 1 } | { b: 2 }) {
+  return <input ref={"ref" in props ? props.ref : undefined} />;
+}
+
+test("Props の union のどれかのメンバーに ref がある関数は、補助コンポーネントとして、Props の ref の型を受け付ける", () => {
+  void (<Choice a={1} ref={(el) => expectTypeOf(el).toEqualTypeOf<HTMLInputElement>()} />);
+});

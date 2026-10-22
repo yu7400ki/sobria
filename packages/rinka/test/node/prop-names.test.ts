@@ -92,36 +92,33 @@ describe("HostAttribute", () => {
 
 describe("PropNameError", () => {
   it("判定の経路ごとに、ビルドのエラーと同じ文を表す", () => {
-    const cases = [
-      [
-        "ref",
-        '"ref" は props の名前にできません。rinka が要素への ref として扱うためです。内側のノードを受け取る関数には inputRef のような名前を使用してください。' satisfies PropNameError<"ref">,
-      ],
-      [
-        "load:idle",
-        '"load:idle" は props の名前にできません。rinka が要素を読み込むタイミングの指定として扱うためです。読み込みの状態には loadState のような名前を使用してください。' satisfies PropNameError<"load:idle">,
-      ],
-      [
-        "ariaLabel",
-        '"ariaLabel" は props の名前にできません。rinka が aria-* と data-* の属性を、そのままホストに渡すためです。代わりに label のような名前を使用してください。' satisfies PropNameError<"ariaLabel">,
-      ],
-      [
-        "title",
-        '"title" は props の名前にできません。要素の全体にツールチップが表示されるためです。見出しには heading のような名前を使用してください。' satisfies PropNameError<"title">,
-      ],
-      [
-        "focus",
-        '"focus" は props の名前にできません。props はホストのプロパティになり、ホストの focus を上書きするためです。要素の役割を表す別の名前を使用してください。' satisfies PropNameError<"focus">,
-      ],
-      [
-        "validity",
-        '"validity" は props の名前にできません。rinka がフォームの部品のホストに validity を付与するためです。要素の役割を表す別の名前を使用してください。' satisfies PropNameError<"validity">,
-      ],
-      [
-        "connectedCallback",
-        '"connectedCallback" は props の名前にできません。Custom Element のライフサイクルのコールバックと衝突するためです。要素の役割を表す別の名前を使用してください。' satisfies PropNameError<"connectedCallback">,
-      ],
-    ] as const;
-    for (const [name, message] of cases) expect(checkPropNames([name])).toEqual([message]);
+    const ref =
+      '"ref" は props の名前にできません。rinka が要素への ref として扱うためです。内側のノードを受け取る関数には inputRef のような名前を使用してください。' as const;
+    expectTypeOf<PropNameError<"ref">>().toEqualTypeOf<typeof ref>();
+    expect(checkPropNames(["ref"])).toEqual([ref]);
+    const load_idle =
+      '"load:idle" は props の名前にできません。rinka が要素を読み込むタイミングの指定として扱うためです。読み込みの状態には loadState のような名前を使用してください。' as const;
+    expectTypeOf<PropNameError<"load:idle">>().toEqualTypeOf<typeof load_idle>();
+    expect(checkPropNames(["load:idle"])).toEqual([load_idle]);
+    const ariaLabel =
+      '"ariaLabel" は props の名前にできません。rinka が aria-* と data-* の属性を、そのままホストに渡すためです。代わりに label のような名前を使用してください。' as const;
+    expectTypeOf<PropNameError<"ariaLabel">>().toEqualTypeOf<typeof ariaLabel>();
+    expect(checkPropNames(["ariaLabel"])).toEqual([ariaLabel]);
+    const title =
+      '"title" は props の名前にできません。要素の全体にツールチップが表示されるためです。見出しには heading のような名前を使用してください。' as const;
+    expectTypeOf<PropNameError<"title">>().toEqualTypeOf<typeof title>();
+    expect(checkPropNames(["title"])).toEqual([title]);
+    const focus =
+      '"focus" は props の名前にできません。props はホストのプロパティになり、ホストの focus を上書きするためです。要素の役割を表す別の名前を使用してください。' as const;
+    expectTypeOf<PropNameError<"focus">>().toEqualTypeOf<typeof focus>();
+    expect(checkPropNames(["focus"])).toEqual([focus]);
+    const validity =
+      '"validity" は props の名前にできません。rinka がフォームの部品のホストに validity を付与するためです。要素の役割を表す別の名前を使用してください。' as const;
+    expectTypeOf<PropNameError<"validity">>().toEqualTypeOf<typeof validity>();
+    expect(checkPropNames(["validity"])).toEqual([validity]);
+    const connectedCallback =
+      '"connectedCallback" は props の名前にできません。Custom Element のライフサイクルのコールバックと衝突するためです。要素の役割を表す別の名前を使用してください。' as const;
+    expectTypeOf<PropNameError<"connectedCallback">>().toEqualTypeOf<typeof connectedCallback>();
+    expect(checkPropNames(["connectedCallback"])).toEqual([connectedCallback]);
   });
 });
