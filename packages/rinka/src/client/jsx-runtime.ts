@@ -1,10 +1,17 @@
-import { isElementComponent, type ElementComponent } from "../shared/element.ts";
+import {
+  isElementComponent,
+  type ElementComponent,
+  type ElementInfo,
+  type ElementRef,
+  elementInfo,
+} from "../shared/element.ts";
 import type {
   ChildrenAttribute,
   ClientChild,
   HtmlTag,
   IntrinsicElementsOf,
   KeyAttribute,
+  ManagedAttributes,
 } from "../shared/jsx-types.ts";
 import type { ClientNode } from "../shared/nodes.ts";
 import { asClientNode, createNode, type Child, type Component } from "./dom.ts";
@@ -47,6 +54,15 @@ type ClientExtras = {
   };
 };
 
+/** 要素の JSX で、要素と補助コンポーネントが Props とホストの属性に加えて受け付ける props を表す。要素は `ElementRef` を受け取る `ref` を受け付ける。 */
+type ClientHost<C> = (C extends { readonly [elementInfo]: ElementInfo }
+  ? { ref?: (el: ElementRef<C>) => unknown }
+  : unknown) & {
+  readonly [
+    load: `load:${string}`
+  ]: "load:* は、サーバーのファイルでだけ記述できます。要素の起動のタイミングは、要素を配置したページで指定してください。";
+};
+
 /** 要素のファイルの JSX の型を表す。 */
 export declare namespace JSX {
   type Element = ClientNode;
@@ -54,4 +70,5 @@ export declare namespace JSX {
   interface ElementChildrenAttribute extends ChildrenAttribute {}
   interface IntrinsicAttributes extends KeyAttribute {}
   interface IntrinsicElements extends IntrinsicElementsOf<ClientChild, ClientExtras> {}
+  type LibraryManagedAttributes<C, P> = ManagedAttributes<C, P, ClientHost<C>>;
 }

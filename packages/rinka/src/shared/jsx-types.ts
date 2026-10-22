@@ -1,5 +1,10 @@
-import type { LooseAttributes, NativeAttributes, SvgTag } from "./jsx-attributes.ts";
-import type { ClientNode, ServerNode } from "./nodes.ts";
+import type {
+  GlobalAttributes,
+  LooseAttributes,
+  NativeAttributes,
+  SvgTag,
+} from "./jsx-attributes.ts";
+import type { ClientNode, ServerNode, Slot, SlotContent } from "./nodes.ts";
 
 /** HTML のタグの名前を表す。 */
 export type HtmlTag = keyof HTMLElementTagNameMap;
@@ -62,3 +67,23 @@ export type SharedChild =
   | undefined
   | readonly SharedChild[]
   | (() => SharedChild);
+
+/** `Slot` の型を、要素とサーバーの JSX の両方の内容を受け付ける `SlotContent` にする。 */
+type SlotValue<T> = T extends Slot ? SlotContent : T;
+
+/** Props の型 `P` のうち、`Slot` の型の props を、`SlotContent` を受け付ける型にする。型が `any` の props は変えない。 */
+export type AcceptSlots<P> = { [K in keyof P]: 0 extends 1 & P[K] ? P[K] : SlotValue<P[K]> };
+
+/** コンポーネント `C` の戻り値の型を表す。async 関数のコンポーネントは、Promise が解決する値の型を表す。 */
+type Rendered<C> = C extends (...args: never[]) => infer R ? Awaited<R> : never;
+
+/**
+ * JSX の名前空間の `LibraryManagedAttributes` を表す。
+ * 戻り値が `ServerNode` に代入できるコンポーネントは、Props だけを受け付ける。
+ * 戻り値が `ClientNode` に代入できるコンポーネントは、Props に加えて、ホストの属性と `Host` を受け付ける。
+ */
+export type ManagedAttributes<C, P, Host> = [Rendered<C>] extends [ServerNode]
+  ? AcceptSlots<P>
+  : [Rendered<C>] extends [ClientNode]
+    ? AcceptSlots<P> & GlobalAttributes & Host
+    : P;

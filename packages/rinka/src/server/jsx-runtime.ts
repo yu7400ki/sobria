@@ -4,6 +4,7 @@ import type {
   HtmlTag,
   IntrinsicElementsOf,
   KeyAttribute,
+  ManagedAttributes,
   ServerChild,
 } from "../shared/jsx-types.ts";
 import type { ClientNode, ServerNode } from "../shared/nodes.ts";
@@ -35,6 +36,15 @@ type ServerExtras = Record<
   { ref?: "ref は、サーバーのファイルでは使用できません。要素のファイルで使用してください。" }
 >;
 
+/** サーバーの JSX で、要素が Props とホストの属性に加えて受け付ける props を表す。 */
+interface ServerHost {
+  ref?: "ref は、サーバーのファイルでは使用できません。要素のファイルで使用してください。";
+  "load:load"?: true;
+  "load:idle"?: true;
+  "load:visible"?: true;
+  "load:media"?: string;
+}
+
 /** サーバーのファイルの JSX の型を表す。 */
 export declare namespace JSX {
   type Element = ServerNode;
@@ -44,4 +54,5 @@ export declare namespace JSX {
   interface ElementChildrenAttribute extends ChildrenAttribute {}
   interface IntrinsicAttributes extends KeyAttribute {}
   interface IntrinsicElements extends IntrinsicElementsOf<ServerChild, ServerExtras> {}
+  type LibraryManagedAttributes<C, P> = ManagedAttributes<C, P, ServerHost>;
 }

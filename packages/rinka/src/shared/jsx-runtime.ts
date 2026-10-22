@@ -2,6 +2,7 @@ import type {
   ChildrenAttribute,
   IntrinsicElementsOf,
   KeyAttribute,
+  ManagedAttributes,
   NoExtras,
   SharedChild,
 } from "./jsx-types.ts";
@@ -27,4 +28,5 @@ export declare namespace JSX {
   interface ElementChildrenAttribute extends ChildrenAttribute {}
   interface IntrinsicAttributes extends KeyAttribute {}
   interface IntrinsicElements extends IntrinsicElementsOf<SharedChild, NoExtras> {}
+  type LibraryManagedAttributes<C, P> = ManagedAttributes<C, P, unknown>;
 }
