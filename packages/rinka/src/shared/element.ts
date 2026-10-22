@@ -1,4 +1,4 @@
-import type { ClientNode } from "./nodes.ts";
+import type { ClientNode, Slot } from "./nodes.ts";
 
 /** 属性の値から変換する props の型を表す。 */
 export type AttributeType = "string" | "number" | "boolean";
@@ -43,3 +43,24 @@ export type ElementComponent<P, M extends object = object> = ((
 /** `value` が `defineElement` の返した要素コンポーネントかどうかを返す。 */
 export const isElementComponent = (value: unknown): value is ElementComponent<unknown> =>
   typeof value === "function" && elementInfo in value;
+
+/** Props の型 `P` のうち、スロットになる props（`children` と、型が `Slot` の props）の名前を表す。型が `any` の props は含めない。 */
+type SlotKeys<P> = {
+  [K in keyof P]-?: K extends "children"
+    ? K
+    : 0 extends 1 & P[K]
+      ? never
+      : NonNullable<P[K]> extends Slot
+        ? K
+        : never;
+}[keyof P];
+
+/**
+ * 要素コンポーネント `C` のインスタンスの型を表す。
+ * `ctx.expose` で公開したメンバーと、スロットになる props を除いた props を持つ。
+ * 公開したメンバーと同じ名前の `HTMLElement` のメンバーは、公開した側の型になる。
+ */
+export type ElementRef<C> =
+  C extends ElementComponent<infer P, infer M>
+    ? Omit<HTMLElement, keyof M> & M & Omit<P, SlotKeys<P>>
+    : never;
