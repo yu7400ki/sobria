@@ -22,7 +22,7 @@ import { createScope, withScope, type ScopedChild } from "../shared/scope.ts";
 import { BOUNDARIES_KEY, childKey, PROPS_KEY } from "../shared/transfer-keys.ts";
 import { checkSerializable } from "../shared/wire.ts";
 import { bootstrap } from "./bootstrap.ts";
-import { classify, type Thrown } from "./errors.ts";
+import { classify } from "./errors.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
 import { toScript } from "./wire.ts";
 
@@ -655,9 +655,21 @@ class Renderer {
           failed = true;
           const { flush } = out;
           const thrown = classify(error);
-          if (passesErrored(thrown, flush.kind === "deferred")) throw error;
-          if (flush.kind === "shell") this.caught = Math.max(this.caught, node.status ?? 500);
-          else if (thrown.kind === "notFound") flush.noindex = true;
+          switch (thrown.kind) {
+            case "redirect":
+              if (flush.kind === "shell" || thrown.safe) throw error;
+              break;
+            case "notFound":
+              if (flush.kind === "shell") throw error;
+              flush.noindex = true;
+              break;
+            case "response":
+              if (flush.kind === "shell") throw error;
+              break;
+            case "error":
+              if (flush.kind === "shell") this.caught = Math.max(this.caught, node.status ?? 500);
+              break;
+          }
           return this.serialize(this.chunks(node.fallback(error), ctx), out);
         }
       }
@@ -676,10 +688,8 @@ class Renderer {
     for (const host of boundary.path) host.deferred++;
     this.track(
       (async () => {
-        const content = await this.serialize(boundary.region, Out.of(flush)).then(
-          (region) => ({ region }),
-          (error: unknown) => ({ error }),
-        );
+        const content = this.serialize(boundary.region, Out.of(flush));
+        await content.catch(() => {});
         if (!(await out.shown)) {
           this.abandon(boundary, flush);
           return;
@@ -687,8 +697,7 @@ class Renderer {
         let region: string;
         let patches: [Patch, string][];
         try {
-          if ("error" in content) throw content.error;
-          region = content.region;
+          region = await content;
           patches = await Promise.all(
             boundary.patches.map(async (patch): Promise<[Patch, string]> => [
               patch,
@@ -838,19 +847,6 @@ class Renderer {
 /** `value` が、`then` を持つ値かどうかを返す。 */
 const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
   typeof value === "object" && value !== null && "then" in value && isFunction(value.then);
-
-/** `<Errored>` が受け止めずに通過させる値かどうかを返す。`late` は、シェルの後に出力する位置かどうかである。シェルの後では、規則に合う移動先への移動だけを通過させる。 */
-function passesErrored(thrown: Thrown, late: boolean): boolean {
-  switch (thrown.kind) {
-    case "redirect":
-      return !late || thrown.safe;
-    case "notFound":
-    case "response":
-      return !late;
-    case "error":
-      return false;
-  }
-}
 
 /** 描画のオプションを表す。 */
 export interface RenderOptions {
