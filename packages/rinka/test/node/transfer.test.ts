@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Loading } from "../../src/server/control.ts";
+import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToStream, renderToString } from "../../src/server/render.ts";
@@ -133,5 +133,77 @@ describe("props の値", () => {
     const { html, sent } = await render(jsx(Outer, {}));
     expect(html).toContain('<x-tr-card data-oh="h2"><template shadowrootmode="open"><p>object</p>');
     expect(sent).toEqual([]);
+  });
+});
+
+describe("入れ子の子要素", () => {
+  it("親の描画で作成した子要素のホストの ID を、呼び出し箇所と回数のキーで親に送る", async () => {
+    const Child = defineAsync("x-tr-child", "c.tsx:9:1", () => Promise.resolve("v"));
+    const Parent = defineElement(
+      "x-tr-parent",
+      () => [jsx(Child, {}, undefined, "p.tsx:1:1"), jsx(Child, {}, undefined, "p.tsx:1:1")],
+      { props: [] },
+    );
+    const { html, sent } = await render(jsx(Parent, {}));
+    expect(html).toContain('<x-tr-parent data-oh="h1" data-om="@c:p.tsx:1:1#0 @c:p.tsx:1:1#1">');
+    expect(sent).toContainEqual(["h1", { "@c:p.tsx:1:1#0": "h2" }]);
+    expect(sent).toContainEqual(["h1", { "@c:p.tsx:1:1#1": "h3" }]);
+  });
+});
+
+/** 同期的にエラーを投げるコンポーネントである。 */
+const Sync = () => {
+  throw new Error("sync");
+};
+/** 5ms 後に失敗する async のコンポーネントである。 */
+const late = async () => {
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  throw new Error("late");
+};
+describe("値を送る範囲", () => {
+  const Card = defineElement(
+    "x-tr-shown",
+    (props: { data?: object }) => {
+      const value = memo(() => Promise.resolve("v"), { site: "s.tsx:1:1" });
+      return jsx("p", { children: () => `${value()} ${typeof props.data}` });
+    },
+    { props: ["data"] },
+  );
+
+  it("Errored がフォールバックに切り替えた領域の中のホストには、値を送らない", async () => {
+    const sync = await render(
+      jsx(Errored, { fallback: "fb", children: [jsx(Card, { data: { a: 1 } }), jsx(Sync, {})] }),
+    );
+    expect(sync.sent).toEqual([]);
+    const async = await render(
+      jsx(Errored, { fallback: "fb", children: [jsx(Card, { data: { a: 1 } }), jsx(late, {})] }),
+    );
+    expect(async.html).toContain("<body>fb");
+    expect(async.sent).toEqual([]);
+  });
+
+  it("値とキーに含まれる </script> は、スクリプトを閉じない", async () => {
+    const Card2 = defineAsync("x-tr-escape", "e.tsx:</script>", () =>
+      Promise.resolve("</script><b>"),
+    );
+    const { html, sent } = await render(jsx(Card2, {}));
+    expect(html).not.toContain("</script><b>");
+    expect(sent).toEqual([["h1", { "e.tsx:</script>#0": "</script><b>" }]]);
+  });
+
+  it("入れ子の要素の memo のキーは、要素ごとに数える", async () => {
+    const Inner = defineAsync("x-tr-inner", "s.tsx:2:1", () => Promise.resolve(1));
+    const Outer = defineElement(
+      "x-tr-nest",
+      () => {
+        const a = memo(() => Promise.resolve(1), { site: "s.tsx:2:1" });
+        const b = memo(() => Promise.resolve(2), { site: "s.tsx:2:1" });
+        return [jsx("i", { children: () => a() + b() }), jsx(Inner, {})];
+      },
+      { props: [] },
+    );
+    const { html } = await render(jsx(Outer, {}));
+    expect(html).toContain('<x-tr-nest data-oh="h1" data-om="s.tsx:2:1#0 s.tsx:2:1#1">');
+    expect(html).toContain('<x-tr-inner data-oh="h2" data-om="s.tsx:2:1#0">');
   });
 });

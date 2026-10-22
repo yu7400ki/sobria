@@ -24,7 +24,7 @@ import { checkExposeName } from "../shared/expose-names.ts";
 import { customEventName, isEventProp, propToAttribute } from "../shared/names.ts";
 import type { ClientNode } from "../shared/nodes.ts";
 import { isFunction, isPlainObject } from "../shared/objects.ts";
-import { createScope, withScope } from "../shared/scope.ts";
+import { createScope, scopedChild, withScope, type MemoScope } from "../shared/scope.ts";
 import { applyAttribute, asClientNode, bind, callRef, insert, setter } from "./dom.ts";
 import {
   activateInSlot,
@@ -81,7 +81,12 @@ interface Instance {
   ref?: (host: HTMLElement) => unknown;
   /** 一度起動したかどうか。SSR したホストは、最初の起動でだけ、サーバーから値を引き継ぐ。 */
   started: boolean;
+  /** 親が作り直した子要素なら、値を引き継ぐ SSR したホストの ID。 */
+  transfer?: string;
 }
+
+/** 描画の範囲ごとに、その要素が引き継いだ値を保持する。子要素は、`@c:キー` の値から、値を引き継ぐホストの ID を探す。 */
+const scopeValues = new WeakMap<MemoScope, ReadonlyMap<string, unknown>>();
 
 const instances = new WeakMap<HTMLElement, Instance>();
 
@@ -172,7 +177,9 @@ export function defineElement<P, M extends object = object>(
   function activate(host: HTMLElement, instance: Instance, owner: Owner | null): void {
     instance.run?.dispose();
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
-    const id = instance.started ? null : host.getAttribute("data-oh");
+    const id = instance.started
+      ? null
+      : (host.getAttribute("data-oh") ?? instance.transfer ?? null);
     instance.started = true;
     const values = id === null ? new Map<string, unknown>() : transferredValues(id);
     const passed = values.get("@p");
@@ -191,6 +198,7 @@ export function defineElement<P, M extends object = object>(
         return seededMemo(values.get(key) as T, compute);
       },
     );
+    scopeValues.set(scope, values);
     let target: ParentNode = shadow;
     if (id === null) shadow.replaceChildren();
     else target = document.createDocumentFragment();
@@ -389,14 +397,19 @@ const instanceOf = (node: Node): Instance | undefined =>
  * `children` とスロットの props の内容は Light DOM に配置し、その中の子要素は、ホストがそのスロットの `<slot>` を作成した後に起動する。
  * スロットに配置する内容でなければ、owner があればその owner の下で同期的に起動する。owner が無ければ、接続した後に、表示されている位置から探索した定義済みの要素の下で起動する。見つからなければ、最上位の要素として起動する。
  * 要素への `ref` は、起動した後に呼ぶ。
+ * 引き継いだ値のある要素の描画で、呼び出し箇所 `site` を指定して作成した子要素は、同じキーの SSR した子要素の値を引き継ぐ。
  */
 export function createElementInstance(
   component: ElementComponent<unknown>,
   props: Record<string, unknown>,
   key?: string,
+  site?: string,
 ): ClientNode {
   const host = document.createElement(component[elementInfo].tag);
   const instance = instances.get(host)!;
+  const child = scopedChild(site);
+  const transfer = child && scopeValues.get(child.scope)?.get(`@c:${child.key}`);
+  if (typeof transfer === "string") instance.transfer = transfer;
   const owner = getOwner();
   const derive = (read: () => unknown): Source => ({ read: owner ? createMemo(read) : read });
   for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(props))) {

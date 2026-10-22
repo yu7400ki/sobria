@@ -73,11 +73,28 @@ export function scopedMemo<T>(
     return current.memo(options.key, fn);
   }
   if (options.site === undefined) return undefined;
-  let sites = counts.get(current);
-  if (!sites) counts.set(current, (sites = new Map<string, number>()));
-  const count = sites.get(options.site) ?? 0;
-  sites.set(options.site, count + 1);
-  return current.memo(`${options.site}#${count}`, fn);
+  return current.memo(countedKey(current, options.site), fn);
+}
+
+/** `scope` の中で呼び出し箇所 `site` が何回目かを数え、呼び出し箇所と回数のキーを返す。 */
+function countedKey(scope: MemoScope, site: string): string {
+  let sites = counts.get(scope);
+  if (!sites) counts.set(scope, (sites = new Map<string, number>()));
+  const count = sites.get(site) ?? 0;
+  sites.set(site, count + 1);
+  return `${site}#${count}`;
+}
+
+/** 描画の範囲の中で作成した子要素を表す。`scope` は子要素を作成した範囲、`key` は呼び出し箇所と回数のキーである。 */
+export interface ScopedChild {
+  readonly scope: MemoScope;
+  readonly key: string;
+}
+
+/** 描画の範囲の中で、呼び出し箇所が `site` の子要素を作成するなら、範囲とキーを返す。範囲の外か、呼び出し箇所が無ければ `undefined` を返す。 */
+export function scopedChild(site: string | undefined): ScopedChild | undefined {
+  if (!current || site === undefined) return undefined;
+  return { scope: current, key: countedKey(current, site) };
 }
 
 /**

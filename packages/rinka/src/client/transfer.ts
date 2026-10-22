@@ -28,14 +28,30 @@ function waitedKeys(host: Element, id: string): string[] {
   return [...keys, ...(receiver()?.w[id] ?? [])];
 }
 
-/** ホストが待つキーの値が、すべて届いているかどうかを返す。 */
+/**
+ * ホストと、ホストの Shadow DOM の中で `@c:キー` の値が指す子要素のホストを、子孫まで含めて、`[ホスト, ID]` の組で返す。
+ * 子要素は、親が作り直すときに、子要素のホストの値を引き継ぐ。
+ */
+function related(host: Element, id: string): [Element, string][] {
+  const found: [Element, string][] = [[host, id]];
+  for (const [key, child] of Object.entries(receiver()?.v[id] ?? {})) {
+    if (!key.startsWith("@c:") || typeof child !== "string") continue;
+    const el = host.shadowRoot?.querySelector(`[data-oh="${child}"]`);
+    if (el) found.push(...related(el, child));
+  }
+  return found;
+}
+
+/** ホストと、値を引き継ぐ子要素のホストが待つキーの値が、すべて届いているかどうかを返す。 */
 function arrived(host: Element, id: string): boolean {
-  const values = receiver()?.v[id] ?? {};
-  return waitedKeys(host, id).every((key) => Object.hasOwn(values, key));
+  return related(host, id).every(([el, target]) => {
+    const values = receiver()?.v[target] ?? {};
+    return waitedKeys(el, target).every((key) => Object.hasOwn(values, key));
+  });
 }
 
 /**
- * SSR したホストが待つキーの値が、すべて届いていれば `undefined` を返す。
+ * SSR したホストと、値を引き継ぐ子要素のホストが待つキーの値が、すべて届いていれば `undefined` を返す。
  * 届いていなければ、すべて届いた時点で `ready` を呼ぶ待機を登録し、待機を取り消す関数を返す。
  * 起動スクリプトを読み込んでいないページでは、`undefined` を返す。
  */
@@ -46,17 +62,31 @@ export function whenArrived(
 ): (() => void) | undefined {
   const store = receiver();
   if (!store || arrived(host, id)) return undefined;
-  const listeners = (store.l[id] ??= []);
+  const watched = new Set<string>();
+  const watch = () => {
+    for (const [, target] of related(host, id)) {
+      if (watched.has(target)) continue;
+      watched.add(target);
+      (store.l[target] ??= []).push(listener);
+    }
+  };
   const listener = () => {
-    if (!arrived(host, id)) return;
+    if (!arrived(host, id)) {
+      watch();
+      return;
+    }
     cancel();
     ready();
   };
   const cancel = () => {
-    const index = listeners.indexOf(listener);
-    if (index !== -1) listeners.splice(index, 1);
+    for (const target of watched) {
+      const listeners = store.l[target] ?? [];
+      const index = listeners.indexOf(listener);
+      if (index !== -1) listeners.splice(index, 1);
+    }
+    watched.clear();
   };
-  listeners.push(listener);
+  watch();
   return cancel;
 }
 

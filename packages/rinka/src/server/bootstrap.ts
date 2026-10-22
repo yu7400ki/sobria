@@ -3,6 +3,7 @@
  * `d(ホストの ID, 値のオブジェクト)` は、ホストに引き継ぐ値を保持して、待っている関数に通知する。
  * `r(spec)` は、1 つの境界の中身と、その境界の差し替えを適用する。開始と終了の目印がそろわない差し替えは、適用せずに除去する。
  * `spec.w` の組は、境界の完了を通知する前に、ホストが待つキーとして `w` に追加する。
+ * `n` は、memo の値が無いことを表すオブジェクトである。
  */
 export const bootstrap = `<script>(R=>{window.$rinka=Object.assign(R,{v:R.v||{},l:R.l||{},w:R.w||{},n:R.n||{},
 d(id,o){Object.assign(this.v[id]||(this.v[id]={}),o);(this.l[id]||[]).slice().forEach(f=>f())},

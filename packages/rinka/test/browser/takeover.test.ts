@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 /** タグ名とプロパティから要素を作成する JSX の関数を表す。サーバーとクライアントで、同じ要素の関数を使用する。 */
-type H = (type: unknown, props: Record<string, unknown>) => unknown;
+type H = (type: unknown, props: Record<string, unknown>, key?: string, site?: string) => unknown;
 const server = serverJsx as unknown as H;
 const client = clientJsx as unknown as H;
 
@@ -209,6 +209,62 @@ describe("Shadow DOM の中の子要素", () => {
     scripts.forEach(run);
     defineClient(parentTag, () => client(childClient, {}), { props: [] });
     await tick();
+    await tick();
+    const child = document.querySelector(parentTag)?.shadowRoot?.querySelector(childTag);
+    expect(child).not.toBe(ssrChild);
+    expect(html(child?.shadowRoot)).toBe("<p>client ann</p>");
+  });
+});
+
+describe("入れ子の子要素の引き継ぎ", () => {
+  it("親が作り直した子要素は、同じキーの子要素のホストの値を引き継ぐ", async () => {
+    const parentTag = nextTag();
+    const childTag = nextTag();
+    let fetched = 0;
+    const fetch = () => {
+      if (!isSeeding()) fetched++;
+      return Promise.resolve("ann");
+    };
+    const childServer = defineServer(childTag, viewWith(server, "", "t:7", fetch), { props: [] });
+    const scripts = await serve(
+      server(
+        defineServer(parentTag, () => server(childServer, {}, undefined, "p:1"), { props: [] }),
+        {},
+      ),
+    );
+    scripts.forEach(run);
+    fetched = 0;
+    const childClient = defineClient(childTag, viewWith(client, "", "t:7", fetch), { props: [] });
+    defineClient(parentTag, () => client(childClient, {}, undefined, "p:1"), { props: [] });
+    await tick();
+    const child = document.querySelector(parentTag)?.shadowRoot?.querySelector(childTag);
+    expect(html(child?.shadowRoot)).toBe("<p> ann</p>");
+    expect(fetched).toBe(0);
+  });
+
+  it("親は、値を引き継ぐ子要素のホストの値も届くまで起動しない", async () => {
+    const parentTag = nextTag();
+    const childTag = nextTag();
+    const childServer = defineServer(childTag, viewWith(server, "", "t:8", fetchAnn), {
+      props: [],
+    });
+    const scripts = await serve(
+      server(
+        defineServer(parentTag, () => server(childServer, {}, undefined, "p:2"), { props: [] }),
+        {},
+      ),
+    );
+    const own = scripts.filter((script) => script.startsWith('$rinka.d("h1"'));
+    const rest = scripts.filter((script) => !own.includes(script));
+    own.forEach(run);
+    const childClient = defineClient(childTag, viewWith(client, "client", "t:8", fetchAnn), {
+      props: [],
+    });
+    defineClient(parentTag, () => client(childClient, {}, undefined, "p:2"), { props: [] });
+    await tick();
+    const ssrChild = document.querySelector(parentTag)?.shadowRoot?.querySelector(childTag);
+    expect(html(ssrChild?.shadowRoot)).toBe("<p> ann</p>");
+    rest.forEach(run);
     await tick();
     const child = document.querySelector(parentTag)?.shadowRoot?.querySelector(childTag);
     expect(child).not.toBe(ssrChild);

@@ -1,4 +1,5 @@
 import type { ServerNode } from "../shared/nodes.ts";
+import type { ScopedChild } from "../shared/scope.ts";
 
 /** サーバーで描画する木のノードを表す。関数は、描画するときに呼び出して、返した値を描画する。 */
 export type Node =
@@ -28,6 +29,8 @@ export interface ComponentNode {
   readonly fn: (props: Record<string, unknown>) => unknown;
   readonly props: Record<string, unknown>;
   readonly key: string | undefined;
+  /** 要素の描画の範囲の中で、呼び出し箇所を指定して作成した要素なら、作成した範囲とキーを表す。 */
+  readonly child?: ScopedChild;
 }
 
 /** `<Loading>` を表す。 */
@@ -58,8 +61,10 @@ export function createNode(
   type: string | ((props: Record<string, unknown>) => unknown),
   props: Record<string, unknown>,
   key?: string,
+  child?: ScopedChild,
 ): Node {
-  return typeof type === "string"
-    ? { kind: "tag", tag: type, props, key }
+  if (typeof type === "string") return { kind: "tag", tag: type, props, key };
+  return child
+    ? { kind: "component", fn: type, props, key, child }
     : { kind: "component", fn: type, props, key };
 }

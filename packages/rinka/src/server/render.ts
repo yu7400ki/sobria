@@ -18,7 +18,7 @@ import {
 } from "../shared/element.ts";
 import { isEventProp, propToAttribute } from "../shared/names.ts";
 import { isFunction } from "../shared/objects.ts";
-import { createScope, withScope } from "../shared/scope.ts";
+import { createScope, withScope, type MemoScope, type ScopedChild } from "../shared/scope.ts";
 import { checkSerializable } from "../shared/wire.ts";
 import { bootstrap } from "./bootstrap.ts";
 import { isSafeLocation, NotFound, Redirect } from "./errors.ts";
@@ -76,6 +76,7 @@ interface HostAttributes {
 interface Host {
   readonly host: {
     readonly id: string;
+    readonly tag: string;
     readonly attributes: HostAttributes | Promise<HostAttributes>;
     readonly open: (attributes: HostAttributes, waits: readonly string[]) => string;
     readonly chunks: Chunk[];
@@ -217,6 +218,15 @@ class Renderer {
   private readonly scheduled: Boundary[] = [];
   /** 開始タグを出力したホストの ID を保持する。 */
   private readonly opened = new Set<string>();
+  /** 要素の描画の範囲ごとに、ホストの ID と、子要素のホストの ID を送ったキーを保持する。 */
+  private readonly scopeHosts = new WeakMap<
+    MemoScope,
+    { readonly id: string; readonly keys: string[] }
+  >();
+  /** ホストの ID ごとに、ホストをページに出力したら `true` に、出力しないことが決まったら `false` に解決する Promise を保持する。 */
+  private readonly shown = new Map<string, PromiseWithResolvers<boolean>>();
+  /** ホストに値を送る処理のうち、終わっていないものを保持する。 */
+  private readonly values = new Set<Promise<void>>();
   /** 要素を描画したか、`<Loading>` の中身を後送りにしたときに真になる。真のページにだけ、起動スクリプトを出力する。 */
   private interactive = false;
   /** `noindex` の `<meta>` を出力したことを表す。 */
@@ -295,7 +305,7 @@ class Renderer {
         return;
       case "component": {
         if (isElementComponent(node.fn)) {
-          this.element(node.fn, node.props, node.key, ctx, out);
+          this.element(node.fn, node.props, node.key, ctx, out, node.child);
           return;
         }
         const result = node.fn(node.props);
@@ -383,17 +393,27 @@ class Renderer {
     out.push({ errored: { chunks, node, ctx } });
   }
 
-  /** 要素のホストを出力し、Shadow DOM の中身を DSD として出力してから、Light DOM の子を出力する。 */
+  /**
+   * 要素のホストを出力し、Shadow DOM の中身を DSD として出力してから、Light DOM の子を出力する。
+   * `child` があれば、要素を作成した描画の範囲のホストに、`@c:キー` でこの要素のホストの ID を送る。
+   */
   private element(
     component: ElementComponent<unknown>,
     props: Record<string, unknown>,
     key: string | undefined,
     ctx: WalkCtx,
     out: Chunk[],
+    child?: ScopedChild,
   ): void {
     this.interactive = true;
     const { tag, options } = component[elementInfo];
     const id = `h${++this.seq}`;
+    const creator = child && this.scopeHosts.get(child.scope);
+    if (child && creator) {
+      const mapKey = `@c:${child.key}`;
+      creator.keys.push(mapKey);
+      this.send(creator.id, mapKey, Promise.resolve(scriptJson(id)));
+    }
     const slotNames = new Set(["children", ...(options.slots ?? [])]);
     const functionProps = new Set(options.functionProps);
     const descriptors = Object.getOwnPropertyDescriptors(props);
@@ -464,6 +484,8 @@ class Renderer {
           return result;
         }),
     );
+    const children: string[] = [];
+    this.scopeHosts.set(scope, { id, keys: children });
     createRoot((dispose) => {
       this.disposers.push(dispose);
       owner = getOwner();
@@ -496,12 +518,11 @@ class Renderer {
     }
     chunks.push(`</${tag}>`);
     const open = ({ text, transfer }: HostAttributes, waits: readonly string[]): string => {
-      if (transfer) this.sendProps(id, transfer, `<${tag}>`);
-      const keys = [...memoKeys, ...waits, ...(transfer ? ["@p"] : [])];
+      const keys = [...memoKeys, ...children, ...waits, ...(transfer ? ["@p"] : [])];
       const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
       return `<${tag}${attribute("data-oh", id)}${text}${om}><template shadowrootmode="open">`;
     };
-    out.push({ host: { id, attributes, open, chunks } });
+    out.push({ host: { id, tag, attributes, open, chunks } });
   }
 
   /**
@@ -553,13 +574,20 @@ class Renderer {
       return marker(id);
     }
     if ("host" in chunk) {
-      const { id, attributes, open, chunks } = chunk.host;
+      const { id, tag, attributes, open, chunks } = chunk.host;
       const inner = await this.serialize(chunks, parent, regions);
       const resolved = await attributes;
       const waits = this.scheduled
         .filter((boundary) => boundary.path.includes(id))
         .map((boundary) => `@${boundary.id}`);
       this.opened.add(id);
+      if (resolved.transfer) {
+        this.send(id, "@p", Promise.resolve(toScript(resolved.transfer, `<${tag}>`)));
+      }
+      const { sent } = parent;
+      void sent.then((output) =>
+        this.host(id).resolve(output && !regions.some((r) => r.discarded)),
+      );
       return open(resolved, waits) + inner;
     }
     const { chunks, node, ctx } = chunk.errored;
@@ -659,37 +687,41 @@ class Renderer {
    * 失敗した値とシリアライズできない値は送らずに、値が無いことを表す `$rinka.n` を送る。シリアライズできない値は記録する。
    */
   private sendMemo(host: string, path: string, key: string, promise: PromiseLike<unknown>): void {
-    this.track(
+    this.send(
+      host,
+      key,
       (async () => {
-        let value = "$rinka.n";
+        let resolved: unknown;
         try {
-          const resolved = await promise;
-          try {
-            value = toScript(resolved, path);
-          } catch (error) {
-            console.error(
-              "[rinka] memo の値を送れないので、要素がブラウザで計算し直します。",
-              error,
-            );
-          }
+          resolved = await promise;
         } catch {
-          // 失敗した memo の値は送らない
+          return "$rinka.n";
         }
-        await this.root.sent;
-        this.write(`<script>$rinka.d(${scriptJson(host)},{${scriptJson(key)}:${value}})</script>`);
+        try {
+          return toScript(resolved, path);
+        } catch (error) {
+          console.error("[rinka] memo の値を送れないので、要素がブラウザで計算し直します。", error);
+          return "$rinka.n";
+        }
       })(),
     );
   }
 
-  /** 属性にできない props の値を、シェルを出力した後に `$rinka.d` の `@p` でホストに送る。 */
-  private sendProps(host: string, transfer: Readonly<Record<string, unknown>>, path: string): void {
-    const value = toScript(transfer, path);
-    this.track(
-      (async () => {
-        await this.root.sent;
-        this.write(`<script>$rinka.d(${scriptJson(host)},{"@p":${value}})</script>`);
-      })(),
-    );
+  /** ホストの ID が `id` のホストを、ページに出力したかどうかを解決する Promise を返す。 */
+  private host(id: string): PromiseWithResolvers<boolean> {
+    let shown = this.shown.get(id);
+    if (!shown) this.shown.set(id, (shown = Promise.withResolvers<boolean>()));
+    return shown;
+  }
+
+  /** `expression` が解決した JS の式を、ホストをページに出力した後に、`$rinka.d` でホストの `key` の値として送る。ホストを出力しなければ送らない。 */
+  private send(host: string, key: string, expression: Promise<string>): void {
+    const task = (async () => {
+      const value = await expression;
+      if (!(await this.host(host).promise)) return;
+      this.write(`<script>$rinka.d(${scriptJson(host)},{${scriptJson(key)}:${value}})</script>`);
+    })();
+    this.values.add(task);
   }
 
   /** 境界の中身を出力しないことを決め、境界を待つホストに境界の完了を通知する。 */
@@ -733,6 +765,8 @@ class Renderer {
       this.write(`<!doctype html><html><head><meta charset="utf-8">${script}</head><body>${shell}`);
       this.root.send(true);
       await this.drain();
+      for (const shown of this.shown.values()) shown.resolve(false);
+      await Promise.all(this.values);
       this.write("</body></html>");
     } finally {
       this.dispose();
