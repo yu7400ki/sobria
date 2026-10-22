@@ -1,6 +1,10 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import { checkPropNames, type HostAttribute } from "../../src/shared/prop-names.ts";
+import {
+  checkPropNames,
+  type HostAttribute,
+  type PropNameError,
+} from "../../src/shared/prop-names.ts";
 
 describe("checkPropNames", () => {
   it("問題の無い名前では、空の配列を返す", () => {
@@ -83,5 +87,41 @@ describe("HostAttribute", () => {
   it("ホストで意味を持つ属性の名前だけを表す", () => {
     expectTypeOf<"id" | "tabindex" | "inputmode">().toExtend<HostAttribute>();
     expectTypeOf<"label">().not.toExtend<HostAttribute>();
+  });
+});
+
+describe("PropNameError", () => {
+  it("判定の経路ごとに、ビルドのエラーと同じ文を表す", () => {
+    const cases = [
+      [
+        "ref",
+        '"ref" は props の名前にできません。rinka が要素への ref として扱うためです。内側のノードを受け取る関数には inputRef のような名前を使用してください。' satisfies PropNameError<"ref">,
+      ],
+      [
+        "load:idle",
+        '"load:idle" は props の名前にできません。rinka が要素を読み込むタイミングの指定として扱うためです。読み込みの状態には loadState のような名前を使用してください。' satisfies PropNameError<"load:idle">,
+      ],
+      [
+        "ariaLabel",
+        '"ariaLabel" は props の名前にできません。rinka が aria-* と data-* の属性を、そのままホストに渡すためです。代わりに label のような名前を使用してください。' satisfies PropNameError<"ariaLabel">,
+      ],
+      [
+        "title",
+        '"title" は props の名前にできません。要素の全体にツールチップが表示されるためです。見出しには heading のような名前を使用してください。' satisfies PropNameError<"title">,
+      ],
+      [
+        "focus",
+        '"focus" は props の名前にできません。props はホストのプロパティになり、ホストの focus を上書きするためです。要素の役割を表す別の名前を使用してください。' satisfies PropNameError<"focus">,
+      ],
+      [
+        "validity",
+        '"validity" は props の名前にできません。rinka がフォームの部品のホストに validity を付与するためです。要素の役割を表す別の名前を使用してください。' satisfies PropNameError<"validity">,
+      ],
+      [
+        "connectedCallback",
+        '"connectedCallback" は props の名前にできません。Custom Element のライフサイクルのコールバックと衝突するためです。要素の役割を表す別の名前を使用してください。' satisfies PropNameError<"connectedCallback">,
+      ],
+    ] as const;
+    for (const [name, message] of cases) expect(checkPropNames([name])).toEqual([message]);
   });
 });

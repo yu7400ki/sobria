@@ -32,13 +32,7 @@ test("Props は、props にできない名前のキーがあると型エラー�
   expectTypeOf<Props<{ ariaLabel: string }>>();
 });
 
-test("props にできない名前の型エラーのメッセージは、ビルドのエラーと同じく理由と代わりの名前を示す", () => {
-  expectTypeOf<
-    PropNameError<"title">
-  >().toEqualTypeOf<'"title" は props の名前にできません。要素の全体にツールチップが表示されるためです。見出しには heading のような名前を使用してください。'>();
-  expectTypeOf<
-    PropNameError<"focus">
-  >().toEqualTypeOf<'"focus" は props の名前にできません。props はホストのプロパティになり、ホストの focus を上書きするためです。要素の役割を表す別の名前を使用してください。'>();
+test("props にできる名前の PropNameError は never である", () => {
   expectTypeOf<PropNameError<"heading">>().toEqualTypeOf<never>();
 });
 
@@ -46,19 +40,4 @@ test("ホストのすべての属性は、props にできない名前である",
   type Named = Exclude<keyof GlobalAttributes, `data-${string}` | `aria-${string}`>;
   expectTypeOf<Exclude<Named, HostAttribute>>().toEqualTypeOf<never>();
   expectTypeOf<Exclude<HostAttribute, Named>>().toEqualTypeOf<never>();
-});
-
-test("予約された props、aria と data、フォームの部品、ライフサイクルのコールバックの名前のメッセージも、ビルドのエラーと同じである", () => {
-  expectTypeOf<
-    PropNameError<"ref">
-  >().toEqualTypeOf<'"ref" は props の名前にできません。rinka が要素への ref として扱うためです。内側のノードを受け取る関数には inputRef のような名前を使用してください。'>();
-  expectTypeOf<
-    PropNameError<"ariaLabel">
-  >().toEqualTypeOf<'"ariaLabel" は props の名前にできません。rinka が aria-* と data-* の属性を、そのままホストに渡すためです。代わりに label のような名前を使用してください。'>();
-  expectTypeOf<
-    PropNameError<"validity">
-  >().toEqualTypeOf<'"validity" は props の名前にできません。rinka がフォームの部品のホストに validity を付与するためです。要素の役割を表す別の名前を使用してください。'>();
-  expectTypeOf<
-    PropNameError<"connectedCallback">
-  >().toEqualTypeOf<'"connectedCallback" は props の名前にできません。Custom Element のライフサイクルのコールバックと衝突するためです。要素の役割を表す別の名前を使用してください。'>();
 });
