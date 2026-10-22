@@ -478,3 +478,40 @@ describe("スロット化の範囲", () => {
     );
   });
 });
+
+describe("括弧で囲んだ式", () => {
+  it("括弧で囲んだ式の本体、await、memo の引数を、括弧ごと変換する", () => {
+    const body = module("export const f = async () => ({ a: await x });", true);
+    expect(body).toContain("return ({ a: await __rinka_gate(x) }); }");
+    expect(module("export const f = async () => { await (a, b); };", true)).toContain(
+      "await __rinka_gate((a, b))",
+    );
+    expect(
+      module("export const f = async () => { for await (const v of (a, b)); };", true),
+    ).toContain("__rinka_gate.iterate((a, b))");
+    const memoCall = 'import { memo } from "rinka"; memo((a, b)); memo(f, (a, b));';
+    expect(module(memoCall)).toContain('memo((a, b), { site: "src/lib/a.ts:1:31" })');
+    expect(module(memoCall)).toContain('memo(f, { ...(a, b), site: "src/lib/a.ts:1:45" })');
+  });
+
+  it("括弧で囲んだ props.children も <slot> にする", () => {
+    expect(slotted("return <p>{(props.children)}</p>;")).toContain("<p><slot /></p>");
+  });
+
+  it("コンポーネントに渡す括弧で囲んだ値は、括弧ごと getter にする", async () => {
+    expect(await compile("const view = <C a={(x, y)} />;")).toContain(
+      "get a() { return ((x, y)); }",
+    );
+  });
+
+  it("構文の誤りのエラーは、ルートからの相対パスを表示する", () => {
+    const source = {
+      id: "/root/src/lib/a.ts",
+      file: "src/lib/a.ts",
+      lang: "ts",
+      client: false,
+    } as const;
+    expect(() => transformSource("const = ;", source)).toThrow(/^src\/lib\/a\.ts を解析できません/);
+    expect(() => transformJsx("const = ;", source)).toThrow(/^src\/lib\/a\.ts を解析できません/);
+  });
+});

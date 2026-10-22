@@ -7,7 +7,8 @@ import { getRequestListener } from "@hono/node-server";
 import { isRunnableDevEnvironment, type Environment, type Plugin, type ViteDevServer } from "vite";
 
 import { tagFromPath } from "../shared/names.ts";
-import { transformSource, type Lang, type SourceResult } from "./compiler.ts";
+import type { Lang } from "./ast.ts";
+import { transformSource, type SourceResult } from "./compiler.ts";
 import { entries, oxc } from "./entries.ts";
 import { transformJsx } from "./jsx.ts";
 

@@ -1,8 +1,16 @@
 import { MagicString } from "magic-string";
-import { parseSync, type ESTree } from "vite";
+import type { ESTree } from "vite";
 
 import { isEventProp, reservedProp } from "../shared/names.ts";
-import { children, importedNames, isFunction, surround, type Node } from "./ast.ts";
+import {
+  children,
+  importedNames,
+  isFunction,
+  parseModule,
+  surround,
+  unwrap,
+  type Node,
+} from "./ast.ts";
 import type { Transformed } from "./compiler.ts";
 import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
@@ -31,13 +39,7 @@ interface Runtime {
  * コンポーネントに渡す props と children は、リテラルと関数を除いて getter にする。
  */
 export function transformJsx(code: string, { id, file }: JsxOptions): Transformed {
-  const { program, errors } = parseSync(id, code, {
-    lang: "js",
-    sourceType: "module",
-    preserveParens: false,
-  });
-  const [error] = errors;
-  if (error) throw new CompileError(`${file} を解析できません: ${error.message}`);
+  const program = parseModule(code, { id, file, lang: "js" });
   const output = new MagicString(code);
   if (importedNames(program, entries.main).has("createElement")) {
     throw new CompileError(
@@ -93,8 +95,9 @@ function applyRules(
     if (name === undefined) continue;
     const { value } = property;
     if (native) {
-      if (name === "children" && multiple && value.type === "ArrayExpression") {
-        for (const item of value.elements) {
+      const inner = unwrap(value);
+      if (name === "children" && multiple && inner.type === "ArrayExpression") {
+        for (const item of inner.elements) {
           if (item && item.type !== "SpreadElement" && isReactive(item, runtime)) {
             wrap(item, output);
           }
@@ -105,7 +108,8 @@ function applyRules(
       continue;
     }
     if (reservedProp(name)) continue;
-    if (isLiteral(value) || isFunction(value) || hasAwait(value) || usesCallee(value)) continue;
+    const inner = unwrap(value);
+    if (isLiteral(inner) || isFunction(inner) || hasAwait(value) || usesCallee(value)) continue;
     const key = code.slice(property.key.start, property.key.end);
     if (!property.shorthand) output.remove(property.start, value.start);
     surround(output, value, `get ${key}() { return (`, "); }");

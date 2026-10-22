@@ -1,5 +1,5 @@
 import { MagicString, type SourceMap } from "magic-string";
-import { parseSync, type ESTree } from "vite";
+import type { ESTree } from "vite";
 
 import type { ElementInfo, ElementOptions } from "../shared/element.ts";
 import {
@@ -9,9 +9,12 @@ import {
   lineStarts,
   follow,
   importedNames,
+  parseModule,
+  unwrap,
   surround,
   walk,
   type FunctionNode,
+  type Lang,
   type Node,
 } from "./ast.ts";
 import { entries } from "./entries.ts";
@@ -19,9 +22,6 @@ import { CompileError } from "./errors.ts";
 import { analyzeProps } from "./props.ts";
 
 export { CompileError } from "./errors.ts";
-
-/** 変換するファイルの言語を表す。 */
-export type Lang = "ts" | "tsx" | "js" | "jsx";
 
 /** 元のソースに適用する変換の設定を表す。 */
 export interface SourceOptions {
@@ -61,12 +61,7 @@ const DEFINE = "__rinka_defineElement";
  * 要素のファイルでは、default export した関数を、要素を登録する呼び出しに書き換え、関数の中の JSX のスロットを `<slot>` にする。
  */
 export function transformSource(code: string, options: SourceOptions): SourceResult {
-  const { program, errors } = parseSync(options.id, code, {
-    lang: options.lang,
-    sourceType: "module",
-  });
-  const [error] = errors;
-  if (error) throw new CompileError(`${options.file} を解析できません: ${error.message}`);
+  const program = parseModule(code, options);
   const output = new MagicString(code);
   addMemoSites(program, output, code, options.file);
   const element =
@@ -245,12 +240,13 @@ function convertSlots(
   visit(fn.body, false);
 }
 
-/** 式が `props` のスロットの参照なら、スロットの名前と既定の中身を返す。 */
+/** 式が `props` のスロットの参照なら、スロットの名前とデフォルトの中身を返す。式を囲む括弧は外して判定する。 */
 function slotOf(
-  expression: ESTree.Expression,
+  node: Node,
   props: string,
   names: ReadonlySet<string>,
 ): { name: string; fallback?: ESTree.Expression } | undefined {
+  const expression = unwrap(node);
   if (expression.type === "LogicalExpression" && expression.operator === "??") {
     const slot = slotOf(expression.left, props, names);
     return slot && !slot.fallback ? { ...slot, fallback: expression.right } : undefined;

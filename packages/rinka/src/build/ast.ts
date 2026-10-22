@@ -1,5 +1,10 @@
 import type { MagicString } from "magic-string";
-import type { ESTree } from "vite";
+import { parseSync, type ESTree } from "vite";
+
+import { CompileError } from "./errors.ts";
+
+/** 変換するソースの言語を表す。 */
+export type Lang = "ts" | "tsx" | "js" | "jsx";
 
 /** oxc のパーサーが返す AST のノードを表す。 */
 export type Node = ESTree.Node;
@@ -106,4 +111,26 @@ export function importedNames(
     }
   }
   return names;
+}
+
+/** 解析するモジュールを表す。`id` はモジュールのパスで、`file` はエラーの文言に表示するパスである。 */
+export interface ModuleSource {
+  readonly id: string;
+  readonly file: string;
+  readonly lang: Lang;
+}
+
+/** `code` を ES モジュールとして解析する。式を囲む括弧は `ParenthesizedExpression` のノードにする。構文の誤りがあれば `CompileError` を投げる。 */
+export function parseModule(code: string, { id, file, lang }: ModuleSource): ESTree.Program {
+  const { program, errors } = parseSync(id, code, { lang, sourceType: "module" });
+  const [error] = errors;
+  if (error) throw new CompileError(`${file} を解析できません: ${error.message}`);
+  return program;
+}
+
+/** 式を囲む括弧を外したノードを返す。 */
+export function unwrap(node: Node): Node {
+  let current = node;
+  while (current.type === "ParenthesizedExpression") current = current.expression;
+  return current;
 }
