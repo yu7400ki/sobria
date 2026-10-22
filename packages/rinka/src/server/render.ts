@@ -201,12 +201,17 @@ interface WalkCtx {
 
 /** 要素のホストごとの状態を表す。 */
 class HostRecord {
-  /** `data-om` に列挙する、キーのある非同期の memo のキーである。 */
-  readonly memoKeys: string[] = [];
-  /** `data-om` に列挙する、子要素のホストの ID を送る `@c:キー` である。 */
-  readonly childKeys: string[] = [];
-  /** 開始タグの `data-om` に列挙したキーのうち、まだ値を送っていないものである。開始タグを作成するまでは `undefined` である。 */
-  unsent: Set<string> | undefined;
+  /**
+   * 開始タグを作成する前は、`data-om` に列挙する、キーのある非同期の memo のキーと、子要素のホストの ID を送る `@c:キー` を集める。
+   * 作成した後は、`data-om` に列挙したキーのうち、まだ値を送っていないものを持つ。
+   */
+  keys:
+    | { readonly phase: "open"; readonly memo: string[]; readonly child: string[] }
+    | { readonly phase: "sealed"; readonly unsent: Set<string> } = {
+    phase: "open",
+    memo: [],
+    child: [],
+  };
   /** Shadow DOM の中で後送りにして、まだ送り終えていない境界の数である。 */
   deferred = 0;
   /** ホストをページに出力したら `true` に、出力しないことが決まったら `false` に解決する。 */
@@ -216,6 +221,15 @@ class HostRecord {
     readonly id: string,
     readonly tag: string,
   ) {}
+
+  /** 集めたキーに `extra` を加えて、`data-om` に列挙するキーとして確定し、その列を返す。 */
+  seal(extra: readonly string[]): string[] {
+    if (this.keys.phase === "sealed")
+      throw new Error(`ホスト ${this.id} の開始タグを 2 回作成しました。`);
+    const keys = [...this.keys.memo, ...this.keys.child, ...extra];
+    this.keys = { phase: "sealed", unsent: new Set(keys) };
+    return keys;
+  }
 }
 
 /** JS の式 `value` を、ホスト `host` の `key` の値として送るスクリプトを返す。 */
@@ -490,10 +504,10 @@ class Renderer {
     if (child?.data instanceof HostRecord && this.hosts.has(child.data)) {
       const creator = child.data;
       const mapKey = childKey(child.key);
-      if (creator.unsent) {
+      if (creator.keys.phase === "sealed") {
         announce = dataScript(creator, mapKey, scriptJson(id));
       } else {
-        creator.childKeys.push(mapKey);
+        creator.keys.child.push(mapKey);
         this.send(creator, mapKey, Promise.resolve(scriptJson(id)));
       }
     }
@@ -555,13 +569,13 @@ class Renderer {
       onMount: () => {},
       expose: () => {},
     };
-    const { memoKeys, childKeys } = record;
     const scope = createScope(
       <T>(memoKey: string, fn: (prev: T | undefined) => T | PromiseLike<T>) =>
         createMemo<T>((prev) => {
           const result = fn(prev);
-          if (isPromiseLike(result) && !memoKeys.includes(memoKey)) {
-            memoKeys.push(memoKey);
+          const { keys } = record;
+          if (isPromiseLike(result) && keys.phase === "open" && !keys.memo.includes(memoKey)) {
+            keys.memo.push(memoKey);
             this.sendMemo(record, `<${tag}> の memo ${memoKey}`, memoKey, result);
           }
           return result;
@@ -600,13 +614,10 @@ class Renderer {
     }
     chunks.push(`</${tag}>`);
     const open = ({ text, transfer }: HostAttributes, waiting: boolean): string => {
-      const keys = [
-        ...memoKeys,
-        ...childKeys,
+      const keys = record.seal([
         ...(waiting ? [BOUNDARIES_KEY] : []),
         ...(transfer ? [PROPS_KEY] : []),
-      ];
-      record.unsent = new Set(keys);
+      ]);
       const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
       return `<${tag}${attribute("data-oh", id)}${text}${om}><template shadowrootmode="open">`;
     };
@@ -811,7 +822,13 @@ class Renderer {
   private send(host: HostRecord, key: string, expression: Promise<string>): void {
     const task = (async () => {
       const value = await expression;
-      if (!(await host.shown.promise) || !host.unsent?.delete(key)) return;
+      if (
+        !(await host.shown.promise) ||
+        host.keys.phase === "open" ||
+        !host.keys.unsent.delete(key)
+      ) {
+        return;
+      }
       this.write(dataScript(host, key, value));
     })();
     this.values.add(task);

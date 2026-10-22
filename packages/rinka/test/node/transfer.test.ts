@@ -257,6 +257,30 @@ describe("開始タグの後に加わったキー", () => {
     expect(sent).toEqual([]);
   });
 
+  it(
+    "開始タグの後に初めて非同期になった memo が解決しなくても、ストリームを閉じる",
+    { timeout: 1000 },
+    async () => {
+      const Host = defineElement(
+        "x-tr-sealed-never",
+        () => {
+          const source = memo(() => wait(5).then(() => "v"));
+          memo(
+            () => {
+              source();
+              return new Promise<never>(() => {});
+            },
+            { key: "b" },
+          );
+          return "x";
+        },
+        { props: [] },
+      );
+      const { sent } = await render([jsx(Host, {}), holding()]);
+      expect(sent).toEqual([]);
+    },
+  );
+
   it("ほかに後送りの境界が無くても、ストリームを閉じた後に書き込まない", async () => {
     const Host = defineElement(
       "x-tr-sealed-closed",
