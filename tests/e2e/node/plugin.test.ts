@@ -5,26 +5,22 @@ import { fileURLToPath } from "node:url";
 
 import { rinka } from "rinka/vite";
 import {
-  createServer,
   type HotPayload,
   type InlineConfig,
   type RunnableDevEnvironment,
   type ViteDevServer,
+  mergeConfig,
 } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { createDevServer } from "../dev-server.ts";
 
 const root = fileURLToPath(new URL("../fixtures/basic", import.meta.url));
 
 let server: ViteDevServer;
 
 beforeAll(async () => {
-  server = await createServer({
-    root,
-    configFile: false,
-    logLevel: "error",
-    server: { middlewareMode: true, hmr: false },
-    plugins: [rinka({ prefix: "app" })],
-  });
+  server = await createDevServer(root, { server: { middlewareMode: true } });
 });
 
 afterAll(async () => {
@@ -63,13 +59,7 @@ describe("Vite プラグイン", () => {
 
   it("rinka のプラグインを 2 回登録すると、エラーで停止する", async () => {
     await expect(
-      createServer({
-        root,
-        configFile: false,
-        logLevel: "silent",
-        server: { middlewareMode: true, hmr: false },
-        plugins: [rinka(), rinka()],
-      }),
+      createDevServer(root, { server: { middlewareMode: true }, plugins: [rinka()] }),
     ).rejects.toThrow(/2 つ以上/);
   });
 });
@@ -82,13 +72,7 @@ describe("タグ名の検査", () => {
       const source = "export default function X() { return <p />; }\n";
       await writeFile(join(project, "src/elements/forms/date-picker.tsx"), source);
       await writeFile(join(project, "src/elements/forms-date-picker.tsx"), source);
-      const starting = createServer({
-        root: project,
-        configFile: false,
-        logLevel: "silent",
-        server: { middlewareMode: true, hmr: false },
-        plugins: [rinka({ prefix: "app" })],
-      });
+      const starting = createDevServer(project, { server: { middlewareMode: true } });
       await expect(starting).rejects.toThrow(/app-forms-date-picker/);
     } finally {
       await rm(project, { recursive: true, force: true });
@@ -110,14 +94,10 @@ async function withProject(
         await writeFile(join(project, file), source);
       }),
     );
-    const dev = await createServer({
-      root: project,
-      configFile: false,
-      logLevel: "silent",
-      server: { middlewareMode: true, hmr: false },
-      plugins: [rinka({ prefix: "app" })],
-      ...config,
-    });
+    const dev = await createDevServer(
+      project,
+      mergeConfig({ server: { middlewareMode: true } }, config),
+    );
     try {
       await run(dev);
     } finally {
@@ -182,7 +162,7 @@ async function update(dev: ViteDevServer, source: string): Promise<string> {
 }
 
 describe("開発中の HMR", () => {
-  const options = { server: { middlewareMode: true, ws: false as const } };
+  const options = { server: { hmr: true, ws: false as const } };
 
   it("要素の props の構成が変わると、ページを再読み込みさせる", async () => {
     await withProject(

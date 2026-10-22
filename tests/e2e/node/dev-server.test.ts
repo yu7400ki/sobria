@@ -1,9 +1,9 @@
-import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 
-import { rinka } from "rinka/vite";
-import { createServer, type ViteDevServer } from "vite";
+import type { ViteDevServer } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { createDevServer, originOf } from "../dev-server.ts";
 
 const root = fileURLToPath(new URL("../fixtures/basic", import.meta.url));
 
@@ -11,18 +11,9 @@ let server: ViteDevServer;
 let origin: string;
 
 beforeAll(async () => {
-  server = await createServer({
-    root,
-    configFile: false,
-    logLevel: "error",
-    server: { port: 0, hmr: false },
-    plugins: [rinka({ prefix: "app" })],
-  });
+  server = await createDevServer(root, { server: { port: 0 } });
   await server.listen();
-  const address = server.httpServer?.address() as AddressInfo | null | undefined;
-  if (!address) throw new Error("開発サーバーのアドレスを取得できません。");
-  const { port } = address;
-  origin = `http://localhost:${port}`;
+  origin = originOf(server);
 });
 
 afterAll(async () => {

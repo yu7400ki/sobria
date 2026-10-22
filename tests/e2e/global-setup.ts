@@ -1,9 +1,8 @@
-import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 
-import { rinka } from "rinka/vite";
-import { createServer } from "vite";
 import type { TestProject } from "vitest/node";
+
+import { createDevServer, originOf } from "./dev-server.ts";
 
 declare module "vitest" {
   interface ProvidedContext {
@@ -16,19 +15,12 @@ declare module "vitest" {
 
 /** `fixtures/basic` の開発サーバーを起動し、オリジンとページの HTML をテストに渡す。 */
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
-  const server = await createServer({
-    root: fileURLToPath(new URL("fixtures/basic", import.meta.url)),
-    configFile: false,
-    logLevel: "error",
-    server: { port: 0, hmr: false },
-    plugins: [rinka({ prefix: "app" })],
+  const server = await createDevServer(fileURLToPath(new URL("fixtures/basic", import.meta.url)), {
+    server: { port: 0 },
   });
   try {
     await server.listen();
-    const address = server.httpServer?.address() as AddressInfo | null | undefined;
-    if (!address) throw new Error("開発サーバーのアドレスを取得できません。");
-    const { port } = address;
-    const origin = `http://localhost:${port}`;
+    const origin = originOf(server);
     const response = await fetch(`${origin}/`);
     if (!response.ok)
       throw new Error(`fixtures/basic のページが ${response.status} を返しました。`);
