@@ -68,8 +68,6 @@ interface Instance {
   dispose?: () => void;
   /** 起動を待っていれば、待つのをやめる関数。 */
   cancel?: () => void;
-  /** 次に起動した後に呼ぶ関数。 */
-  readonly waiters: Set<() => void>;
   /** 起動した後に呼ぶ、要素への `ref`。 */
   ref?: (host: HTMLElement) => unknown;
   /** まだ呼んでいない `onMount` の関数。 */
@@ -160,7 +158,6 @@ export function defineElement<P, M extends object = object>(
    * `owner` の下に root を作成して要素の関数を描画し、要素への `ref` を呼ぶ。
    * `owner` が `null` なら、描画の全体を、フォールバックが空の `<Loading>` で包む。
    * root を破棄すると、`instance.dispose` を `undefined` にし、まだ呼んでいない `onMount` の関数を捨てる。
-   * 起動した後に、`instance.waiters` の関数を呼んで空にする。
    */
   function activate(host: HTMLElement, instance: Instance, owner: Owner | null): void {
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
@@ -202,9 +199,6 @@ export function defineElement<P, M extends object = object>(
         if (instance.ref) callRef(instance.ref, host);
       }),
     );
-    const waiters = [...instance.waiters];
-    instance.waiters.clear();
-    for (const waiter of waiters) waiter();
   }
 
   class RinkaElement extends HTMLElement {
@@ -235,7 +229,6 @@ export function defineElement<P, M extends object = object>(
         owned: false,
         mounts: [],
         settled: false,
-        waiters: new Set(),
       };
       instances.set(this, instance);
     }
@@ -281,8 +274,8 @@ export function defineElement<P, M extends object = object>(
 
 /**
  * owner の無い場所で作成して接続した要素を起動する。表示されている位置から上へ、定義済みの要素を探索する。
- * 見つけた要素が起動していれば、見つけた要素の子のうち `el` を含む子の `slot` 属性の名前で、`<slot>` の owner の下で起動する。`<slot>` が無ければ、その `<slot>` を作成した時点で起動する。
- * 見つけた要素が起動していなければ、その要素が起動した後に、接続していれば探索し直す。
+ * 見つけた要素の子のうち `el` を含む子の `slot` 属性の名前で、見つけた要素の `<slot>` の owner の下で起動する。
+ * `<slot>` が無いか、見つけた要素が起動していなければ、その `<slot>` を作成した時点で、接続していれば起動する。
  * Shadow DOM の中にあるか、上に定義済みの要素が無ければ、最上位の要素として起動する。
  * 起動を待っていれば、待つのをやめる関数を返す。
  */
@@ -290,13 +283,10 @@ function attach(el: HTMLElement, instance: Instance): (() => void) | undefined {
   let child: Element = el;
   for (let node = el.parentNode; node && !(node instanceof ShadowRoot); node = node.parentNode) {
     const parent = instanceOf(node);
-    if (parent?.dispose) return addChild(parent.slots, child.slot, instance.activate);
     if (parent) {
-      const retry = () => {
-        instance.cancel = el.isConnected ? attach(el, instance) : undefined;
-      };
-      parent.waiters.add(retry);
-      return () => parent.waiters.delete(retry);
+      return addChild(parent.slots, child.slot, (owner) => {
+        if (el.isConnected) instance.activate(owner);
+      });
     }
     if (node instanceof Element) child = node;
   }

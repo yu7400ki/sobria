@@ -265,6 +265,25 @@ describe("owner の無い場所で作成した要素の境界", () => {
     expect(html(outer.firstElementChild!.shadowRoot!)).toBe("inner");
   });
 
+  it("途中の要素が <slot> を待っていれば、子要素は、その要素が <slot> を作成した時点で起動し、その要素の Loading がフォールバックを表示する", async () => {
+    const [show, setShow] = signal(false);
+    const Outer = defineGuard(show);
+    const Card = defineCard();
+    const { Pending, resolve } = definePending();
+    const [o, c, p] = [Outer, Card, Pending].map(tagOf);
+    document.body.innerHTML = `<${o}><${c}><${p}></${p}></${c}></${o}>`;
+    await tick();
+    flush();
+    setShow(true);
+    flush();
+    const card = document.body.firstElementChild!.firstElementChild!;
+    expect(html(card.shadowRoot!)).toBe("wait");
+    resolve("v");
+    await tick();
+    flush();
+    expect(html(card.shadowRoot!)).toBe("<slot></slot>");
+  });
+
   it("起動した要素の Shadow DOM に DOM の API で追加した要素は、最上位の要素として、値が解決するまで何も描画しない", async () => {
     const Host = defineElement(nextTag(), () => jsx("div", {}), { props: [] });
     const { Pending, resolve } = definePending();
