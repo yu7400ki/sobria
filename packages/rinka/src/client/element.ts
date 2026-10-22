@@ -23,7 +23,8 @@ import {
 import { checkExposeName } from "../shared/expose-names.ts";
 import { customEventName, isEventProp, propToAttribute } from "../shared/names.ts";
 import type { ClientNode } from "../shared/nodes.ts";
-import { isFunction } from "../shared/objects.ts";
+import { isFunction, isPlainObject } from "../shared/objects.ts";
+import { createScope, withScope } from "../shared/scope.ts";
 import { applyAttribute, asClientNode, bind, callRef, insert, setter } from "./dom.ts";
 import {
   activateInSlot,
@@ -33,6 +34,7 @@ import {
   placeInSlot,
   type HostSlots,
 } from "./slots.ts";
+import { seededMemo, transferredValues, whenArrived } from "./transfer.ts";
 
 /** 要素を描画する関数を表す。 */
 export type ElementFn<P, M extends object> = (props: P, ctx: Ctx<M>) => unknown;
@@ -77,6 +79,8 @@ interface Instance {
   cancel?: () => void;
   /** 起動した後に呼ぶ、要素への `ref`。 */
   ref?: (host: HTMLElement) => unknown;
+  /** 一度起動したかどうか。SSR したホストは、最初の起動でだけ、サーバーから値を引き継ぐ。 */
+  started: boolean;
 }
 
 const instances = new WeakMap<HTMLElement, Instance>();
@@ -162,11 +166,34 @@ export function defineElement<P, M extends object = object>(
    * `owner` が `null` なら、描画の全体を、フォールバックが空の `<Loading>` で包む。
    * 起動していれば、前の起動の root を先に破棄する。
    * root を破棄すると、まだ呼んでいない `onMount` の関数を捨て、`instance.run` を `undefined` にする。
+   * SSR したホストの最初の起動では、引き継いだ値を memo の最初の値と props にし、描画を Shadow DOM の外で組み立てて、
+   * 最初の内容を表示できる状態になってから、Shadow DOM の中身と置き換える。
    */
   function activate(host: HTMLElement, instance: Instance, owner: Owner | null): void {
     instance.run?.dispose();
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
-    shadow.replaceChildren();
+    const id = instance.started ? null : host.getAttribute("data-oh");
+    instance.started = true;
+    const values = id === null ? new Map<string, unknown>() : transferredValues(id);
+    const passed = values.get("@p");
+    if (isPlainObject(passed)) {
+      for (const [name, value] of Object.entries(passed)) {
+        const prop = instance.props.get(name);
+        if (prop) write(prop, { value });
+      }
+    }
+    const used = new Set<string>();
+    const scope = createScope(
+      <T>(key: string, compute: (prev: T | undefined) => T | PromiseLike<T>) => {
+        if (!values.has(key)) return createMemo(compute);
+        used.add(key);
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+        return seededMemo(values.get(key) as T, compute);
+      },
+    );
+    let target: ParentNode = shadow;
+    if (id === null) shadow.replaceChildren();
+    else target = document.createDocumentFragment();
     runWithOwner(owner, () =>
       createRoot((dispose) => {
         const run: Run = { dispose, mounts: [], settled: false };
@@ -193,14 +220,26 @@ export function defineElement<P, M extends object = object>(
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion
         const props = createProps(host, instance) as P;
         const render = () => {
-          const content = untrack(() => fn(props, ctx));
+          const content = untrack(() => withScope(scope, () => fn(props, ctx)));
           onSettled(() => {
+            if (target !== shadow) {
+              shadow.replaceChildren(target);
+              target = shadow;
+              const unused = [...values.keys()].filter(
+                (key) => !key.startsWith("@") && !used.has(key),
+              );
+              if (import.meta.env?.DEV && unused.length > 0) {
+                console.warn(
+                  `[rinka] <${tag}> は、サーバーから引き継いだ memo の値 ${unused.join(", ")} を使用しませんでした。サーバーとクライアントで描画が異なる可能性があります。`,
+                );
+              }
+            }
             run.settled = true;
             runMounts(host, run);
           });
           return content;
         };
-        insert(shadow, owner ? render() : createLoadingBoundary(render, () => undefined));
+        insert(target, owner ? render() : createLoadingBoundary(render, () => undefined));
         if (instance.ref) callRef(instance.ref, host);
       }),
     );
@@ -232,6 +271,7 @@ export function defineElement<P, M extends object = object>(
         slots: createHostSlots(),
         activate: (owner) => activate(this, instance, owner),
         owned: false,
+        started: false,
       };
       instances.set(this, instance);
     }
@@ -269,46 +309,69 @@ export function defineElement<P, M extends object = object>(
   return createElementComponent(tag, fn, options);
 }
 
-/** 要素を配置するスロットを表す。`parent` は定義済みの要素のインスタンス、`name` はスロットの名前である。 */
-interface Placement {
-  readonly parent: Instance;
-  readonly name: string;
-}
-
 /**
- * `el` が表示されている位置から上へ、定義済みの要素を探索する。
- * 見つけた要素と、見つけた要素の子のうち `el` を含む子の `slot` 属性の名前を返す。
- * Shadow DOM の中にあるか、上に定義済みの要素が無ければ、`undefined` を返す。
+ * 要素の位置を表す。
+ * `slot` は、定義済みの要素 `parent` の、`name` のスロットに配置されていることを表す。
+ * `shadow` は、上へ探索する途中で、`host` の Shadow DOM に到達したことを表す。`top` は、上に定義済みの要素が無いことを表す。
  */
-function locate(el: HTMLElement): Placement | undefined {
+type Position =
+  | { readonly kind: "slot"; readonly parent: Instance; readonly name: string }
+  | { readonly kind: "shadow"; readonly host: Element }
+  | { readonly kind: "top" };
+
+/** `el` が表示されている位置から上へ、定義済みの要素か ShadowRoot を探索して、`el` の位置を返す。 */
+function locate(el: HTMLElement): Position {
   let child: Element = el;
-  for (let node = el.parentNode; node && !(node instanceof ShadowRoot); node = node.parentNode) {
+  for (let node = el.parentNode; node; node = node.parentNode) {
+    if (node instanceof ShadowRoot) return { kind: "shadow", host: node.host };
     const parent = instanceOf(node);
-    if (parent) return { parent, name: child.slot };
+    if (parent) return { kind: "slot", parent, name: child.slot };
     if (node instanceof Element) child = node;
   }
-  return undefined;
+  return { kind: "top" };
 }
 
 /**
  * owner の無い場所で作成して接続した要素を起動する。
+ * SSR したホストは、`data-om` と、起動スクリプトが追加したキーの値がすべて届くまで起動しない。
  * 表示されている位置の上に定義済みの要素があれば、そのスロットの `<slot>` の owner の下で起動する。
  * `<slot>` が無ければ、その `<slot>` を作成した時点で、接続していれば起動する。その時点でスロットの位置が変わっていれば、今の位置のスロットに登録し直す。
- * 上に定義済みの要素が無ければ、最上位の要素として起動する。
- * 前のスロットへの登録は取り消し、新しく登録したら、登録を取り消す関数を `instance.cancel` に設定する。
+ * 起動していない SSR したホストの Shadow DOM の中にあれば、起動しない。そのホストが起動するときに、Shadow DOM の中身を作り直す。
+ * それ以外の Shadow DOM の中にあるか、上に定義済みの要素が無ければ、最上位の要素として起動する。
+ * 前の待機とスロットへの登録は取り消し、新しく待機か登録をしたら、取り消す関数を `instance.cancel` に設定する。
  */
 function attach(el: HTMLElement, instance: Instance): void {
   instance.cancel?.();
   instance.cancel = undefined;
-  const placement = locate(el);
-  if (!placement) {
+  const id = instance.started ? null : el.getAttribute("data-oh");
+  if (id !== null) {
+    const cancel = whenArrived(el, id, () => {
+      instance.cancel = undefined;
+      if (el.isConnected) attach(el, instance);
+    });
+    if (cancel) {
+      instance.cancel = cancel;
+      return;
+    }
+  }
+  const position = locate(el);
+  if (position.kind === "shadow") {
+    if (position.host.hasAttribute("data-oh") && !instanceOf(position.host)?.run) return;
     instance.activate(null);
     return;
   }
-  instance.cancel = addChild(placement.parent.slots, placement.name, (owner) => {
+  if (position.kind === "top") {
+    instance.activate(null);
+    return;
+  }
+  instance.cancel = addChild(position.parent.slots, position.name, (owner) => {
     if (!el.isConnected) return;
     const current = locate(el);
-    if (current?.parent === placement.parent && current.name === placement.name) {
+    if (
+      current.kind === "slot" &&
+      current.parent === position.parent &&
+      current.name === position.name
+    ) {
       instance.activate(owner);
     } else {
       attach(el, instance);
