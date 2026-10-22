@@ -160,6 +160,12 @@ const late = async () => {
   await new Promise((resolve) => setTimeout(resolve, 5));
   throw new Error("late");
 };
+/** `x-tr-shown` のホスト `host` に送る値の列を返す。 */
+const shownValues = (host: string) => [
+  [host, { "s.tsx:1:1#0": "v" }],
+  [host, { "@p": { data: { a: 1 } } }],
+];
+
 describe("値を送る範囲", () => {
   const Card = defineElement(
     "x-tr-shown",
@@ -181,6 +187,20 @@ describe("値を送る範囲", () => {
     expect(async.html).toContain("<body>fb");
     expect(async.sent).toEqual([]);
   });
+
+  it.each([1, 3, 6])(
+    "%i 段の Errored が受け止めなかった領域の中のホストには、値を送る",
+    async (depth) => {
+      const wrap = (rest: number, child: unknown): unknown =>
+        rest === 0 ? child : jsx(Errored, { fallback: "fb", children: wrap(rest - 1, child) });
+      const shell = await render(wrap(depth, jsx(Card, { data: { a: 1 } })));
+      expect(shell.sent).toEqual(shownValues("h1"));
+      const deferred = await render(
+        jsx(Loading, { fallback: "f", children: wrap(depth, jsx(Card, { data: { a: 1 } })) }),
+      );
+      expect(deferred.sent).toEqual(shownValues("h2"));
+    },
+  );
 
   it("出力しないホストの memo が、境界をすべて出力した後で解決しても、ストリームを閉じる", async () => {
     const Slow = defineAsync(
