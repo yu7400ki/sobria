@@ -9,6 +9,7 @@ import {
   parseModule,
   surround,
   unwrap,
+  type ModuleSource,
   type Node,
 } from "./ast.ts";
 import type { Transformed } from "./compiler.ts";
@@ -16,12 +17,7 @@ import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 
 /** oxc が JSX を変換した後のコードに適用する変換の設定を表す。 */
-export interface JsxOptions {
-  /** モジュールのパスである。ソースマップは、このパスのファイルを指す。 */
-  readonly id: string;
-  /** ファイルのパスである。プロジェクトのルートからの相対パスを、`/` で区切って記述する。エラーの文言に使用する。 */
-  readonly file: string;
-}
+export type JsxOptions = Omit<ModuleSource, "lang">;
 
 /** `rinka/jsx-runtime` から import した名前を表す。 */
 interface Runtime {
@@ -94,8 +90,8 @@ function applyRules(
     const name = propertyName(property.key);
     if (name === undefined) continue;
     const { value } = property;
+    const inner = unwrap(value);
     if (native) {
-      const inner = unwrap(value);
       if (name === "children" && multiple && inner.type === "ArrayExpression") {
         for (const item of inner.elements) {
           if (item && item.type !== "SpreadElement" && isReactive(item, runtime)) {
@@ -108,7 +104,6 @@ function applyRules(
       continue;
     }
     if (reservedProp(name)) continue;
-    const inner = unwrap(value);
     if (isLiteral(inner) || isFunction(inner) || hasAwait(value) || usesCallee(value)) continue;
     const key = code.slice(property.key.start, property.key.end);
     if (!property.shorthand) output.remove(property.start, value.start);

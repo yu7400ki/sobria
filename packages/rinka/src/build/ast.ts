@@ -113,9 +113,11 @@ export function importedNames(
   return names;
 }
 
-/** 解析するモジュールを表す。`id` はモジュールのパスで、`file` はエラーの文言に表示するパスである。 */
+/** 解析するモジュールを表す。 */
 export interface ModuleSource {
+  /** モジュールのパスである。ソースマップは、このパスのファイルを指す。 */
   readonly id: string;
+  /** ファイルのパスである。プロジェクトのルートからの相対パスを、`/` で区切って記述する。エラーの文言に表示する。 */
   readonly file: string;
   readonly lang: Lang;
 }

@@ -14,7 +14,7 @@ import {
   surround,
   walk,
   type FunctionNode,
-  type Lang,
+  type ModuleSource,
   type Node,
 } from "./ast.ts";
 import { entries } from "./entries.ts";
@@ -24,12 +24,7 @@ import { analyzeProps } from "./props.ts";
 export { CompileError } from "./errors.ts";
 
 /** 元のソースに適用する変換の設定を表す。 */
-export interface SourceOptions {
-  /** モジュールのパスである。ソースマップは、このパスのファイルを指す。 */
-  readonly id: string;
-  /** ファイルのパスである。プロジェクトのルートからの相対パスを、`/` で区切って記述する。memo の ID とエラーの文言に使用する。 */
-  readonly file: string;
-  readonly lang: Lang;
+export interface SourceOptions extends ModuleSource {
   /** クライアント向けのコードなら真である。 */
   readonly client: boolean;
   /** 要素のファイルなら、要素のタグ名を持つ。 */
