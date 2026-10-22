@@ -19,6 +19,7 @@ import {
 import { isEventProp, propToAttribute } from "../shared/names.ts";
 import { isFunction } from "../shared/objects.ts";
 import { createScope, withScope, type ScopedChild } from "../shared/scope.ts";
+import { BOUNDARIES_KEY, childKey, PROPS_KEY } from "../shared/transfer-keys.ts";
 import { checkSerializable } from "../shared/wire.ts";
 import { bootstrap } from "./bootstrap.ts";
 import { classify, type Thrown } from "./errors.ts";
@@ -429,7 +430,7 @@ class Renderer {
     const record = new HostRecord(id, tag);
     this.hosts.add(record);
     if (child?.data instanceof HostRecord && this.hosts.has(child.data)) {
-      const mapKey = `@c:${child.key}`;
+      const mapKey = childKey(child.key);
       child.data.childKeys.push(mapKey);
       this.send(child.data, mapKey, Promise.resolve(scriptJson(id)));
     }
@@ -539,8 +540,8 @@ class Renderer {
       const keys = [
         ...memoKeys,
         ...childKeys,
-        ...(waiting ? ["@b"] : []),
-        ...(transfer ? ["@p"] : []),
+        ...(waiting ? [BOUNDARIES_KEY] : []),
+        ...(transfer ? [PROPS_KEY] : []),
       ];
       const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
       return `<${tag}${attribute("data-oh", id)}${text}${om}><template shadowrootmode="open">`;
@@ -592,7 +593,11 @@ class Renderer {
         const inner = await this.serialize(chunks, out);
         const resolved = await attributes;
         if (resolved.transfer) {
-          this.send(record, "@p", Promise.resolve(toScript(resolved.transfer, `<${record.tag}>`)));
+          this.send(
+            record,
+            PROPS_KEY,
+            Promise.resolve(toScript(resolved.transfer, `<${record.tag}>`)),
+          );
         }
         this.placed.push(out.shown.then((output) => record.shown.resolve(output)));
         return open(resolved, record.deferred > 0) + inner;
@@ -746,7 +751,7 @@ class Renderer {
   private finishBoundary(boundary: Boundary): void {
     for (const host of boundary.path) {
       host.deferred--;
-      if (host.deferred === 0) this.send(host, "@b", Promise.resolve("1"));
+      if (host.deferred === 0) this.send(host, BOUNDARIES_KEY, Promise.resolve("1"));
     }
   }
 

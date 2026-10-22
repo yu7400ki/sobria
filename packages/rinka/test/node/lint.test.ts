@@ -29,6 +29,7 @@ const rules = new Map([
   ["unicorn(prefer-node-protocol)", "node"],
   ["rinka(no-static-wire-codec)", "wire-codec"],
   ["import(no-cycle)", "cycle"],
+  ["rinka(no-transfer-key-literal)", "key"],
 ]);
 
 type Diagnostic = { code: string; labels: { span: { line: number } }[] };
@@ -195,6 +196,31 @@ describe("import の循環", () => {
   it("互いを import するモジュールを報告する", () => {
     expect(reports("src/client/cycle-b.ts", ['import "./cycle-a.ts";'])).toEqual([]);
     expect(reports("src/client/cycle-a.ts", ['import "./cycle-b.ts";'])).toEqual([[1, "cycle"]]);
+  });
+});
+
+describe("値の受け渡しのキー", () => {
+  it("src/ の中の、@ で始まる文字列のリテラルとテンプレートリテラルを報告し、読み込む先は報告しない", () => {
+    expect(
+      reports("src/server/keys.ts", [
+        'export const a = "@b";',
+        "export const b = `@c:${a}`;",
+        'import "@solidjs/signals";',
+        'export const c = () => import("@solidjs/signals");',
+        'export { createMemo } from "@solidjs/signals";',
+        'export const d = "x@b";',
+        'export type M = typeof import("@solidjs/signals");',
+        "export const e = (x: string) => import(`@solidjs/${x}`);",
+        'declare module "@solidjs/signals" {}',
+      ]),
+    ).toEqual([
+      [1, "key"],
+      [2, "key"],
+    ]);
+  });
+
+  it("src/shared/transfer-keys.ts のキーの定義は報告しない", () => {
+    expect(reports("src/shared/transfer-keys.ts", ['export const a = "@b";'])).toEqual([]);
   });
 });
 

@@ -2,6 +2,7 @@ import { createMemo, type SourceAccessor } from "@solidjs/signals";
 
 import { isPlainObject } from "../shared/objects.ts";
 import { runSeeding, type ScopedMemo } from "../shared/scope.ts";
+import { isChildKey, isReservedKey, PROPS_KEY } from "../shared/transfer-keys.ts";
 
 /** 起動スクリプトが `window.$rinka` に定義する受け口のうち、値の引き継ぎで使用するものを表す。 */
 interface Receiver {
@@ -32,7 +33,7 @@ function waitedKeys(host: Element): string[] {
 function related(host: Element, id: string): [Element, string][] {
   const found: [Element, string][] = [[host, id]];
   for (const [key, child] of Object.entries(receiver()?.v[id] ?? {})) {
-    if (!key.startsWith("@c:") || typeof child !== "string") continue;
+    if (!isChildKey(key) || typeof child !== "string") continue;
     const el = host.shadowRoot?.querySelector(`[data-oh="${child}"]`);
     if (el) found.push(...related(el, child));
   }
@@ -108,7 +109,7 @@ export function beginTakeover(id: string | null, tag: string): Transferred {
       if (value !== store?.n) values.set(key, value);
     }
   }
-  const passed = values.get("@p");
+  const passed = values.get(PROPS_KEY);
   const used = new Set<string>();
   return {
     values,
@@ -121,7 +122,7 @@ export function beginTakeover(id: string | null, tag: string): Transferred {
     },
     finish: () => {
       if (!import.meta.env?.DEV) return;
-      const unused = [...values.keys()].filter((key) => !key.startsWith("@") && !used.has(key));
+      const unused = [...values.keys()].filter((key) => !isReservedKey(key) && !used.has(key));
       if (unused.length > 0) {
         console.warn(
           `[rinka] <${tag}> は、サーバーから引き継いだ memo の値 ${unused.join(", ")} を使用しませんでした。サーバーとクライアントで描画が異なる可能性があります。`,

@@ -5,9 +5,32 @@ interface ModuleDeclaration {
   readonly exportKind?: string;
 }
 
-interface Context {
-  report(descriptor: { node: ModuleDeclaration; message: string }): void;
+/** 文字列のリテラルと、テンプレートリテラルを表す。 */
+interface StringNode {
+  readonly type: string;
+  readonly value?: unknown;
+  readonly quasis?: readonly { readonly value: { readonly cooked: string | null } }[];
+  readonly parent?: { readonly type: string };
 }
+
+interface Context {
+  report(descriptor: { node: ModuleDeclaration | StringNode; message: string }): void;
+}
+
+/** 読み込む先を表すリテラルの、親のノードの種類である。 */
+const moduleSources = new Set([
+  "ImportDeclaration",
+  "ExportNamedDeclaration",
+  "ExportAllDeclaration",
+  "ImportExpression",
+  "TSModuleDeclaration",
+  "TSExternalModuleReference",
+  "TSImportType",
+]);
+
+/** `node` が、モジュールの読み込む先を表すかどうかを返す。 */
+const isModuleSource = ({ parent }: StringNode): boolean =>
+  parent !== undefined && moduleSources.has(parent.type);
 
 const wireCodec = /\/wire-codec(\.[jt]s)?$/;
 
@@ -32,6 +55,24 @@ export default {
           ImportDeclaration: check,
           ExportNamedDeclaration: check,
           ExportAllDeclaration: check,
+        };
+      },
+    },
+    /** `@` で始まる文字列のリテラルと、`@` で始まるテンプレートリテラルを報告する。読み込む先のリテラルは報告しない。 */
+    "no-transfer-key-literal": {
+      create(context: Context) {
+        const message =
+          "値の受け渡しのキーは、src/shared/transfer-keys.ts の定数と関数で記述してください。";
+        return {
+          Literal(node: StringNode) {
+            if (typeof node.value !== "string" || !node.value.startsWith("@")) return;
+            if (isModuleSource(node)) return;
+            context.report({ node, message });
+          },
+          TemplateLiteral(node: StringNode) {
+            if (!node.quasis?.[0]?.value.cooked?.startsWith("@") || isModuleSource(node)) return;
+            context.report({ node, message });
+          },
         };
       },
     },

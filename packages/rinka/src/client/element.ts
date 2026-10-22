@@ -25,6 +25,7 @@ import { customEventName, isEventProp, propToAttribute } from "../shared/names.t
 import type { ClientNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
 import { createScope, scopedChild, withScope } from "../shared/scope.ts";
+import { childKey } from "../shared/transfer-keys.ts";
 import { applyAttribute, asClientNode, bind, callRef, insert, setter } from "./dom.ts";
 import {
   activateInSlot,
@@ -407,7 +408,7 @@ export function createElementInstance(
   const instance = instances.get(host)!;
   const child = scopedChild(site);
   const transfer: unknown =
-    child?.data instanceof Map ? child.data.get(`@c:${child.key}`) : undefined;
+    child?.data instanceof Map ? child.data.get(childKey(child.key)) : undefined;
   if (typeof transfer === "string") instance.takeover = { phase: "waiting", from: transfer };
   const owner = getOwner();
   const derive = (read: () => unknown): Source => ({ read: owner ? createMemo(read) : read });

@@ -1,5 +1,7 @@
 import type { SourceAccessor } from "@solidjs/signals";
 
+import { isReservedKey } from "./transfer-keys.ts";
+
 /** キーで識別する memo を作成する関数を表す。`fn` は、直前の値を受け取って、memo の新しい値を返す。 */
 export type ScopedMemo = <T>(
   key: string,
@@ -60,7 +62,7 @@ export interface MemoOptions {
 
 /** 明示的なキーの形式と、同じ範囲で重複していないことを確認する。規則に合わなければ、エラーを投げる。 */
 function checkKey(scope: MemoScope, key: string): void {
-  if (key === "" || /\s/.test(key) || key.startsWith("@")) {
+  if (key === "" || /\s/.test(key) || isReservedKey(key)) {
     throw new Error(
       `memo の明示的なキー ${JSON.stringify(key)} は使用できません。空白を含まず、@ で始まらない、空でない文字列を指定してください。`,
     );
