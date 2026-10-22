@@ -18,7 +18,7 @@ import {
 } from "../shared/element.ts";
 import { isEventProp, propToAttribute } from "../shared/names.ts";
 import { isFunction } from "../shared/objects.ts";
-import { createScope, withScope, type MemoScope, type ScopedChild } from "../shared/scope.ts";
+import { createScope, withScope, type ScopedChild } from "../shared/scope.ts";
 import { checkSerializable } from "../shared/wire.ts";
 import { bootstrap } from "./bootstrap.ts";
 import { classify, type Thrown } from "./errors.ts";
@@ -66,8 +66,8 @@ interface Slotted {
   readonly slotted: {
     readonly boundary: Boundary;
     readonly chunks: Chunk[];
-    /** 目印を含む Shadow DOM のホストの ID を、外側から順に列挙する。 */
-    readonly path: readonly string[];
+    /** 目印を含む Shadow DOM のホストを、外側から順に列挙する。 */
+    readonly path: readonly HostRecord[];
   };
 }
 
@@ -81,8 +81,7 @@ interface HostAttributes {
 interface Host {
   readonly kind: "host";
   readonly host: {
-    readonly id: string;
-    readonly tag: string;
+    readonly record: HostRecord;
     readonly attributes: HostAttributes | Promise<HostAttributes>;
     readonly open: (attributes: HostAttributes, waiting: boolean) => string;
     readonly chunks: Chunk[];
@@ -92,16 +91,16 @@ interface Host {
 /** 境界の差し替えを表す。 */
 interface Patch {
   readonly id: string;
-  /** 目印を含む Shadow DOM のホストの ID を、外側から順に列挙する。 */
-  readonly path: readonly string[];
+  /** 目印を含む Shadow DOM のホストを、外側から順に列挙する。 */
+  readonly path: readonly HostRecord[];
   readonly html: Promise<string>;
 }
 
 /** `<Loading>` の境界と、シェルを表す。 */
 interface Boundary {
   readonly id: string;
-  /** 目印を含む Shadow DOM のホストの ID を、外側から順に列挙する。 */
-  readonly path: readonly string[];
+  /** 目印を含む Shadow DOM のホストを、外側から順に列挙する。 */
+  readonly path: readonly HostRecord[];
   /** 境界の領域に出力する単位の列を表す。 */
   readonly region: Chunk[];
   /** 境界の中の `<slot>` に配置するスロットの内容を表す。内容に穴があれば、境界は保留中になる。 */
@@ -136,8 +135,8 @@ interface Out {
 interface WalkCtx {
   /** 要素の描画の範囲を表す owner である。要素の外では `null` である。 */
   readonly owner: Owner | null;
-  /** この位置を含む Shadow DOM のホストの ID を、外側から順に列挙する。 */
-  readonly path: readonly string[];
+  /** この位置を含む Shadow DOM のホストを、外側から順に列挙する。 */
+  readonly path: readonly HostRecord[];
   /** この位置を囲む境界を表す。 */
   readonly boundary: Boundary;
   /** 要素の Shadow DOM の中なら、`<slot>` の名前ごとに、その `<slot>` を囲む境界を記録する。 */
@@ -145,6 +144,26 @@ interface WalkCtx {
   /** 名前付きのスロットに配置する内容のうち、最上位のノードを描画しているときは、そのスロットの名前を表す。 */
   readonly slot?: string;
 }
+
+/** 要素のホストごとの状態を表す。 */
+class HostRecord {
+  /** `data-om` に列挙する、キーのある非同期の memo のキーである。 */
+  readonly memoKeys: string[] = [];
+  /** `data-om` に列挙する、子要素のホストの ID を送る `@c:キー` である。 */
+  readonly childKeys: string[] = [];
+  /** Shadow DOM の中で後送りにして、まだ送り終えていない境界の数である。 */
+  deferred = 0;
+  /** ホストをページに出力したら `true` に、出力しないことが決まったら `false` に解決する。 */
+  readonly shown = Promise.withResolvers<boolean>();
+
+  constructor(
+    readonly id: string,
+    readonly tag: string,
+  ) {}
+}
+
+/** ホストの列を、ホストの ID の列にする。 */
+const hostIds = (path: readonly HostRecord[]): string[] => path.map((host) => host.id);
 
 const isNodeList = (node: Node): node is readonly Node[] => Array.isArray(node);
 
@@ -232,15 +251,8 @@ class Renderer {
   private readonly disposers: (() => void)[] = [];
   /** シェルの後に後送りの境界を出力する処理のうち、終わっていないものを保持する。 */
   private readonly pending = new Set<Promise<void>>();
-  /** ホストの ID ごとに、Shadow DOM の中で後送りにして、まだ送り終えていない境界の数を保持する。 */
-  private readonly deferred = new Map<string, number>();
-  /** 要素の描画の範囲ごとに、範囲を作成したホストの ID と、子要素のホストの ID を送るキーの列を保持する。 */
-  private readonly scopeHosts = new WeakMap<
-    MemoScope,
-    { readonly id: string; readonly childKeys: string[] }
-  >();
-  /** ホストの ID ごとに、ホストをページに出力したら `true` に、出力しないことが決まったら `false` に解決する Promise を保持する。 */
-  private readonly shown = new Map<string, PromiseWithResolvers<boolean>>();
+  /** この描画で作成したすべてのホストを保持する。 */
+  private readonly hosts = new Set<HostRecord>();
   /** ホストに値を送る処理のうち、終わっていないものを保持する。 */
   private readonly values = new Set<Promise<void>>();
   /** 文字列にしたホストごとに、ページに出力したかどうかをホストの Promise に反映する処理を保持する。 */
@@ -269,7 +281,7 @@ class Renderer {
     return this.caught;
   }
 
-  private newBoundary(id: string, path: readonly string[]): Boundary {
+  private newBoundary(id: string, path: readonly HostRecord[]): Boundary {
     return { id, path, region: [], slotted: [], patches: [] };
   }
 
@@ -414,11 +426,12 @@ class Renderer {
     this.interactive = true;
     const { tag, options } = component[elementInfo];
     const id = `h${++this.seq}`;
-    const creator = child && this.scopeHosts.get(child.scope);
-    if (child && creator) {
+    const record = new HostRecord(id, tag);
+    this.hosts.add(record);
+    if (child?.data instanceof HostRecord && this.hosts.has(child.data)) {
       const mapKey = `@c:${child.key}`;
-      creator.childKeys.push(mapKey);
-      this.send(creator.id, mapKey, Promise.resolve(scriptJson(id)));
+      child.data.childKeys.push(mapKey);
+      this.send(child.data, mapKey, Promise.resolve(scriptJson(id)));
     }
     const slotNames = new Set(["children", ...(options.slots ?? [])]);
     const functionProps = new Set(options.functionProps);
@@ -478,20 +491,19 @@ class Renderer {
       onMount: () => {},
       expose: () => {},
     };
-    const memoKeys: string[] = [];
+    const { memoKeys, childKeys } = record;
     const scope = createScope(
       <T>(memoKey: string, fn: (prev: T | undefined) => T | PromiseLike<T>) =>
         createMemo<T>((prev) => {
           const result = fn(prev);
           if (isPromiseLike(result) && !memoKeys.includes(memoKey)) {
             memoKeys.push(memoKey);
-            this.sendMemo(id, `<${tag}> の memo ${memoKey}`, memoKey, result);
+            this.sendMemo(record, `<${tag}> の memo ${memoKey}`, memoKey, result);
           }
           return result;
         }),
+      record,
     );
-    const childKeys: string[] = [];
-    this.scopeHosts.set(scope, { id, childKeys });
     createRoot((dispose) => {
       this.disposers.push(dispose);
       owner = getOwner();
@@ -500,7 +512,7 @@ class Renderer {
 
     const chunks: Chunk[] = [];
     const slots = new Map<string, Boundary>();
-    this.walk(tree, { owner, path: [...ctx.path, id], boundary: ctx.boundary, slots }, chunks);
+    this.walk(tree, { owner, path: [...ctx.path, record], boundary: ctx.boundary, slots }, chunks);
     chunks.push("</template>");
     for (const name of Object.keys(descriptors)) {
       if (!slotNames.has(name)) continue;
@@ -533,7 +545,7 @@ class Renderer {
       const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
       return `<${tag}${attribute("data-oh", id)}${text}${om}><template shadowrootmode="open">`;
     };
-    out.push({ kind: "host", host: { id, tag, attributes, open, chunks } });
+    out.push({ kind: "host", host: { record, attributes, open, chunks } });
   }
 
   /**
@@ -576,14 +588,14 @@ class Renderer {
         return marker(id);
       }
       case "host": {
-        const { id, tag, attributes, open, chunks } = chunk.host;
+        const { record, attributes, open, chunks } = chunk.host;
         const inner = await this.serialize(chunks, out);
         const resolved = await attributes;
         if (resolved.transfer) {
-          this.send(id, "@p", Promise.resolve(toScript(resolved.transfer, `<${tag}>`)));
+          this.send(record, "@p", Promise.resolve(toScript(resolved.transfer, `<${record.tag}>`)));
         }
-        this.placed.push(out.shown.then((output) => this.host(id).resolve(output)));
-        return open(resolved, (this.deferred.get(id) ?? 0) > 0) + inner;
+        this.placed.push(out.shown.then((output) => record.shown.resolve(output)));
+        return open(resolved, record.deferred > 0) + inner;
       }
       case "errored": {
         const { chunks, node, ctx } = chunk.errored;
@@ -620,7 +632,7 @@ class Renderer {
       noindex: false,
     };
     boundary.flush = flush;
-    for (const host of boundary.path) this.deferred.set(host, (this.deferred.get(host) ?? 0) + 1);
+    for (const host of boundary.path) host.deferred++;
     this.track(
       (async () => {
         const content = await this.serialize(boundary.region, { flush, shown }).then(
@@ -661,8 +673,8 @@ class Renderer {
         }
         const spec = {
           b: boundary.id,
-          bp: boundary.path,
-          p: patches.map(([patch]) => [patch.id, patch.path]),
+          bp: hostIds(boundary.path),
+          p: patches.map(([patch]) => [patch.id, hostIds(patch.path)]),
         };
         let noindex = "";
         if (flush.noindex && !this.noindexSent) {
@@ -688,7 +700,12 @@ class Renderer {
    * `promise` が解決した値を、シェルを出力した後に `$rinka.d` でホストに送る。
    * 失敗した値とシリアライズできない値の代わりに、値が無いことを表す `$rinka.n` を送る。シリアライズできない値は記録する。
    */
-  private sendMemo(host: string, path: string, key: string, promise: PromiseLike<unknown>): void {
+  private sendMemo(
+    host: HostRecord,
+    path: string,
+    key: string,
+    promise: PromiseLike<unknown>,
+  ): void {
     this.send(
       host,
       key,
@@ -709,20 +726,12 @@ class Renderer {
     );
   }
 
-  /** ホストの ID が `id` のホストについて、ページに出力したかどうかを解決する `PromiseWithResolvers` を返す。 */
-  private host(id: string): PromiseWithResolvers<boolean> {
-    let shown = this.shown.get(id);
-    if (!shown) this.shown.set(id, (shown = Promise.withResolvers<boolean>()));
-    return shown;
-  }
-
   /** `expression` が解決した JS の式を、ホストをページに出力した後に、`$rinka.d` でホストの `key` の値として送る。ホストを出力しなければ送らない。 */
-  private send(host: string, key: string, expression: Promise<string>): void {
-    const shown = this.host(host).promise;
+  private send(host: HostRecord, key: string, expression: Promise<string>): void {
     const task = (async () => {
       const value = await expression;
-      if (!(await shown)) return;
-      this.write(`<script>$rinka.d(${scriptJson(host)},{${scriptJson(key)}:${value}})</script>`);
+      if (!(await host.shown.promise)) return;
+      this.write(`<script>$rinka.d(${scriptJson(host.id)},{${scriptJson(key)}:${value}})</script>`);
     })();
     this.values.add(task);
   }
@@ -736,9 +745,9 @@ class Renderer {
   /** 境界を送り終えたものとして数え、Shadow DOM の中の後送りの境界をすべて送り終えたホストに、`@b` の値を送る。 */
   private finishBoundary(boundary: Boundary): void {
     for (const host of boundary.path) {
-      const rest = (this.deferred.get(host) ?? 0) - 1;
-      this.deferred.set(host, rest);
-      if (rest === 0) this.write(`<script>$rinka.d(${scriptJson(host)},{"@b":1})</script>`);
+      host.deferred--;
+      if (host.deferred === 0)
+        this.write(`<script>$rinka.d(${scriptJson(host.id)},{"@b":1})</script>`);
     }
   }
 
@@ -773,7 +782,7 @@ class Renderer {
       this.shellShown.resolve(true);
       await this.drain();
       await Promise.all(this.placed);
-      for (const shown of this.shown.values()) shown.resolve(false);
+      for (const host of this.hosts) host.shown.resolve(false);
       await Promise.all(this.values);
       this.write("</body></html>");
     } finally {

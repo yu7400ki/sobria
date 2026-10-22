@@ -9,13 +9,21 @@ export type ScopedMemo = <T>(
 /** 要素のインスタンスの描画の範囲を表す。範囲の中で作成する、キーのある memo の作り方を決定する。 */
 export interface MemoScope {
   readonly memo: ScopedMemo;
+  /** 範囲を作成した側が、範囲の中で作成した子要素に渡す値である。 */
+  readonly data: unknown;
+  /** 呼び出し箇所ごとに、memo と子要素を作成した数を保持する。 */
+  readonly counts: Map<string, number>;
+  /** 使用した明示的なキーを保持する。 */
+  readonly explicitKeys: Set<string>;
 }
 
-/** 描画の範囲ごとに、呼び出し箇所ごとに作成した memo の数を保持する。 */
-const counts = new WeakMap<MemoScope, Map<string, number>>();
-
-/** キーのある memo を `memo` で作成する、描画の範囲を返す。 */
-export const createScope = (memo: ScopedMemo): MemoScope => ({ memo });
+/** キーのある memo を `memo` で作成し、子要素に `data` を渡す、描画の範囲を返す。 */
+export const createScope = (memo: ScopedMemo, data?: unknown): MemoScope => ({
+  memo,
+  data,
+  counts: new Map(),
+  explicitKeys: new Set(),
+});
 
 let current: MemoScope | undefined;
 let seeding = false;
@@ -50,9 +58,6 @@ export interface MemoOptions {
   readonly site?: string;
 }
 
-/** 描画の範囲ごとに、使用した明示的なキーを保持する。 */
-const explicitKeys = new WeakMap<MemoScope, Set<string>>();
-
 /** 明示的なキーの形式と、同じ範囲で重複していないことを確認する。規則に合わなければ、エラーを投げる。 */
 function checkKey(scope: MemoScope, key: string): void {
   if (key === "" || /\s/.test(key) || key.startsWith("@")) {
@@ -60,14 +65,12 @@ function checkKey(scope: MemoScope, key: string): void {
       `memo の明示的なキー ${JSON.stringify(key)} は使用できません。空白を含まず、@ で始まらない、空でない文字列を指定してください。`,
     );
   }
-  let keys = explicitKeys.get(scope);
-  if (!keys) explicitKeys.set(scope, (keys = new Set<string>()));
-  if (keys.has(key)) {
+  if (scope.explicitKeys.has(key)) {
     throw new Error(
       `memo の明示的なキー ${JSON.stringify(key)} は、同じ要素の中で既に使用しています。`,
     );
   }
-  keys.add(key);
+  scope.explicitKeys.add(key);
 }
 
 /**
@@ -89,23 +92,21 @@ export function scopedMemo<T>(
 
 /** `scope` の中で呼び出し箇所 `site` が何回目かを数え、呼び出し箇所と回数のキーを返す。 */
 function countedKey(scope: MemoScope, site: string): string {
-  let sites = counts.get(scope);
-  if (!sites) counts.set(scope, (sites = new Map<string, number>()));
-  const count = sites.get(site) ?? 0;
-  sites.set(site, count + 1);
+  const count = scope.counts.get(site) ?? 0;
+  scope.counts.set(site, count + 1);
   return `${site}#${count}`;
 }
 
-/** 描画の範囲の中で作成した子要素を表す。`scope` は子要素を作成した範囲、`key` は呼び出し箇所と回数のキーである。 */
+/** 描画の範囲の中で作成した子要素を表す。`data` は子要素を作成した範囲の `data`、`key` は呼び出し箇所と回数のキーである。 */
 export interface ScopedChild {
-  readonly scope: MemoScope;
+  readonly data: unknown;
   readonly key: string;
 }
 
-/** 描画の範囲の中で、呼び出し箇所が `site` の子要素を作成するなら、範囲とキーを返す。範囲の外か、呼び出し箇所が無ければ `undefined` を返す。 */
+/** 描画の範囲の中で、呼び出し箇所が `site` の子要素を作成するなら、範囲の `data` とキーを返す。範囲の外か、呼び出し箇所が無ければ `undefined` を返す。 */
 export function scopedChild(site: string | undefined): ScopedChild | undefined {
   if (!current || site === undefined) return undefined;
-  return { scope: current, key: countedKey(current, site) };
+  return { data: current.data, key: countedKey(current, site) };
 }
 
 /**

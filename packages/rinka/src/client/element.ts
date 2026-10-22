@@ -24,7 +24,7 @@ import { checkExposeName } from "../shared/expose-names.ts";
 import { customEventName, isEventProp, propToAttribute } from "../shared/names.ts";
 import type { ClientNode } from "../shared/nodes.ts";
 import { isFunction, isPlainObject } from "../shared/objects.ts";
-import { createScope, scopedChild, withScope, type MemoScope } from "../shared/scope.ts";
+import { createScope, scopedChild, withScope } from "../shared/scope.ts";
 import { applyAttribute, asClientNode, bind, callRef, insert, setter } from "./dom.ts";
 import {
   activateInSlot,
@@ -86,9 +86,6 @@ interface Instance {
   /** 親が作り直した子要素なら、値を引き継ぐ SSR したホストの ID。 */
   transfer?: string;
 }
-
-/** 描画の範囲ごとに、その要素が引き継いだ値を保持する。子要素は、`@c:キー` の値から、値を引き継ぐホストの ID を探す。 */
-const scopeValues = new WeakMap<MemoScope, ReadonlyMap<string, unknown>>();
 
 const instances = new WeakMap<HTMLElement, Instance>();
 
@@ -197,8 +194,8 @@ export function defineElement<P, M extends object = object>(
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion
         return seededMemo(values.get(key) as T, compute);
       },
+      values,
     );
-    scopeValues.set(scope, values);
     let target: ParentNode = shadow;
     if (id === null) {
       shadow.replaceChildren();
@@ -418,7 +415,8 @@ export function createElementInstance(
   const host = document.createElement(component[elementInfo].tag);
   const instance = instances.get(host)!;
   const child = scopedChild(site);
-  const transfer = child && scopeValues.get(child.scope)?.get(`@c:${child.key}`);
+  const transfer: unknown =
+    child?.data instanceof Map ? child.data.get(`@c:${child.key}`) : undefined;
   if (typeof transfer === "string") instance.transfer = transfer;
   const owner = getOwner();
   const derive = (read: () => unknown): Source => ({ read: owner ? createMemo(read) : read });
