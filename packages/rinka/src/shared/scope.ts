@@ -14,7 +14,7 @@ export interface MemoScope {
 /** 描画の範囲ごとに、呼び出し箇所ごとに作成した memo の数を保持する。 */
 const counts = new WeakMap<MemoScope, Map<string, number>>();
 
-/** `memo` でキーのある memo を作成する、描画の範囲を作成する。 */
+/** キーのある memo を `memo` で作成する、描画の範囲を返す。 */
 export const createScope = (memo: ScopedMemo): MemoScope => ({ memo });
 
 let current: MemoScope | undefined;
@@ -42,7 +42,7 @@ export interface MemoOptions {
 /** 描画の範囲ごとに、使用した明示的なキーを保持する。 */
 const explicitKeys = new WeakMap<MemoScope, Set<string>>();
 
-/** 明示的なキーが、空でなく、空白を含まず、`@` で始まらず、同じ範囲で使用していないことを確認する。 */
+/** 明示的なキーの形式と、同じ範囲で重複していないことを確認する。規則に合わなければ、エラーを投げる。 */
 function checkKey(scope: MemoScope, key: string): void {
   if (key === "" || /\s/.test(key) || key.startsWith("@")) {
     throw new Error(

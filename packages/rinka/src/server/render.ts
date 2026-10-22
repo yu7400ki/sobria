@@ -28,7 +28,7 @@ import { toScript } from "./wire.ts";
 /**
  * 出力の単位を表す。文字列、穴、投げられた値、`<Loading>` の位置、`<Errored>` の領域、スロットの内容、要素のホストのいずれかである。
  * 穴は、描画した時点では内容が決まらず、値が解決してから内容が決まる位置である。
- * 後送りの境界は、シェルにはフォールバックを目印で囲んで出力し、中身はシェルの後に出力して、起動スクリプトが目印の間と差し替える。
+ * 後送りの境界は、シェルにはフォールバックを目印で囲んで出力し、中身はシェルの後に出力して、起動スクリプトが目印の間の内容を差し替える。
  */
 type Chunk = string | Hole | Fail | Mark | ErroredRegion | Slotted | Host;
 
@@ -37,7 +37,7 @@ interface Hole {
   readonly hole: Promise<Chunk[]>;
 }
 
-/** 描画の途中で同期的に投げられた値を表す。文字列にする時点で、`fail` を投げる。 */
+/** 描画の途中で同期的に投げられた値を表す。文字列にする時点で、保持している値を投げる。 */
 interface Fail {
   readonly fail: unknown;
 }
@@ -116,7 +116,7 @@ interface Boundary {
   late: boolean;
   /** 境界の中で `notFound()` を受け止めたことを表す。 */
   noindex: boolean;
-  /** 開始タグを出力した後のホストに、待たせる境界のキーを追加する組を表す。 */
+  /** 開始タグを出力したホストに境界を待たせるための、ホストの ID と境界のキーの組を表す。 */
   readonly waits: [host: string, key: string][];
 }
 
@@ -158,7 +158,7 @@ const escapeText = (text: string): string =>
 const escapeAttribute = (text: string): string =>
   text.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
 
-/** HTML の属性の名前に一致する正規表現である。 */
+/** HTML の属性の名前として使用できる文字列に一致する正規表現である。 */
 const attributeName = /^[^\s"'>/=\p{Cc}]+$/u;
 
 /**
@@ -194,7 +194,7 @@ const serverHost = new Proxy(
 );
 
 /**
- * 出力の単位の列に、穴があるかどうかを返す。`<Errored>` の領域と要素のホストの中を含め、`<Loading>` の中とスロットの内容の中を除く。
+ * 出力の単位の列に、穴があるかどうかを返す。`<Errored>` の領域と要素のホストの中は調べ、`<Loading>` の中とスロットの内容の中は調べない。属性が未解決のホストは、穴として扱う。
  */
 function hasHole(chunks: readonly Chunk[]): boolean {
   return chunks.some((chunk) => {
@@ -218,7 +218,7 @@ class Renderer {
   private readonly scheduled: Boundary[] = [];
   /** 開始タグを出力したホストの ID を保持する。 */
   private readonly opened = new Set<string>();
-  /** 要素の描画の範囲ごとに、ホストの ID と、子要素のホストの ID を送ったキーを保持する。 */
+  /** 要素の描画の範囲ごとに、範囲を作成したホストの ID と、子要素のホストの ID を送るキーの列を保持する。 */
   private readonly scopeHosts = new WeakMap<
     MemoScope,
     { readonly id: string; readonly keys: string[] }
@@ -227,7 +227,7 @@ class Renderer {
   private readonly shown = new Map<string, PromiseWithResolvers<boolean>>();
   /** ホストに値を送る処理のうち、終わっていないものを保持する。 */
   private readonly values = new Set<Promise<void>>();
-  /** 要素を描画したか、`<Loading>` の中身を後送りにしたときに真になる。真のページにだけ、起動スクリプトを出力する。 */
+  /** 要素を描画したか、`<Loading>` の中身を後送りにしたときに真になる。真になったページにだけ、起動スクリプトを出力する。 */
   private interactive = false;
   /** `noindex` の `<meta>` を出力したことを表す。 */
   private noindexSent = false;
@@ -328,7 +328,7 @@ class Renderer {
     }
   }
 
-  /** `promise` の穴を作成する。描画を中断して穴を捨てても、`promise` の reject は処理されないままにならない。 */
+  /** `promise` の穴を作成する。描画を中断して穴を捨てたときも、`promise` の reject を処理する。 */
   private hole(promise: Promise<Chunk[]>): Hole {
     promise.catch(() => {});
     return { hole: promise };
@@ -606,6 +606,7 @@ class Renderer {
 
   /**
    * 境界の中身と差し替えを、親の境界を出力した後に出力する。
+   * 中身の出力に失敗したときは、規則に合う移動先への移動なら移動させ、それ以外ならエラーを記録する。
    * 中身の出力に失敗したとき、親の境界を出力しないとき、目印を囲む `<Errored>` がフォールバックに切り替わったときは、中身と差し替えを出力せずに、
    * 境界を待つホストに境界の完了を通知する。
    */
@@ -684,7 +685,7 @@ class Renderer {
 
   /**
    * `promise` が解決した値を、シェルを出力した後に `$rinka.d` でホストに送る。
-   * 失敗した値とシリアライズできない値は送らずに、値が無いことを表す `$rinka.n` を送る。シリアライズできない値は記録する。
+   * 失敗した値とシリアライズできない値の代わりに、値が無いことを表す `$rinka.n` を送る。シリアライズできない値は記録する。
    */
   private sendMemo(host: string, path: string, key: string, promise: PromiseLike<unknown>): void {
     this.send(
@@ -707,7 +708,7 @@ class Renderer {
     );
   }
 
-  /** ホストの ID が `id` のホストを、ページに出力したかどうかを解決する Promise を返す。 */
+  /** ホストの ID が `id` のホストについて、ページに出力したかどうかを解決する `PromiseWithResolvers` を返す。 */
   private host(id: string): PromiseWithResolvers<boolean> {
     let shown = this.shown.get(id);
     if (!shown) this.shown.set(id, (shown = Promise.withResolvers<boolean>()));
@@ -806,7 +807,7 @@ function redirectLocation(error: unknown): string | undefined {
   return location !== undefined && isSafeLocation(location) ? location : undefined;
 }
 
-/** `<Errored>` が受け止めずに通過させる値かどうかを返す。`late` は、シェルの後に出力する位置かどうかである。 */
+/** `<Errored>` が受け止めずに通過させる値かどうかを返す。`late` は、シェルの後に出力する位置かどうかである。シェルの後では、規則に合う移動先への `Redirect` と 3xx の Response だけを通過させる。 */
 function passesErrored(error: unknown, late: boolean): boolean {
   if (late) return redirectLocation(error) !== undefined;
   return error instanceof Redirect || error instanceof NotFound || error instanceof Response;
@@ -814,7 +815,7 @@ function passesErrored(error: unknown, late: boolean): boolean {
 
 /** 描画のオプションを表す。 */
 export interface RenderOptions {
-  /** すべての `<Loading>` の解決を待ち、フォールバックと差し替えのスクリプトを含まない HTML を送る。 */
+  /** すべての `<Loading>` の中身を待ち、中身を埋め込んだ HTML を送る。 */
   readonly blocking?: boolean;
 }
 
@@ -865,7 +866,7 @@ export interface ResponseOptions extends RenderOptions {
  * シェルの中で投げた `redirect()` はリダイレクトのレスポンスにし、Response はそのまま返す。
  * `notFound()` は `notFound` のページを 404 で返し、ページが無ければ本文の無い 404 を返す。
  * どの `<Errored>` も受け止めなかったエラーは、`error` のページを 500 で返し、ページが無ければ reject する。
- * `notFound` のページの描画で投げたエラーには `error` のページを使用し、`error` のページの描画で投げた値は、ページを使用せずに扱う。
+ * `notFound` のページの描画で投げたエラーには `error` のページを使用する。`error` のページの描画で投げた値は、ページを使用せずに、`redirect()` と `notFound()` と Response を同じ規則で扱い、それ以外では reject する。
  */
 export function renderToResponse(node: unknown, options: ResponseOptions = {}): Promise<Response> {
   return respond(node, options, 200);

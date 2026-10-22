@@ -39,7 +39,7 @@ export interface Memo<T> {
 /** `read` が読み取った値が変化するたびに、`read` の戻り値を `apply` に渡して呼ぶ関数を表す。 */
 export type Effect = <T>(read: () => T, apply: (value: T) => void | (() => void)) => void;
 
-/** 読み取りの関数と書き込みの関数の組を作成する。書き込んだ値は、flush されるまで読み取りに反映されない。 */
+/** 読み取りの関数と書き込みの関数の組を作成する。書き込んだ値は、次の flush の時点で読み取りに反映される。 */
 export const signal: {
   <T>(): Signal<T | undefined>;
   <T>(value: Exclude<T, Function>, options?: SignalOptions<T>): Signal<T>;
@@ -47,7 +47,7 @@ export const signal: {
 
 /**
  * ほかの signal や memo から計算する値を作成する。関数は Promise を返してもよい。
- * `options` は、要素の描画の範囲の中で memo を識別する。
+ * 要素の描画の範囲の中では、`options` の `key` か `site` で memo を識別する。
  */
 export function memo<T>(
   fn: (prev: T | undefined) => T | PromiseLike<T>,

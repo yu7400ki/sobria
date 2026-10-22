@@ -38,7 +38,7 @@ export function isSafeLocation(location: string): boolean {
 }
 
 /**
- * `location` に移動させる値を返す。返した値をシェルの中で投げると、`status` のリダイレクトのレスポンスになる。
+ * `location` への移動を表す値を返す。返した値をシェルの中で投げると、`status` のリダイレクトのレスポンスになり、シェルの後で投げると、ブラウザで移動させる。
  * `location` には、相対 URL か、http か https の URL を指定する。それ以外のスキームを指定すると、エラーを投げる。
  */
 export function redirect(location: string, status: RedirectStatus = 303): Redirect {
@@ -50,5 +50,5 @@ export function redirect(location: string, status: RedirectStatus = 303): Redire
   return new Redirect(location, status);
 }
 
-/** ページが見つからないことを表す値を返す。返した値をシェルの中で投げると、404 のレスポンスになる。 */
+/** ページが見つからないことを表す値を返す。返した値をシェルの中で投げると、404 のレスポンスになる。シェルの後では、`<Errored>` が受け止める。 */
 export const notFound = (): NotFound => new NotFound();

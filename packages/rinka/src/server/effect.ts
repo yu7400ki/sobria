@@ -1,4 +1,4 @@
 import type { Effect } from "../shared/signals.ts";
 
-/** `read` と `apply` を呼ばずに戻る。 */
+/** 何も実行せずに戻る。 */
 export const effect: Effect = () => {};
