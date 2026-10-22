@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { runtimes } from "../../src/build/plugin.ts";
+import { entries, runtimes } from "../../src/build/entries.ts";
 import * as client from "../../src/client/index.ts";
 import * as server from "../../src/server/index.ts";
 
@@ -38,8 +38,11 @@ describe("入口", () => {
   });
 
   it("内部の入口は、コンパイラと開発サーバーが使用する関数を export する", async () => {
-    expect(Object.keys(await lib(runtimes.client["rinka/internal"]!))).toContain("stopIfSeeding");
-    expect(Object.keys(await lib(runtimes.server["rinka/internal"]!))).toContain("createApp");
+    const clientInternal = await lib(runtimes.client[entries.internal]!);
+    const serverInternal = await lib(runtimes.server[entries.internal]!);
+    expect(typeof clientInternal.stopIfSeeding).toBe("function");
+    expect(typeof clientInternal.defineElement).toBe("function");
+    expect(typeof serverInternal.createApp).toBe("function");
   });
 
   it("サーバーの effect は、read と apply を呼ばない", () => {

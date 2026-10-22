@@ -89,7 +89,10 @@ export function surround(output: MagicString, node: Span, open: string, close: s
   output.appendLeft(node.end, close);
 }
 
-/** `node` の最初の文字（オブジェクトやブロックの `{`）の直後に `text` を挿入する。`text` は、`node` の内側の先頭に挿入した文字列より前に並ぶ。 */
+/**
+ * `node` の最初の文字（オブジェクトやブロックの `{`）の直後に `text` を挿入する。
+ * `text` は、`node` の内側の最初の子を `surround` で囲む文字列より前に並ぶ。同じ `node` に 2 回呼び出すと、後の `text` は前の `text` の後ろに並ぶ。
+ */
 export function insertInside(output: MagicString, node: Span, text: string): void {
   output.appendLeft(node.start + 1, text);
 }

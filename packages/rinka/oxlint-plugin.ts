@@ -18,7 +18,7 @@ interface CallNode {
   readonly callee: {
     readonly type: string;
     readonly computed?: boolean;
-    readonly property?: { readonly type: string; readonly name?: string };
+    readonly property?: { readonly type: string; readonly name?: string; readonly value?: unknown };
   };
 }
 
@@ -32,6 +32,10 @@ const directionalInserts = new Set(["prependLeft", "prependRight", "appendLeft",
 /** 文字列のリテラルかテンプレートリテラルの、最初の文字列の部分を返す。 */
 const leadingText = (node: StringNode): string | undefined =>
   typeof node.value === "string" ? node.value : (node.quasis?.[0]?.value.cooked ?? undefined);
+
+/** 呼び出すメソッドの名前を返す。`s["name"]` の形の名前も返す。 */
+const methodName = ({ callee }: CallNode): unknown =>
+  callee.computed ? callee.property?.value : callee.property?.name;
 
 /** 読み込む先を表すリテラルの、親のノードの種類である。 */
 const moduleSources = new Set([
@@ -79,17 +83,11 @@ export default {
       create(context: Context) {
         const message =
           "値の受け渡しのキーは、src/shared/transfer-keys.ts の定数と関数で記述してください。";
-        return {
-          Literal(node: StringNode) {
-            if (typeof node.value !== "string" || !node.value.startsWith("@")) return;
-            if (isModuleSource(node)) return;
-            context.report({ node, message });
-          },
-          TemplateLiteral(node: StringNode) {
-            if (!node.quasis?.[0]?.value.cooked?.startsWith("@") || isModuleSource(node)) return;
-            context.report({ node, message });
-          },
+        const check = (node: StringNode) => {
+          if (!leadingText(node)?.startsWith("@") || isModuleSource(node)) return;
+          context.report({ node, message });
         };
+        return { Literal: check, TemplateLiteral: check };
       },
     },
     /** MagicString の、挿入する位置の左右を選ぶメソッドの呼び出しを報告する。 */
@@ -97,9 +95,9 @@ export default {
       create(context: Context) {
         return {
           CallExpression(node: CallNode) {
-            const { callee } = node;
-            if (callee.type !== "MemberExpression" || callee.computed) return;
-            if (!directionalInserts.has(callee.property?.name ?? "")) return;
+            if (node.callee.type !== "MemberExpression") return;
+            const name = methodName(node);
+            if (typeof name !== "string" || !directionalInserts.has(name)) return;
             context.report({
               node,
               message:
@@ -109,11 +107,12 @@ export default {
         };
       },
     },
-    /** `rinka/` で始まる文字列のリテラルとテンプレートリテラルを報告する。読み込む先のリテラルは報告しない。 */
+    /** `rinka/` か、仮想モジュールの印の `\0` と `rinka/` で始まる文字列のリテラルとテンプレートリテラルを報告する。読み込む先のリテラルは報告しない。 */
     "no-entry-literal": {
       create(context: Context) {
         const check = (node: StringNode) => {
-          if (!leadingText(node)?.startsWith("rinka/") || isModuleSource(node)) return;
+          const text = leadingText(node)?.replace(/^\0/, "");
+          if (!text?.startsWith("rinka/") || isModuleSource(node)) return;
           context.report({
             node,
             message: "rinka の入口の指定子は、src/build/entries.ts の entries で記述してください。",

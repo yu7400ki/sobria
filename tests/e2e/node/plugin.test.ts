@@ -7,6 +7,7 @@ import { rinka } from "rinka/vite";
 import {
   type HotPayload,
   type InlineConfig,
+  type Plugin,
   type RunnableDevEnvironment,
   type ViteDevServer,
   mergeConfig,
@@ -58,6 +59,7 @@ describe("Vite プラグイン", () => {
   });
 
   it("rinka のプラグインを 2 回登録すると、エラーで停止する", async () => {
+    // createDevServer が 1 つ目の rinka のプラグインを登録する
     await expect(
       createDevServer(root, { server: { middlewareMode: true }, plugins: [rinka()] }),
     ).rejects.toThrow(/2 つ以上/);
@@ -144,6 +146,35 @@ describe("変換の対象", () => {
   });
 });
 
+/** HMR のソケットで開発サーバーに接続する。`next` は、まだ読んでいない次のメッセージの種類を返す。カスタムイベントは、イベントの名前を返す。 */
+async function connect(url: URL): Promise<{
+  readonly socket: WebSocket;
+  readonly next: () => Promise<string>;
+}> {
+  const socket = new WebSocket(url, "vite-hmr");
+  const received: string[] = [];
+  const waiting: ((type: string) => void)[] = [];
+  let read = 0;
+  const connected = new Promise<void>((resolve) => {
+    socket.addEventListener("message", (message) => {
+      const payload = JSON.parse(String(message.data)) as HotPayload;
+      if (payload.type === "connected") return resolve();
+      const type = payload.type === "custom" ? payload.event : payload.type;
+      received.push(type);
+      waiting.shift()?.(type);
+    });
+  });
+  await connected;
+  const next = () =>
+    read < received.length
+      ? Promise.resolve(received[read++]!)
+      : new Promise<string>((resolve) => {
+          read++;
+          waiting.push(resolve);
+        });
+  return { socket, next };
+}
+
 /** 要素のファイルを書き換えて変更を通知し、client の環境が最初に送ったメッセージの種類を返す。 */
 async function update(dev: ViteDevServer, source: string): Promise<string> {
   const client = dev.environments.client;
@@ -164,24 +195,28 @@ async function update(dev: ViteDevServer, source: string): Promise<string> {
 describe("開発中の HMR", () => {
   const options = { server: { hmr: true, ws: false as const } };
 
-  it("クライアントがページの再読み込みを求めるイベントを送ると、そのクライアントに full-reload を送る", async () => {
-    const dev = await createDevServer(root, { server: { port: 0, hmr: true } });
+  it("クライアントがページの再読み込みを求めるイベントを送ると、そのクライアントにだけ full-reload を送る", async () => {
+    // test:echo を送ったクライアントに、同じ名前のカスタムイベントを返す
+    const echo: Plugin = {
+      name: "echo",
+      configureServer(dev) {
+        dev.environments.client.hot.on("test:echo", (_data, client) => {
+          client.send("test:echo", {});
+        });
+      },
+    };
+    const dev = await createDevServer(root, { server: { port: 0, hmr: true }, plugins: [echo] });
     try {
       await dev.listen();
       const url = new URL(originOf(dev).replace("http", "ws"));
-      const socket = new WebSocket(url, "vite-hmr");
-      const received = new Promise<string>((resolve) => {
-        socket.addEventListener("message", (message) => {
-          const payload = JSON.parse(String(message.data)) as HotPayload;
-          if (payload.type === "connected") {
-            socket.send(JSON.stringify({ type: "custom", event: "rinka:reload" }));
-          } else {
-            resolve(payload.type);
-          }
-        });
-      });
-      expect(await received).toBe("full-reload");
-      socket.close();
+      const [first, second] = await Promise.all([connect(url), connect(url)]);
+      first.socket.send(JSON.stringify({ type: "custom", event: "rinka:reload" }));
+      expect(await first.next()).toBe("full-reload");
+      // full-reload が全体に送られていれば、後のクライアントには test:echo より先に full-reload が届く
+      second.socket.send(JSON.stringify({ type: "custom", event: "test:echo" }));
+      expect(await second.next()).toBe("test:echo");
+      first.socket.close();
+      second.socket.close();
     } finally {
       await dev.close();
     }

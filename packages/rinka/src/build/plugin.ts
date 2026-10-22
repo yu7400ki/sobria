@@ -11,7 +11,7 @@ import { tagFromPath } from "../shared/names.ts";
 import type { CreateApp, Route } from "../shared/routes.ts";
 import type { Lang } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
-import { entries, oxc } from "./entries.ts";
+import { entries, oxc, runtimes } from "./entries.ts";
 import { transformJsx } from "./jsx.ts";
 
 /** rinka のプラグインの設定を表す。 */
@@ -21,20 +21,6 @@ export interface RinkaOptions {
   /** 要素を置くディレクトリである。プロジェクトのルートからの相対パスで記述し、デフォルトは `src/elements` である。 */
   readonly elementsDir?: string;
 }
-
-/** 環境ごとの実行時のコードの入口を、`lib/` からの相対パスで表す。 */
-export const runtimes: Readonly<Record<"client" | "server", Readonly<Record<string, string>>>> = {
-  client: {
-    [entries.main]: "client/index.js",
-    [entries.jsxRuntime]: "client/jsx-runtime.js",
-    [entries.internal]: "client/internal.js",
-  },
-  server: {
-    [entries.main]: "server/index.js",
-    [entries.jsxRuntime]: "server/jsx-runtime.js",
-    [entries.internal]: "server/internal.js",
-  },
-};
 
 /** 拡張子ごとの、変換する言語である。 */
 const langs: Readonly<Record<string, Lang>> = {
