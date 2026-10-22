@@ -1,23 +1,30 @@
-/** イベントハンドラーの props の名前を、`HTMLElementEventMap` のイベントの名前に対応させる。 */
-interface EventNames {
+/** イベントハンドラーの props の名前を、`HTMLElementEventMap` のイベントの名前に対応させる。props の名前の `on` の後ろを小文字にした名前が、イベントの名前になる。 */
+export interface EventNames {
   onAbort: "abort";
   onAnimationCancel: "animationcancel";
   onAnimationEnd: "animationend";
   onAnimationIteration: "animationiteration";
   onAnimationStart: "animationstart";
+  onAuxClick: "auxclick";
   onBeforeInput: "beforeinput";
+  onBeforeMatch: "beforematch";
   onBeforeToggle: "beforetoggle";
   onBlur: "blur";
   onCancel: "cancel";
   onCanPlay: "canplay";
+  onCanPlayThrough: "canplaythrough";
   onChange: "change";
   onClick: "click";
   onClose: "close";
+  onCommand: "command";
   onCompositionEnd: "compositionend";
   onCompositionStart: "compositionstart";
   onCompositionUpdate: "compositionupdate";
+  onContextLost: "contextlost";
   onContextMenu: "contextmenu";
+  onContextRestored: "contextrestored";
   onCopy: "copy";
+  onCueChange: "cuechange";
   onCut: "cut";
   onDblClick: "dblclick";
   onDrag: "drag";
@@ -27,19 +34,26 @@ interface EventNames {
   onDragOver: "dragover";
   onDragStart: "dragstart";
   onDrop: "drop";
+  onDurationChange: "durationchange";
+  onEmptied: "emptied";
   onEnded: "ended";
   onError: "error";
   onFocus: "focus";
   onFocusIn: "focusin";
   onFocusOut: "focusout";
+  onFormData: "formdata";
+  onFullscreenChange: "fullscreenchange";
+  onFullscreenError: "fullscreenerror";
   onGotPointerCapture: "gotpointercapture";
   onInput: "input";
   onInvalid: "invalid";
   onKeyDown: "keydown";
+  onKeyPress: "keypress";
   onKeyUp: "keyup";
   onLoad: "load";
   onLoadedData: "loadeddata";
   onLoadedMetadata: "loadedmetadata";
+  onLoadStart: "loadstart";
   onLostPointerCapture: "lostpointercapture";
   onMouseDown: "mousedown";
   onMouseEnter: "mouseenter";
@@ -59,14 +73,24 @@ interface EventNames {
   onPointerMove: "pointermove";
   onPointerOut: "pointerout";
   onPointerOver: "pointerover";
+  onPointerRawUpdate: "pointerrawupdate";
   onPointerUp: "pointerup";
+  onProgress: "progress";
+  onRateChange: "ratechange";
   onReset: "reset";
+  onResize: "resize";
   onScroll: "scroll";
   onScrollEnd: "scrollend";
+  onSecurityPolicyViolation: "securitypolicyviolation";
   onSeeked: "seeked";
   onSeeking: "seeking";
   onSelect: "select";
+  onSelectionChange: "selectionchange";
+  onSelectStart: "selectstart";
+  onSlotChange: "slotchange";
+  onStalled: "stalled";
   onSubmit: "submit";
+  onSuspend: "suspend";
   onTimeUpdate: "timeupdate";
   onToggle: "toggle";
   onTouchCancel: "touchcancel";
@@ -78,21 +102,13 @@ interface EventNames {
   onTransitionRun: "transitionrun";
   onTransitionStart: "transitionstart";
   onVolumeChange: "volumechange";
+  onWaiting: "waiting";
+  onWebkitAnimationEnd: "webkitanimationend";
+  onWebkitAnimationIteration: "webkitanimationiteration";
+  onWebkitAnimationStart: "webkitanimationstart";
+  onWebkitTransitionEnd: "webkittransitionend";
   onWheel: "wheel";
 }
-
-/** props の名前の `on` の後ろを小文字にした名前が、対応させたイベントの名前と一致することを確認する。 */
-type Checked = {
-  [K in keyof EventNames]: K extends `on${infer Rest}`
-    ? Lowercase<Rest> extends EventNames[K]
-      ? EventNames[K] extends keyof HTMLElementEventMap
-        ? true
-        : K
-      : K
-    : K;
-}[keyof EventNames];
-const checked: Checked = true;
-void checked;
 
 /** 要素 `E` のネイティブのタグが受け付けるイベントハンドラーを表す。`currentTarget` は `E` である。 */
 export type EventHandlers<E extends Element> = {

@@ -1,7 +1,9 @@
-import { isElementComponent } from "../shared/element.ts";
+import { isElementComponent, type ElementInfo, elementInfo } from "../shared/element.ts";
 import type {
   ChildrenAttribute,
-  HtmlTag,
+  ElementOnlyExtras,
+  ElementOnlyLoose,
+  ElementOnlyRef,
   IntrinsicElementsOf,
   KeyAttribute,
   ManagedAttributes,
@@ -30,20 +32,17 @@ export function Fragment(props: { children?: unknown }): ServerNode {
   return asServerNode(asNode(props.children));
 }
 
-/** サーバーの JSX のネイティブのタグが、属性に加えて受け付ける props を表す。 */
-type ServerExtras = Record<
-  HtmlTag,
-  { ref?: "ref は、サーバーのファイルでは使用できません。要素のファイルで使用してください。" }
->;
-
-/** サーバーの JSX で、要素が Props とホストの属性に加えて受け付ける props を表す。 */
-interface ServerHost {
-  ref?: "ref は、サーバーのファイルでは使用できません。要素のファイルで使用してください。";
+/** サーバーの JSX で、要素が Props とホストの属性に加えて受け付ける、起動のタイミングの props を表す。 */
+interface LoadAttributes {
   "load:load"?: true;
   "load:idle"?: true;
   "load:visible"?: true;
   "load:media"?: string;
 }
+
+/** サーバーの JSX で、要素と補助コンポーネントが Props とホストの属性に加えて受け付ける props を表す。 */
+type ServerHost<C> = ElementOnlyRef &
+  (C extends { readonly [elementInfo]: ElementInfo } ? LoadAttributes : unknown);
 
 /** サーバーのファイルの JSX の型を表す。 */
 export declare namespace JSX {
@@ -53,6 +52,10 @@ export declare namespace JSX {
     | ((props: never, ctx: never) => ServerNode | ClientNode | Promise<ServerNode>);
   interface ElementChildrenAttribute extends ChildrenAttribute {}
   interface IntrinsicAttributes extends KeyAttribute {}
-  interface IntrinsicElements extends IntrinsicElementsOf<ServerChild, ServerExtras> {}
-  type LibraryManagedAttributes<C, P> = ManagedAttributes<C, P, ServerHost>;
+  interface IntrinsicElements extends IntrinsicElementsOf<
+    ServerChild,
+    ElementOnlyExtras,
+    ElementOnlyLoose
+  > {}
+  type LibraryManagedAttributes<C, P> = ManagedAttributes<C, P, ServerHost<C>>;
 }

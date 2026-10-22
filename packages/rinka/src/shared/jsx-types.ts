@@ -9,16 +9,33 @@ import type { ClientNode, ServerNode, Slot, SlotContent } from "./nodes.ts";
 /** HTML のタグの名前を表す。 */
 export type HtmlTag = keyof HTMLElementTagNameMap;
 
+/** HTML と SVG のタグの名前を表す。 */
+export type NativeTag = HtmlTag | SvgTag;
+
 /**
  * ネイティブのタグの JSX の型を作成する。HTML のタグは、属性と、子の型 `C` の `children` と、タグごとの `X[K]` を受け付ける。
- * SVG のタグと、名前に `-` を含むタグは、属性の名前を検査しない。
+ * SVG のタグは `X[K]` を、名前に `-` を含むタグは `U` を受け付け、ほかの属性の名前を検査しない。
  */
-export type IntrinsicElementsOf<C, X extends Record<HtmlTag, object>> = {
+export type IntrinsicElementsOf<C, X extends Record<NativeTag, object>, U extends object> = {
   [K in HtmlTag]: NativeAttributes<K> & X[K] & { children?: C };
-} & { [K in SvgTag]: LooseAttributes } & { [tag: `${string}-${string}`]: LooseAttributes };
+} & { [K in SvgTag]: LooseAttributes & X[K] } & {
+  [tag: `${string}-${string}`]: LooseAttributes & U;
+};
 
-/** タグごとに追加する props が無いことを表す。 */
-export type NoExtras = Record<HtmlTag, object>;
+/** `ref` の型を、要素のファイルでだけ記述できることを示すメッセージの型にする。 */
+export interface ElementOnlyRef {
+  ref?: "ref は、要素のファイルでだけ使用できます。";
+}
+
+/** 属性の名前を検査しないタグで、`ref` と、`on` と大文字で始まる名前の型を、要素のファイルでだけ記述できることを示すメッセージの型にする。 */
+export type ElementOnlyLoose = ElementOnlyRef & {
+  readonly [
+    handler: `on${Capitalize<string>}`
+  ]: "イベントハンドラーは、要素のファイルでだけ使用できます。";
+};
+
+/** 要素のファイルの外の JSX で、HTML と SVG のタグが属性に加えて受け付ける props を表す。 */
+export type ElementOnlyExtras = Record<HtmlTag, ElementOnlyRef> & Record<SvgTag, ElementOnlyLoose>;
 
 /** JSX の要素に記述できる `key` を表す。 */
 export interface KeyAttribute {
@@ -71,8 +88,8 @@ export type SharedChild =
 /** `Slot` の型を、要素とサーバーの JSX の両方の内容を受け付ける `SlotContent` にする。 */
 type SlotValue<T> = T extends Slot ? SlotContent : T;
 
-/** Props の型 `P` のうち、`Slot` の型の props を、`SlotContent` を受け付ける型にする。型が `any` の props は変えない。 */
-export type AcceptSlots<P> = { [K in keyof P]: 0 extends 1 & P[K] ? P[K] : SlotValue<P[K]> };
+/** Props の型 `P` のうち、`Slot` の型の props を、`SlotContent` を受け付ける型にする。 */
+export type AcceptSlots<P> = { [K in keyof P]: SlotValue<P[K]> };
 
 /** コンポーネント `C` の戻り値の型を表す。async 関数のコンポーネントは、Promise が解決する値の型を表す。 */
 type Rendered<C> = C extends (...args: never[]) => infer R ? Awaited<R> : never;

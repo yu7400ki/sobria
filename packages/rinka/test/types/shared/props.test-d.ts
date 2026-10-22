@@ -1,6 +1,9 @@
 import type { Props } from "rinka";
 import { expectTypeOf, test } from "vitest";
 
+import type { GlobalAttributes } from "../../../src/shared/jsx-attributes.ts";
+import type { HostAttribute, PropNameError } from "../../../src/shared/prop-names.ts";
+
 test("Props は、props にできる名前だけを持つ型を、そのまま返す", () => {
   type Card = { heading: string; count?: number; children?: unknown; onSelect?: () => void };
   expectTypeOf<Props<Card>>().toEqualTypeOf<Card>();
@@ -27,4 +30,20 @@ test("Props は、props にできない名前のキーがあると型エラー�
   expectTypeOf<Props<{ validity: string }>>();
   // @ts-expect-error aria の直後に大文字が続く名前
   expectTypeOf<Props<{ ariaLabel: string }>>();
+});
+
+test("props にできない名前の型エラーのメッセージは、ビルドのエラーと同じく理由と代わりの名前を示す", () => {
+  expectTypeOf<
+    PropNameError<"title">
+  >().toEqualTypeOf<'"title" は props の名前にできません。要素の全体にツールチップが表示されるためです。見出しには heading のような名前を使用してください。'>();
+  expectTypeOf<
+    PropNameError<"focus">
+  >().toEqualTypeOf<'"focus" は props の名前にできません。props はホストのプロパティになり、ホストの focus を上書きするためです。要素の役割を表す別の名前を使用してください。'>();
+  expectTypeOf<PropNameError<"heading">>().toEqualTypeOf<never>();
+});
+
+test("ホストのすべての属性は、props にできない名前である", () => {
+  type Named = Exclude<keyof GlobalAttributes, `data-${string}` | `aria-${string}`>;
+  expectTypeOf<Exclude<Named, HostAttribute>>().toEqualTypeOf<never>();
+  expectTypeOf<Exclude<HostAttribute, Named>>().toEqualTypeOf<never>();
 });

@@ -5,6 +5,8 @@ import {
   type ElementRef,
   elementInfo,
 } from "../shared/element.ts";
+import type { SvgTag } from "../shared/jsx-attributes.ts";
+import type { EventHandlers } from "../shared/jsx-events.ts";
 import type {
   ChildrenAttribute,
   ClientChild,
@@ -16,7 +18,6 @@ import type {
 import type { ClientNode } from "../shared/nodes.ts";
 import { asClientNode, createNode, type Child, type Component } from "./dom.ts";
 import { createElementInstance } from "./element.ts";
-import type { EventHandlers } from "./jsx-events.ts";
 
 /**
  * JSX の要素を作成する。要素コンポーネントはインスタンスを作成し、ほかの型は DOM のノードを作成する。
@@ -47,16 +48,20 @@ export function Fragment(props: { children?: Child }): ClientNode {
   return asClientNode(props.children);
 }
 
+/** DOM の要素 `E` を受け取る `ref` と、`E` のイベントハンドラーを表す。 */
+type DomProps<E extends Element> = EventHandlers<E> & { ref?: (el: E) => unknown };
+
 /** 要素の JSX のネイティブのタグが、属性に加えて受け付ける props を表す。 */
-type ClientExtras = {
-  [K in HtmlTag]: EventHandlers<HTMLElementTagNameMap[K]> & {
-    ref?: (el: HTMLElementTagNameMap[K]) => unknown;
-  };
+type ClientExtras = { [K in HtmlTag]: DomProps<HTMLElementTagNameMap[K]> } & {
+  [K in SvgTag]: DomProps<SVGElementTagNameMap[K]>;
 };
 
-/** 要素の JSX で、要素と補助コンポーネントが Props とホストの属性に加えて受け付ける props を表す。要素は `ElementRef` を受け取る `ref` を受け付ける。 */
-type ClientHost<C> = (C extends { readonly [elementInfo]: ElementInfo }
-  ? { ref?: (el: ElementRef<C>) => unknown }
+/**
+ * 要素の JSX で、要素と補助コンポーネントが Props とホストの属性に加えて受け付ける props を表す。
+ * 要素は、`ElementRef` を受け取る `ref` と、Props に宣言していない名前のイベントハンドラーを受け付ける。
+ */
+type ClientHost<C, P> = (C extends { readonly [elementInfo]: ElementInfo }
+  ? { ref?: (el: ElementRef<C>) => unknown } & Omit<EventHandlers<HTMLElement>, keyof P>
   : unknown) & {
   readonly [
     load: `load:${string}`
@@ -69,6 +74,10 @@ export declare namespace JSX {
   type ElementType = string | ((props: never, ctx: never) => ClientNode);
   interface ElementChildrenAttribute extends ChildrenAttribute {}
   interface IntrinsicAttributes extends KeyAttribute {}
-  interface IntrinsicElements extends IntrinsicElementsOf<ClientChild, ClientExtras> {}
-  type LibraryManagedAttributes<C, P> = ManagedAttributes<C, P, ClientHost<C>>;
+  interface IntrinsicElements extends IntrinsicElementsOf<
+    ClientChild,
+    ClientExtras,
+    DomProps<HTMLElement>
+  > {}
+  type LibraryManagedAttributes<C, P> = ManagedAttributes<C, P, ClientHost<C, P>>;
 }

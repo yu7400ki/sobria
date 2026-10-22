@@ -1,4 +1,5 @@
 import { defineElement, type ClientNode, type ServerNode, type Slot } from "rinka";
+import type { JSX } from "rinka/jsx-runtime";
 import { expectTypeOf, test } from "vitest";
 
 type DialogProps = { heading?: string; header?: Slot; children?: Slot };
@@ -54,4 +55,31 @@ test("共通のコンポーネントには、ref とホストの属性を付与�
 test("要素の中でサーバーコンポーネントを使用すると型エラーになる", () => {
   // @ts-expect-error サーバーコンポーネントは要素の JSX に記述できない
   void (<ServerPart id="1" />);
+});
+
+test("要素の load:* は、記述できない理由を示すメッセージの型である", () => {
+  expectTypeOf<
+    JSX.LibraryManagedAttributes<typeof Dialog, DialogProps>["load:idle"]
+  >().toEqualTypeOf<"load:* は、サーバーのファイルでだけ記述できます。要素の起動のタイミングは、要素を配置したページで指定してください。">();
+});
+
+test("要素には、Props に宣言していないイベントハンドラーを、ホストのリスナーとして付与できる", () => {
+  void (
+    <Dialog onClick={(event) => expectTypeOf(event.currentTarget).toEqualTypeOf<HTMLElement>()} />
+  );
+});
+
+test("要素の中の SVG と名前に - を含むタグは、タグの要素を受け取る ref とイベントハンドラーを受け付ける", () => {
+  void (
+    <svg
+      ref={(el) => expectTypeOf(el).toEqualTypeOf<SVGSVGElement>()}
+      onClick={(event) => expectTypeOf(event.currentTarget).toEqualTypeOf<SVGSVGElement>()}
+    />
+  );
+  void (
+    <custom-widget
+      ref={(el) => expectTypeOf(el).toEqualTypeOf<HTMLElement>()}
+      onClick={(event) => expectTypeOf(event.currentTarget).toEqualTypeOf<HTMLElement>()}
+    />
+  );
 });

@@ -17,8 +17,7 @@
     },
     "./jsx-runtime": {
       "rinka-shared": {
-        "types": "./lib/shared/jsx-runtime.d.ts",
-        "default": "./lib/client/jsx-runtime.js"
+        "types": "./lib/shared/jsx-runtime.d.ts"
       },
       "rinka-server": {
         "types": "./lib/server/jsx-runtime.d.ts",
@@ -29,8 +28,7 @@
     },
     "./server": {
       "rinka-client": {
-        "types": "./lib/client/server-api.d.ts",
-        "default": "./lib/client/server-api.js"
+        "types": "./lib/client/server-api.d.ts"
       },
       "types": "./lib/server/api.d.ts",
       "default": "./lib/server/api.js"

@@ -1,9 +1,10 @@
 import type {
   ChildrenAttribute,
+  ElementOnlyExtras,
+  ElementOnlyLoose,
   IntrinsicElementsOf,
   KeyAttribute,
   ManagedAttributes,
-  NoExtras,
   SharedChild,
 } from "./jsx-types.ts";
 import type { ClientNode, ServerNode } from "./nodes.ts";
@@ -27,6 +28,10 @@ export declare namespace JSX {
   type ElementType = string | ((props: never, ctx: never) => ClientNode & ServerNode);
   interface ElementChildrenAttribute extends ChildrenAttribute {}
   interface IntrinsicAttributes extends KeyAttribute {}
-  interface IntrinsicElements extends IntrinsicElementsOf<SharedChild, NoExtras> {}
+  interface IntrinsicElements extends IntrinsicElementsOf<
+    SharedChild,
+    ElementOnlyExtras,
+    ElementOnlyLoose
+  > {}
   type LibraryManagedAttributes<C, P> = ManagedAttributes<C, P, unknown>;
 }
