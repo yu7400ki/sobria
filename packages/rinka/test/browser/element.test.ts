@@ -1,7 +1,7 @@
 import { createEffect, createRoot, flush, onCleanup } from "@solidjs/signals";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { defineElement } from "../../src/client/element.ts";
+import { defineElement, registerElement } from "../../src/client/element.ts";
 import { jsx } from "../../src/client/jsx-runtime.ts";
 import type { Ctx } from "../../src/shared/element.ts";
 import { reloadEvent } from "../../src/shared/hmr.ts";
@@ -612,7 +612,7 @@ describe("開発中の再登録", () => {
     await connect(host);
     expect(shadow(host)).toBe("<p>old:a</p>");
     const hot = createHot();
-    defineElement(
+    registerElement(
       tag,
       (props: CounterProps) => jsx("p", { children: () => `new:${props.label}` }),
       options,
@@ -643,7 +643,7 @@ describe("開発中の再登録", () => {
     const host = await connect(Object.assign(document.createElement(tag), { depth: 0 }));
     const inner = () => host.shadowRoot!.querySelector(tag)!;
     expect(shadow(inner())).toBe("<p>old:1</p>");
-    defineElement(tag, tree("new"), options, createHot());
+    registerElement(tag, tree("new"), options, createHot());
     flush();
     await tick();
     flush();
@@ -658,7 +658,7 @@ describe("開発中の再登録", () => {
     });
     const host = await connect(document.createElement(tag));
     const hot = createHot();
-    defineElement(tag, () => jsx("p", { children: "new" }), { props: ["count"] }, hot);
+    registerElement(tag, () => jsx("p", { children: "new" }), { props: ["count"] }, hot);
     flush();
     expect(hot.sent).toEqual([reloadEvent]);
     expect(shadow(host)).toBe("<p>old</p>");

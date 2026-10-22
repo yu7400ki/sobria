@@ -100,7 +100,7 @@ function registerElement(
 export default ${DEFINE}(${args.join(", ")});
 `);
   if (client) output.append("if (import.meta.hot) import.meta.hot.accept();\n");
-  output.prepend(`import { defineElement as ${DEFINE} } from "${entries.main}";
+  output.prepend(`import { defineElement as ${DEFINE} } from "${client ? entries.internal : entries.main}";
 `);
   return { tag, options: elementOptions };
 }

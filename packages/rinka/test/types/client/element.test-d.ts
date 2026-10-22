@@ -48,3 +48,8 @@ test("ElementRef は、Slot 以外の型で宣言した children も持たず、
   expectTypeOf<ElementRef<typeof Box>["children"]>().toEqualTypeOf<HTMLCollection>();
   expectTypeOf<ElementRef<typeof Box>>().toHaveProperty("value");
 });
+
+test("公開の defineElement は、タグ名、要素の関数、登録の設定の 3 つの引数を受け取る", () => {
+  // @ts-expect-error 4 つ目の引数は受け取らない
+  defineElement("type-four-args", () => null, { props: [] }, { send: () => {} });
+});

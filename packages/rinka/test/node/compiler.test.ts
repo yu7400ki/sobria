@@ -249,7 +249,7 @@ export default function X(props: Props) { return <p />; }`);
     );
   });
 
-  it("クライアント向けの要素のモジュールは、import.meta.hot を登録に渡し、自身の更新を受け入れる", () => {
+  it("クライアント向けの要素のモジュールは、内部の入口の登録の関数に import.meta.hot を渡し、自身の更新を受け入れる", () => {
     const code = `export default function X(props: { a: string }) { return <p />; }`;
     const client = transformSource(code, {
       id: "src/elements/x.tsx",
@@ -260,6 +260,9 @@ export default function X(props: Props) { return <p />; }`);
     }).code;
     expect(client).toContain(
       'export default __rinka_defineElement("app-x", X, {"props":["a"],"types":{"a":"string"}}, import.meta.hot);',
+    );
+    expect(client).toContain(
+      'import { defineElement as __rinka_defineElement } from "rinka/internal";',
     );
     expect(client).toContain("if (import.meta.hot) import.meta.hot.accept();");
     expect(element(code).code).not.toContain("import.meta.hot");

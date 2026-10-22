@@ -155,13 +155,22 @@ function runMounts(host: HTMLElement, run: Run): void {
   for (const mount of mounts) mount();
 }
 
+/** `fn` を要素として、`tag` の名前で Custom Element に登録し、JSX で使用する要素コンポーネントを返す。登録済みの `tag` を登録するとエラーにする。 */
+export function defineElement<P, M extends object = object>(
+  tag: string,
+  fn: ElementFn<P, M>,
+  options: ElementOptions,
+): ElementComponent<P, M> {
+  return registerElement(tag, fn, options);
+}
+
 /**
  * `fn` を要素として、`tag` の名前で Custom Element に登録し、JSX で使用する要素コンポーネントを返す。
  * 登録済みの `tag` をもう一度登録するときは、`hot` が無ければエラーにする。
  * `hot` があり、`options` が前の登録と同じなら、要素の関数を `fn` に置換して、起動しているインスタンスを props の値を引き継いで描画し直す。
  * `options` が前の登録と異なれば、関数を置換せずに、ページの再読み込みを求めるイベントを開発サーバーに送る。
  */
-export function defineElement<P, M extends object = object>(
+export function registerElement<P, M extends object = object>(
   tag: string,
   fn: ElementFn<P, M>,
   options: ElementOptions,
