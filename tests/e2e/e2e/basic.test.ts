@@ -11,9 +11,7 @@ it("開発サーバーで描画したページの要素が、サーバーの mem
   const page = served.replace(/(counter\.tsx:\d+:\d+#0":)4/, "$15");
   expect(page).not.toBe(served);
   const frame = document.createElement("iframe");
-  frame.srcdoc = page
-    .replace("<head>", `<head><base href="${origin}/">`)
-    .replace("</body>", '<script type="module" src="/src/elements/counter.tsx"></script></body>');
+  frame.srcdoc = page.replace("<head>", `<head><base href="${origin}/">`);
   document.body.append(frame);
 
   const shadow = () => frame.contentDocument?.querySelector("app-counter")?.shadowRoot;
