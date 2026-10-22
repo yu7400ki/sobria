@@ -267,7 +267,7 @@ export function defineElement<P, M extends object = object>(
  * `options.props` に名前がある値は props に設定し、関数の値（関数の props を除く）と getter は、owner があれば親の owner の memo にする。
  * それ以外の値と `key` はホストの属性にし、props に無い `onX` の関数はホストのリスナーにする。
  * `children` とスロットの props の内容は Light DOM に配置し、その中の子要素は、ホストがそのスロットの `<slot>` を作成した後に起動する。
- * スロットに置く内容でなければ、owner があればその owner の下で同期的に起動する。owner が無ければ、接続した後に最上位の要素として起動する。
+ * スロットに配置する内容でなければ、owner があればその owner の下で同期的に起動する。owner が無ければ、接続した後に最上位の要素として起動する。
  * 要素への `ref` は、起動した後に呼ぶ。
  */
 export function createElementInstance(
@@ -321,7 +321,7 @@ export function createElementInstance(
   return host as unknown as ClientNode;
 }
 
-/** 名前付きのスロットに置くノードを返す。要素には `slot` 属性を付与し、テキストは `<span slot>` で包む。 */
+/** 名前付きのスロットに配置するノードを返す。要素には `slot` 属性を付与し、テキストは `<span slot>` で包む。 */
 function assignSlot(node: Node, name: string): Node {
   if (node instanceof Element) {
     node.setAttribute("slot", name);

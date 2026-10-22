@@ -9,7 +9,6 @@ import { memo, signal } from "../../src/shared/signals.ts";
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 let count = 0;
-/** テストごとに異なるタグ名を返す。 */
 const nextTag = () => `test-el-${++count}`;
 
 afterEach(() => {

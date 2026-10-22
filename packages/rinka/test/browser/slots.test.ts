@@ -6,7 +6,6 @@ import { jsx, jsxs } from "../../src/client/jsx-runtime.ts";
 import { signal } from "../../src/shared/signals.ts";
 
 let count = 0;
-/** テストごとに異なるタグ名を返す。 */
 const nextTag = () => `test-slot-${++count}`;
 
 afterEach(() => {
@@ -84,7 +83,7 @@ function defineChild() {
   return { Child, runs };
 }
 
-describe("スロットに置いた子要素の起動", () => {
+describe("スロットに配置した子要素の起動", () => {
   it("子要素は、ホストがそのスロットの <slot> を作成した時点で起動する", () => {
     const { Child, runs } = defineChild();
     const [show, setShow] = signal(false);
@@ -226,7 +225,7 @@ describe("スロットの owner", () => {
     expect(runs.count).toBe(0);
   });
 
-  it("スロットに置いた子要素の Shadow DOM の中で作成した要素は、外側のスロットを待たずに起動する", () => {
+  it("スロットに配置した子要素の Shadow DOM の中で作成した要素は、外側のスロットを待たずに起動する", () => {
     const { Child: Grandchild, runs } = defineChild();
     const Child = defineElement(nextTag(), () => jsx(Grandchild, {}), { props: [] });
     const Inner = defineElement(nextTag(), () => null, { props: ["children"] });
