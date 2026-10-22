@@ -34,7 +34,7 @@ export const isFunction = (value: unknown): value is (...args: unknown[]) => unk
 
 /** 実行時の DOM のノードを、`ClientNode` の型として扱う。 */
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-const asClientNode = (value: unknown): ClientNode => value as ClientNode;
+export const asClientNode = (value: unknown): ClientNode => value as ClientNode;
 
 /** `ref` を呼び、`ref` が返した関数を描画の範囲の後始末に登録する。`ref` は `runWithOwner(null, …)` の中で呼ぶ。 */
 export function callRef<T>(ref: (node: T) => unknown, node: T): void {
