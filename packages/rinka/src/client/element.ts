@@ -20,14 +20,9 @@ import {
   type ElementOptions,
 } from "../shared/element.ts";
 import { checkExposeName } from "../shared/expose-names.ts";
-import {
-  customEventName,
-  isEventProp,
-  listenerEventName,
-  propToAttribute,
-} from "../shared/names.ts";
+import { customEventName, isEventProp, propToAttribute } from "../shared/names.ts";
 import type { ClientNode } from "../shared/nodes.ts";
-import { bind, callRef, insert, isFunction, setter } from "./dom.ts";
+import { applyAttribute, asClientNode, callRef, insert, isFunction, setter } from "./dom.ts";
 import {
   activateInSlot,
   addChild,
@@ -323,33 +318,20 @@ export function createElementInstance(
   for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(props))) {
     if (name === "ref") continue;
     const getter = descriptor.get;
+    const read = getter ? () => getter.call(props) as unknown : undefined;
+    const value: unknown = read ?? descriptor.value;
+    const prop = instance.props.get(name);
     if (instance.slotNames.has(name)) {
-      const content: unknown = getter ? () => getter.call(props) as unknown : descriptor.value;
       const slot = name === "children" ? "" : name;
       insertIntoSlot(instance.slots, slot, () =>
-        insert(host, content, slot === "" ? undefined : (node) => assignSlot(node, slot)),
+        insert(host, value, slot === "" ? undefined : (node) => assignSlot(node, slot)),
       );
-      continue;
-    }
-    const prop = instance.props.get(name);
-    if (getter) {
-      const read = () => getter.call(props) as unknown;
-      if (prop) write(prop, derive(read));
-      else {
-        const listener = isEventProp(name) ? untrack(read) : undefined;
-        if (isFunction(listener)) host.addEventListener(listenerEventName(name), listener);
-        else bind(read, setter(host, name, false));
-      }
-      continue;
-    }
-    const value: unknown = descriptor.value;
-    if (prop) {
-      if (isFunction(value) && !instance.functionProps.has(name)) write(prop, derive(value));
-      else write(prop, { value });
-    } else if (isEventProp(name) && isFunction(value)) {
-      host.addEventListener(listenerEventName(name), value);
+    } else if (prop) {
+      const reactive =
+        read ?? (isFunction(value) && !instance.functionProps.has(name) ? value : undefined);
+      write(prop, reactive ? derive(reactive) : { value });
     } else {
-      bind(value, setter(host, name, false));
+      applyAttribute(host, name, read && isEventProp(name) ? untrack(read) : value);
     }
   }
   if (key !== undefined) setter(host, "key", false)(key);
@@ -358,8 +340,7 @@ export function createElementInstance(
     instance.owned = true;
     if (!activateInSlot((slotOwner) => instance.activate(slotOwner))) instance.activate(owner);
   }
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-  return host as unknown as ClientNode;
+  return asClientNode(host);
 }
 
 /** 名前付きのスロットに配置するノードを返す。要素には `slot` 属性を付与し、テキストは `<span slot>` で包む。 */

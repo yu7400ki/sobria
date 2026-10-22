@@ -1,6 +1,6 @@
 import { isElementComponent, type ElementComponent } from "../shared/element.ts";
 import type { ClientNode } from "../shared/nodes.ts";
-import { createNode, type Child, type Component } from "./dom.ts";
+import { asClientNode, createNode, type Child, type Component } from "./dom.ts";
 import { createElementInstance } from "./element.ts";
 
 /** JSX の要素を作成する。要素コンポーネントはインスタンスを作成し、ほかの型は DOM のノードを作成する。 */
@@ -24,6 +24,5 @@ export { jsx as jsxs };
 
 /** 子をそのまま返す。 */
 export function Fragment(props: { children?: Child }): ClientNode {
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-  return props.children as ClientNode;
+  return asClientNode(props.children);
 }

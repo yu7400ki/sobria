@@ -63,6 +63,12 @@ export function bind(value: unknown, set: (value: unknown) => void): void {
   else set(value);
 }
 
+/** `onX` の名前の関数は `el` のリスナーにし、それ以外の値は `el` の属性にする。 */
+export function applyAttribute(el: Element, name: string, value: unknown): void {
+  if (isEventProp(name) && isFunction(value)) el.addEventListener(listenerEventName(name), value);
+  else bind(value, setter(el, name, false));
+}
+
 /** ネイティブのタグのノードを作成する。子、属性、プロパティの順に設定する。 */
 function createTag(tag: string, props: Record<string, unknown>): Element {
   const el = document.createElement(tag);
@@ -70,11 +76,7 @@ function createTag(tag: string, props: Record<string, unknown>): Element {
   const propertyNames = properties[tag] ?? [];
   for (const [name, value] of Object.entries(props)) {
     if (name === "children" || name === "ref" || propertyNames.includes(name)) continue;
-    if (isEventProp(name) && isFunction(value)) {
-      el.addEventListener(listenerEventName(name), value);
-      continue;
-    }
-    bind(value, setter(el, name, false));
+    applyAttribute(el, name, value);
   }
   for (const name of propertyNames) {
     if (name in props) bind(props[name], setter(el, name, true));
