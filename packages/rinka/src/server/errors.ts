@@ -31,13 +31,18 @@ function normalizeUrl(url: string): string {
   return text.slice(start);
 }
 
+/** `location` が、相対 URL か、http か https の URL かどうかを返す。 */
+export function isSafeLocation(location: string): boolean {
+  const protocol = scheme.exec(normalizeUrl(location))?.[1]?.toLowerCase();
+  return protocol === undefined || protocol === "http" || protocol === "https";
+}
+
 /**
  * `location` に移動させる値を返す。返した値をシェルの中で投げると、`status` のリダイレクトのレスポンスになる。
  * `location` には、相対 URL か、http か https の URL を指定する。それ以外のスキームを指定すると、エラーを投げる。
  */
 export function redirect(location: string, status: RedirectStatus = 303): Redirect {
-  const protocol = scheme.exec(normalizeUrl(location))?.[1]?.toLowerCase();
-  if (protocol !== undefined && protocol !== "http" && protocol !== "https") {
+  if (!isSafeLocation(location)) {
     throw new Error(
       `redirect() の移動先 ${JSON.stringify(location)} には、相対 URL か、http か https の URL を指定してください。`,
     );

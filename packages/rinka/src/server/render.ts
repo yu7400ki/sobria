@@ -19,7 +19,7 @@ import { isEventProp, propToAttribute } from "../shared/names.ts";
 import { isFunction } from "../shared/objects.ts";
 import { checkSerializable } from "../shared/wire.ts";
 import { bootstrap } from "./bootstrap.ts";
-import { NotFound, Redirect } from "./errors.ts";
+import { isSafeLocation, NotFound, Redirect } from "./errors.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
 
 /**
@@ -590,9 +590,12 @@ class Renderer {
             ]),
           );
         } catch (error) {
-          await parent.sent;
+          if (!(await parent.sent) || boundary.regions.some((r) => r.discarded)) {
+            this.abandon(boundary);
+            return;
+          }
           const location = redirectLocation(error);
-          if (location === undefined) {
+          if (location === undefined || !isSafeLocation(location)) {
             console.error(
               "[rinka] シェルを送った後に、<Loading> の中身の描画に失敗しました。フォールバックのまま残します。",
               error,

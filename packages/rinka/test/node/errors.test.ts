@@ -191,6 +191,41 @@ describe("シェルの後", () => {
     expect(html).toContain('<template data-os="b2">拒否</template>');
   });
 
+  it("移動先が相対 URL でも http や https でもない 3xx の Response は、移動させずに記録する", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const unsafe = deferredThrow(
+      new Response(null, { status: 302, headers: { location: "javascript:alert(1)" } }),
+    );
+    const response = await renderToResponse(
+      jsx(Loading, { fallback: "wait", children: jsx(unsafe.Slow, {}) }),
+    );
+    unsafe.resolve();
+    const html = await response.text();
+    expect(html).not.toContain("location.replace");
+    expect(error).toHaveBeenCalledTimes(1);
+  });
+
+  it("Errored がフォールバックに切り替えた領域の中の境界は、移動させない", async () => {
+    const moving = deferredThrow(redirect("/r"));
+    const failing = deferredThrow(new Error("e"));
+    const responding = renderToResponse(
+      jsx(Errored, {
+        fallback: "EB",
+        children: [
+          jsx(Loading, { fallback: "wait", children: jsx(moving.Slow, {}) }),
+          jsx(failing.Slow, {}),
+        ],
+      }),
+    );
+    await tick();
+    failing.resolve();
+    const response = await responding;
+    expect(response.status).toBe(500);
+    moving.resolve();
+    const html = await response.text();
+    expect(html).not.toContain("location.replace");
+  });
+
   it("notFound() は Errored が受け止め、noindex を 1 回だけ出力する", async () => {
     const first = deferredThrow(notFound());
     const second = deferredThrow(notFound());
