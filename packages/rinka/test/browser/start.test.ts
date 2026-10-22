@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { defineElement as defineClient } from "../../src/client/element.ts";
 import { jsx as clientJsx } from "../../src/client/jsx-runtime.ts";
-import { bootstrap } from "../../src/server/bootstrap.ts";
+import { bootstrapSource } from "../../src/server/bootstrap.ts";
 import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
 import { renderToStream } from "../../src/server/render.ts";
 import { createElementComponent as defineServer } from "../../src/shared/element.ts";
@@ -33,7 +33,7 @@ async function serve(node: unknown): Promise<void> {
   const decoder = new TextDecoder();
   let text = "";
   for await (const chunk of renderToStream(node)) text += decoder.decode(chunk);
-  run(bootstrap.slice("<script>".length, -"</script>".length));
+  run(bootstrapSource);
   const head = text.slice(text.indexOf("<head>"), text.indexOf("</head>"));
   const body = text.slice(text.indexOf("<body>") + 6, text.indexOf("</body>"));
   const scripts: string[] = [];
