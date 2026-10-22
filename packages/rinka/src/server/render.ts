@@ -21,7 +21,7 @@ import { isFunction } from "../shared/objects.ts";
 import { createScope, withScope, type MemoScope, type ScopedChild } from "../shared/scope.ts";
 import { checkSerializable } from "../shared/wire.ts";
 import { bootstrap } from "./bootstrap.ts";
-import { isSafeLocation, NotFound, Redirect } from "./errors.ts";
+import { classify, type Thrown } from "./errors.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
 import { toScript } from "./wire.ts";
 
@@ -596,10 +596,11 @@ class Renderer {
       return await this.serialize(chunks, parent, [...regions, region]);
     } catch (error) {
       const late = lateBoundary(parent);
-      if (passesErrored(error, late !== undefined)) throw error;
+      const thrown = classify(error);
+      if (passesErrored(thrown, late !== undefined)) throw error;
       region.discarded = true;
       if (!late) this.caught = Math.max(this.caught, node.status ?? 500);
-      else if (error instanceof NotFound) late.noindex = true;
+      else if (thrown.kind === "notFound") late.noindex = true;
       return this.serialize(this.chunks(node.fallback(error), ctx), parent, regions);
     }
   }
@@ -640,18 +641,17 @@ class Renderer {
             this.abandon(boundary);
             return;
           }
-          const location = redirectLocation(error);
-          if (location === undefined) {
-            const requested = requestedLocation(error);
-            console.error(
-              requested === undefined
-                ? "[rinka] シェルを送った後に、<Loading> の中身の描画に失敗しました。フォールバックのまま残します。"
-                : `[rinka] 移動先 ${JSON.stringify(requested)} は、相対 URL でも http や https の URL でもないので、移動させずにフォールバックのまま残します。`,
-              error,
+          const thrown = classify(error);
+          if (thrown.kind === "redirect" && thrown.safe) {
+            this.write(
+              `<script>location.replace(${scriptJson(thrown.location)})</script><meta http-equiv="refresh" content="0;url=${escapeAttribute(thrown.location)}">`,
             );
           } else {
-            this.write(
-              `<script>location.replace(${scriptJson(location)})</script><meta http-equiv="refresh" content="0;url=${escapeAttribute(location)}">`,
+            console.error(
+              thrown.kind === "redirect"
+                ? `[rinka] 移動先 ${JSON.stringify(thrown.location)} は、相対 URL でも http や https の URL でもないので、移動させずにフォールバックのまま残します。`
+                : "[rinka] シェルを送った後に、<Loading> の中身の描画に失敗しました。フォールバックのまま残します。",
+              error,
             );
           }
           this.abandon(boundary);
@@ -793,25 +793,17 @@ function lateBoundary(boundary: Boundary): Boundary | undefined {
 const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
   typeof value === "object" && value !== null && "then" in value && isFunction(value.then);
 
-/** `Redirect` か、3xx の Response なら、規則を確認する前の移動先を返す。 */
-function requestedLocation(error: unknown): string | undefined {
-  if (error instanceof Redirect) return error.location;
-  if (error instanceof Response && error.status >= 300 && error.status < 400) {
-    return error.headers.get("location") ?? undefined;
+/** `<Errored>` が受け止めずに通過させる値かどうかを返す。`late` は、シェルの後に出力する位置かどうかである。シェルの後では、規則に合う移動先への移動だけを通過させる。 */
+function passesErrored(thrown: Thrown, late: boolean): boolean {
+  switch (thrown.kind) {
+    case "redirect":
+      return !late || thrown.safe;
+    case "notFound":
+    case "response":
+      return !late;
+    case "error":
+      return false;
   }
-  return undefined;
-}
-
-/** `Redirect` か 3xx の Response で、移動先が相対 URL か http か https の URL なら、移動先を返す。 */
-function redirectLocation(error: unknown): string | undefined {
-  const location = requestedLocation(error);
-  return location !== undefined && isSafeLocation(location) ? location : undefined;
-}
-
-/** `<Errored>` が受け止めずに通過させる値かどうかを返す。`late` は、シェルの後に出力する位置かどうかである。シェルの後では、規則に合う移動先への `Redirect` と 3xx の Response だけを通過させる。 */
-function passesErrored(error: unknown, late: boolean): boolean {
-  if (late) return redirectLocation(error) !== undefined;
-  return error instanceof Redirect || error instanceof NotFound || error instanceof Response;
 }
 
 /** 描画のオプションを表す。 */
@@ -905,17 +897,23 @@ async function respond(node: unknown, options: ResponseOptions, status: number):
 
 /** シェルの中で投げられた値から、レスポンスを作成する。 */
 function failure(error: unknown, options: ResponseOptions): Response | Promise<Response> {
-  if (error instanceof Response) return error;
-  if (error instanceof Redirect) {
-    return new Response(null, { status: error.status, headers: { location: error.location } });
+  const thrown = classify(error);
+  switch (thrown.kind) {
+    case "redirect":
+      return thrown.response;
+    case "response":
+      return thrown.response;
+    case "notFound": {
+      const page = options.notFound;
+      return page
+        ? respond(page(), { ...options, notFound: undefined }, 404)
+        : new Response(null, { status: 404 });
+    }
+    case "error": {
+      const page = options.error;
+      if (page)
+        return respond(page(error), { ...options, notFound: undefined, error: undefined }, 500);
+      throw error;
+    }
   }
-  if (error instanceof NotFound) {
-    const page = options.notFound;
-    return page
-      ? respond(page(), { ...options, notFound: undefined }, 404)
-      : new Response(null, { status: 404 });
-  }
-  const page = options.error;
-  if (page) return respond(page(error), { ...options, notFound: undefined, error: undefined }, 500);
-  throw error;
 }

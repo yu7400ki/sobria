@@ -52,3 +52,35 @@ export function redirect(location: string, status: RedirectStatus = 303): Redire
 
 /** ページが見つからないことを表す値を返す。返した値をシェルの中で投げると、404 のレスポンスになる。シェルの後では、`<Errored>` が受け止める。 */
 export const notFound = (): NotFound => new NotFound();
+
+/** 描画の途中で投げられた値の種類を表す。 */
+export type Thrown =
+  | {
+      /** `Redirect` か、`location` のヘッダーを持つ 3xx の Response である。`safe` は、移動先が `isSafeLocation` の規則に合うかどうかである。 */
+      readonly kind: "redirect";
+      readonly location: string;
+      readonly safe: boolean;
+      /** 移動を表すレスポンスである。3xx の Response なら、その Response である。 */
+      readonly response: Response;
+    }
+  | { readonly kind: "notFound" }
+  | { readonly kind: "response"; readonly response: Response }
+  | { readonly kind: "error" };
+
+/** 投げられた値の種類を返す。 */
+export function classify(error: unknown): Thrown {
+  if (error instanceof Redirect) {
+    const { location, status } = error;
+    return {
+      kind: "redirect",
+      location,
+      safe: isSafeLocation(location),
+      response: new Response(null, { status, headers: { location } }),
+    };
+  }
+  if (error instanceof NotFound) return { kind: "notFound" };
+  if (!(error instanceof Response)) return { kind: "error" };
+  const location = error.status >= 300 && error.status < 400 ? error.headers.get("location") : null;
+  if (location === null) return { kind: "response", response: error };
+  return { kind: "redirect", location, safe: isSafeLocation(location), response: error };
+}
