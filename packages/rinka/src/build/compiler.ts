@@ -59,7 +59,7 @@ const DEFINE = "__rinka_defineElement";
 /**
  * 元のソースに、`rinka` の `memo` の呼び出し箇所の ID を付与する。
  * クライアント向けのコードでは、async 関数の `await` を関門で包む。
- * 要素のファイルでは、default export した関数を、要素を登録する呼び出しに書き換える。
+ * 要素のファイルでは、default export した関数を、要素を登録する呼び出しに書き換え、関数の中の JSX のスロットを `<slot>` にする。
  */
 export function transformSource(code: string, options: SourceOptions): SourceResult {
   const { program, errors } = parseSync(options.file, code, {
@@ -103,6 +103,7 @@ function registerElement(
     if (error instanceof PropsError) throw new CompileError(`${file}: ${error.message}`);
     throw error;
   }
+  convertSlots(fn, elementOptions, output, file);
   output.remove(exported.start, fn.start);
   output.append(
     `
@@ -188,4 +189,63 @@ function insertGate(fn: FunctionNode, output: MagicString): void {
     output.prependRight(body.start, `{ ${declaration} return `);
     output.appendLeft(body.end, "; }");
   }
+}
+
+/** 要素の関数の JSX の子に置いた `{props.children}`、`{props.X}`、`{props.X ?? 既定の中身}` を `<slot>` にする。 */
+function convertSlots(
+  fn: ESTree.Function,
+  elementOptions: ElementOptions,
+  output: MagicString,
+  file: string,
+): void {
+  const [param] = fn.params;
+  if (param?.type !== "Identifier" || !fn.body) return;
+  const names = new Set(["children", ...(elementOptions.slots ?? [])]);
+  const placed = new Set<string>();
+  walk(fn.body, (node) => {
+    if (node.type !== "JSXElement" && node.type !== "JSXFragment") return;
+    for (const child of node.children) {
+      if (
+        child.type !== "JSXExpressionContainer" ||
+        child.expression.type === "JSXEmptyExpression"
+      ) {
+        continue;
+      }
+      const slot = slotOf(child.expression, param.name, names);
+      if (!slot) continue;
+      if (placed.has(slot.name)) {
+        throw new CompileError(
+          `${file}: スロット ${slot.name} を 2 回置いています。スロットは 1 回だけ置いてください。`,
+        );
+      }
+      placed.add(slot.name);
+      const name = slot.name === "children" ? "" : ` name=${JSON.stringify(slot.name)}`;
+      const { fallback } = slot;
+      if (!fallback) {
+        output.overwrite(child.start, child.end, `<slot${name} />`);
+        continue;
+      }
+      const jsx = fallback.type === "JSXElement" || fallback.type === "JSXFragment";
+      output.overwrite(child.start, fallback.start, `<slot${name}>${jsx ? "" : "{"}`);
+      output.overwrite(fallback.end, child.end, `${jsx ? "" : "}"}</slot>`);
+    }
+  });
+}
+
+/** 式が `props` のスロットの参照なら、スロットの名前と既定の中身を返す。 */
+function slotOf(
+  expression: ESTree.Expression,
+  props: string,
+  names: ReadonlySet<string>,
+): { name: string; fallback?: ESTree.Expression } | undefined {
+  if (expression.type === "LogicalExpression" && expression.operator === "??") {
+    const slot = slotOf(expression.left, props, names);
+    return slot && !slot.fallback ? { ...slot, fallback: expression.right } : undefined;
+  }
+  if (expression.type !== "MemberExpression" || expression.computed) return undefined;
+  const { object, property } = expression;
+  if (object.type !== "Identifier" || object.name !== props || property.type !== "Identifier") {
+    return undefined;
+  }
+  return names.has(property.name) ? { name: property.name } : undefined;
 }

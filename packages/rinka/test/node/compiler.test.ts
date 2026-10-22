@@ -1,7 +1,16 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
+import { transformWithOxc } from "vite";
 import { describe, expect, it } from "vitest";
 
-import { CompileError, transformSource } from "../../src/build/compiler.ts";
+import { CompileError, transformSource, type SourceOptions } from "../../src/build/compiler.ts";
+import { transformJsx } from "../../src/build/jsx.ts";
 import { takeGate } from "../../src/client/internal.ts";
+import { jsx } from "../../src/server/jsx-runtime.ts";
+import { renderToString } from "../../src/server/render.ts";
 import { runSeeding } from "../../src/shared/scope.ts";
 
 /** `.ts` のモジュール `src/lib/a.ts` として `code` を変換し、空白をまとめたコードを返す。 */
@@ -191,5 +200,147 @@ export default function X(props: Props) { return <p />; }`);
       /export default function/,
     );
     expect(() => element("export const x = 1;")).toThrow(/export default function/);
+  });
+});
+
+/** 元のソースを変換したコード `code` に、oxc の JSX の変換と、JSX の規則を適用する。 */
+async function lower(code: string, file: string): Promise<string> {
+  const lowered = await transformWithOxc(code, file, {
+    lang: "tsx",
+    sourceType: "module",
+    jsx: { runtime: "automatic", importSource: "rinka" },
+  });
+  return transformJsx(lowered.code, file).code;
+}
+
+/** サーバーのソース `path` を import する指定子を、JS の文字列のリテラルにする。 */
+const runtime = (path: string): string => JSON.stringify(pathToFileURL(resolve(path)).href);
+
+/** `code` に、元のソースの変換、oxc の JSX の変換、JSX の規則の順に適用し、注釈を除いて空白をまとめたコードを返す。 */
+async function compile(code: string, options: Partial<SourceOptions> = {}): Promise<string> {
+  const file = options.file ?? "src/routes/page.tsx";
+  const source = transformSource(code, { file, lang: "tsx", client: false, ...options });
+  return (await lower(source.code, file))
+    .replaceAll("/* @__PURE__ */ ", "")
+    .replaceAll(/\s+/g, " ");
+}
+
+describe("JSX のリアクティブ化", () => {
+  it("ネイティブのタグの属性と子は、関数呼び出しかプロパティ参照を含む式だけを関数で包む", async () => {
+    const code =
+      await compile(`const view = <div class={{ active: on() }} title="t" id={id} onClick={() => f()}
+  onInput={props.onInput} ref={r} key={k} style={s.value} data-n={1}>
+  {user().name}{count}{"lit"}<b />{cond() ? <i /> : null}{flag && <p>{x()}</p>}{tag\`a\`}
+</div>;`);
+    expect(code).toContain("class: () => ({ active: on() })");
+    expect(code).toContain('title: "t"');
+    expect(code).toContain("id,");
+    expect(code).toContain("onClick: () => f()");
+    expect(code).toContain("onInput: props.onInput");
+    expect(code).toContain("ref: r");
+    expect(code).toContain("style: () => (s.value)");
+    expect(code).toContain('"data-n": 1');
+    expect(code).toContain("() => (user().name)");
+    expect(code).toContain('count, "lit", _jsx("b", {})');
+    expect(code).toContain('() => (cond() ? _jsx("i", {}) : null)');
+    expect(code).toContain('flag && _jsx("p", { children: () => (x()) })');
+    expect(code).toContain("() => (tag`a`)");
+  });
+
+  it("コンポーネントに渡す props と children は、リテラルと関数を除いて getter にする", async () => {
+    const code = await compile(
+      `const view = <Loading fallback={<p>l</p>} n={2} pick={() => 1} v={props.v} id={id} ref={r} load:visible>{user()}</Loading>;`,
+    );
+    expect(code).toContain('get fallback() { return (_jsx("p", { children: "l" })); }');
+    expect(code).toContain("n: 2");
+    expect(code).toContain("pick: () => 1");
+    expect(code).toContain("get v() { return (props.v); }");
+    expect(code).toContain("get id() { return (id); }");
+    expect(code).toContain("ref: r");
+    expect(code).toContain('"load:visible": true');
+    expect(code).toContain("get children() { return (user()); }");
+  });
+
+  it("値の中に await があれば、関数で包まず、getter にもしない", async () => {
+    const code = await compile(
+      `async function Page() { return <main><h1>{await greet()}</h1><Card title={await t()} n={x.y} onPick={async () => await save()} /></main>; }`,
+    );
+    expect(code).toContain("children: await greet()");
+    expect(code).toContain("title: await t()");
+    expect(code).toContain("get n() { return (x.y); }");
+    expect(code).toContain("onPick: async () => await save()");
+  });
+});
+
+describe("スロット化", () => {
+  it("要素のファイルでは、props.children とスロットの props を <slot> にする", async () => {
+    const code = await compile(
+      `type Props = { header?: JSX.Element; footer?: JSX.Element; children?: JSX.Element };
+export default function X(props: Props) {
+  return <section><header>{props.header ?? <h2>t</h2>}</header><Loading>{props.children}</Loading><div>{props.footer}</div></section>;
+}`,
+      { file: "src/elements/x.tsx", element: { tag: "app-x" } },
+    );
+    expect(code).toContain(
+      '_jsx("slot", { name: "header", children: _jsx("h2", { children: "t" }) })',
+    );
+    expect(code).toContain('get children() { return (_jsx("slot", {})); }');
+    expect(code).toContain('_jsx("slot", { name: "footer" })');
+  });
+
+  it("同じスロットを 2 回置くと、ビルドのエラーにする", () => {
+    expect(() =>
+      element(`type Props = { children?: JSX.Element };
+export default function X(props: Props) { return <p>{props.children}{props.children}</p>; }`),
+    ).toThrow(/2 回/);
+  });
+
+  it("要素でないファイルの props.children は、そのまま関数で包む", async () => {
+    expect(
+      await compile(`function Layout(props) { return <main>{props.children}</main>; }`),
+    ).toContain("children: () => (props.children)");
+  });
+});
+
+describe("変換したコードの描画", () => {
+  it("変換した要素とページを、サーバーのレンダラーで描画する", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "rinka-compiler-"));
+    /** 変換したコードの `rinka` の import をサーバーのソースに置き換えて、`dir` の `name` として読み込む。 */
+    const load = async (code: string, name: string): Promise<{ default: unknown }> => {
+      const path = join(dir, name);
+      await writeFile(
+        path,
+        code
+          .replaceAll('"rinka/jsx-runtime"', runtime("src/server/jsx-runtime.ts"))
+          .replaceAll('"rinka"', runtime("src/server/index.ts")),
+      );
+      return (await import(pathToFileURL(path).href)) as { default: unknown };
+    };
+    try {
+      const card = transformSource(
+        `import { signal } from "rinka";
+type Props = { heading: string; children?: JSX.Element };
+export default function Card(props: Props) {
+  const [count] = signal(2);
+  return <section><h2>{props.heading}</h2><p>{count() * 2}</p><div>{props.children}</div></section>;
+}`,
+        { file: "src/elements/card.tsx", lang: "tsx", client: false, element: { tag: "app-card" } },
+      );
+      await load(await lower(card.code, "src/elements/card.tsx"), "card.js");
+      const page = transformSource(
+        `import Card from "./card.js";
+export default function Page() { return <main><Card heading={"h" + 1}>body</Card></main>; }`,
+        { file: "src/routes/page.tsx", lang: "tsx", client: false },
+      );
+      const { default: Page } = await load(
+        await lower(page.code, "src/routes/page.tsx"),
+        "page.js",
+      );
+      expect(await renderToString(jsx(Page as () => unknown, {}))).toBe(
+        '<main><app-card data-oh="h1" heading="h1"><template shadowrootmode="open"><section><h2>h1</h2><p>4</p><div><slot></slot></div></section></template>body</app-card></main>',
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
