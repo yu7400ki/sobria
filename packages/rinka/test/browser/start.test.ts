@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { defineElement as defineClient } from "../../src/client/element.ts";
 import { jsx as clientJsx } from "../../src/client/jsx-runtime.ts";
 import { bootstrapSource } from "../../src/server/bootstrap.ts";
+import { defineElement as defineServer } from "../../src/server/internal.ts";
 import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
 import { renderToStream } from "../../src/server/render.ts";
-import { createElementComponent as defineServer } from "../../src/shared/element.ts";
 import type { Ctx } from "../../src/shared/element.ts";
 
 afterEach(() => {

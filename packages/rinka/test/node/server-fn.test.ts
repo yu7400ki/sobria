@@ -5,7 +5,9 @@ import { HTTPException } from "hono/http-exception";
 import { describe, expect, it } from "vitest";
 
 import { runInRequest } from "../../src/server/context.ts";
+import { Loading } from "../../src/server/control.ts";
 import { createApp } from "../../src/server/internal.ts";
+import { jsx } from "../../src/server/jsx-runtime.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
 
 /** `value` が数の文字列なら数を返し、そうでなければ issues を返す Standard Schema である。 */
@@ -101,6 +103,37 @@ describe("サーバー側から直接呼んだサーバー関数", () => {
     expect(seen).toEqual([boom]);
   });
 
+  it("handler の失敗を受け止めたミドルウェアが Response を返すと、その Response を投げる", async () => {
+    const recovered = new Response("recovered", { status: 500 });
+    const recover = defineMiddleware(async (_c, next) => {
+      try {
+        await next();
+        return undefined;
+      } catch {
+        return recovered;
+      }
+    });
+    const fn = defineServerFn(recover, () => {
+      throw new Error("boom");
+    });
+    await expect(fn()).rejects.toBe(recovered);
+  });
+
+  it("handler の失敗を受け止めたミドルウェアが Response を返さずに終了すると、handler の失敗を投げる", async () => {
+    const boom = new Error("boom");
+    const swallow = defineMiddleware(async (_c, next) => {
+      try {
+        await next();
+      } catch {
+        // 握りつぶす
+      }
+    });
+    const fn = defineServerFn(swallow, () => {
+      throw boom;
+    });
+    await expect(fn()).rejects.toBe(boom);
+  });
+
   it("ミドルウェアが next を呼ばずに、Response を返さずに終了すると、エラーを投げる", async () => {
     const silent = defineMiddleware(async () => {});
     const fn = defineServerFn(silent, () => null);
@@ -153,6 +186,17 @@ describe("ページの描画中に呼んだサーバー関数", () => {
     const Page = async () => `user:${await whoami()}`;
     const response = await requestPage(Page, { headers: { "x-user": "ann" } });
     expect(await response.text()).toContain("user:ann");
+  });
+
+  it("シェルを送った後に描画する部分でも、ページのリクエストの Context でサーバー関数を実行する", async () => {
+    const whoami = defineServerFn((c) => c.req.header("x-user") ?? "none");
+    const Later = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return `deferred:${await whoami()}`;
+    };
+    const Page = () => jsx(Loading, { fallback: "…", children: jsx(Later, {}) });
+    const response = await requestPage(Page, { headers: { "x-user": "ann" } });
+    expect(await response.text()).toContain("deferred:ann");
   });
 
   it("ミドルウェアが返した Response を、ページのレスポンスにする", async () => {

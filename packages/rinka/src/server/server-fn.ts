@@ -151,24 +151,31 @@ async function runChain(
   last: () => Promise<unknown>,
 ): Promise<unknown> {
   let called = -1;
-  let reached = false;
   let result: unknown;
   const dispatch = async (index: number): Promise<void> => {
     if (index <= called) throw new Error("ミドルウェアは、next() を 1 回だけ呼んでください。");
     called = index;
     const middleware = middlewares[index];
     if (middleware === undefined) {
-      reached = true;
       result = await last();
       return;
     }
-    const returned = await middleware(c, () => dispatch(index + 1));
-    if (reached) return;
-    if (!(returned instanceof Response)) {
-      throw new Error("ミドルウェアは、next() を呼ぶか、Response を返してください。");
-    }
+    let settled: { ok: true } | { ok: false; error: unknown } | undefined;
+    const next = async () => {
+      try {
+        await dispatch(index + 1);
+        settled = { ok: true };
+      } catch (error) {
+        settled = { ok: false, error };
+        throw error;
+      }
+    };
+    const returned = await middleware(c, next);
+    if (settled?.ok) return;
     // oxlint-disable-next-line typescript/only-throw-error
-    throw returned;
+    if (returned instanceof Response) throw returned;
+    if (settled) throw settled.error;
+    throw new Error("ミドルウェアは、next() を呼ぶか、Response を返してください。");
   };
   await dispatch(0);
   return result;
