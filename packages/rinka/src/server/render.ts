@@ -14,6 +14,7 @@ import {
   elementInfo,
   isElementComponent,
   type Ctx,
+  type Delivery,
   type ElementComponent,
 } from "../shared/element.ts";
 import { isEventProp, propToAttribute, reservedProp } from "../shared/names.ts";
@@ -88,7 +89,22 @@ interface Host {
     readonly chunks: Chunk[];
     /** 要素を作成したホストに、開始タグの後で `@c:キー` を送るスクリプトである。 */
     readonly announce: string | undefined;
+    /** サーバーコンポーネントが直接使用した、配信の情報を持つ要素なら、起動スクリプトに伝える内容を持つ。 */
+    readonly delivered: Delivered | undefined;
   };
+}
+
+/** 起動スクリプトに伝える要素のインスタンスを表す。`immediate` は、インスタンスがすぐ起動するなら真である。 */
+interface Delivered {
+  readonly tag: string;
+  readonly delivery: Delivery;
+  readonly immediate: boolean;
+}
+
+/** チャンクで起動スクリプトに伝える要素を表す。`preload` は、すぐ起動するインスタンスが 1 つでもあれば真である。 */
+interface Listed {
+  readonly delivery: Delivery;
+  preload: boolean;
 }
 
 /** 境界の差し替えを表す。 */
@@ -128,6 +144,8 @@ interface Resolvable {
 /** シェルを送るチャンクを表す。 */
 interface ShellFlush extends Resolvable {
   readonly kind: "shell";
+  /** シェルに出力した要素を、タグ名ごとに表す。 */
+  readonly elements: Map<string, Listed>;
 }
 
 /** 後送りの境界の中身を送るチャンクを表す。 */
@@ -135,6 +153,8 @@ interface DeferredFlush extends Resolvable {
   readonly kind: "deferred";
   /** 中身の中で `notFound()` を受け止めたことを表す。 */
   noindex: boolean;
+  /** 中身に出力した要素を、タグ名ごとに表す。 */
+  readonly elements: Map<string, Listed>;
 }
 
 /** 解決していない `Resolvable` を作成する。 */
@@ -361,6 +381,20 @@ function hasHole(chunks: readonly Chunk[]): boolean {
   });
 }
 
+/**
+ * 要素の props の `load:*` から、`data-rinka-load` の属性の値を返す。`load:media` は、`media:` にメディアクエリを連結する。
+ * `load:*` が無ければ `undefined` を返す。
+ */
+function loadAttribute(props: Record<string, unknown>): string | undefined {
+  for (const name of Object.keys(props)) {
+    if (reservedProp(name) !== "load:") continue;
+    const value = props[name];
+    const timing = name.slice("load:".length);
+    return timing === "media" ? `media:${String(value)}` : timing;
+  }
+  return undefined;
+}
+
 /** サーバーで木を描画する。 */
 class Renderer {
   private seq = 0;
@@ -378,7 +412,13 @@ class Renderer {
   /** シェルを表す境界である。 */
   private readonly root = this.newBoundary("", []);
   /** シェルの最も外側の位置である。 */
-  private readonly shellOut = Out.of({ ...resolvable(), kind: "shell" } satisfies ShellFlush);
+  private readonly shellOut = Out.of({
+    ...resolvable(),
+    kind: "shell",
+    elements: new Map(),
+  } satisfies ShellFlush);
+  /** 起動スクリプトに伝えた要素のタグ名を保持する。 */
+  private readonly listed = new Set<string>();
   /** シェルの中の `<Errored>` が受け止めたときのステータスのうち、最も大きいものを表す。 */
   private caught = 200;
 
@@ -540,7 +580,12 @@ class Renderer {
     child?: ScopedChild,
   ): void {
     this.interactive = true;
-    const { tag, options } = component[elementInfo];
+    const { tag, options, delivery } = component[elementInfo];
+    const load = loadAttribute(props);
+    const delivered: Delivered | undefined =
+      delivery && ctx.owner === null
+        ? { tag, delivery, immediate: (load ?? delivery.load) === "load" }
+        : undefined;
     const id = `h${++this.seq}`;
     const record = new HostRecord(id, tag);
     this.hosts.add(record);
@@ -657,9 +702,9 @@ class Renderer {
     const open = ({ text, transfer }: HostAttributes, shown: Promise<boolean>): string => {
       const keys = record.seal(transfer ? [PROPS_KEY] : [], shown);
       const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
-      return `<${tag}${attribute("data-oh", id)}${text}${om}><template shadowrootmode="open">`;
+      return `<${tag}${attribute("data-oh", id)}${attribute("data-rinka-load", load)}${text}${om}><template shadowrootmode="open">`;
     };
-    out.push({ kind: "host", host: { record, attributes, open, chunks, announce } });
+    out.push({ kind: "host", host: { record, attributes, open, chunks, announce, delivered } });
   }
 
   /**
@@ -702,7 +747,17 @@ class Renderer {
         return marker(id);
       }
       case "host": {
-        const { record, attributes, open, chunks, announce } = chunk.host;
+        const { record, attributes, open, chunks, announce, delivered } = chunk.host;
+        if (delivered) {
+          const listed = out.flush.elements.get(delivered.tag);
+          if (listed) listed.preload ||= delivered.immediate;
+          else {
+            out.flush.elements.set(delivered.tag, {
+              delivery: delivered.delivery,
+              preload: delivered.immediate,
+            });
+          }
+        }
         const inner = await this.serialize(chunks, out);
         const resolved = await attributes;
         if (resolved.transfer) {
@@ -755,7 +810,12 @@ class Renderer {
    */
   private schedule(boundary: Boundary, out: Out): void {
     this.interactive = true;
-    const flush: DeferredFlush = { ...resolvable(), kind: "deferred", noindex: false };
+    const flush: DeferredFlush = {
+      ...resolvable(),
+      kind: "deferred",
+      noindex: false,
+      elements: new Map(),
+    };
     boundary.flush = flush;
     for (const host of boundary.path) host.defer();
     this.track(
@@ -815,6 +875,7 @@ class Renderer {
             [regionOut, ...patches.map(([patch]) => patch.out)]
               .flatMap((position) => position.scripts)
               .join("") +
+            this.list(flush.elements, false) +
             `<script>$rinka.r(${scriptJson(spec)})</script>`,
         );
         this.finishBoundary(boundary);
@@ -907,10 +968,33 @@ class Renderer {
     );
   }
 
+  /**
+   * `elements` のうち、まだ起動スクリプトに伝えていない要素の `$rinka.m` を返す。
+   * `preload` が真なら、すぐ起動するインスタンスがある要素の `modulepreload` を前に置く。
+   */
+  private list(elements: ReadonlyMap<string, Listed>, preload: boolean): string {
+    const fresh = [...elements].filter(([tag]) => !this.listed.has(tag));
+    if (fresh.length === 0) return "";
+    for (const [tag] of fresh) this.listed.add(tag);
+    const links = preload
+      ? fresh
+          .filter(([, listed]) => listed.preload)
+          .map(
+            ([, { delivery }]) =>
+              `<link rel="modulepreload" href="${escapeAttribute(delivery.module)}">`,
+          )
+          .join("")
+      : "";
+    const list = fresh.map(([tag, { delivery }]) => [tag, delivery.module, delivery.load]);
+    return `${links}<script>$rinka.m(${scriptJson(list)})</script>`;
+  }
+
   /** 文書の先頭と `shell` を出力し、後送りの境界をすべて出力してから、文書を閉じる。 */
   async finish(shell: string): Promise<void> {
     try {
-      const script = this.interactive ? bootstrap : "";
+      const script = this.interactive
+        ? bootstrap + this.list(this.shellOut.flush.elements, true)
+        : "";
       this.reveal(
         this.shellOut.flush,
         `<!doctype html><html><head><meta charset="utf-8">${script}${this.head}</head><body>${shell}${this.shellOut.scripts.join("")}`,
