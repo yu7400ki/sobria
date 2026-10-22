@@ -4,16 +4,11 @@ import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { getRequestListener } from "@hono/node-server";
-import {
-  isRunnableDevEnvironment,
-  type Environment,
-  type Plugin,
-  type UserConfig,
-  type ViteDevServer,
-} from "vite";
+import { isRunnableDevEnvironment, type Environment, type Plugin, type ViteDevServer } from "vite";
 
 import { tagFromPath } from "../shared/names.ts";
 import { transformSource, type Lang } from "./compiler.ts";
+import { entries, oxc } from "./entries.ts";
 import { transformJsx } from "./jsx.ts";
 
 /** rinka のプラグインの設定を表す。 */
@@ -27,22 +22,16 @@ export interface RinkaOptions {
 /** 環境ごとの実行時のコードの入口を、`lib/` からの相対パスで表す。 */
 const runtimes: Readonly<Record<"client" | "server", Readonly<Record<string, string>>>> = {
   client: {
-    rinka: "client/index.js",
-    "rinka/jsx-runtime": "client/jsx-runtime.js",
-    "rinka/internal": "client/internal.js",
+    [entries.main]: "client/index.js",
+    [entries.jsxRuntime]: "client/jsx-runtime.js",
+    [entries.internal]: "client/internal.js",
   },
   server: {
-    rinka: "server/index.js",
-    "rinka/jsx-runtime": "server/jsx-runtime.js",
-    "rinka/internal": "server/internal.js",
+    [entries.main]: "server/index.js",
+    [entries.jsxRuntime]: "server/jsx-runtime.js",
+    [entries.internal]: "server/internal.js",
   },
 };
-
-/** oxc の変換の設定である。`sourceType` は Vite の型に無い項目で、oxc の変換にはそのまま渡される。 */
-const oxc = {
-  jsx: { runtime: "automatic", importSource: "rinka", development: false },
-  sourceType: "module",
-} satisfies UserConfig["oxc"] & { sourceType: "module" };
 
 /** 拡張子ごとの、変換する言語である。 */
 const langs: Readonly<Record<string, Lang>> = {
@@ -56,7 +45,7 @@ const langs: Readonly<Record<string, Lang>> = {
 const NAME = "rinka";
 
 /** ルートの表を export する仮想モジュールの ID である。 */
-const ROUTES = "\0rinka/routes";
+const ROUTES = `\0${entries.routes}`;
 
 /** 開発中のページの `<head>` に出力する、Vite のクライアントを読み込むスクリプトである。 */
 const VITE_CLIENT = '<script type="module" src="/@vite/client"></script>';
@@ -108,7 +97,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       config: () => ({ appType: "custom", oxc }),
       configEnvironment(name, config) {
         const consumer = config.consumer ?? (name === "client" ? "client" : "server");
-        return consumer === "server" ? { resolve: { noExternal: ["rinka"] } } : null;
+        return consumer === "server" ? { resolve: { noExternal: [entries.main] } } : null;
       },
       configResolved(config) {
         if (config.plugins.filter((plugin) => plugin.name === NAME).length > 1) {
@@ -123,7 +112,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         checkTags(elementsDir, tagOf);
       },
       resolveId(id) {
-        if (id === "rinka/routes") return ROUTES;
+        if (id === entries.routes) return ROUTES;
         const entry = runtimes[isClient(this.environment) ? "client" : "server"][id];
         return entry === undefined ? null : fileURLToPath(new URL(`../${entry}`, import.meta.url));
       },
@@ -230,9 +219,9 @@ function appMiddleware(
     const { runner } = environment;
     (async () => {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const { routes } = (await runner.import("rinka/routes")) as { readonly routes: unknown };
+      const { routes } = (await runner.import(entries.routes)) as { readonly routes: unknown };
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const { createApp } = (await runner.import("rinka/internal")) as InternalModule;
+      const { createApp } = (await runner.import(entries.internal)) as InternalModule;
       let failure: { readonly error: unknown } | undefined;
       const app = createApp(routes, {
         head: VITE_CLIENT,

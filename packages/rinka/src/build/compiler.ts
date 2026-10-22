@@ -14,6 +14,7 @@ import {
   type FunctionNode,
   type Node,
 } from "./ast.ts";
+import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 import { analyzeProps } from "./props.ts";
 
@@ -70,7 +71,7 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
     options.element &&
     registerElement(program, output, options.element.tag, options.file, options.client);
   if (options.client && gateAwaits(program, output)) {
-    output.prepend(`import { takeGate as ${TAKE_GATE} } from "rinka/internal";\n`);
+    output.prepend(`import { takeGate as ${TAKE_GATE} } from "${entries.internal}";\n`);
   }
   return {
     code: output.toString(),
@@ -106,7 +107,7 @@ function registerElement(
 export default ${DEFINE}(${args.join(", ")});
 `);
   if (client) output.append("if (import.meta.hot) import.meta.hot.accept();\n");
-  output.prepend(`import { defineElement as ${DEFINE} } from "rinka";
+  output.prepend(`import { defineElement as ${DEFINE} } from "${entries.main}";
 `);
   return { tag, options: elementOptions };
 }
@@ -118,7 +119,7 @@ function addMemoSites(
   code: string,
   file: string,
 ): void {
-  const names = importedNames(program, "rinka").get("memo");
+  const names = importedNames(program, entries.main).get("memo");
   if (!names) return;
   const starts = lineStarts(code);
   walk(program, (node) => {

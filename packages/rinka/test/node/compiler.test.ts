@@ -7,6 +7,7 @@ import { transformWithOxc } from "vite";
 import { describe, expect, it } from "vitest";
 
 import { CompileError, transformSource, type SourceOptions } from "../../src/build/compiler.ts";
+import { oxc } from "../../src/build/entries.ts";
 import { transformJsx } from "../../src/build/jsx.ts";
 import { takeGate } from "../../src/client/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
@@ -271,11 +272,7 @@ export default function X(props: Props) { return <p />; }`);
 
 /** 元のソースを変換したコード `code` に、oxc の JSX の変換と、JSX の規則を適用する。 */
 async function lower(code: string, file: string): Promise<string> {
-  const lowered = await transformWithOxc(code, file, {
-    lang: "tsx",
-    sourceType: "module",
-    jsx: { runtime: "automatic", importSource: "rinka" },
-  });
+  const lowered = await transformWithOxc(code, file, { lang: "tsx", ...oxc });
   return transformJsx(lowered.code, file).code;
 }
 

@@ -1,9 +1,10 @@
 import { MagicString } from "magic-string";
 import { parseSync, type ESTree } from "vite";
 
-import { isEventProp } from "../shared/names.ts";
+import { isEventProp, reservedProp } from "../shared/names.ts";
 import { children, importedNames, isFunction, surround, type Node } from "./ast.ts";
 import type { Transformed } from "./compiler.ts";
+import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 
 /** `rinka/jsx-runtime` から import した名前を表す。 */
@@ -30,7 +31,7 @@ export function transformJsx(code: string, file: string): Transformed {
   const [error] = errors;
   if (error) throw new CompileError(`${file} を解析できません: ${error.message}`);
   const output = new MagicString(code);
-  if (importedNames(program, "rinka").has("createElement")) {
+  if (importedNames(program, entries.main).has("createElement")) {
     throw new CompileError(
       `${file}: スプレッドの後に記述した key は変換できません。key をスプレッドより前に記述してください。`,
     );
@@ -49,7 +50,7 @@ export function transformJsx(code: string, file: string): Transformed {
 
 /** `rinka/jsx-runtime` から import した名前を返す。 */
 function runtimeNames(program: ESTree.Program): Runtime {
-  const names = importedNames(program, "rinka/jsx-runtime");
+  const names = importedNames(program, entries.jsxRuntime);
   const none = new Set<string>();
   return {
     single: names.get("jsx") ?? none,
@@ -95,7 +96,7 @@ function applyRules(
       }
       continue;
     }
-    if (name === "ref" || name.startsWith("load:")) continue;
+    if (reservedProp(name)) continue;
     if (isLiteral(value) || isFunction(value) || hasAwait(value) || usesCallee(value)) continue;
     const key = code.slice(property.key.start, property.key.end);
     if (!property.shorthand) output.remove(property.start, value.start);

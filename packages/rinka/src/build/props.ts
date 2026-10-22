@@ -3,6 +3,7 @@ import type { ESTree } from "vite";
 import type { AttributeType, ElementOptions } from "../shared/element.ts";
 import { checkPropNames } from "../shared/prop-names.ts";
 import { importedNames } from "./ast.ts";
+import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 
 /** Props のメンバーの分類を表す。 */
@@ -107,7 +108,7 @@ function propsMembers(
 
 /** `rinka` から import した `Props` と `Slot` の、ファイルの中の名前を返す。 */
 function rinkaTypes(program: ESTree.Program): Helpers {
-  const names = importedNames(program, "rinka");
+  const names = importedNames(program, entries.main);
   return { props: names.get("Props") ?? new Set(), slot: names.get("Slot") ?? new Set() };
 }
 
