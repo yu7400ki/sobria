@@ -476,14 +476,11 @@ interface WalkCtx {
   readonly depth: number;
   /** この位置のタグを `<head>` に移動するかどうかを表す。 */
   readonly head: HeadPlacement;
-  /** Light DOM で外側にある `<fieldset disabled>` で無効になるかどうかを表す。 */
-  readonly disabled?: Disabled;
+  /** 同じ tree の外側にある `<fieldset disabled>` で無効になるかどうかを返す。値が未解決なら `NotReadyError` を投げる。 */
+  readonly disabled: () => boolean;
   /** `<fieldset>` の子なら、その `<fieldset>` の子の `<legend>` を表す。 */
   readonly legend?: Legend;
 }
-
-/** 無効かどうかを表す。値が未解決なら、解決する Promise である。 */
-type Disabled = boolean | Promise<boolean>;
 
 /**
  * `<fieldset>` の子の `<legend>` を表す。`taken` は、最初の `<legend>` を描画したかどうかで、
@@ -492,19 +489,14 @@ type Disabled = boolean | Promise<boolean>;
  */
 interface Legend {
   taken: boolean;
-  readonly outer: Disabled | undefined;
+  readonly outer: () => boolean;
 }
 
-/** `a` と `b` のどちらかが無効なら無効であることを表す値を返す。 */
-function eitherDisabled(a: Disabled | undefined, b: Disabled | undefined): Disabled {
-  if (a === true || b === true) return true;
-  if (a instanceof Promise || b instanceof Promise) {
-    const either = Promise.all([a, b]).then(([x, y]) => x === true || y === true);
-    either.catch(() => {});
-    return either;
-  }
-  return false;
-}
+/** `disabled` の属性の値 `value` が、無効であることを表すかどうかを返す。 */
+const disables = (value: unknown): boolean => attributeValue("disabled", value) !== null;
+
+/** 常に無効でないことを返す。 */
+const notDisabled = (): boolean => false;
 
 /**
  * タグを `<head>` に移動するかどうかを表す。
@@ -1079,19 +1071,14 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       legend.taken = true;
       disabled = legend.outer;
     }
-    if (tag === "fieldset" && this.runsElements) {
-      const own = this.settle(
-        ctx,
-        (tracked) => attributeValue("disabled", this.value(props.disabled, ctx, tracked)) !== null,
-      );
-      disabled = eitherDisabled(outer, own);
-    }
+    if (tag === "fieldset")
+      disabled = () => outer() || disables(this.value(props.disabled, ctx, true));
     this.walk(
       asNode(props.children),
       {
         ...inner,
         head: childPlacement(tag, ctx.head),
-        ...(disabled !== undefined && { disabled }),
+        disabled,
         ...(tag === "fieldset" && { legend: { taken: false, outer } }),
       },
       out,
@@ -1199,13 +1186,9 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     };
     const attributes = this.settle(ctx, hostAttributes);
 
-    const disabled =
-      options.form && this.runsElements
-        ? eitherDisabled(
-            ctx.disabled,
-            this.settle(ctx, () => attributeValue("disabled", propValue("disabled")) !== null),
-          )
-        : false;
+    const disabled = options.form
+      ? () => ctx.disabled() || disables(propValue("disabled"))
+      : notDisabled;
     const shadow = this.runsElements
       ? this.runElement(component, elementProps, record, ctx, disabled)
       : undefined;
@@ -1213,7 +1196,11 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     const aria = ariaAttributes(shadow?.internals ?? {});
     const hostId = options.form && shadow ? this.settle(ctx, () => propValue("id")) : undefined;
     if (options.form && shadow?.form) {
-      const parts = [this.settle(ctx, () => propValue("name")), shadow.form.value, disabled];
+      const parts = [
+        this.settle(ctx, () => propValue("name")),
+        shadow.form.value,
+        this.settle(ctx, disabled),
+      ];
       chunks.push(
         parts.some((part) => part instanceof Promise)
           ? this.hole(
@@ -1221,7 +1208,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
                 this.hiddenInput(tag, name, value, off === true),
               ]),
             )
-          : this.hiddenInput(tag, parts[0], parts[1], disabled === true),
+          : this.hiddenInput(tag, parts[0], parts[1], parts[2] === true),
       );
     }
     for (const name of Object.keys(descriptors)) {
@@ -1236,7 +1223,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
         depth: ctx.depth,
         head: ctx.head === "none" ? "none" : "element",
         ...(ctx.slots && { slots: ctx.slots }),
-        ...(ctx.disabled !== undefined && { disabled: ctx.disabled }),
+        disabled: ctx.disabled,
         ...(slot !== "" && { slot }),
       };
       if (boundary === ctx.boundary) {
@@ -1305,7 +1292,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     props: object,
     record: HostRecord,
     ctx: WalkCtx,
-    disabled: Disabled,
+    disabled: () => boolean,
   ): {
     readonly chunks: Chunk[];
     readonly slots: ReadonlyMap<string, Boundary>;
@@ -1319,7 +1306,6 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     let tree: Node = null;
     const internals = {};
     let valueOf: (() => unknown) | undefined;
-    let isDisabled: (() => boolean) | undefined;
     const elementCtx: Ctx = {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       host: serverHost as HTMLElement,
@@ -1332,7 +1318,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
         validity: () => {},
         onReset: () => {},
         onRestore: () => {},
-        disabled: () => isDisabled?.() ?? false,
+        disabled,
       },
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       internals: internals as ElementInternals,
@@ -1351,7 +1337,6 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     createRoot((dispose) => {
       this.disposers.push(dispose);
       owner = getOwner();
-      if (disabled !== false) isDisabled = createMemo(() => disabled);
       tree = asNode(untrack(() => withScope(scope, () => component(props, elementCtx))));
     });
     const read = valueOf;
@@ -1365,6 +1350,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
         slots,
         depth: ctx.depth,
         head: "element",
+        disabled: notDisabled,
       },
       chunks,
     );
@@ -1616,7 +1602,14 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
   /** シェルを描画し、シェルの HTML を返す。 */
   async shell(node: Node): Promise<string> {
     const html = await this.serialize(
-      this.chunks(node, { owner: null, path: [], boundary: this.root, depth: 0, head: "auto" }),
+      this.chunks(node, {
+        owner: null,
+        path: [],
+        boundary: this.root,
+        depth: 0,
+        head: "auto",
+        disabled: notDisabled,
+      }),
       this.shellOut,
     );
     return this.resolveLabels([html])[0] ?? "";
