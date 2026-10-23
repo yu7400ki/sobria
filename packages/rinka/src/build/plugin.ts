@@ -350,12 +350,12 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           }),
           ...(isBuild && { fnModule: hashedFnModule(target.file) }),
         });
+        if (result.serverFns.length > 0 && !isServerFnSource(target.file)) {
+          throw new Error(
+            `${target.file}: サーバー関数は、src/ の中のファイルで定義してください。`,
+          );
+        }
         if (!isClient(this.environment)) {
-          if (result.serverFns.length > 0 && !isServerFnSource(target.file)) {
-            throw new Error(
-              `${target.file}: サーバー関数は、src/ の中のファイルで定義してください。`,
-            );
-          }
           if (result.serverFns.length > 0) serverFnIds.set(target.file, new Set(result.serverFns));
           else serverFnIds.delete(target.file);
         }

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { extname, join, relative, sep } from "node:path";
+import { extname, join, posix, relative, sep } from "node:path";
 
 import { langs } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
@@ -14,7 +14,10 @@ export const hashedFnModule = (file: string): string =>
 
 /** アプリのルートからの相対パス `file` のファイルで、サーバー関数を定義できるかどうかを返す。 */
 export const isServerFnSource = (file: string): boolean =>
-  file.startsWith(`${SERVER_FN_DIR}/`) && extname(file) in langs && !file.endsWith(".d.ts");
+  file.startsWith(`${SERVER_FN_DIR}/`) &&
+  posix.normalize(file) === file &&
+  extname(file) in langs &&
+  !file.endsWith(".d.ts");
 
 /** アプリのルート `root` で、サーバー関数を定義したファイルを走査し、ID のモジュールの部分からルートからの相対パスへの対応を返す。 */
 export function serverFnModules(root: string): Map<string, string> {

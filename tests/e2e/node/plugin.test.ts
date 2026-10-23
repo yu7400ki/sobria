@@ -135,7 +135,7 @@ export const load = async () => { await 0; };
 `;
 
 describe("サーバー関数を定義できる範囲", () => {
-  it("src/ の外のファイルでサーバー関数を定義すると、サーバー向けの変換をエラーにする", async () => {
+  it("src/ の外のファイルでサーバー関数を定義すると、サーバー向けとクライアント向けの変換をエラーにする", async () => {
     await withProject(
       {
         "test/fns.ts":
@@ -143,6 +143,9 @@ describe("サーバー関数を定義できる範囲", () => {
       },
       async (dev) => {
         await expect(dev.environments.ssr.transformRequest("/test/fns.ts")).rejects.toThrow(
+          /src\/ の中のファイルで定義してください/,
+        );
+        await expect(dev.environments.client.transformRequest("/test/fns.ts")).rejects.toThrow(
           /src\/ の中のファイルで定義してください/,
         );
       },
