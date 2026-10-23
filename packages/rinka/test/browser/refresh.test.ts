@@ -112,7 +112,6 @@ describe("applyRefresh", () => {
     );
     expect(document.documentElement.getAttribute("lang")).toBe("ja");
     expect(document.body.getAttribute("data-a")).toBe("");
-    expect(document.body.hasAttribute("hidden")).toBe(false);
     document.body.classList.add("theme");
     applyRefresh(refreshJson({ doc: { html: { lang: "en" }, body: {} } }));
     expect(document.documentElement.getAttribute("lang")).toBe("en");

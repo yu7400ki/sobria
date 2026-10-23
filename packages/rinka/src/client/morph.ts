@@ -4,7 +4,6 @@ import { tagAttributeName } from "../shared/attributes.ts";
 const isKept = (node: Node): boolean =>
   node instanceof HTMLScriptElement || node instanceof HTMLTemplateElement;
 
-/** キーの属性の名前である。 */
 const keyAttribute = tagAttributeName("key");
 
 /** キーの属性の値を返す。 */

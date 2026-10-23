@@ -17,7 +17,7 @@ export interface RefreshJson {
   };
 }
 
-/** 描き直しのレスポンスの `data` の式が表す、1 つのホストの props を表す。 */
+/** 描き直しのレスポンスの `data` の式を評価した値で、1 つのホストの props を持つ。 */
 export interface RefreshValues {
   /** ページにある要素に設定する props である。 */
   readonly [REFRESH_PROPS_KEY]: object;

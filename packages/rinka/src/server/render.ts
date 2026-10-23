@@ -101,8 +101,8 @@ interface Host {
   readonly kind: "host";
   readonly host: {
     readonly attributes: HostAttributes | Promise<HostAttributes>;
-    /** 開始タグを返し、ホストの値を `out` の位置で渡す。 */
-    readonly open: (attributes: HostAttributes, out: Out) => string;
+    /** 開始タグを返し、ホストの値を `at` の位置で渡す。 */
+    readonly open: (attributes: HostAttributes, at: Out) => string;
     readonly chunks: Chunk[];
     /** 要素を作成したホストに、開始タグの後で `@c:キー` を送るスクリプトである。 */
     readonly announce: string | undefined;
@@ -694,25 +694,23 @@ class Renderer {
 
   /** ホストの ID の接頭辞である。 */
   private readonly hostPrefix: string;
+  /** すべての境界を待って、フォールバックと差し替えを出力しないかどうかである。 */
+  private readonly blocking: boolean;
+  /** 文字列を出力する。文書を出力しない描画では、エラーを投げる。 */
+  private readonly write: (text: string) => void;
 
   /**
    * `target` が `document` か `refresh` の描画では、シェルの中かつ要素の外の `<title>`、`<meta>`、`<link>` と `<head>` の子を `<head>` に移動し、`<html>` と `<body>` の属性を文書の開始タグに移動する。
    */
   constructor(private readonly target: Target) {
     this.hostPrefix = target.kind === "refresh" ? `r${this.nonce.slice(0, 8)}-` : "";
-  }
-
-  /** すべての境界を待って、フォールバックと差し替えを出力しないかどうかである。 */
-  private get blocking(): boolean {
-    return this.target.kind !== "document" || this.target.blocking;
-  }
-
-  /** `text` を出力する。文書を出力しない描画では、エラーを投げる。 */
-  private write(text: string): void {
-    if (this.target.kind !== "document") {
-      throw new Error(`${this.target.kind} の描画は、文字列を書き込みません。`);
-    }
-    this.target.write(text);
+    this.blocking = target.kind !== "document" || target.blocking;
+    this.write =
+      target.kind === "document"
+        ? target.write
+        : () => {
+            throw new Error(`${target.kind} の描画は、文字列を書き込みません。`);
+          };
   }
 
   /** シェルの中の `<Errored>` が受け止めたときのステータスのうち、最も大きいものを返す。受け止めていなければ 200 を返す。 */
