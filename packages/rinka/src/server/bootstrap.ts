@@ -1,5 +1,6 @@
 import { loadTimings } from "../shared/names.ts";
 import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
+import { scriptJson } from "./wire.ts";
 
 /** インスタンスの起動のタイミングを指定する属性の名前である。 */
 export const loadAttributeName = "data-rinka-load";
@@ -46,10 +47,6 @@ w(el,f){const e=E[el.localName];e?when(el,e.l,f):f()}})})(window.$rinka||{})`;
 
 /** `<script>` で囲んだ起動スクリプトである。 */
 export const bootstrap = `<script>${bootstrapSource}</script>`;
-
-/** `value` を、`<script>` の中に埋め込める JSON にする。 */
-export const scriptJson = (value: unknown): string =>
-  JSON.stringify(value).replaceAll("<", "\\u003c");
 
 /** 値が無いことを表す JS の式である。 */
 export const noValue = "$rinka.n";

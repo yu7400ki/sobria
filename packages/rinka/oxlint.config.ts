@@ -63,8 +63,10 @@ export default defineConfig({
     "unicorn/prefer-node-protocol": "error",
   },
   overrides: [
-    { files: ["src/**"], rules: { "rinka/no-transfer-key-literal": "error" } },
-    { files: ["src/**"], rules: { "rinka/no-receiver-literal": "error" } },
+    {
+      files: ["src/**"],
+      rules: { "rinka/no-transfer-key-literal": "error", "rinka/no-receiver-literal": "error" },
+    },
     {
       files: ["src/shared/**"],
       env: { "shared-node-browser": true },

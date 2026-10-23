@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { bootstrapSource } from "../../src/server/bootstrap.ts";
-import type { LoadTiming } from "../../src/shared/names.ts";
-import { loadTimings } from "../../src/shared/names.ts";
+import { loadTimings, type LoadTiming } from "../../src/shared/names.ts";
 import { receiverKeys, type Receiver } from "../../src/shared/receiver.ts";
 
 /** モジュールを読み込んだ要素のタグ名を、読み込んだ順に列挙する。 */

@@ -408,6 +408,7 @@ function attach(el: HTMLElement, instance: Instance): void {
     if (takeover.activation === "requested") return;
     takeover.activation = "requested";
     whenStartable(el, () => {
+      if (instance.takeover !== takeover) return;
       takeover.activation = "granted";
       if (el.isConnected) attach(el, instance);
     });

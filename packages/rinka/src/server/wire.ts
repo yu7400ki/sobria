@@ -25,6 +25,10 @@ function withPath<T>(run: () => T, value: unknown, path: string): T {
   }
 }
 
+/** `value` を、`<script>` の中に埋め込める JSON にする。 */
+export const scriptJson = (value: unknown): string =>
+  JSON.stringify(value).replaceAll("<", "\\u003c");
+
 /** ページのスクリプトに埋め込む、`value` を作成する JS の式を返す。 */
 export function toScript(value: unknown, path: string): string {
   return withPath(() => serialize(value, { plugins: [refuseErrors] }), value, path);

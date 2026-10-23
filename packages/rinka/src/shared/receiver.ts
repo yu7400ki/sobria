@@ -1,6 +1,9 @@
 import type { DefaultLoad } from "./element.ts";
 
-/** 1 つの境界の中身と、その境界の中の差し替えを表す。`bp` と `p` の各要素の 2 つ目は、境界までのホストの ID の列である。 */
+/**
+ * 1 つの境界の中身と、その境界の中の差し替えを表す。`b` は境界の ID で、`bp` は境界の目印を含む Shadow DOM のホストの ID の列である。
+ * `p` の各要素は、差し替えの ID と、その差し替えの目印を含む Shadow DOM のホストの ID の列の組である。
+ */
 export interface SwapSpec {
   readonly b: string;
   readonly bp: readonly string[];
