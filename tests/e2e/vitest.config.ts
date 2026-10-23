@@ -1,3 +1,4 @@
+import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
 
@@ -7,6 +8,7 @@ export default defineConfig({
     projects: [
       { test: { name: "node", include: ["node/**/*.test.ts"] } },
       {
+        plugins: [svelte()],
         test: {
           name: "e2e",
           globalSetup: ["global-setup.ts"],
