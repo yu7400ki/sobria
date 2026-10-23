@@ -9,6 +9,15 @@ import { ROUTES_DIR, scanPages } from "./routes.ts";
 /** 生成したファイルを置く、アプリのルートからの相対パスのディレクトリである。 */
 export const PREPARED_DIR = ".rinka";
 
+/** `.rinka/` に tsconfig を生成するプロジェクトの名前である。 */
+export const PROJECTS = ["shared", "elements", "server"] as const;
+
+/** `.rinka/` に tsconfig を生成するプロジェクトの名前を表す。 */
+type Project = (typeof PROJECTS)[number];
+
+/** プロジェクト `project` の tsconfig の、`.rinka/` の中のファイルの名前を返す。 */
+export const projectConfig = (project: Project): string => `tsconfig.${project}.json`;
+
 /** 生成する tsconfig が extends する、アプリの tsconfig のファイルの名前である。 */
 const BASE_CONFIG = "tsconfig.base.json";
 
@@ -42,10 +51,10 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
   const routesDir = fromPrepared(join(root, ROUTES_DIR));
   const elements = fromPrepared(elementsDir);
   const tsconfig = (
-    project: string,
+    project: Project,
     customConditions: readonly string[],
     files: { include: readonly string[]; exclude?: readonly string[] },
-    references: readonly string[],
+    references: readonly Project[],
   ): string =>
     `${JSON.stringify(
       {
@@ -53,7 +62,7 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
         compilerOptions: { rootDir: "..", outDir: `out/${project}`, customConditions },
         ...files,
         ...(references.length > 0 && {
-          references: references.map((name) => ({ path: `tsconfig.${name}.json` })),
+          references: references.map((name) => ({ path: projectConfig(name) })),
         }),
       },
       null,
@@ -64,7 +73,7 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
     ["env.d.ts", envDeclaration(options.globalJSX)],
     ["elements.d.ts", elementsDeclaration(options.prefix, elementsDir, fromPrepared)],
     [
-      "tsconfig.shared.json",
+      projectConfig("shared"),
       tsconfig(
         "shared",
         ["rinka-shared", "rinka-server"],
@@ -73,7 +82,7 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
       ),
     ],
     [
-      "tsconfig.elements.json",
+      projectConfig("elements"),
       tsconfig(
         "elements",
         ["rinka-client"],
@@ -82,7 +91,7 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
       ),
     ],
     [
-      "tsconfig.server.json",
+      projectConfig("server"),
       tsconfig("server", ["rinka-server"], { include: [routesDir, "env.d.ts", "routes.d.ts"] }, [
         "elements",
         "shared",

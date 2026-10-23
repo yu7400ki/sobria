@@ -6,6 +6,7 @@ import { resolveConfig } from "vite";
 import { entries } from "./entries.ts";
 import { rinkaPackage } from "./package.ts";
 import { rinkaApi } from "./plugin.ts";
+import { PREPARED_DIR, PROJECTS, projectConfig } from "./prepare.ts";
 
 /** `value` を、整形した JSON のファイルの内容にする。 */
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
@@ -45,12 +46,12 @@ export default defineConfig({
 `,
     "tsconfig.json": json({
       files: [],
-      references: ["shared", "elements", "server"].map((project) => ({
-        path: `./.rinka/tsconfig.${project}.json`,
+      references: PROJECTS.map((project) => ({
+        path: `./${PREPARED_DIR}/${projectConfig(project)}`,
       })),
     }),
     "tsconfig.base.json": json({ compilerOptions: { strict: true } }),
-    ".gitignore": "node_modules\ndist\n.rinka\n",
+    ".gitignore": `node_modules\ndist\n${PREPARED_DIR}\n`,
     "src/server.ts": `/// <reference types="node" />
 
 import { fileURLToPath } from "node:url";
