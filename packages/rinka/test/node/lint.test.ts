@@ -34,6 +34,7 @@ const rules = new Map([
   ["rinka(no-entry-literal)", "entry"],
   ["rinka(no-receiver-literal)", "receiver"],
   ["rinka(no-marker-attribute-literal)", "marker"],
+  ["rinka(no-output-dir-literal)", "output-dir"],
 ]);
 
 type Diagnostic = { code: string; labels: { span: { line: number } }[] };
@@ -341,6 +342,37 @@ describe("src/ のディレクトリ", () => {
       entries
         .filter((entry) => !entry.isDirectory() || !allowed.has(entry.name))
         .map((entry) => entry.name),
+    ).toEqual([]);
+  });
+});
+
+describe("ビルドの出力先", () => {
+  it("src/build/ の中で、join と resolve に client か server で始まる文字列を渡すと報告する", () => {
+    expect(
+      reports("src/build/app-build.ts", [
+        'import { join, resolve } from "node:path";',
+        'export const a = (out: string) => join(out, "client");',
+        'export const b = (out: string) => resolve(out, "server/entry.js");',
+        "export const c = (out: string) => join(out, `client/${out}`);",
+        'export const d = (out: string) => join(out, "clients");',
+        'export const e = (out: string) => join(out, ".vite");',
+        'export const f = "client";',
+        'export const g = Promise.resolve("server");',
+        'export const h = ["a"].join("client");',
+      ]),
+    ).toEqual([
+      [2, "output-dir"],
+      [3, "output-dir"],
+      [4, "output-dir"],
+    ]);
+  });
+
+  it("src/build/settings.ts では報告しない", () => {
+    expect(
+      reports("src/build/settings.ts", [
+        'import { join } from "node:path";',
+        'export const a = (out: string) => join(out, "client");',
+      ]),
     ).toEqual([]);
   });
 });

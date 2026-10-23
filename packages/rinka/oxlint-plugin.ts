@@ -13,18 +13,26 @@ interface StringNode {
   readonly parent?: { readonly type: string };
 }
 
-/** メソッドの呼び出しを表す。 */
+/** 関数とメソッドの呼び出しを表す。 */
 interface CallNode {
   readonly callee: {
     readonly type: string;
+    readonly name?: string;
     readonly computed?: boolean;
     readonly property?: StringNode & { readonly name?: string };
   };
+  readonly arguments: readonly StringNode[];
 }
 
 interface Context {
   report(descriptor: { node: ModuleDeclaration | StringNode | CallNode; message: string }): void;
 }
+
+/** パスを結合する `node:path` の関数の名前である。 */
+const pathJoins = new Set(["join", "resolve"]);
+
+/** ビルドの出力先のディレクトリの名前で始まる文字列である。 */
+const outputDir = /^(client|server)(\/|$)/;
 
 /** MagicString の、挿入する位置の左右を選ぶメソッドの名前である。 */
 const directionalInserts = new Set(["prependLeft", "prependRight", "appendLeft", "appendRight"]);
@@ -155,6 +163,28 @@ export default {
           });
         };
         return { Literal: check, TemplateLiteral: check };
+      },
+    },
+    /**
+     * 識別子で呼び出す `join` と `resolve` の引数の文字列のリテラルとテンプレートリテラルのうち、
+     * `client` か `server` の後が `/` か終端のものを報告する。
+     */
+    "no-output-dir-literal": {
+      create(context: Context) {
+        return {
+          CallExpression(node: CallNode) {
+            const { type, name } = node.callee;
+            if (type !== "Identifier" || name === undefined || !pathJoins.has(name)) return;
+            for (const argument of node.arguments) {
+              if (!outputDir.test(leadingText(argument) ?? "")) continue;
+              context.report({
+                node: argument,
+                message:
+                  "ビルドの出力先は、src/build/settings.ts の Settings の clientDir と serverDir から作成してください。",
+              });
+            }
+          },
+        };
       },
     },
   },
