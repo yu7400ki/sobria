@@ -153,20 +153,24 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       },
       configureServer(server) {
         const routesDir = resolve(root, "src/routes");
-        const refreshRoutes = (path: string, isDirectory: boolean): void => {
-          if (inside(routesDir, path) === undefined) return;
-          if (!isDirectory && !routeFileNames.has(basename(path))) return;
+        const invalidateRoutes = (): void => {
           for (const environment of Object.values(server.environments)) {
             const node = environment.moduleGraph.getModuleById(ROUTES);
             if (node) environment.moduleGraph.invalidateModule(node);
-            if (!isRunnableDevEnvironment(environment)) continue;
-            const evaluated = environment.runner.evaluatedModules.getModuleById(ROUTES);
-            if (evaluated) environment.runner.evaluatedModules.invalidateModule(evaluated);
           }
         };
-        server.watcher.on("add", (path) => refreshRoutes(path, false));
-        server.watcher.on("unlink", (path) => refreshRoutes(path, false));
-        server.watcher.on("unlinkDir", (path) => refreshRoutes(path, true));
+        const onRouteFile = (path: string): void => {
+          if (inside(routesDir, path) !== undefined && routeFileNames.has(basename(path))) {
+            invalidateRoutes();
+          }
+        };
+        const onRouteDir = (path: string): void => {
+          if (inside(routesDir, path) !== undefined) invalidateRoutes();
+        };
+        server.watcher.on("add", onRouteFile);
+        server.watcher.on("unlink", onRouteFile);
+        server.watcher.on("addDir", onRouteDir);
+        server.watcher.on("unlinkDir", onRouteDir);
         for (const environment of Object.values(server.environments)) {
           if (!isClient(environment)) continue;
           environment.hot.on(reloadEvent, (_data, client) => {

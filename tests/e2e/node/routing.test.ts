@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { ViteDevServer } from "vite";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { createDevServer, originOf } from "../dev-server.ts";
 
@@ -94,10 +94,10 @@ describe("ルーティング", () => {
 
   it("notFound() と表に無い URL には最も近い not-found.tsx を、エラーには最も近い error.tsx を返す", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    onTestFinished(() => error.mockRestore());
     const pages = await Promise.all(
       ["/users/0", "/users/9/x", "/nothing", "/users/boom", "/boom"].map((path) => get(path)),
     );
-    error.mockRestore();
     expect(pages.map(({ status, body }) => [status, /<h1>(.*)<\/h1>/.exec(body)?.[1]])).toEqual([
       [404, "user not found"],
       [404, "user not found"],
