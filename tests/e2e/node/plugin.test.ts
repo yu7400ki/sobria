@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -205,6 +205,80 @@ describe("変換の対象", () => {
       },
       { environments: { widget: { consumer: "client" } } },
     );
+  });
+});
+
+/** 開発サーバー `dev` が生成した `.rinka/` のファイルのうち、名前が `name` のファイルの内容を返す。 */
+const prepared = (dev: ViteDevServer, name: string) =>
+  readFile(join(dev.config.root, ".rinka", name), "utf8");
+
+/** 開発サーバー `dev` のプロジェクトに、ルートからの相対パス `file` のファイルを追加し、追加を通知する。 */
+async function addFile(dev: ViteDevServer, file: string, source: string): Promise<void> {
+  const path = join(dev.config.root, file);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, source);
+  dev.watcher.emit("add", path);
+}
+
+/** 開発サーバー `dev` のプロジェクトから、ルートからの相対パス `file` のファイルを削除し、削除を通知する。 */
+async function removeFile(dev: ViteDevServer, file: string): Promise<void> {
+  const path = join(dev.config.root, file);
+  await rm(path);
+  dev.watcher.emit("unlink", path);
+}
+
+const page = "export default function Page() { return <p>page</p>; }\n";
+
+describe(".rinka/ の生成", () => {
+  it("tsconfig.base.json を追加すると、生成する tsconfig がそれを extends し、削除すると extends から取り除く", async () => {
+    await withProject({ "src/routes/page.tsx": page }, async (dev) => {
+      const extendsOf = async () =>
+        (JSON.parse(await prepared(dev, "tsconfig.shared.json")) as { extends: string[] }).extends;
+      await addFile(dev, "tsconfig.base.json", "{}\n");
+      expect(await extendsOf()).toEqual(["rinka/tsconfig.json", "../tsconfig.base.json"]);
+      await removeFile(dev, "tsconfig.base.json");
+      expect(await extendsOf()).toEqual(["rinka/tsconfig.json"]);
+    });
+  });
+
+  it("Vite の設定を解決する前に api の prepare を呼ぶと、エラーを投げる", () => {
+    const [plugin] = rinka();
+    const api = plugin!.api as { prepare: () => void };
+    expect(() => api.prepare()).toThrow(/設定を解決した後/);
+  });
+
+  it("開発サーバーを起動すると、.rinka/ に型宣言と tsconfig を生成する", async () => {
+    await withProject(
+      { "src/elements/card.tsx": card, "src/routes/users/[id]/page.tsx": page },
+      async (dev) => {
+        expect(await prepared(dev, "elements.d.ts")).toContain(
+          '"app-card": ElementRef<typeof E0>;',
+        );
+        expect(await prepared(dev, "routes.d.ts")).toContain('"/users/[id]": { id: string };');
+        expect(await prepared(dev, "env.d.ts")).toContain("type Element =");
+        expect(JSON.parse(await prepared(dev, "tsconfig.elements.json"))).toMatchObject({
+          extends: ["rinka/tsconfig.json"],
+        });
+      },
+    );
+  });
+
+  it("要素のファイルを追加すると elements.d.ts にタグを加え、削除すると取り除く", async () => {
+    await withProject({ "src/elements/card.tsx": card }, async (dev) => {
+      await addFile(dev, "src/elements/badge.tsx", card);
+      expect(await prepared(dev, "elements.d.ts")).toContain('"app-badge"');
+      await removeFile(dev, "src/elements/badge.tsx");
+      expect(await prepared(dev, "elements.d.ts")).not.toContain('"app-badge"');
+    });
+  });
+
+  it("ページのファイルを追加すると routes.d.ts にルートを加え、削除すると取り除く", async () => {
+    await withProject({ "src/routes/page.tsx": page }, async (dev) => {
+      await addFile(dev, "src/routes/docs/[...slug]/page.tsx", page);
+      expect(await prepared(dev, "routes.d.ts")).toContain('"/docs/[...slug]": { slug: string };');
+      await removeFile(dev, "src/routes/docs/[...slug]/page.tsx");
+      expect(await prepared(dev, "routes.d.ts")).not.toContain("/docs");
+    });
   });
 });
 

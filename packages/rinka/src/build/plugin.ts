@@ -16,12 +16,13 @@ import type { CreateApp, Routes } from "../shared/routes.ts";
 import { fileOfServerFnId } from "../shared/server-fn.ts";
 import type { Lang } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
-import { elementTag, scanElements } from "./elements.ts";
+import { elementTag } from "./elements.ts";
 import { entries, oxc, runtimes } from "./entries.ts";
 import { transformJsx } from "./jsx.ts";
 import { devPath, directUrl, inside } from "./paths.ts";
+import { preparedFiles, writePrepared } from "./prepare.ts";
 import { routeStyles } from "./route-styles.ts";
-import { ROUTES_DIR, routeFileNames, routesModule } from "./routes.ts";
+import { PAGE_FILE, ROUTES_DIR, routeFileNames, routesModule } from "./routes.ts";
 import { SHEET_QUERY, clientSheetModule, serverSheetModule, sheetId, sheetPath } from "./sheets.ts";
 
 /** rinka のプラグインの設定を表す。 */
@@ -32,6 +33,14 @@ export interface RinkaOptions {
   readonly elementsDir?: string;
   /** GET 以外のサーバー関数のリクエストで、別のサイトからでも受け付けるオリジンを、スキーム、ホスト、ポートを含めて列挙する。 */
   readonly trustedOrigins?: readonly string[];
+  /** `false` なら、`.rinka/env.d.ts` でグローバルの `JSX` を宣言しない。 */
+  readonly globalJSX?: false;
+}
+
+/** rinka のプラグインが、ほかのプラグインと CLI に公開する API を表す。 */
+export interface RinkaApi {
+  /** `.rinka/` を生成する。Vite の設定を解決する前に呼び出すと、エラーを投げる。 */
+  readonly prepare: () => void;
 }
 
 /** 拡張子ごとの、変換する言語である。 */
@@ -73,6 +82,16 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   const serverFnIds = new Map<string, ReadonlySet<string>>();
   let root = "";
   let elementsDir = "";
+  const writeTypes = (): void => {
+    if (root === "") {
+      throw new Error("[rinka] .rinka/ は、Vite の設定を解決した後に生成してください。");
+    }
+    writePrepared(
+      root,
+      preparedFiles({ root, prefix, elementsDir, globalJSX: options.globalJSX ?? true }),
+    );
+  };
+  const api: RinkaApi = { prepare: writeTypes };
 
   /** モジュールの ID を、クエリの無いプロジェクトのファイルなら、ルートからの相対パスと言語にする。 */
   const projectFile = (id: string): ProjectFile | undefined => {
@@ -104,6 +123,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
     {
       name: NAME,
       enforce: "pre",
+      api,
       config: () => ({
         appType: "custom",
         oxc,
@@ -125,7 +145,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         elementsDir = resolve(root, options.elementsDir ?? "src/elements");
       },
       buildStart() {
-        scanElements(prefix, elementsDir);
+        writeTypes();
       },
       resolveId(id, importer, resolveOptions) {
         if (id === entries.routes) return ROUTES;
@@ -162,18 +182,34 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
             if (node) environment.moduleGraph.invalidateModule(node);
           }
         };
-        const onRouteFile = (path: string): void => {
-          if (inside(routesDir, path) !== undefined && routeFileNames.has(basename(path))) {
-            invalidateRoutes();
+        const rewriteTypes = (): void => {
+          try {
+            writeTypes();
+          } catch (error) {
+            server.config.logger.error(error instanceof Error ? error.message : String(error));
           }
         };
-        const onRouteDir = (path: string): void => {
-          if (inside(routesDir, path) !== undefined) invalidateRoutes();
+        const baseConfig = resolve(root, "tsconfig.base.json");
+        const onFile = (path: string): void => {
+          if (inside(routesDir, path) !== undefined && routeFileNames.has(basename(path))) {
+            invalidateRoutes();
+            if (basename(path) === PAGE_FILE) rewriteTypes();
+          }
+          if (elementTag(prefix, elementsDir, path) !== undefined || resolve(path) === baseConfig) {
+            rewriteTypes();
+          }
         };
-        server.watcher.on("add", onRouteFile);
-        server.watcher.on("unlink", onRouteFile);
-        server.watcher.on("addDir", onRouteDir);
-        server.watcher.on("unlinkDir", onRouteDir);
+        const onDir = (path: string): void => {
+          if (inside(routesDir, path) !== undefined) {
+            invalidateRoutes();
+            rewriteTypes();
+          }
+          if (inside(elementsDir, path) !== undefined) rewriteTypes();
+        };
+        server.watcher.on("add", onFile);
+        server.watcher.on("unlink", onFile);
+        server.watcher.on("addDir", onDir);
+        server.watcher.on("unlinkDir", onDir);
         for (const environment of Object.values(server.environments)) {
           if (!isClient(environment)) continue;
           environment.hot.on(reloadEvent, (_data, client) => {

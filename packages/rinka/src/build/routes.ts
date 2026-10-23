@@ -21,9 +21,12 @@ type ScannedRoute = Route<PathFiles>;
 /** ルートのファイルを置く、アプリのルートからの相対パスのディレクトリである。 */
 export const ROUTES_DIR = "src/routes";
 
+/** ページのファイルの名前である。 */
+export const PAGE_FILE = "page.tsx";
+
 /** ディレクトリにあれば表の行になるファイルの名前と、その種類である。 */
 const routeFiles: readonly (readonly [string, RouteKind])[] = [
-  ["page.tsx", "page"],
+  [PAGE_FILE, "page"],
   ["route.ts", "route"],
   ["not-found.tsx", "not-found"],
 ];
