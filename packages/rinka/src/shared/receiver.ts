@@ -1,5 +1,5 @@
 import type { DefaultLoad } from "./element.ts";
-import type { ServerFnMethod } from "./server-fn.ts";
+import type { CallOptions, ServerFnMethod } from "./server-fn.ts";
 
 /**
  * 1 つの境界の中身と、その境界の中の差し替えを表す。`b` は境界の ID で、`bp` は境界の目印を含む Shadow DOM のホストの ID の列である。
@@ -28,13 +28,16 @@ export interface Receiver {
   readonly r: (spec: SwapSpec) => void;
   /** 要素の一覧を保持し、各要素の最初のインスタンスが起動の条件を満たした時点で、モジュールを 1 回だけ読み込む。 */
   readonly m: (list: readonly ListedElement[]) => void;
-  /** 同じ ID とメソッドには同じ関数を返す。返す関数は、呼ばれるたびに `c` から RPC の関数を取得して呼ぶ。 */
-  readonly f: (id: string, method: ServerFnMethod) => (...args: unknown[]) => Promise<unknown>;
+  /** 同じ ID とメソッドには、ID とメソッドを保持する同じ関数を返す。返す関数は、呼ばれるたびに `c` から RPC の関数を取得して呼ぶ。 */
+  readonly f: (id: string, method: ServerFnMethod) => RpcCall;
   /** ID とメソッドから、RPC で呼び出す関数を返す。クライアントのランタイムが登録する。 */
-  c?: (id: string, method: ServerFnMethod) => (...args: never[]) => Promise<unknown>;
+  c?: (id: string, method: ServerFnMethod) => RpcCall;
   /** インスタンスの起動のタイミングの属性か、一覧のデフォルトの起動タイミングの条件を満たした時点で `start` を呼ぶ。一覧に無いタグなら、すぐに呼ぶ。 */
   readonly w: (host: Element, start: () => void) => void;
 }
+
+/** RPC でサーバー関数を呼び出す関数である。 */
+type RpcCall = (input?: unknown, options?: CallOptions) => Promise<unknown>;
 
 /** 起動スクリプトが `window.$rinka` に定義する受け口の名前を列挙する。 */
 export const receiverKeys = [
@@ -44,7 +47,7 @@ export const receiverKeys = [
   "d",
   "r",
   "m",
-  "w",
   "f",
   "c",
+  "w",
 ] as const satisfies readonly (keyof Receiver)[];

@@ -1,5 +1,6 @@
 import { loadTimings } from "../shared/names.ts";
 import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
+import { serverFnRefName } from "../shared/server-fn.ts";
 import { scriptJson } from "./script.ts";
 
 /** インスタンスの起動のタイミングを指定する属性の名前である。 */
@@ -21,7 +22,7 @@ when(el,e.l,()=>{if(!e.s){e.s=1;import(e.u)}})};
 const scan=root=>{for(const t in E)if(!E[t].s)for(const el of root.querySelectorAll(t))watch(el)};
 const F={};
 window.$rinka=Object.assign(R,{v:R.v||{},l:R.l||{},n:R.n||{},c:R.c,
-f(id,m){const k=m+' '+id;return F[k]||(F[k]=(...a)=>this.c(id,m)(...a))},
+f(id,m){const k=m+' '+id;return F[k]||(F[k]=Object.defineProperty((...a)=>this.c(id,m)(...a),Symbol.for(${scriptJson(serverFnRefName)}),{value:{id,method:m}}))},
 d(id,o){Object.assign(this.v[id]||(this.v[id]={}),o);(this.l[id]||[]).slice().forEach(f=>f())},
 r(s){const me=document.currentScript;me&&me.remove();
 const fix=root=>{for(const t of root.querySelectorAll('template[shadowrootmode]')){fix(t.content);const host=t.parentElement;

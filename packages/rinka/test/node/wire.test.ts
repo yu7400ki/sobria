@@ -1,6 +1,8 @@
 import { fromJSON, toJSON } from "seroval";
 import { describe, expect, it } from "vitest";
 
+import { registerServerFn } from "../../src/server/internal.ts";
+import { defineServerFn } from "../../src/server/server-fn.ts";
 import { fromRpcInput, toRpcBody, toScript } from "../../src/server/wire.ts";
 import { checkSerializable, isJson } from "../../src/shared/wire.ts";
 
@@ -34,23 +36,23 @@ describe("checkSerializable", () => {
     class Point {
       x = 1;
     }
-    expect(() => checkSerializable({ a: [{ p: new Point() }] }, "props")).toThrow(
+    expect(() => checkSerializable({ a: [{ p: new Point() }] }, "props", false)).toThrow(
       "props.a[0].p は Point のインスタンスなので、シリアライズできません。",
     );
-    expect(() => checkSerializable({ cb: () => 1 }, "props")).toThrow(
+    expect(() => checkSerializable({ cb: () => 1 }, "props", false)).toThrow(
       "props.cb は関数なので、シリアライズできません。",
     );
-    expect(() => checkSerializable({ s: Symbol("x") }, "v")).toThrow("v.s は symbol なので");
-    expect(() => checkSerializable({ p: Promise.resolve(1) }, "v")).toThrow(
+    expect(() => checkSerializable({ s: Symbol("x") }, "v", false)).toThrow("v.s は symbol なので");
+    expect(() => checkSerializable({ p: Promise.resolve(1) }, "v", false)).toThrow(
       "v.p は Promise なので、シリアライズできません。await してから渡してください。",
     );
-    expect(() => checkSerializable({ e: new TypeError("x") }, "v")).toThrow(
+    expect(() => checkSerializable({ e: new TypeError("x") }, "v", false)).toThrow(
       "v.e は Error なので、送信できません。",
     );
-    expect(() => checkSerializable(new Map([["k", () => 1]]), "v")).toThrow(
+    expect(() => checkSerializable(new Map([["k", () => 1]]), "v", false)).toThrow(
       "v.get(k) は関数なので",
     );
-    expect(() => checkSerializable(new Map([[Symbol("k"), 1]]), "v")).toThrow(
+    expect(() => checkSerializable(new Map([[Symbol("k"), 1]]), "v", false)).toThrow(
       "v のキー は symbol なので",
     );
   });
@@ -63,10 +65,10 @@ describe("checkSerializable", () => {
       u: new Uint8Array(2),
       n: Object.create(null) as object,
     };
-    expect(() => checkSerializable(value, "v")).not.toThrow();
+    expect(() => checkSerializable(value, "v", false)).not.toThrow();
     const cyclic: Record<string, unknown> = { a: 1 };
     cyclic.self = cyclic;
-    expect(() => checkSerializable(cyclic, "v")).not.toThrow();
+    expect(() => checkSerializable(cyclic, "v", false)).not.toThrow();
   });
 });
 
@@ -122,6 +124,16 @@ describe("RPC の値", () => {
   it("戻り値の Error は位置を示すエラーにする", () => {
     expect(() => toRpcBody({ e: new Error("x") })).toThrow(
       "サーバー関数の戻り値.e は Error なので、送信できません。",
+    );
+  });
+
+  it("戻り値のサーバー関数は、位置を示すエラーにする", () => {
+    const like = registerServerFn(
+      "src/wire-fns.ts#like",
+      defineServerFn(() => null),
+    );
+    expect(() => toRpcBody({ like, at: new Date(1) })).toThrow(
+      "サーバー関数の戻り値.like は関数なので、シリアライズできません。",
     );
   });
 

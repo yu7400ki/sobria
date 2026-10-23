@@ -61,13 +61,16 @@ export function isJson(value: unknown): boolean {
 
 const builtins = [Date, RegExp, Map, Set, ArrayBuffer, DataView];
 
-/** seroval でシリアライズできない値を `value` の中から探索し、`path` に続けてその値の位置を示すエラーを投げる。 */
-export function checkSerializable(value: unknown, path: string): void {
-  check(value, path, new Set());
+/**
+ * seroval でシリアライズできない値を `value` の中から探索し、`path` に続けてその値の位置を示すエラーを投げる。
+ * `serverFns` が真なら、ID とメソッドを保持するサーバー関数を、シリアライズできる値として扱う。
+ */
+export function checkSerializable(value: unknown, path: string, serverFns: boolean): void {
+  check(value, path, serverFns, new Set());
 }
 
-function check(value: unknown, path: string, seen: Set<object>): void {
-  if (typeof value === "function" && serverFnRefOf(value) === undefined) {
+function check(value: unknown, path: string, serverFns: boolean, seen: Set<object>): void {
+  if (typeof value === "function" && !(serverFns && serverFnRefOf(value))) {
     throw new Error(
       `${path} は関数なので、シリアライズできません。サーバーから要素に渡せる関数は、サーバー関数だけです。`,
     );
@@ -76,7 +79,7 @@ function check(value: unknown, path: string, seen: Set<object>): void {
     throw new Error(`${path} は symbol なので、シリアライズできません。`);
   if (typeof value !== "object" || value === null || seen.has(value)) return;
   seen.add(value);
-  const next = (item: unknown, at: string) => check(item, at, seen);
+  const next = (item: unknown, at: string) => check(item, at, serverFns, seen);
   if (Array.isArray(value)) {
     value.forEach((item: unknown, i) => next(item, `${path}[${i}]`));
     return;

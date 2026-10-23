@@ -1,8 +1,11 @@
 /** サーバー関数を呼び出す HTTP のメソッドである。 */
 export type ServerFnMethod = "GET" | "POST";
 
+/** `serverFnRef` を `Symbol.for` で取得するときの名前である。 */
+export const serverFnRefName = "rinka.serverFnRef";
+
 /** サーバー関数の ID とメソッドを、関数に保持するときのキーである。 */
-export const serverFnRef: unique symbol = Symbol.for("rinka.serverFnRef");
+export const serverFnRef: unique symbol = Symbol.for(serverFnRefName);
 
 /** サーバー関数の ID とメソッドを表す。 */
 export interface ServerFnRef<M extends ServerFnMethod = ServerFnMethod> {

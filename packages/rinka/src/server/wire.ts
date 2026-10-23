@@ -17,7 +17,6 @@ const refuseErrors = createPlugin<Error, never>({
   deserialize: refuseError,
 });
 
-/** ID とメソッドを保持するサーバー関数を、`$rinka.f` の式にする seroval のプラグイン。 */
 /** seroval のプラグインが扱う、サーバー関数の ID とメソッドのノードを表す。 */
 type RefNode = { readonly id: SerovalNode; readonly method: SerovalNode };
 
@@ -37,39 +36,41 @@ const serverFns = createPlugin<(...args: never[]) => unknown, RefNode>({
       const { id, method } = refOf(value);
       return { id: ctx.parse(id), method: ctx.parse(method) };
     },
-    async: async (value, ctx) => {
-      const { id, method } = refOf(value);
-      return { id: await ctx.parse(id), method: await ctx.parse(method) };
-    },
-    stream: (value, ctx) => {
-      const { id, method } = refOf(value);
-      return { id: ctx.parse(id), method: ctx.parse(method) };
-    },
   },
   serialize: (node, ctx) => serverFnCall(ctx.serialize(node.id), ctx.serialize(node.method)),
   deserialize: refuseError,
 });
 
-/** `run` が失敗したときだけ `value` を走査し、送信できない値の位置を示すエラーを投げる。 */
-function withPath<T>(run: () => T, value: unknown, path: string): T {
+/** `run` が失敗したときだけ `value` を走査し、送信できない値の位置を示すエラーを投げる。`allowServerFns` は `checkSerializable` に渡す。 */
+function withPath<T>(run: () => T, value: unknown, path: string, allowServerFns: boolean): T {
   try {
     return run();
   } catch (error) {
-    checkSerializable(value, path);
+    checkSerializable(value, path, allowServerFns);
     throw error;
   }
 }
 
 /** ページのスクリプトに埋め込む、`value` を作成する JS の式を返す。 */
 export function toScript(value: unknown, path: string): string {
-  return withPath(() => serialize(value, { plugins: [refuseErrors, serverFns] }), value, path);
+  return withPath(
+    () => serialize(value, { plugins: [refuseErrors, serverFns] }),
+    value,
+    path,
+    true,
+  );
 }
 
 /** サーバー関数の戻り値から、RPC のレスポンスの本文を作成する。 */
 export function toRpcBody(value: unknown): RpcBody {
   if (isJson(value)) return { ok: value };
   return {
-    s: withPath(() => toJSON(value, { plugins: [refuseErrors] }), value, "サーバー関数の戻り値"),
+    s: withPath(
+      () => toJSON(value, { plugins: [refuseErrors] }),
+      value,
+      "サーバー関数の戻り値",
+      false,
+    ),
   };
 }
 

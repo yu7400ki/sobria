@@ -656,7 +656,7 @@ class Renderer {
         const value = propValue(name);
         if ((typeof value === "object" && value !== null) || typeof value === "function") {
           if (ctx.owner !== null) continue;
-          checkSerializable(value, `<${tag}> ${name}`);
+          checkSerializable(value, `<${tag}> ${name}`, true);
           (transfer ??= {})[name] = value;
           continue;
         }

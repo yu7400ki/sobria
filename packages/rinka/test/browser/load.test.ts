@@ -4,6 +4,7 @@ import { installRpc, serverFn } from "../../src/client/server-fn.ts";
 import { bootstrapSource } from "../../src/server/bootstrap.ts";
 import { loadTimings, type LoadTiming } from "../../src/shared/names.ts";
 import { receiverKeys, type Receiver } from "../../src/shared/receiver.ts";
+import { serverFnRefOf } from "../../src/shared/server-fn.ts";
 
 /** モジュールを読み込んだ要素のタグ名を、読み込んだ順に列挙する。 */
 declare global {
@@ -182,6 +183,11 @@ describe("$rinka.f", () => {
       };
     expect(await like(1)).toBe("liked");
     expect(calls).toEqual([["src/fns.ts#like", "POST", 1]]);
+  });
+
+  it("返す関数は、サーバー関数の ID とメソッドを保持する", () => {
+    const like = receiver().f("src/fns.ts#like", "POST");
+    expect(serverFnRefOf(like)).toEqual({ id: "src/fns.ts#like", method: "POST" });
   });
 
   it("クライアントのランタイムは、$rinka.c に serverFn を登録する", () => {
