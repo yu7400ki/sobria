@@ -16,6 +16,7 @@ import { reloadEvent } from "../shared/hmr.ts";
 import type { CreateApp, Routes } from "../shared/routes.ts";
 import { moduleOfServerFnId } from "../shared/server-fn.ts";
 import type { Lang } from "./ast.ts";
+import { embedRouteStyles, moveServerAssets } from "./build-styles.ts";
 import { transformSource } from "./compiler.ts";
 import { elementTag, scanElements } from "./elements.ts";
 import { entries, oxc, runtimes } from "./entries.ts";
@@ -28,7 +29,15 @@ import { preparedFiles, writePrepared } from "./prepare.ts";
 import { routeStyles } from "./route-styles.ts";
 import { PAGE_FILE, ROUTES_DIR, routeFileNames, routesModule } from "./routes.ts";
 import { hashedFnModule, serverFnModules } from "./server-fns.ts";
-import { SHEET_QUERY, clientSheetModule, serverSheetModule, sheetId, sheetPath } from "./sheets.ts";
+import {
+  SHEET_QUERY,
+  clientBuildSheetModule,
+  clientSheetModule,
+  serverBuildSheetModule,
+  serverSheetModule,
+  sheetId,
+  sheetPath,
+} from "./sheets.ts";
 
 /** rinka のプラグインの設定を表す。 */
 export interface RinkaOptions {
@@ -243,9 +252,22 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         const sheet = sheetPath(id);
         if (sheet === undefined) return null;
         const path = devPath(sheet, root);
+        if (isBuild) {
+          return isClient(this.environment)
+            ? clientBuildSheetModule(`${path}?url`)
+            : serverBuildSheetModule(`${path}?url`, `${path}?inline`);
+        }
         return isClient(this.environment)
           ? clientSheetModule(`${path}?inline`)
           : serverSheetModule(`${path}?inline`, directUrl(path));
+      },
+      generateBundle(_output, bundle) {
+        if (isBuild && !isClient(this.environment)) embedRouteStyles(bundle, root);
+      },
+      writeBundle(_output, bundle) {
+        if (isBuild && !isClient(this.environment)) {
+          moveServerAssets(bundle, join(outDir, "server"), join(outDir, "client"));
+        }
       },
       configureServer(server) {
         const routesDir = resolve(root, ROUTES_DIR);

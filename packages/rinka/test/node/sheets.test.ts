@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { CompileError, transformSource } from "../../src/build/compiler.ts";
 import { devPath, directUrl } from "../../src/build/paths.ts";
-import { clientSheetModule, serverSheetModule } from "../../src/build/sheets.ts";
+import {
+  clientBuildSheetModule,
+  clientSheetModule,
+  serverBuildSheetModule,
+  serverSheetModule,
+} from "../../src/build/sheets.ts";
 import { serverSheet, sheetInfo } from "../../src/server/styles.ts";
 
 /** `.ts` のモジュール `src/lib/a.ts` として `code` を変換したコードを返す。 */
@@ -55,6 +60,22 @@ describe("シートのモジュール", () => {
     expect(code).toContain('import { serverSheet } from "rinka/internal";');
     expect(code).toContain('export default serverSheet("/src/a.css?direct", css);');
     expect(code).not.toContain("rinka.sheet");
+  });
+});
+
+describe("本番のシートのモジュール", () => {
+  it("クライアントのモジュールは、?url の CSS を fetch して作成したシートを default export する", () => {
+    const code = clientBuildSheetModule("/src/a.css?url");
+    expect(code).toContain('import { loadSheet } from "rinka/internal";');
+    expect(code).toContain('import url from "/src/a.css?url";');
+    expect(code).toContain("export default await loadSheet(url);");
+  });
+
+  it("サーバーのモジュールは、?url の URL と ?inline の CSS からシートの情報を作成する", () => {
+    const code = serverBuildSheetModule("/src/a.css?url", "/src/a.css?inline");
+    expect(code).toContain('import href from "/src/a.css?url";');
+    expect(code).toContain('import css from "/src/a.css?inline";');
+    expect(code).toContain("export default serverSheet(href, css);");
   });
 });
 

@@ -56,3 +56,10 @@ function sheetOf(sheet: CSSStyleSheet): SheetInfo {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   return info as SheetInfo;
 }
+
+/** ルートのファイルごとの CSS の URL の一覧から、ページのルートのファイルの CSS の URL を、同じ URL を 1 回だけ含めて返す関数を作成する。 */
+export const routeStyles =
+  (table: Readonly<Record<string, readonly string[]>>) =>
+  async (files: readonly string[]): Promise<readonly string[]> => [
+    ...new Set(files.flatMap((file) => (Object.hasOwn(table, file) ? table[file]! : []))),
+  ];

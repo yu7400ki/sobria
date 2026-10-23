@@ -8,7 +8,7 @@ import {
 
 export { createApp } from "./app.ts";
 export { registerServerFn, serverFnLoader } from "./endpoint.ts";
-export { serverSheet } from "./styles.ts";
+export { routeStyles, serverSheet } from "./styles.ts";
 
 /** `fn` を、`tag` の名前の要素として、ブラウザが読み込むモジュールの URL とデフォルトの起動タイミングとともに登録する。 */
 export function defineElement<P, M extends object = object>(

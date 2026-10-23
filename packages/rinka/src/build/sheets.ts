@@ -80,3 +80,20 @@ import css from ${JSON.stringify(inline)};
 export default serverSheet(${JSON.stringify(href)}, css);
 `;
 }
+
+/** 本番のビルドで、`?url` の指定子 `url` の CSS を fetch して作成したシートを default export する、クライアントのシートのモジュールのコードを返す。 */
+export function clientBuildSheetModule(url: string): string {
+  return `import { loadSheet } from "${entries.internal}";
+import url from ${JSON.stringify(url)};
+export default await loadSheet(url);
+`;
+}
+
+/** 本番のビルドで、`?url` の指定子 `url` の URL と、`?inline` の指定子 `inline` の CSS から作成したシートの情報を default export する、サーバーのシートのモジュールのコードを返す。 */
+export function serverBuildSheetModule(url: string, inline: string): string {
+  return `import { serverSheet } from "${entries.internal}";
+import href from ${JSON.stringify(url)};
+import css from ${JSON.stringify(inline)};
+export default serverSheet(href, css);
+`;
+}

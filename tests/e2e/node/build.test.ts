@@ -87,6 +87,31 @@ describe("本番のビルド", () => {
     await Promise.all(preloads.map((url) => readFile(join(outDir, "client", url))));
   });
 
+  it("レイアウトが import した CSS と、要素のシートの DSD の <link> は、クライアントの出力の /assets/ の CSS を指す", async () => {
+    const html = await (await request("/")).text();
+    const links = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map(
+      ([, href]) => href!,
+    );
+    expect(links.length).toBeGreaterThanOrEqual(2);
+    const texts = await Promise.all(
+      links.map((href) => {
+        expect(href).toMatch(/^\/assets\/.+\.css$/);
+        return readFile(join(outDir, "client", href), "utf8");
+      }),
+    );
+    expect(texts.join("\n")).toContain("h1{color:#00f}");
+    expect(texts.join("\n")).toContain(".count{color:red}");
+    const head = html.slice(0, html.indexOf("</head>"));
+    expect(head).toMatch(/<link rel="stylesheet" href="\/assets\/[^"]+\.css">/);
+  });
+
+  it("サーバーの出力の CSS はクライアントの出力に移動し、ソースマップと JSON は移動しない", async () => {
+    const server = await readdir(join(outDir, "server"), { recursive: true });
+    expect(server.filter((file) => file.endsWith(".css"))).toEqual([]);
+    const client = await readdir(join(outDir, "client"), { recursive: true });
+    expect(client.filter((file) => file.endsWith(".map"))).toEqual([]);
+  });
+
   it("どのページからも import されていないサーバー関数も、ハッシュの ID の RPC で呼び出せる", async () => {
     const response = await request(rpcPath("src/lib/orphan.ts", "orphan"), { method: "POST" });
     expect(await response.json()).toEqual({ ok: "orphan" });
