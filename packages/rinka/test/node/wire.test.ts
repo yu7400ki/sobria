@@ -126,7 +126,9 @@ describe("RPC の値", () => {
   });
 
   it("seroval の JSON の形式の入力を読む", () => {
-    expect(fromRpcInput(toJSON({ from: new Date(10), seen: new Set([1]) }))).toEqual({
+    expect(
+      fromRpcInput(JSON.stringify(toJSON({ from: new Date(10), seen: new Set([1]) }))),
+    ).toEqual({
       from: new Date(10),
       seen: new Set([1]),
     });

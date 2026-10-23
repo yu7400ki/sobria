@@ -8,9 +8,11 @@ import {
   type ElementOptions,
 } from "../shared/element.ts";
 import type { AppOptions, CreateApp, Route } from "../shared/routes.ts";
-import { runInRequest } from "./context.ts";
+import { rinkaMiddleware } from "./endpoint.ts";
 import { jsx } from "./jsx-runtime.ts";
 import { renderDocument } from "./render.ts";
+
+export { registerServerFn } from "./endpoint.ts";
 
 /** `fn` を、`tag` の名前の要素として、ブラウザが読み込むモジュールの URL とデフォルトの起動タイミングとともに登録する。 */
 export function defineElement<P, M extends object = object>(
@@ -27,15 +29,14 @@ export const createApp = ((routes: readonly Route[], options: AppOptions = {}): 
   const app = new Hono();
   const { onError } = options;
   if (onError) app.onError((c) => onError(c.error));
+  app.use(rinkaMiddleware(options));
   for (const route of routes) {
-    app.get(route.path, (c) =>
-      runInRequest(c, async () => {
-        const { default: page } = await route.page();
-        return renderDocument(jsx(page, {}), {
-          ...(options.head !== undefined && { head: options.head }),
-        });
-      }),
-    );
+    app.get(route.path, async () => {
+      const { default: page } = await route.page();
+      return renderDocument(jsx(page, {}), {
+        ...(options.head !== undefined && { head: options.head }),
+      });
+    });
   }
   return app;
 }) satisfies CreateApp;

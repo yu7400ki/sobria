@@ -76,6 +76,19 @@ describe("サーバー側から直接呼んだサーバー関数", () => {
     expect(called).toBe(false);
   });
 
+  it("内側のミドルウェアが返した Response で、外側のミドルウェアの next() は正常に終了し、呼び出し元にはその Response を投げる", async () => {
+    const order: string[] = [];
+    const unauthorized = new Response("Unauthorized", { status: 401 });
+    const outer = defineMiddleware(async (_c, next) => {
+      await next();
+      order.push("outer:after");
+    });
+    const deny = defineMiddleware(async () => unauthorized);
+    const fn = defineServerFn(outer, deny, () => "secret");
+    await expect(fn()).rejects.toBe(unauthorized);
+    expect(order).toEqual(["outer:after"]);
+  });
+
   it("ミドルウェアが投げた HTTPException は、そのまま呼び出し元に届く", async () => {
     const forbidden = new HTTPException(403, { message: "forbidden" });
     const deny = defineMiddleware(async () => {
@@ -197,6 +210,24 @@ describe("ページの描画中に呼んだサーバー関数", () => {
     const Page = () => jsx(Loading, { fallback: "…", children: jsx(Later, {}) });
     const response = await requestPage(Page, { headers: { "x-user": "ann" } });
     expect(await response.text()).toContain("deferred:ann");
+  });
+
+  it("ページから直接呼んだサーバー関数のミドルウェアが c.res を変更しても、ページのレスポンスは変わらない", async () => {
+    const touch = defineMiddleware(async (c, next) => {
+      await next();
+      c.res.headers.set("x-outer-res", "1");
+      c.header("x-outer", "1");
+    });
+    const replace = defineMiddleware(async (c, next) => {
+      await next();
+      c.res = new Response("replaced", { status: 418 });
+    });
+    const fn = defineServerFn(touch, replace, () => "value");
+    const response = await requestPage(async () => `page:${await fn()}`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-outer-res")).toBeNull();
+    expect(response.headers.get("x-outer")).toBeNull();
+    expect(await response.text()).toContain("page:value");
   });
 
   it("ミドルウェアが返した Response を、ページのレスポンスにする", async () => {

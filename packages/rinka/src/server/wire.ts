@@ -1,6 +1,6 @@
-import { createPlugin, fromJSON, serialize, toJSON, type SerovalJSON } from "seroval";
+import { createPlugin, fromJSON, serialize, toJSON } from "seroval";
 
-import { checkSerializable, isJson, type RpcBody } from "../shared/wire.ts";
+import { checkSerializable, isJson, isSerovalJson, type RpcBody } from "../shared/wire.ts";
 
 function refuseError(): never {
   throw new Error("Error は送信できません。");
@@ -42,7 +42,9 @@ export function toRpcBody(value: unknown): RpcBody {
   };
 }
 
-/** seroval の JSON の形式で送られた RPC の入力を読む。関数の参照は復元しない。 */
-export function fromRpcInput(json: SerovalJSON): unknown {
+/** seroval の JSON の形式の文字列で送られた RPC の入力を読む。関数の参照は復元しない。形式に合わなければ例外を投げる。 */
+export function fromRpcInput(text: string): unknown {
+  const json: unknown = JSON.parse(text);
+  if (!isSerovalJson(json)) throw new TypeError("seroval の JSON の形式ではありません。");
   return fromJSON(json);
 }

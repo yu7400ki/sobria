@@ -58,6 +58,13 @@ describe("Vite プラグイン", () => {
     }
   });
 
+  it("trustedOrigins に、オリジンでない値を記述するとエラーにする", () => {
+    expect(() => rinka({ trustedOrigins: ["https://www.example.com"] })).not.toThrow();
+    for (const origin of ["https://*.example.com", "https://www.example.com/", "www.example.com"]) {
+      expect(() => rinka({ trustedOrigins: [origin] })).toThrow("trustedOrigins");
+    }
+  });
+
   it("rinka のプラグインを 2 回登録すると、エラーで停止する", async () => {
     // createDevServer が 1 つ目の rinka のプラグインを登録する
     await expect(

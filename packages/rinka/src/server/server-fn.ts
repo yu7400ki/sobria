@@ -1,4 +1,4 @@
-import type { Context, MiddlewareHandler } from "hono";
+import { Context, type MiddlewareHandler } from "hono";
 import type { StandardSchema } from "hono/factory";
 import type { IntersectNonAnyTypes } from "hono/types";
 
@@ -58,10 +58,12 @@ export type ServerFn<In, R> = ([In] extends [undefined]
 
 export const serverFnKey: unique symbol = Symbol("rinka.serverFn");
 
-interface Definition {
-  method: ServerFnMethod;
-  /** 引数の Context を使用してサーバー関数を実行し、handler の戻り値を返す。 */
-  run: (c: Context, input: unknown) => Promise<unknown>;
+/** サーバー関数の定義を表す。 */
+export interface Definition {
+  readonly method: ServerFnMethod;
+  readonly middlewares: readonly Step[];
+  /** 入力を検証し、検証を通過した値で handler を呼び、handler の戻り値を返す。 */
+  readonly handle: (c: Context, input: unknown) => Promise<unknown>;
 }
 
 /** Standard Schema の検証が失敗したことを表すエラーである。 */
@@ -104,7 +106,7 @@ export function defineServerFn(...args: (ServerFnOptions<Validation> | Step)[]):
 }
 
 /** ミドルウェアか handler である。どちらも Context と、`next` か `{ input }` を引数にする。 */
-type Step = (c: Context, arg: any) => unknown;
+export type Step = (c: Context, arg: any) => unknown;
 
 function create(options: ServerFnOptions<Validation>, steps: Step[]): unknown {
   const middlewares = steps.slice(0, -1);
@@ -112,12 +114,10 @@ function create(options: ServerFnOptions<Validation>, steps: Step[]): unknown {
   if (handler === undefined) throw new TypeError("defineServerFn には handler を渡してください。");
   const definition: Definition = {
     method: options.method ?? "POST",
-    run: (c, input) =>
-      runChain(c, middlewares, async () =>
-        handler(c, { input: await validate(options.input, input, c) }),
-      ),
+    middlewares,
+    handle: async (c, input) => handler(c, { input: await validate(options.input, input, c) }),
   };
-  const fn = (input?: unknown) => definition.run(currentContext(), input);
+  const fn = (input?: unknown) => callDirectly(currentContext(), definition, input);
   return Object.assign(fn, { [serverFnKey]: definition });
 }
 
@@ -135,38 +135,85 @@ async function validate(
   return validation(value, c);
 }
 
-async function runChain(
-  c: Context,
-  middlewares: Step[],
-  last: () => Promise<unknown>,
+/**
+ * `page` のリクエストで、別の Context を使用してサーバー関数を実行し、handler の戻り値を返す。
+ * 別の Context は `page` のリクエストと変数を受け継ぎ、ミドルウェアが `c.set` した変数は `page` に戻す。ミドルウェアが設定したレスポンスは `page` に反映しない。
+ * handler が完了せずに、ミドルウェアがレスポンスを設定したら、そのレスポンスを投げる。
+ */
+async function callDirectly(
+  page: Context,
+  definition: Definition,
+  input: unknown,
 ): Promise<unknown> {
-  let called = -1;
+  const c = scopedContext(page);
+  let done = false;
   let result: unknown;
+  let failure: { readonly error: unknown } | undefined;
+  try {
+    await runChain(c, definition.middlewares, async () => {
+      try {
+        result = await definition.handle(c, input);
+        done = true;
+      } catch (error) {
+        failure = { error };
+        throw error;
+      }
+      return undefined;
+    });
+  } finally {
+    for (const [key, value] of Object.entries(c.var)) page.set(key, value);
+  }
+  if (done) return result;
+  // oxlint-disable-next-line typescript/only-throw-error
+  if (c.finalized) throw c.res;
+  if (failure) throw failure.error;
+  throw new Error("ミドルウェアは、next() を呼ぶか、Response を返してください。");
+}
+
+/** `page` のリクエスト、環境、変数を受け継いだ、新しい Context を返す。 */
+function scopedContext(page: Context): Context {
+  let executionCtx: Context["executionCtx"] | undefined;
+  try {
+    executionCtx = page.executionCtx;
+  } catch {
+    executionCtx = undefined;
+  }
+  const env: unknown = page.env;
+  const c = new Context(page.req.raw, {
+    env,
+    ...(executionCtx !== undefined && { executionCtx }),
+  });
+  Object.defineProperty(c, "req", { value: page.req });
+  for (const [key, value] of Object.entries(page.var)) c.set(key, value);
+  return c;
+}
+
+/**
+ * Hono のミドルウェアの合成と同じ規則で、`middlewares` と `last` を順に実行する。
+ * ミドルウェアか `last` が返した Response は、`c.res` が確定していなければ `c.res` にする。
+ * `onError` があれば、投げられた値を `onError` が返す Response にして `c.res` にし、外側のミドルウェアの `next()` を正常に終了させる。
+ */
+export async function runChain(
+  c: Context,
+  middlewares: readonly Step[],
+  last: () => Promise<unknown>,
+  onError?: (error: unknown) => Response | Promise<Response>,
+): Promise<void> {
+  let called = -1;
   const dispatch = async (index: number): Promise<void> => {
     if (index <= called) throw new Error("ミドルウェアは、next() を 1 回だけ呼んでください。");
     called = index;
     const middleware = middlewares[index];
-    if (middleware === undefined) {
-      result = await last();
-      return;
+    let value: unknown;
+    let failed = false;
+    try {
+      value = middleware ? await middleware(c, () => dispatch(index + 1)) : await last();
+    } catch (error) {
+      if (!onError) throw error;
+      value = await onError(error);
+      failed = true;
     }
-    let settled: { ok: true } | { ok: false; error: unknown } | undefined;
-    const next = async () => {
-      try {
-        await dispatch(index + 1);
-        settled = { ok: true };
-      } catch (error) {
-        settled = { ok: false, error };
-        throw error;
-      }
-    };
-    const returned = await middleware(c, next);
-    if (settled?.ok) return;
-    // oxlint-disable-next-line typescript/only-throw-error
-    if (returned instanceof Response) throw returned;
-    if (settled) throw settled.error;
-    throw new Error("ミドルウェアは、next() を呼ぶか、Response を返してください。");
+    if (value instanceof Response && (!c.finalized || failed)) c.res = value;
   };
   await dispatch(0);
-  return result;
 }

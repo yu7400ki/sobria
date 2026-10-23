@@ -8,8 +8,12 @@ export interface Route {
 export interface AppOptions {
   /** ページの `<head>` の末尾に出力するマークアップである。 */
   readonly head?: string;
-  /** ページの読み込みか描画で投げたエラーを受け取り、アプリが返す Response を返す。 */
+  /** ページとサーバー関数のエンドポイントが投げた、rinka が扱わないエラーを受け取り、アプリが返す Response を返す。 */
   readonly onError?: (error: unknown) => Response;
+  /** GET 以外のサーバー関数のリクエストで、別のサイトからでも受け付ける `Origin` を列挙する。 */
+  readonly trustedOrigins?: readonly string[];
+  /** プロジェクトからの相対パスで指定したモジュールに、サーバー関数の定義があれば読み込む。未登録のサーバー関数の ID の、モジュールの部分を受け取る。 */
+  readonly loadModule?: (path: string) => Promise<unknown>;
 }
 
 /** ルートの表から、各ページを描画するアプリを作成する関数を表す。 */

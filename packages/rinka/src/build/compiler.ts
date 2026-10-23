@@ -47,6 +47,8 @@ export interface Transformed {
 export interface SourceResult extends Transformed {
   /** 要素のファイルなら、要素の情報を持つ。 */
   readonly element: ElementInfo | undefined;
+  /** サーバー関数を 1 つ以上定義していれば真である。 */
+  readonly serverFns: boolean;
 }
 
 /** 変換したコードで `stopIfSeeding` を呼ぶときの名前である。 */
@@ -92,6 +94,7 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
     code: output.toString(),
     map: output.generateMap({ hires: true, source: options.id, includeContent: true }),
     element,
+    serverFns: definitions.some((definition) => definition.kind === "serverFn"),
   };
 }
 

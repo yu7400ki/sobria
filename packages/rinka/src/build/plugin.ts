@@ -20,6 +20,8 @@ export interface RinkaOptions {
   readonly prefix?: string;
   /** 要素を置くディレクトリである。プロジェクトのルートからの相対パスで記述し、デフォルトは `src/elements` である。 */
   readonly elementsDir?: string;
+  /** GET 以外のサーバー関数のリクエストで、別のサイトからでも受け付けるオリジンを、スキーム、ホスト、ポートを含めて列挙する。 */
+  readonly trustedOrigins?: readonly string[];
 }
 
 /** 拡張子ごとの、変換する言語である。 */
@@ -55,6 +57,10 @@ const isClient = (environment: Environment): boolean => environment.config.consu
  */
 export function rinka(options: RinkaOptions = {}): Plugin[] {
   const prefix = options.prefix ?? "rinka";
+  const trustedOrigins = options.trustedOrigins ?? [];
+  for (const origin of trustedOrigins) checkOrigin(origin);
+  /** サーバー関数を定義したファイルの、ルートからの相対パスの集合である。 */
+  const serverFnFiles = new Set<string>();
   let root = "";
   let elementsDir = "";
 
@@ -119,7 +125,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           });
         }
         return () => {
-          server.middlewares.use(appMiddleware(server));
+          server.middlewares.use(appMiddleware(server, trustedOrigins, serverFnFiles));
         };
       },
       transform(code, id) {
@@ -133,6 +139,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           client: isClient(this.environment),
           ...(tag !== undefined && { element: { tag, module: `/${target.file}` } }),
         });
+        if (result.serverFns) serverFnFiles.add(target.file);
         return { code: result.code, map: result.map };
       },
     },
@@ -204,10 +211,13 @@ function routesModule(dir: string, root: string): string {
 
 /**
  * `ssr` の環境のランナーで読み込んだ `rinka/routes` からアプリを作成し、リクエストを渡すミドルウェアを返す。
- * アプリはリクエストごとに作成する。ページの読み込みか描画で投げたエラーは `next` に渡す。
+ * アプリはリクエストごとに作成する。アプリの onError が受け取ったエラーは `next` に渡す。
+ * サーバー関数の ID のモジュールは、変換の時点でサーバー関数の定義を見つけたファイルだけを、同じランナーで読み込む。
  */
 function appMiddleware(
   server: ViteDevServer,
+  trustedOrigins: readonly string[],
+  serverFnFiles: ReadonlySet<string>,
 ): (request: IncomingMessage, response: ServerResponse, next: (error?: unknown) => void) => void {
   return (request, response, next) => {
     const environment = server.environments.ssr;
@@ -224,6 +234,10 @@ function appMiddleware(
       let failure: { readonly error: unknown } | undefined;
       const app = createApp(routes, {
         head: VITE_CLIENT,
+        trustedOrigins,
+        loadModule: async (path) => {
+          if (serverFnFiles.has(path)) await runner.import(`/${path}`);
+        },
         onError: (error) => {
           failure = { error };
           return new Response(null, { status: 500 });
@@ -244,4 +258,19 @@ function appMiddleware(
       await listener(request, response);
     })().catch(next);
   };
+}
+
+/** `origin` が、スキーム、ホスト、ポートだけのオリジンでなければ、エラーを投げる。 */
+function checkOrigin(origin: string): void {
+  let parsed: string | undefined;
+  try {
+    parsed = new URL(origin).origin;
+  } catch {
+    parsed = undefined;
+  }
+  if (parsed !== origin || origin.includes("*")) {
+    throw new Error(
+      `trustedOrigins の ${JSON.stringify(origin)} は、"https://www.example.com" のように、スキーム、ホスト、ポートだけのオリジンで記述してください。ワイルドカードは使用できません。`,
+    );
+  }
 }
