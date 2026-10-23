@@ -26,12 +26,13 @@ function defaultFailure(error: unknown): Response {
   return new Response("Internal Server Error", { status: 500 });
 }
 
-/** リクエストごとに `load` でミドルウェアを読み込んで実行するミドルウェアを返す。 */
+/** リクエストごとに `load` でミドルウェアを読み込んで実行するミドルウェアを返す。ミドルウェアが返した Response には、Context で設定したヘッダーを加える。 */
 const lazy =
   (load: Load<MiddlewareHandler>): MiddlewareHandler =>
   async (c, next) => {
     const { default: middleware } = await load();
-    return middleware(c, next);
+    const result = await middleware(c, next);
+    return result instanceof Response ? withContextHeaders(c, result) : result;
   };
 
 /** ページとレイアウトが受け取る、リクエストの props を返す。 */

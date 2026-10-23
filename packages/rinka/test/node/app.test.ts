@@ -499,6 +499,7 @@ describe("Context のヘッダーを加えるレスポンスの出口", () => {
     routes: [
       pageRoute("/page", page("page")),
       pageRoute("/shell", throwing(raw(401, "shell=1"))),
+      pageRoute("/dir", page("dir"), [], [async () => raw(401, "dir=1")]),
       apiRoute("/value", { GET: () => ({ ok: true }) }),
       apiRoute("/response", { GET: () => raw(200, "route=1") }),
       apiRoute("/http", {
@@ -511,6 +512,7 @@ describe("Context のヘッダーを加えるレスポンスの出口", () => {
           throw new Error("boom");
         },
       }),
+      notFoundRoute("/", fallbackOf(fallback("root"))),
     ],
   };
   const rpc = { method: "POST", headers: { "content-type": "application/json" }, body: "null" };
@@ -529,6 +531,8 @@ describe("Context のヘッダーを加えるレスポンスの出口", () => {
       [rpcPath(denied), rpc, "deny=1"],
       [rpcPath(thrown), rpc, "thrown=1"],
       [rpcPath(unfinished), rpc, undefined],
+      ["/dir", undefined, "dir=1"],
+      ["/missing", undefined, undefined],
     ];
     const results = await Promise.all(
       exits.map(async ([path, init, own]) => {
@@ -540,6 +544,24 @@ describe("Context のヘッダーを加えるレスポンスの出口", () => {
     expect(results.map(([path, mark, cookies]) => [path, mark, cookies])).toEqual(
       results.map(([path, , , expected]) => [path, "1", expected]),
     );
+  });
+});
+
+/** ヘッダー `x-mw` と Cookie の `mw` を設定してから、Set-Cookie を持つ 401 の Response を返すミドルウェアである。 */
+const own: MiddlewareHandler = async (c) => {
+  c.header("x-mw", "1");
+  setCookie(c, "mw", "1");
+  return raw(401, "own=1");
+};
+
+describe("ルートの middleware.ts が返した Response", () => {
+  it("next() の前に設定したヘッダーと Set-Cookie を加える", async () => {
+    const response = await request({ middleware: module(own), routes: [] }, "/");
+    expect([
+      response.status,
+      response.headers.get("x-mw"),
+      response.headers.getSetCookie(),
+    ]).toEqual([401, "1", ["mw=1; Path=/", "own=1"]]);
   });
 });
 
