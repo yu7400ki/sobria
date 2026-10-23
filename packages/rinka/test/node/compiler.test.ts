@@ -688,6 +688,13 @@ export const go = () => redirect("/b");`;
     expect(() => module(outside, true)).toThrow(
       "src/lib/a.ts: クライアント向けの出力に、rinka/server から import した redirect が残ります。",
     );
+    expect(() => module(`export { redirect } from "rinka/server";`, true)).toThrow(
+      "src/lib/a.ts: クライアント向けの出力に、rinka/server から export した redirect が残ります。",
+    );
+    expect(() => module(`export * from "rinka/server";`, true)).toThrow(
+      "src/lib/a.ts: クライアント向けの出力に、rinka/server から export した * が残ります。",
+    );
+    expect(() => module(`export type { ServerFn } from "rinka/server";`, true)).not.toThrow();
     expect(() =>
       module(`import { notFound } from "rinka/server";\nexport const f = () => notFound();`, true),
     ).toThrow("import した notFound が残ります。");

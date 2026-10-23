@@ -75,8 +75,8 @@ async function endpoint(
       return value instanceof Response ? value : responder.respond(c, { kind: "value", value });
     },
     (error) => {
-      if (error instanceof Response) return error;
-      if (error instanceof HTTPException) return httpResponse(c, error);
+      if (error instanceof Response) return withContextHeaders(c, error);
+      if (error instanceof HTTPException) return withContextHeaders(c, error.getResponse());
       return responder.respond(c, outcomeOf(error));
     },
   );
@@ -162,9 +162,8 @@ function unreachable(value: never): never {
   throw new Error(`想定していない値です: ${JSON.stringify(value)}`);
 }
 
-/** `HTTPException` のレスポンスに、Context で設定したヘッダーを加えて返す。 */
-function httpResponse(c: Context, error: HTTPException): Response {
-  const response = error.getResponse();
+/** `response` に、Context で設定したヘッダーを加えて返す。 */
+function withContextHeaders(c: Context, response: Response): Response {
   return c.newResponse(response.body, response);
 }
 

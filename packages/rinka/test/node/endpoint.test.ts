@@ -226,17 +226,25 @@ describe("サーバー関数のエンドポイント", () => {
   it("handler から直接呼んだサーバー関数のミドルウェアが返した Response を、RPC とフォームの送信のレスポンスにする", async () => {
     const deny = defineMiddleware(async (c) => c.text("Unauthorized", 401));
     const inner = defineServerFn(deny, () => "inner");
-    const id = register(defineServerFn(async () => inner()));
+    const cookie = defineMiddleware(async (c, next) => {
+      c.header("set-cookie", "a=1");
+      await next();
+    });
+    const id = register(defineServerFn(cookie, async () => inner()));
     const responses = await Promise.all([
       call(id, post(null)),
       call(id, { method: "POST", body: new FormData() }),
     ]);
     const actual = await Promise.all(
-      responses.map(async (response) => [response.status, await response.text()]),
+      responses.map(async (response) => [
+        response.status,
+        response.headers.get("set-cookie"),
+        await response.text(),
+      ]),
     );
     expect(actual).toEqual([
-      [401, "Unauthorized"],
-      [401, "Unauthorized"],
+      [401, "a=1", "Unauthorized"],
+      [401, "a=1", "Unauthorized"],
     ]);
   });
 
