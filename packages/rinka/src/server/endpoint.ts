@@ -86,7 +86,7 @@ type Outcome =
   | { readonly kind: "notFound" }
   | { readonly kind: "schema"; readonly issues: SchemaError["issues"] };
 
-/** `error` を分類する。rinka が扱わない値は投げ直す。 */
+/** `redirect()`、`notFound()`、スキーマの失敗を分類する。それ以外の値は投げ直す。 */
 function outcomeOf(error: unknown): Outcome {
   if (error instanceof Redirect) return { kind: "redirect", location: error.location };
   if (error instanceof NotFound) return { kind: "notFound" };

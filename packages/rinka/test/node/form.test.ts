@@ -151,13 +151,16 @@ describe("JS が無いときのフォームの送信", () => {
     expect(await response.text()).toBe("Bad Request");
   });
 
-  it("GET のサーバー関数への送信は 405 に、別のサイトからの送信は 403 に、未登録の ID への送信は 404 にし、本文を素のテキストにする", async () => {
+  it("GET のサーバー関数への送信は 405 に、別のサイトからの送信は 403 に、未登録の ID と形式が不正な ID への送信は 404 にし、本文を素のテキストにする", async () => {
     const { id: get } = register(defineServerFn({ method: "GET" })(() => null));
     const { id: post } = register(defineServerFn(() => null));
     const responses = await Promise.all([
       submit(get, new FormData()),
       submit(post, new FormData(), { "sec-fetch-site": "cross-site" }),
       submit("src/forms-missing.ts#fn", new FormData()),
+      createApp([]).fetch(
+        new Request("http://localhost/_rinka/fn/%E0", { method: "POST", body: new FormData() }),
+      ),
     ]);
     const actual = await Promise.all(
       responses.map(async (response) => [
@@ -169,6 +172,7 @@ describe("JS が無いときのフォームの送信", () => {
     expect(actual).toEqual([
       [405, false, "Method Not Allowed"],
       [403, false, "Forbidden"],
+      [404, false, "Not Found"],
       [404, false, "Not Found"],
     ]);
   });

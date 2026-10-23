@@ -185,7 +185,7 @@ function scopedContext(page: Context): Context {
 }
 
 /** `runChain` の結果である。`last` が完了したら、その戻り値を持つ。完了せずにレスポンスが確定したら、そのレスポンスを持つ。 */
-export type ChainResult =
+type ChainResult =
   | { readonly completed: true; readonly value: unknown }
   | { readonly completed: false; readonly response: Response };
 
