@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Loading } from "../../src/server/control.ts";
+import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToResponse, renderToString } from "../../src/server/render.ts";
@@ -13,6 +13,12 @@ const sheet = (href: string, properties = "") =>
 
 /** `node` を描画した文書の HTML を返す。 */
 const document = async (node: unknown) => (await renderToResponse(node)).text();
+
+/** `ms` ミリ秒後に `node` を返すコンポーネントを返す。 */
+const after = (ms: number, node: unknown) => async () => {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+  return node;
+};
 
 /** 連続する空白を 1 つの空白にする。 */
 const squash = (html: string) => html.replaceAll(/\s+/g, " ");
@@ -130,5 +136,79 @@ describe("後送りの内容の @property の規則", () => {
     );
     expect(html.split(shellRule)).toHaveLength(2);
     expect(html).toContain(`<style data-rinka-properties>${lateRule}</style><x-styled-late`);
+  });
+
+  it("後送りの境界で使用したシートの規則は、先に出力したほかの境界の内容に出力しない", async () => {
+    const rule = '@property --rb { syntax: "*"; inherits: false; }';
+    const Early = defineElement("x-styled-early", () => null, { props: [] });
+    const Ruled = defineElement(
+      "x-styled-ruled",
+      (_props: object, { css }: Ctx) => {
+        css(sheet("/src/rb.css?direct", rule));
+        return null;
+      },
+      { props: [] },
+    );
+    const html = await document(
+      jsx("main", {
+        children: [
+          jsx(Loading, { fallback: "a", children: jsx(after(40, jsx(Early, {})), {}) }),
+          jsx(Loading, {
+            fallback: "b",
+            children: [jsx(after(10, jsx(Ruled, {})), {}), jsx(after(80, "done"), {})],
+          }),
+        ],
+      }),
+    );
+    expect(html.indexOf(rule)).toBeGreaterThan(html.indexOf("<x-styled-early"));
+    expect(html).toContain(`<style data-rinka-properties>${rule}</style><x-styled-ruled`);
+  });
+
+  it("シェルより先に描画を終えた後送りの境界の規則は、<head> に出力せず、その境界の内容の先頭に出力する", async () => {
+    const rule = '@property --pre { syntax: "*"; inherits: false; }';
+    const Ruled = defineElement(
+      "x-styled-pre",
+      (_props: object, { css }: Ctx) => {
+        css(sheet("/src/pre.css?direct", rule));
+        return null;
+      },
+      { props: [] },
+    );
+    const html = await document(
+      jsx("main", {
+        children: [
+          jsx(Loading, { fallback: "wait", children: jsx(after(5, jsx(Ruled, {})), {}) }),
+          jsx(after(40, "shell"), {}),
+        ],
+      }),
+    );
+    expect(html.indexOf(rule)).toBeGreaterThan(html.indexOf("</head>"));
+    expect(html).toContain(`<style data-rinka-properties>${rule}</style><x-styled-pre`);
+  });
+});
+
+/** 失敗するコンポーネントである。 */
+const Fail = async () => {
+  throw new Error("失敗");
+};
+
+describe("出力しなかった内容の @property の規則", () => {
+  it("失敗した <Errored> の中の要素が使用したシートの規則は出力しない", async () => {
+    const rule = '@property --lost { syntax: "*"; inherits: false; }';
+    const Lost = defineElement(
+      "x-styled-lost",
+      (_props: object, { css }: Ctx) => {
+        css(sheet("/src/lost.css?direct", rule));
+        return null;
+      },
+      { props: [] },
+    );
+    const html = await document(
+      jsx("main", {
+        children: jsx(Errored, { fallback: "fb", children: [jsx(Lost, {}), jsx(Fail, {})] }),
+      }),
+    );
+    expect(html).toContain("fb");
+    expect(html).not.toContain("--lost");
   });
 });

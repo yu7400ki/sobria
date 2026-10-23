@@ -132,6 +132,8 @@ interface Host {
     readonly announce: string | undefined;
     /** サーバーコンポーネントが直接使用した、配信の情報を持つ要素なら、起動スクリプトに伝える内容を持つ。 */
     readonly delivered: Delivered | undefined;
+    /** 要素の関数が ctx の `css` に渡したシートの情報である。 */
+    readonly sheets: readonly SheetInfo[];
   };
 }
 
@@ -395,6 +397,8 @@ class Out {
   private readonly elements = new Map<string, Delivered>();
   /** 描き直しで、この位置に出力したホストの ID ごとに、`data` に入れる JS の式を表す。 */
   private readonly refreshData = new Map<string, string>();
+  /** この位置に出力した要素が使用したシートの `@property` の規則を、シートの URL ごとに表す。 */
+  private readonly sheetRules = new Map<string, string>();
 
   /** 出力の後に書き込むスクリプトを加える。 */
   addScript(script: string): void {
@@ -406,16 +410,27 @@ class Out {
     mergeDelivered(this.elements, [delivered]);
   }
 
+  /** 要素が使用したシートを加える。 */
+  addSheet({ href, properties }: SheetInfo): void {
+    this.sheetRules.set(href, properties);
+  }
+
   /** 描き直しの `data` に入れる、ホストの ID が `id` の props の JS の式を加える。 */
   addRefreshData(id: string, expression: string): void {
     this.refreshData.set(id, expression);
   }
 
-  /** `other` の位置のスクリプト、要素、描き直しの `data` を、この位置に加える。 */
+  /** `other` の位置のスクリプト、要素、描き直しの `data`、シートを、この位置に加える。 */
   absorb(other: Out): void {
     this.scripts.push(...other.scripts);
     mergeDelivered(this.elements, other.elements.values());
     for (const [id, expression] of other.refreshData) this.refreshData.set(id, expression);
+    for (const [href, properties] of other.sheetRules) this.sheetRules.set(href, properties);
+  }
+
+  /** この位置に出力した要素が使用したシートの、URL と `@property` の規則の組である。 */
+  get sheets(): Iterable<readonly [string, string]> {
+    return this.sheetRules.entries();
   }
 
   /** 描き直しの `data` に入れる、ホストの ID ごとの JS の式である。 */
@@ -757,10 +772,8 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
   private caught = 200;
   /** 文書の骨組みに移動するものの目印に含める、描画ごとの値である。 */
   private readonly nonce = crypto.randomUUID();
-  /** 描画した要素が `css` に渡したシートの `@property` の規則を、シートの URL ごとに表す。 */
-  private readonly properties = new Map<string, string>();
   /** `@property` の規則を出力したシートの URL である。 */
-  private readonly sentProperties = new Set<string>();
+  private readonly sentSheets = new Set<string>();
   /** `<label for>` の補完の目印を作成し、置換する。 */
   private readonly labels = new Labels(this.nonce);
   /** 文書の骨組みに移動するものを、目印の番号ごとに保持する。 */
@@ -1238,7 +1251,10 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       const om = keys.length > 0 ? attribute(AWAITED_ATTRIBUTE, keys.join(" ")) : "";
       return `${start}${om}><template shadowrootmode="open"${form ? " shadowrootdelegatesfocus" : ""}>`;
     };
-    out.push({ kind: "host", host: { attributes, open, chunks, announce, delivered } });
+    out.push({
+      kind: "host",
+      host: { attributes, open, chunks, announce, delivered, sheets: shadow?.sheets ?? [] },
+    });
   }
 
   /**
@@ -1257,8 +1273,10 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     readonly chunks: Chunk[];
     readonly slots: ReadonlyMap<string, Boundary>;
     readonly internals: object;
+    readonly sheets: readonly SheetInfo[];
   } {
     const { tag } = record;
+    const sheets: SheetInfo[] = [];
     const chunks: Chunk[] = [];
     const slots = new Map<string, Boundary>();
     let owner: Owner | null = null;
@@ -1276,9 +1294,9 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
         styles.push(styleTag(cssText(input, values)));
         return;
       }
-      const { href, properties } = sheetOf(input);
-      if (properties !== "") this.properties.set(href, properties);
-      styles.push(stylesheetLink(href));
+      const sheet = sheetOf(input);
+      sheets.push(sheet);
+      styles.push(stylesheetLink(sheet.href));
     };
     const elementCtx: Ctx = {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
@@ -1336,7 +1354,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     this.walk(tree, shadowCtx, chunks);
     chunks.push("</template>");
     if (input !== undefined) chunks.push(input);
-    return { chunks, slots, internals };
+    return { chunks, slots, internals, sheets };
   }
 
   /**
@@ -1379,8 +1397,9 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
         return marker(id);
       }
       case "host": {
-        const { attributes, open, chunks, announce, delivered } = chunk.host;
+        const { attributes, open, chunks, announce, delivered, sheets } = chunk.host;
         if (delivered) out.addElement(delivered);
+        for (const sheet of sheets) out.addSheet(sheet);
         const inner = await this.serialize(chunks, out);
         const resolved = await attributes;
         const start = open(resolved, out);
@@ -1481,6 +1500,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
           noindex =
             '<meta name="robots" content="noindex"><script>document.head.append(document.currentScript.previousSibling.cloneNode())</script>';
         }
+        const outs = [regionOut, ...patches.map(([patch]) => patch.out)];
         const [resolvedRegion, ...patched] = this.labels.resolve([
           region,
           ...patches.map(([, html]) => html),
@@ -1488,14 +1508,14 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
         this.reveal(
           flush,
           noindex +
-            `<template ${BOUNDARY_CONTENT_ATTRIBUTE}="${boundary.id}">${this.propertiesStyle()}${resolvedRegion}</template>` +
+            `<template ${BOUNDARY_CONTENT_ATTRIBUTE}="${boundary.id}">${this.takeProperties(outs)}${resolvedRegion}</template>` +
             patches
               .map(
                 ([patch], index) =>
                   `<template ${PATCH_ATTRIBUTE}="${patch.id}">${patched[index]}</template>`,
               )
               .join("") +
-            this.tailOf([regionOut, ...patches.map(([patch]) => patch.out)]) +
+            this.tailOf(outs) +
             swapScript(spec),
         );
         this.finishBoundary(boundary);
@@ -1663,7 +1683,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       const head = `<meta charset="utf-8">${headTags(parts)}`;
       this.reveal(
         this.shellOut.flush,
-        `<!doctype html><html${attributesText(parts.html)}><head>${head}${script}${extraHead}${this.propertiesStyle()}</head><body${attributesText(parts.body)}>${parts.rest}${this.shellOut.scriptText}`,
+        `<!doctype html><html${attributesText(parts.html)}><head>${head}${script}${extraHead}${this.takeProperties([this.shellOut])}</head><body${attributesText(parts.body)}>${parts.rest}${this.shellOut.scriptText}`,
       );
       await this.drain();
       for (const host of this.hosts) host.hide();
@@ -1674,21 +1694,20 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     }
   }
 
-  /** まだ出力していないシートの `@property` の規則を返し、出力したものとして記録する。 */
-  private unsentProperties(): string {
+  /**
+   * `outs` の位置に出力した要素が使用したシートのうち、まだ規則を出力していないシートの `@property` の規則の `<style>` を返し、出力したものとして記録する。
+   * 規則が無ければ空の文字列を返す。
+   */
+  private takeProperties(outs: readonly Out[]): string {
     const rules: string[] = [];
-    for (const [href, properties] of this.properties) {
-      if (this.sentProperties.has(href)) continue;
-      this.sentProperties.add(href);
-      rules.push(properties);
+    for (const out of outs) {
+      for (const [href, properties] of out.sheets) {
+        if (this.sentSheets.has(href)) continue;
+        this.sentSheets.add(href);
+        if (properties !== "") rules.push(properties);
+      }
     }
-    return rules.join("\n");
-  }
-
-  /** まだ出力していないシートの `@property` の規則の `<style>` を返す。規則が無ければ空の文字列を返す。 */
-  private propertiesStyle(): string {
-    const properties = this.unsentProperties();
-    return properties === "" ? "" : styleTag(properties, ` ${PROPERTIES_ATTRIBUTE}`);
+    return rules.length === 0 ? "" : styleTag(rules.join("\n"), ` ${PROPERTIES_ATTRIBUTE}`);
   }
 
   /** 描き直しの `shell` から、`refreshPage()` のレスポンスの JSON の値を作成する。 */
