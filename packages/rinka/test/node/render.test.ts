@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
@@ -266,5 +266,39 @@ describe("要素の props とホストの属性", () => {
       process.off("unhandledRejection", record);
     }
     expect(unhandled).toEqual([]);
+  });
+});
+
+describe("要素の外のイベントハンドラー", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  /** Shadow DOM の中の `<button>` に onClick を渡す要素である。 */
+  const Clicker = defineElement(
+    "x-clicker",
+    () => jsx("button", { onClick: () => {}, children: "in" }),
+    { props: [] },
+  );
+
+  it("要素の外のネイティブのタグに渡したイベントハンドラーは、開発時に警告し、要素の中では警告しない", async () => {
+    vi.stubEnv("DEV", true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const html = await renderToString([
+      jsx("button", { onClick: () => {}, children: "out" }),
+      jsx(Clicker, {}),
+    ]);
+    expect(html).toContain("<button>out</button>");
+    expect(warn.mock.calls).toEqual([
+      ["[rinka] 要素の外の <button> に渡した onClick は、ブラウザで実行されません。"],
+    ]);
+  });
+
+  it("開発時でなければ警告しない", async () => {
+    vi.stubEnv("DEV", false);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await renderToString(jsx("button", { onClick: () => {} }));
+    expect(warn).not.toHaveBeenCalled();
   });
 });

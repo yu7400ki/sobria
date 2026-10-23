@@ -1026,6 +1026,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       tag === "label" && this.runsElements && !ctx.fallback ? this.labelOf(props, ctx) : undefined;
     const attributesOf =
       tag === "form" ? formProps(props) : label ? { ...props, id: label.id } : props;
+    if (ctx.owner === null) warnHandlers(tag, props);
     const openTag = (tracked: boolean): string => {
       let attributes = "";
       for (const [name, raw] of Object.entries(attributesOf)) {
@@ -1693,6 +1694,16 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
   /** 要素の描画の範囲を破棄する。 */
   dispose(): void {
     for (const dispose of this.disposers.splice(0)) dispose();
+  }
+}
+
+/** 開発時に、要素の外のネイティブのタグ `tag` の `props` にあるイベントハンドラーを警告する。 */
+function warnHandlers(tag: string, props: Record<string, unknown>): void {
+  if (!import.meta.env?.DEV) return;
+  for (const [name, value] of Object.entries(props)) {
+    if (isEventProp(name) && isFunction(value)) {
+      console.warn(`[rinka] 要素の外の <${tag}> に渡した ${name} は、ブラウザで実行されません。`);
+    }
   }
 }
 
