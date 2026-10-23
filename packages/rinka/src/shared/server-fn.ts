@@ -23,6 +23,10 @@ export interface ServerFnRef<M extends ServerFnMethod = ServerFnMethod> {
   readonly method: M;
 }
 
+/** `fn` に、サーバー関数の ID とメソッドを保持させて返す。 */
+export const withServerFnRef = <F extends object>(fn: F, ref: ServerFnRef): F =>
+  Object.defineProperty(fn, serverFnRef, { value: ref });
+
 /** `value` が ID とメソッドを保持するサーバー関数なら、その ID とメソッドを返す。 */
 export function serverFnRefOf(value: unknown): ServerFnRef | undefined {
   if (typeof value !== "function" || !(serverFnRef in value)) return undefined;

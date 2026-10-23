@@ -1,6 +1,6 @@
 import { isSeeding } from "../shared/scope.ts";
 import type { CallOptions, ServerFnMethod } from "../shared/server-fn.ts";
-import { ServerFnError, serverFnRef, type ServerFnRef } from "../shared/server-fn.ts";
+import { ServerFnError, withServerFnRef } from "../shared/server-fn.ts";
 import {
   isJson,
   isSerovalJson,
@@ -25,7 +25,6 @@ const never = (): Promise<never> => new Promise(() => {});
  * 2xx 以外のレスポンスは `ServerFnError` として投げ、rinka が組み立てていない 2xx のレスポンスは Response のまま返す。
  */
 export function serverFn(id: string, method: ServerFnMethod): RpcFn {
-  const ref: ServerFnRef = { id, method };
   const call: RpcFn = async (input, { signal, headers } = {}) => {
     if (isSeeding()) return never();
     const plain = input === undefined || isJson(input);
@@ -53,7 +52,7 @@ export function serverFn(id: string, method: ServerFnMethod): RpcFn {
     });
     return read(response);
   };
-  return Object.defineProperty(call, serverFnRef, { value: ref });
+  return withServerFnRef(call, { id, method });
 }
 
 /** 起動スクリプトの `$rinka.c` に `serverFn` を登録する。起動スクリプトを読み込んでいないページでは、何もしない。 */

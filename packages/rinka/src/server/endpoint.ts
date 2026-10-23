@@ -2,7 +2,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 
 import type { AppOptions } from "../shared/routes.ts";
-import { serverFnRef, type ServerFnRef } from "../shared/server-fn.ts";
+import { withServerFnRef } from "../shared/server-fn.ts";
 import { rpcPrefix, rpcQuery, wireFormat, wireHeader } from "../shared/wire.ts";
 import { runInRequest } from "./context.ts";
 import { NotFound, Redirect } from "./errors.ts";
@@ -18,8 +18,7 @@ export function registerServerFn<F extends object>(id: string, fn: F): F {
   if (!definition)
     throw new TypeError("registerServerFn には、defineServerFn が作成した関数を渡してください。");
   registry.set(id, definition);
-  const ref: ServerFnRef = { id, method: definition.method };
-  return Object.defineProperty(fn, serverFnRef, { value: ref });
+  return withServerFnRef(fn, { id, method: definition.method });
 }
 
 /**
