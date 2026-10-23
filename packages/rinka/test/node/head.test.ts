@@ -66,6 +66,16 @@ const Titled = defineElement(
   },
 );
 
+/** <svg> の <title> と、フォールバックに <title> を持つ <Loading> を、Shadow DOM に描画する要素である。 */
+const Graphic = defineElement(
+  "x-graphic",
+  () => [
+    jsx("svg", { children: title("icon") }),
+    jsx(Loading, { fallback: title("wait"), children: jsx(later(10, "done"), {}) }),
+  ],
+  { props: [] },
+);
+
 /** <title> と、フォールバックに <title> と <html> を持つ <Loading> を描画するページである。 */
 const fallbackTitledPage = () =>
   jsx("main", {
@@ -171,6 +181,16 @@ describe("文書の <head>", () => {
     expect(body).toContain('<title>inner</title><link rel="stylesheet" href="/x.css">');
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("<title>"));
+  });
+
+  it("要素の中の <svg> のタグは警告せず、要素の中の <Loading> のフォールバックのタグは要素の中として警告する", async () => {
+    vi.stubEnv("DEV", true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { head } = await documentOf(jsx(Graphic, {}));
+    expect(head).not.toContain("<title>");
+    expect(warn.mock.calls).toEqual([
+      ["[rinka] <title> は要素の中にあるので、<head> に移動せずに、記述した位置に出力します。"],
+    ]);
   });
 
   it("開発時でなければ警告しない", async () => {
