@@ -114,6 +114,68 @@ const documentTags: ReadonlyMap<string, DocumentTag> = new Map([
   ["link", "head"],
 ]);
 
+/** `<meta>` のキーになる属性のうち、`charset` 以外のものである。 */
+const metaKeyNames = ["name", "property", "http-equiv", "itemprop"] as const;
+
+/**
+ * `<head>` に移動するタグのキーを返す。キーが同じタグは、1 つだけを出力する。`read` は、属性の名前から値を返す。
+ * `<title>`、`charset` を持つ `<meta>`、`rel` が `canonical` の `<link>` は、タグの種類がキーになる。ほかの `<meta>` は、キーになる属性の名前と値の組がキーになる。
+ */
+function headKey(tag: string, read: (name: string) => unknown): string | undefined {
+  const text = (name: string): string | null => attributeValue(name, read(name));
+  switch (tag) {
+    case "title":
+      return "title";
+    case "meta": {
+      if (text("charset") !== null) return "charset";
+      for (const name of metaKeyNames) {
+        const value = text(name);
+        if (value !== null) return `${name}=${value}`;
+      }
+      return undefined;
+    }
+    case "link":
+      return text("rel") === "canonical" ? "canonical" : undefined;
+  }
+  return undefined;
+}
+
+/** `<head>` に移動するタグを表す。`depth` は、タグを記述したルートのファイルの深さである。 */
+interface HeadTag {
+  readonly key: string | undefined | Promise<string | undefined>;
+  readonly depth: number;
+}
+
+/**
+ * 文書の順序で並んだ `<head>` のタグから、キーごとに、深さが最も大きく、同じ深さなら後のタグだけを残す。
+ * 残したタグは、そのキーのタグが最初に現れた位置に出力する。
+ */
+function dedupeHead(
+  tags: readonly {
+    readonly html: string;
+    readonly key: string | undefined;
+    readonly depth: number;
+  }[],
+): string {
+  const chosen = new Map<string, { readonly html: string; readonly depth: number }>();
+  for (const tag of tags) {
+    if (tag.key === undefined) continue;
+    const current = chosen.get(tag.key);
+    if (!current || tag.depth >= current.depth) chosen.set(tag.key, tag);
+  }
+  const written = new Set<string>();
+  let html = "";
+  for (const tag of tags) {
+    if (tag.key === undefined) {
+      html += tag.html;
+    } else if (!written.has(tag.key)) {
+      written.add(tag.key);
+      html += chosen.get(tag.key)?.html ?? "";
+    }
+  }
+  return html;
+}
+
 /** 文書を表す。`head` は、文書の `<head>` の末尾に出力するマークアップである。 */
 interface DocumentOutput {
   readonly head: string;
@@ -269,6 +331,8 @@ interface WalkCtx {
   readonly slots?: Map<string, Boundary>;
   /** 名前付きのスロットに配置する内容のうち、最上位のノードを描画しているときは、そのスロットの名前を表す。 */
   readonly slot?: string;
+  /** この位置を記述したルートのファイルの深さである。ルートのファイルの外では 0 である。 */
+  readonly depth: number;
 }
 
 /** 要素のホストごとの状態を表す。 */
@@ -464,6 +528,8 @@ class Renderer {
   private caught = 200;
   /** `<head>` に移動するタグを囲む目印に含める、描画ごとの値である。 */
   private readonly nonce = crypto.randomUUID();
+  /** `<head>` に移動するタグを、目印の番号ごとに保持する。 */
+  private readonly heads = new Map<number, HeadTag>();
 
   /**
    * `write` は、出力する文字列を受け取る。`blocking` なら、すべての境界を待って、フォールバックと差し替えを出力しない。
@@ -519,6 +585,9 @@ class Renderer {
       }
       case "errored":
         this.errored(node, ctx, out);
+        return;
+      case "depth":
+        this.walk(asNode(node.children), { ...ctx, depth: node.depth }, out);
         return;
       case "component": {
         if (isElementComponent(node.fn)) {
@@ -580,6 +649,10 @@ class Renderer {
       if (ctx.owner === null && ctx.boundary === this.root) {
         const { slot: _, ...unslotted } = ctx;
         const id = ++this.seq;
+        const headTagKey = this.settle(ctx, (tracked) =>
+          headKey(tag, (name) => this.value(props[name], ctx, tracked)),
+        );
+        this.heads.set(id, { key: headTagKey, depth: ctx.depth });
         out.push(this.headMarker(id, ""));
         this.nativeTag(tag, props, key, unslotted, out);
         out.push(this.headMarker(id, "/"));
@@ -749,7 +822,11 @@ class Renderer {
 
     const chunks: Chunk[] = [];
     const slots = new Map<string, Boundary>();
-    this.walk(tree, { owner, path: [...ctx.path, record], boundary: ctx.boundary, slots }, chunks);
+    this.walk(
+      tree,
+      { owner, path: [...ctx.path, record], boundary: ctx.boundary, slots, depth: ctx.depth },
+      chunks,
+    );
     chunks.push("</template>");
     for (const name of Object.keys(descriptors)) {
       if (!slotNames.has(name)) continue;
@@ -760,6 +837,7 @@ class Renderer {
         owner: ctx.owner,
         path: ctx.path,
         boundary,
+        depth: ctx.depth,
         ...(ctx.slots && { slots: ctx.slots }),
         ...(slot !== "" && { slot }),
       };
@@ -1023,7 +1101,7 @@ class Renderer {
   /** シェルを描画し、シェルの HTML を返す。 */
   async shell(node: Node): Promise<string> {
     return this.serialize(
-      this.chunks(node, { owner: null, path: [], boundary: this.root }),
+      this.chunks(node, { owner: null, path: [], boundary: this.root, depth: 0 }),
       this.shellOut,
     );
   }
@@ -1045,18 +1123,31 @@ class Renderer {
     );
   }
 
-  /** シェルの文字列 `shell` から、目印で囲んだタグを取り除き、取り除いたタグを文書の順序で連結した文字列と、残りの文字列を返す。 */
-  private takeHead(shell: string): { readonly tags: string; readonly body: string } {
-    const tags: string[] = [];
+  /**
+   * シェルの文字列 `shell` から、目印で囲んだタグを取り除き、`<head>` に出力するタグと、残りの文字列を返す。
+   * `<head>` のタグは、rinka の `<meta charset="utf-8">` を最も浅いタグとして先頭に加え、キーが同じタグを 1 つにする。
+   */
+  private async takeHead(shell: string): Promise<{ readonly tags: string; readonly body: string }> {
+    const found: { readonly html: string; readonly head: HeadTag | undefined }[] = [];
     const inner = new RegExp(`<!--${this.nonce}:\\d+/?-->`, "g");
     const body = shell.replace(
       new RegExp(`<!--${this.nonce}:(\\d+)-->([\\s\\S]*?)<!--${this.nonce}:\\1/-->`, "g"),
-      (_match, _id: string, tag: string) => {
-        tags.push(tag.replace(inner, ""));
+      (_match, id: string, tag: string) => {
+        found.push({ html: tag.replace(inner, ""), head: this.heads.get(Number(id)) });
         return "";
       },
     );
-    return { tags: tags.join(""), body };
+    const tags = await Promise.all(
+      found.map(async ({ html, head }) => ({
+        html,
+        key: await head?.key,
+        depth: head?.depth ?? 0,
+      })),
+    );
+    return {
+      tags: dedupeHead([{ html: '<meta charset="utf-8">', key: "charset", depth: -1 }, ...tags]),
+      body,
+    };
   }
 
   /** 文書の先頭と `shell` を出力し、後送りの境界をすべて出力してから、文書を閉じる。 */
@@ -1066,10 +1157,10 @@ class Renderer {
       const script = this.interactive
         ? bootstrap + preloadLinks(fresh) + announceScript(fresh)
         : "";
-      const { tags, body } = this.takeHead(shell);
+      const { tags, body } = await this.takeHead(shell);
       this.reveal(
         this.shellOut.flush,
-        `<!doctype html><html><head><meta charset="utf-8">${tags}${script}${this.document?.head ?? ""}</head><body>${body}${this.shellOut.scriptText}`,
+        `<!doctype html><html><head>${tags}${script}${this.document?.head ?? ""}</head><body>${body}${this.shellOut.scriptText}`,
       );
       await this.drain();
       for (const host of this.hosts) host.hide();

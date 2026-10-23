@@ -13,7 +13,8 @@ export type Node =
   | TagNode
   | ComponentNode
   | LoadingNode
-  | ErroredNode;
+  | ErroredNode
+  | DepthNode;
 
 /** ネイティブのタグを表す。`props` は、記述子のまま保持する。 */
 export interface TagNode {
@@ -47,6 +48,20 @@ export interface ErroredNode {
   readonly children: () => Node;
   readonly status: number | undefined;
 }
+
+/** ルートのファイルの深さを、子の描画に伝えるノードを表す。深さは、ルートのレイアウト、内側のレイアウト、ページの順に大きい。 */
+export interface DepthNode {
+  readonly kind: "depth";
+  readonly depth: number;
+  readonly children: unknown;
+}
+
+/** `children` を、ルートのファイルの深さ `depth` で描画するノードを返す。 */
+export const withDepth = (depth: number, children: unknown): Node => ({
+  kind: "depth",
+  depth,
+  children,
+});
 
 /** 木のノードを、`ServerNode` の型として扱う。 */
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion

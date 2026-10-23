@@ -18,6 +18,7 @@ import { serverFnMiddleware } from "./endpoint.ts";
 import { notFound } from "./errors.ts";
 import { jsx } from "./jsx-runtime.ts";
 import { renderDocument } from "./render.ts";
+import { withDepth } from "./tree.ts";
 
 /** `HTTPException` はそのレスポンスにし、それ以外は記録して素のテキストの 500 にする。 */
 function defaultFailure(error: unknown): Response {
@@ -38,7 +39,7 @@ const lazy =
 /** ページとレイアウトが受け取る、リクエストの props を返す。 */
 const propsOf = (c: Context) => ({ params: c.req.param(), url: new URL(c.req.url) });
 
-/** `page` を、外側から順に並んだ `layouts` で包んだノードを返す。 */
+/** `page` を、外側から順に並んだ `layouts` で包んだノードを返す。各ファイルの描画には、外側から順に 0 から始まる深さを与える。 */
 async function wrap(
   page: Load<RouteComponent>,
   layouts: readonly Load<RouteComponent>[],
@@ -49,8 +50,8 @@ async function wrap(
     ...layouts.map((load) => load()),
   ]);
   return outer.reduceRight<unknown>(
-    (children, { default: layout }) => jsx(layout, { ...props, children }),
-    jsx(component, props),
+    (children, { default: layout }, depth) => withDepth(depth, jsx(layout, { ...props, children })),
+    withDepth(outer.length, jsx(component, props)),
   );
 }
 
