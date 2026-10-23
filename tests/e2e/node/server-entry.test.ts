@@ -32,6 +32,14 @@ describe("開発サーバーのサーバーのエントリー", () => {
     expect(html).toContain("<h1>deploy</h1>");
     expect(html).toMatch(/<link rel="stylesheet" href="\/src\/styles\/app\.css[^"]*">/);
     expect((await fetch(`${origin}/missing`)).status).toBe(404);
+    expect((await fetch(`${origin}/`)).headers.get("x-server-entry")).toBe("1");
+  });
+
+  it("開発サーバーを再起動しても、サーバーコンポーネントの CSS の <link> を出力する", async () => {
+    await server.restart();
+    origin = originOf(server);
+    const html = await (await fetch(`${origin}/`)).text();
+    expect(html).toMatch(/<link rel="stylesheet" href="\/src\/styles\/app\.css[^"]*">/);
   });
 
   it("サーバー関数の RPC は、ファイルのパスの ID で呼び出せる", async () => {

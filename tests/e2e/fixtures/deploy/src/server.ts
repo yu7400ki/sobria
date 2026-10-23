@@ -9,6 +9,10 @@ const server = new Hono();
 if (import.meta.main) {
   server.use(serveStatic({ root: fileURLToPath(new URL("../client", import.meta.url)) }));
 }
+server.use(async (c, next) => {
+  await next();
+  c.header("x-server-entry", "1");
+});
 server.get("/health", (c) => c.text("ok"));
 server.route("/", app);
 

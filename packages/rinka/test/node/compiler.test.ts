@@ -505,6 +505,13 @@ export default function X(props: Props) { return <p>{props.header ?? props.child
     ).toThrow(/スロット children は/);
   });
 
+  it("括弧で囲んだ props のスロットの参照は、ビルドのエラーにする", () => {
+    expect(() =>
+      element(`type Props = { children?: JSX.Element };
+export default function X(props: Props) { const x = (props).children; return <p>{x}</p>; }`),
+    ).toThrow(/スロット children は/);
+  });
+
   it("デフォルトの中身の JSX の子に置いたスロットも、<slot> にする", async () => {
     const code = await compile(
       `type Props = { header?: JSX.Element; children?: JSX.Element };

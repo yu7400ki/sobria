@@ -108,7 +108,7 @@ const hasCloudflare = (plugins: readonly unknown[]): boolean =>
         plugin.name.startsWith("vite-plugin-cloudflare"),
   );
 
-/** アプリのルート `root` と設定 `options` から、要素のディレクトリとビルドの出力先の絶対パスを返す。 */
+/** アプリのルート `root` と設定 `options` から、アプリのルートと、要素のディレクトリとビルドの出力先の絶対パスを返す。 */
 const dirsOf = (root: string, options: RinkaOptions) => ({
   root,
   elementsDir: resolve(root, options.elementsDir ?? "src/elements"),
@@ -135,8 +135,10 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   for (const origin of trustedOrigins) checkOrigin(origin);
   /** サーバーの環境で最後に変換したときに、サーバー関数を定義していたファイルの、ルートからの相対パスごとの ID の集合である。 */
   const serverFnIds = new Map<string, ReadonlySet<string>>();
-  /** 開発中の `rinka/app` が `DevHooks` を探す、このインスタンスの ID である。 */
-  const devId = randomUUID();
+  /** 最後に起動した開発サーバーの `DevHooks` の ID である。開発中の `rinka/app` は、この ID の `DevHooks` を探す。 */
+  let devId = "";
+  /** 開発サーバーの ssr の環境ごとの、`DevHooks` の ID である。 */
+  const devIds = new WeakMap<Environment, string>();
   let root = "";
   let elementsDir = "";
   let outDir = "";
@@ -371,6 +373,8 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         }
         const environment = server.environments.ssr;
         if (environment && isRunnable(environment)) {
+          devId = randomUUID();
+          devIds.set(environment, devId);
           devHooks().set(devId, {
             styles: async (files) => {
               const nodes = await Promise.all(
@@ -387,7 +391,8 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         };
       },
       buildEnd() {
-        if (!isBuild) devHooks().delete(devId);
+        const id = devIds.get(this.environment);
+        if (id !== undefined) devHooks().delete(id);
       },
       transform(code, id) {
         const target = projectFile(id);
