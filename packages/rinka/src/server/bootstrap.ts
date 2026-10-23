@@ -2,6 +2,7 @@ import {
   BOUNDARY_ATTRIBUTE,
   BOUNDARY_CONTENT_ATTRIBUTE,
   HOST_ATTRIBUTE,
+  LOAD_ATTRIBUTE,
   PATCH_ATTRIBUTE,
   PROPERTIES_ATTRIBUTE,
 } from "../shared/attributes.ts";
@@ -10,15 +11,12 @@ import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
 import { serverFnRefName } from "../shared/server-fn.ts";
 import { scriptJson } from "./script.ts";
 
-/** インスタンスの起動のタイミングを指定する属性の名前である。 */
-export const loadAttributeName = "data-rinka-load";
-
 /** `load:media` を指定したインスタンスの、属性の値の接頭辞である。値はこの接頭辞とメディアクエリを連結したものである。 */
 export const mediaPrefix = "media:";
 
 /** `<script>` で囲まない起動スクリプトである。`window.$rinka` に `Receiver` の受け口を定義する。既に `$rinka` があれば、保持している値を残して受け口を追加する。 */
 export const bootstrapSource = `(R=>{const E={},Q=new WeakSet(),C={};let O,P;
-const when=(el,t,f)=>{const v=el.getAttribute('${loadAttributeName}')||t;
+const when=(el,t,f)=>{const v=el.getAttribute('${LOAD_ATTRIBUTE}')||t;
 if(v==='idle')(window.requestIdleCallback||setTimeout)(()=>f());
 else if(v==='visible'){const o=new IntersectionObserver(es=>{if(es.some(e=>e.isIntersecting)){o.disconnect();f()}});o.observe(el)}
 else if(v.startsWith('${mediaPrefix}')){const q=matchMedia(v.slice(${mediaPrefix.length}));if(q.matches)f();

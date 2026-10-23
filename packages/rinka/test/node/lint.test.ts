@@ -162,7 +162,7 @@ describe("src/ の lint の規則", () => {
     ]);
   });
 
-  it("src/build/ は、client、server、rinka、seroval、ブラウザのグローバルを参照できず、shared、props の名前の一覧、Node.js の組み込みモジュールを参照できる", () => {
+  it("src/build/ は、client、server、rinka、seroval、vite の isRunnableDevEnvironment、ブラウザのグローバルを参照できず、shared、props の名前の一覧、Node.js の組み込みモジュール、ほかの vite の値を参照できる", () => {
     expect(
       reports("src/build/probe.ts", [
         'import "../client/effect.ts";',
@@ -174,6 +174,8 @@ describe("src/ の lint の規則", () => {
         'import "../shared/names.ts";',
         'import "node:fs";',
         "export const b = process;",
+        'import { isRunnableDevEnvironment } from "vite";',
+        'import { createServer } from "vite";',
       ]),
     ).toEqual([
       [1, "import"],
@@ -181,6 +183,7 @@ describe("src/ の lint の規則", () => {
       [3, "import"],
       [4, "import"],
       [5, "global"],
+      [10, "import"],
     ]);
   });
 
@@ -229,24 +232,18 @@ describe("値の受け渡しのキー", () => {
 });
 
 describe("起動スクリプトの受け口の文字列", () => {
-  it("src/ の中の、$rinka か data-rinka- で始まる属性名を含む文字列のリテラルとテンプレートリテラルを報告する", () => {
+  it("src/ の中の、$rinka を含む文字列のリテラルとテンプレートリテラルを報告する", () => {
     expect(
       reports("src/server/receiver-use.ts", [
         'export const a = "$rinka.n";',
         "export const b = (x: string) => `<script>$rinka.d(${x})</script>`;",
-        'export const c = (x: string) => `<p ${x} data-rinka-load="idle">`;',
         'export const d = "rinka";',
-        'export const e = "data-oh";',
         'export const f = (x: string) => "$rinka" + x;',
-        'export const g = "<style data-rinka-properties>";',
       ]),
     ).toEqual([
       [1, "receiver"],
       [2, "receiver"],
-      [3, "receiver"],
-      [5, "marker"],
-      [6, "receiver"],
-      [7, "receiver"],
+      [4, "receiver"],
     ]);
   });
 
@@ -256,23 +253,34 @@ describe("起動スクリプトの受け口の文字列", () => {
 });
 
 describe("rinka が HTML に出力する目印の属性名", () => {
-  it("src/ の中の、data-o に英小文字 1 文字が続く属性名を含む文字列のリテラルとテンプレートリテラルを報告する", () => {
+  it("src/ の中の、data-o に英小文字 1 文字が続く属性名か、data-rinka- で始まる属性名を含む文字列のリテラルとテンプレートリテラルを報告する", () => {
     expect(
       reports("src/client/marker-use.ts", [
         'export const a = "data-oh";',
         'export const b = (x: string) => `<p data-om="${x}">`;',
         'export const c = "data-other metadata-ok";',
         'export const d = "template[data-op=\\"1\\"]";',
+        'export const e = (x: string) => `<p ${x} data-rinka-load="idle">`;',
+        'export const f = "<style data-rinka-properties>";',
+        "export const g = (x: string) => `<p${x}data-rinka-load>`;",
       ]),
     ).toEqual([
       [1, "marker"],
       [2, "marker"],
       [4, "marker"],
+      [5, "marker"],
+      [6, "marker"],
+      [7, "marker"],
     ]);
   });
 
   it("src/shared/attributes.ts の属性名の定義は報告しない", () => {
-    expect(reports("src/shared/attributes.ts", ['export const a = "data-oh";'])).toEqual([]);
+    expect(
+      reports("src/shared/attributes.ts", [
+        'export const a = "data-oh";',
+        'export const b = "data-rinka-load";',
+      ]),
+    ).toEqual([]);
   });
 });
 

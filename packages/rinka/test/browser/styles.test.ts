@@ -7,8 +7,8 @@ import { bootstrapSource } from "../../src/server/bootstrap.ts";
 import { defineElement as defineServer } from "../../src/server/element.ts";
 import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
 import { renderToStream } from "../../src/server/render.ts";
+import { serverSheet } from "../../src/server/styles.ts";
 import type { Ctx } from "../../src/shared/element.ts";
-import { sheetInfo } from "../../src/shared/styles.ts";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -114,7 +114,7 @@ describe("ctx の css", () => {
 
   it("SSR した要素を引き継ぐと、DSD の <style> と <link> を adoptedStyleSheets に置換する", async () => {
     const tag = nextTag();
-    const sheet = { [sheetInfo]: { href: "data:text/css,", properties: "" } };
+    const sheet = serverSheet("data:text/css,", "");
     const server = defineServer(
       tag,
       (props: object, ctx: Ctx) => {

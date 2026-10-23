@@ -4,12 +4,12 @@ import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToResponse, renderToString } from "../../src/server/render.ts";
+import { serverSheet } from "../../src/server/styles.ts";
 import type { Ctx } from "../../src/shared/element.ts";
-import { sheetInfo } from "../../src/shared/styles.ts";
 
 /** サーバーで `css` に渡す、`href` の CSS を表すシートを返す。`properties` は CSS に含まれる `@property` の規則である。 */
 const sheet = (href: string, properties = "") =>
-  ({ [sheetInfo]: { href, properties } }) as unknown as CSSStyleSheet;
+  serverSheet(href, properties) as unknown as CSSStyleSheet;
 
 /** `node` を描画した文書の HTML を返す。 */
 const document = async (node: unknown) => (await renderToResponse(node)).text();
@@ -19,6 +19,17 @@ const after = (ms: number, node: unknown) => async () => {
   await new Promise((resolve) => setTimeout(resolve, ms));
   return node;
 };
+
+/** `rule` の規則を持つシートを使用する、タグが `tag` の要素を返す。 */
+const ruled = (tag: string, rule: string) =>
+  defineElement(
+    tag,
+    (_props: object, { css }: Ctx) => {
+      css(sheet(`/src/${tag}.css?direct`, rule));
+      return null;
+    },
+    { props: [] },
+  );
 
 /** 連続する空白を 1 つの空白にする。 */
 const squash = (html: string) => html.replaceAll(/\s+/g, " ");
@@ -141,14 +152,7 @@ describe("後送りの内容の @property の規則", () => {
   it("後送りの境界で使用したシートの規則は、先に出力したほかの境界の内容に出力しない", async () => {
     const rule = '@property --rb { syntax: "*"; inherits: false; }';
     const Early = defineElement("x-styled-early", () => null, { props: [] });
-    const Ruled = defineElement(
-      "x-styled-ruled",
-      (_props: object, { css }: Ctx) => {
-        css(sheet("/src/rb.css?direct", rule));
-        return null;
-      },
-      { props: [] },
-    );
+    const Ruled = ruled("x-styled-ruled", rule);
     const html = await document(
       jsx("main", {
         children: [
@@ -166,14 +170,7 @@ describe("後送りの内容の @property の規則", () => {
 
   it("シェルより先に描画を終えた後送りの境界の規則は、<head> に出力せず、その境界の内容の先頭に出力する", async () => {
     const rule = '@property --pre { syntax: "*"; inherits: false; }';
-    const Ruled = defineElement(
-      "x-styled-pre",
-      (_props: object, { css }: Ctx) => {
-        css(sheet("/src/pre.css?direct", rule));
-        return null;
-      },
-      { props: [] },
-    );
+    const Ruled = ruled("x-styled-pre", rule);
     const html = await document(
       jsx("main", {
         children: [
@@ -192,17 +189,35 @@ const Fail = async () => {
   throw new Error("失敗");
 };
 
+describe("<Errored> の中の要素の @property の規則", () => {
+  it("成功した <Errored> の中の要素が使用したシートの規則を、<head> に出力する", async () => {
+    const rule = '@property --kept { syntax: "*"; inherits: false; }';
+    const Kept = ruled("x-styled-kept", rule);
+    const html = await document(
+      jsx("main", { children: jsx(Errored, { fallback: "fb", children: jsx(Kept, {}) }) }),
+    );
+    expect(html).toContain(`<style data-rinka-properties>${rule}</style></head>`);
+  });
+
+  it("後送りの境界の中で成功した <Errored> の中の要素が使用したシートの規則を、境界の内容の先頭に出力する", async () => {
+    const rule = '@property --kept-late { syntax: "*"; inherits: false; }';
+    const Kept = ruled("x-styled-kept-late", rule);
+    const html = await document(
+      jsx("main", {
+        children: jsx(Loading, {
+          fallback: "wait",
+          children: jsx(after(5, jsx(Errored, { fallback: "fb", children: jsx(Kept, {}) })), {}),
+        }),
+      }),
+    );
+    expect(html).toContain(`<style data-rinka-properties>${rule}</style><x-styled-kept-late`);
+  });
+});
+
 describe("出力しなかった内容の @property の規則", () => {
   it("失敗した <Errored> の中の要素が使用したシートの規則は出力しない", async () => {
     const rule = '@property --lost { syntax: "*"; inherits: false; }';
-    const Lost = defineElement(
-      "x-styled-lost",
-      (_props: object, { css }: Ctx) => {
-        css(sheet("/src/lost.css?direct", rule));
-        return null;
-      },
-      { props: [] },
-    );
+    const Lost = ruled("x-styled-lost", rule);
     const html = await document(
       jsx("main", {
         children: jsx(Errored, { fallback: "fb", children: [jsx(Lost, {}), jsx(Fail, {})] }),

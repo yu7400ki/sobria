@@ -33,11 +33,11 @@ const directionalInserts = new Set(["prependLeft", "prependRight", "appendLeft",
 const leadingText = (node: StringNode): string | undefined =>
   typeof node.value === "string" ? node.value : (node.quasis?.[0]?.value.cooked ?? undefined);
 
-/** 文字列のリテラルの値か、テンプレートリテラルの文字列の部分をすべて連結した文字列を返す。 */
+/** 文字列のリテラルの値か、テンプレートリテラルの文字列の部分を、埋め込みの位置に空白を入れて連結した文字列を返す。 */
 const fullText = (node: StringNode): string | undefined =>
   typeof node.value === "string"
     ? node.value
-    : node.quasis?.map((quasi) => quasi.value.cooked ?? "").join("");
+    : node.quasis?.map((quasi) => quasi.value.cooked ?? "").join(" ");
 
 /** 呼び出すメソッドの名前を返す。``s["name"]`` と ``s[`name`]`` の形の名前も返す。 */
 const methodName = ({ callee }: CallNode): string | undefined =>
@@ -96,33 +96,31 @@ export default {
         return { Literal: check, TemplateLiteral: check };
       },
     },
-    /** `$rinka` か、`data-rinka-` で始まる属性名を含む、文字列のリテラルとテンプレートリテラルを報告する。 */
+    /** `$rinka` を含む、文字列のリテラルとテンプレートリテラルを報告する。 */
     "no-receiver-literal": {
       create(context: Context) {
         const check = (node: StringNode) => {
           const text = fullText(node);
-          if (text === undefined || !(text.includes("$rinka") || text.includes("data-rinka-"))) {
-            return;
-          }
+          if (text === undefined || !text.includes("$rinka")) return;
           context.report({
             node,
             message:
-              "起動スクリプトの受け口と、data-rinka- で始まる属性の名前は、src/server/bootstrap.ts と src/shared/attributes.ts の関数と定数を通して記述し、ほかのファイルの文字列に記述しないでください。",
+              "起動スクリプトの受け口は、src/server/bootstrap.ts の関数を通して記述し、ほかのファイルの文字列に記述しないでください。",
           });
         };
         return { Literal: check, TemplateLiteral: check };
       },
     },
-    /** `data-o` に英小文字 1 文字が続く属性名を含む、文字列のリテラルとテンプレートリテラルを報告する。 */
+    /** `data-o` に英小文字 1 文字が続く属性名か、`data-rinka-` で始まる属性名を含む、文字列のリテラルとテンプレートリテラルを報告する。 */
     "no-marker-attribute-literal": {
       create(context: Context) {
         const check = (node: StringNode) => {
           const text = fullText(node);
-          if (text === undefined || !/(?<![\w-])data-o[a-z](?![\w-])/.test(text)) return;
+          if (text === undefined || !/(?<![\w-])data-(o[a-z](?![\w-])|rinka-)/.test(text)) return;
           context.report({
             node,
             message:
-              "rinka が HTML に出力する目印の属性名（data-o に英小文字 1 文字が続く名前）は、src/shared/attributes.ts の定数で記述してください。",
+              "rinka が HTML に出力する属性名（data-o に英小文字 1 文字が続く名前と、data-rinka- で始まる名前）は、src/shared/attributes.ts の定数で記述してください。",
           });
         };
         return { Literal: check, TemplateLiteral: check };

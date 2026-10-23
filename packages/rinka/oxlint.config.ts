@@ -2,12 +2,21 @@ import { base, defineConfig, testRelaxations } from "@rinka/config/oxlint";
 
 type Pattern = { regex: string; message: string; allowTypeImports?: boolean };
 
+type Path = { name: string; importNames: string[]; message: string };
+
 type Restrict = {
-  "no-restricted-imports": ["error", { patterns: Pattern[] }];
+  "no-restricted-imports": ["error", { patterns: Pattern[]; paths: Path[] }];
 };
 
-const restrict = (...patterns: Pattern[]): Restrict => ({
-  "no-restricted-imports": ["error", { patterns }],
+/** パターンと、モジュールの名前で指定した import を禁止する規則の設定を返す。 */
+const restrict = (...rules: (Pattern | Path)[]): Restrict => ({
+  "no-restricted-imports": [
+    "error",
+    {
+      patterns: rules.filter((rule): rule is Pattern => "regex" in rule),
+      paths: rules.filter((rule): rule is Path => "name" in rule),
+    },
+  ],
 });
 
 /** `src/` の中の、指定したディレクトリからの import に一致するパターンを返す。 */
@@ -55,7 +64,15 @@ const shared = [
 ];
 const client = [directory("server"), directory("build"), self, nodeBuiltin, propNameList];
 const server = [directory("client"), directory("build"), self, propNameList];
-const build = [directory("client"), directory("server"), self];
+/** vite の isRunnableDevEnvironment の import に一致する指定を表す。 */
+const runnableCheck: Path = {
+  name: "vite",
+  importNames: ["isRunnableDevEnvironment"],
+  message:
+    "isRunnableDevEnvironment はクラスで判定するので、アプリと rinka の vite が別のインスタンスに解決されると偽になります。runner の有無で判定してください。",
+};
+
+const build = [directory("client"), directory("server"), self, runnableCheck];
 
 export default defineConfig({
   ...base,
@@ -106,20 +123,7 @@ export default defineConfig({
       files: ["src/build/**"],
       env: { node: true },
       rules: {
-        "no-restricted-imports": [
-          "error",
-          {
-            patterns: [...build, seroval],
-            paths: [
-              {
-                name: "vite",
-                importNames: ["isRunnableDevEnvironment"],
-                message:
-                  "isRunnableDevEnvironment はクラスで判定するので、アプリと rinka の vite が別のインスタンスに解決されると偽になります。runner の有無で判定してください。",
-              },
-            ],
-          },
-        ],
+        ...restrict(...build, seroval),
         "no-undef": "error",
         "rinka/no-directional-insert": "error",
         "rinka/no-entry-literal": "error",
@@ -131,7 +135,7 @@ export default defineConfig({
     { files: ["src/server/bootstrap.ts"], rules: { "rinka/no-receiver-literal": "off" } },
     {
       files: ["src/shared/attributes.ts"],
-      rules: { "rinka/no-marker-attribute-literal": "off", "rinka/no-receiver-literal": "off" },
+      rules: { "rinka/no-marker-attribute-literal": "off" },
     },
     { files: ["test/**"], rules: testRelaxations },
   ],

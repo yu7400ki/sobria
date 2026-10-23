@@ -17,6 +17,7 @@ import {
   BOUNDARY_CONTENT_ATTRIBUTE,
   FORM_VALUE_ATTRIBUTE,
   HOST_ATTRIBUTE,
+  LOAD_ATTRIBUTE,
   PATCH_ATTRIBUTE,
   tagAttributeName,
 } from "../shared/attributes.ts";
@@ -35,7 +36,6 @@ import { isFunction } from "../shared/objects.ts";
 import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
 import type { RefreshJson, RefreshValues } from "../shared/refresh.ts";
 import { createScope, withScope, type ScopedChild } from "../shared/scope.ts";
-import type { SheetInfo } from "../shared/styles.ts";
 import { BOUNDARIES_KEY, childKey, PROPS_KEY, REFRESH_PROPS_KEY } from "../shared/transfer-keys.ts";
 import { checkSerializable, formProps } from "../shared/wire.ts";
 import { ariaAttributes } from "./aria.ts";
@@ -43,7 +43,6 @@ import {
   bootstrap,
   dataScript,
   listScript,
-  loadAttributeName,
   loadAttributeValue,
   noValue,
   swapScript,
@@ -52,7 +51,7 @@ import { classify } from "./errors.ts";
 import { attribute, checkAttributeName, escapeAttribute, escapeText } from "./html.ts";
 import { Labels } from "./labels.ts";
 import { scriptJson } from "./script.ts";
-import { elementCss, propertiesStyle } from "./styles.ts";
+import { elementCss, propertiesStyle, type SheetInfo } from "./styles.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
 import { toScript } from "./wire.ts";
 
@@ -1212,7 +1211,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
         (typeof hostId === "string" || typeof hostId === "number") && !named
           ? this.labels.host(scopeOf(ctx), String(hostId))
           : "";
-      const start = `<${tag}${attribute(HOST_ATTRIBUTE, id)}${attribute(loadAttributeName, load)}${text}${ariaText}${labelled}`;
+      const start = `<${tag}${attribute(HOST_ATTRIBUTE, id)}${attribute(LOAD_ATTRIBUTE, load)}${text}${ariaText}${labelled}`;
       if (shadow === undefined) {
         const values = {
           [REFRESH_PROPS_KEY]: current,

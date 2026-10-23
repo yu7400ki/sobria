@@ -1,16 +1,23 @@
 import { PROPERTIES_ATTRIBUTE } from "../shared/attributes.ts";
-import {
-  cssText,
-  isTemplate,
-  propertiesOf,
-  sheetInfo,
-  type ElementCss,
-  type SheetInfo,
-} from "../shared/styles.ts";
+import { cssText, isTemplate, propertiesOf, type ElementCss } from "../shared/styles.ts";
 import { stylesheetLink } from "./html.ts";
 
+/** サーバーで ctx の `css` に渡すシートが、`<link>` に出力する情報を持つプロパティのキーである。 */
+export const sheetInfo = Symbol.for("rinka.sheet");
+
+/** サーバーのシートが持つ、`<link>` に出力する CSS の URL と、CSS に含まれる `@property` の規則である。 */
+export interface SheetInfo {
+  readonly href: string;
+  readonly properties: string;
+}
+
+/** サーバーで ctx の `css` に渡すシートを表す。 */
+export interface ServerSheet {
+  readonly [sheetInfo]: SheetInfo;
+}
+
 /** `<link>` に出力する URL `href` と、Vite が処理した CSS `css` から、サーバーで ctx の `css` に渡すシートを作成する。 */
-export function serverSheet(href: string, css: string): { readonly [sheetInfo]: SheetInfo } {
+export function serverSheet(href: string, css: string): ServerSheet {
   return { [sheetInfo]: { href, properties: propertiesOf(css) } };
 }
 
