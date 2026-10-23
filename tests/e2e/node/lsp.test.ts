@@ -1,22 +1,14 @@
-import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { promisify } from "node:util";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-const require = createRequire(import.meta.url);
+import { rinkaBin, run, tscBin } from "./typescript.ts";
 
 /** 言語サーバーに接続するテスト用のアプリのルートである。 */
 const root = fileURLToPath(new URL("../fixtures/types", import.meta.url));
-
-/** rinka の CLI のファイルである。 */
-const rinkaBin = join(dirname(fileURLToPath(import.meta.resolve("rinka/vite"))), "bin.js");
-
-/** TypeScript の CLI のファイルである。 */
-const tscBin = join(dirname(require.resolve("typescript/package.json")), "bin/tsc");
 
 /** 言語サーバーとの JSON-RPC のメッセージを表す。 */
 interface Message {
@@ -93,16 +85,22 @@ let server: LanguageServer;
 /** アプリのルートからの相対パス `file` の URI を返す。 */
 const uriOf = (file: string) => pathToFileURL(join(root, file)).href;
 
-/** ファイル `file` を言語サーバーで開き、行の配列を返す。 */
+/** 言語サーバーで開いたファイルである。 */
+const opened = new Set<string>();
+
+/** ファイル `file` を、まだ開いていなければ言語サーバーで開き、行の配列を返す。 */
 function open(file: string): string[] {
   const text = readFileSync(join(root, file), "utf8");
-  server.notify("textDocument/didOpen", {
-    textDocument: { uri: uriOf(file), languageId: "typescriptreact", version: 1, text },
-  });
+  if (!opened.has(file)) {
+    opened.add(file);
+    server.notify("textDocument/didOpen", {
+      textDocument: { uri: uriOf(file), languageId: "typescriptreact", version: 1, text },
+    });
+  }
   return text.split("\n");
 }
 
-/** ファイル `file` の中で、`text` が最初に現れる行の、`text` の先頭から `offset` 文字目の位置を返す。 */
+/** 行の配列 `lines` の中で、`text` が最初に現れる行の、`text` の先頭から `offset` 文字目の位置を返す。 */
 function positionOf(lines: readonly string[], text: string, offset = 0) {
   const line = lines.findIndex((content) => content.includes(text));
   if (line < 0) throw new Error(`${text} が見つかりません。`);
@@ -129,7 +127,7 @@ async function hover(file: string, text: string, offset: number): Promise<string
 }
 
 beforeAll(async () => {
-  await promisify(execFile)(process.execPath, [rinkaBin, "prepare", root]);
+  await run(process.execPath, [rinkaBin, "prepare", root]);
   server = new LanguageServer();
   await server.request("initialize", {
     processId: process.pid,
@@ -169,7 +167,7 @@ describe("言語サーバー", () => {
       "function Counter(props: Props",
     );
     expect(await hover("src/elements/counter.tsx", "await greet()", "await g".length)).toContain(
-      "const greet",
+      "const greet: (input?: undefined, options?: CallOptions) => Promise<string>",
     );
   }, 60_000);
 });
