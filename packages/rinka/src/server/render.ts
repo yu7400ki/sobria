@@ -35,6 +35,7 @@ import { isFunction } from "../shared/objects.ts";
 import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
 import type { RefreshJson, RefreshValues } from "../shared/refresh.ts";
 import { createScope, withScope, type ScopedChild } from "../shared/scope.ts";
+import { cssText, sheetInfo, type ElementCss, type SheetInfo } from "../shared/styles.ts";
 import { BOUNDARIES_KEY, childKey, PROPS_KEY, REFRESH_PROPS_KEY } from "../shared/transfer-keys.ts";
 import { checkSerializable, formProps } from "../shared/wire.ts";
 import { ariaAttributes } from "./aria.ts";
@@ -499,6 +500,33 @@ interface Legend {
 
 /** `disabled` の属性の値 `value` が、無効であることを表すかどうかを返す。 */
 const disables = (value: unknown): boolean => attributeValue("disabled", value) !== null;
+
+/**
+ * ctx の `css` に渡した値を、DSD の先頭に出力する HTML にする。タグ付きテンプレートは `<style>` にし、中の `</style` を、大文字と小文字を保ったまま `<\/style` に置換する。
+ * シートは、その URL の `<link rel="stylesheet">` にする。
+ */
+function styleHtml(
+  input: TemplateStringsArray | CSSStyleSheet,
+  values: readonly (string | number)[],
+): string {
+  if (!isTemplate(input)) return `<link rel="stylesheet"${attribute("href", sheetOf(input).href)}>`;
+  return `<style>${cssText(input, values).replaceAll(/<\/(style)/gi, "<\\/$1")}</style>`;
+}
+
+/** `value` がタグ付きテンプレートの文字列の配列かどうかを返す。 */
+const isTemplate = (value: unknown): value is TemplateStringsArray => Array.isArray(value);
+
+/** サーバーのシート `sheet` の情報を返す。Vite プラグインが生成したシートでなければ、エラーを投げる。 */
+function sheetOf(sheet: CSSStyleSheet): SheetInfo {
+  const info: unknown = Reflect.get(sheet, sheetInfo);
+  if (info === undefined) {
+    throw new Error(
+      "[rinka] サーバーで css に渡せるシートは、with { type: 'css' } で import した CSS だけです。",
+    );
+  }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  return info as SheetInfo;
+}
 
 /** 常に無効でないことを返す。 */
 const notDisabled = (): boolean => false;
@@ -1235,9 +1263,18 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     const internals = {};
     /** ホストの `name`、要素の関数が `form.value` に渡した関数の値、ホストの `disabled` を返す関数である。 */
     let submitted: (() => readonly [unknown, unknown, boolean]) | undefined;
+    /** `css` に渡したスタイルを、DSD の先頭に出力する HTML にして、呼び出した順に保持する。 */
+    const styles: string[] = [];
+    const css: ElementCss = (
+      input: TemplateStringsArray | CSSStyleSheet,
+      ...values: readonly (string | number)[]
+    ) => {
+      styles.push(styleHtml(input, values));
+    };
     const elementCtx: Ctx = {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       host: serverHost as HTMLElement,
+      css,
       onMount: () => {},
       expose: () => {},
       form: form
@@ -1286,6 +1323,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       this.chunkOf(this.settle(shadowCtx, read), ([given, value, off]) =>
         hiddenInput(tag, given, value, off),
       );
+    chunks.push(styles.join(""));
     this.walk(tree, shadowCtx, chunks);
     chunks.push("</template>");
     if (input !== undefined) chunks.push(input);

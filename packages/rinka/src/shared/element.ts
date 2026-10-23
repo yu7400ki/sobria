@@ -1,5 +1,6 @@
 import type { defaultLoads } from "./names.ts";
 import type { ClientNode, Slot } from "./nodes.ts";
+import type { ElementCss } from "./styles.ts";
 
 /** 属性の値から変換する props の型を表す。 */
 export type AttributeType = "string" | "number" | "boolean";
@@ -76,6 +77,8 @@ export interface Ctx<M extends object = object> {
   readonly form: FormControls;
   /** ホストの `ElementInternals`。 */
   readonly internals: ElementInternals;
+  /** Shadow DOM に適用するスタイルを、呼び出した順に追加する関数。 */
+  readonly css: ElementCss;
   /** 要素が DOM に接続され、最初の内容を Shadow DOM に表示した後に呼ぶ関数を登録する。 */
   readonly onMount: (fn: () => void) => void;
   /** `members` の各プロパティを、その記述子のままホストに追加する。 */

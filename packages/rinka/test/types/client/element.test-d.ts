@@ -66,3 +66,21 @@ test("公開の defineElement は、タグ名、要素の関数、登録の設�
   // @ts-expect-error 4 つ目の引数は受け取らない
   defineElement("type-four-args", () => null, { props: [] }, { send: () => {} });
 });
+
+test("ctx の css は、タグ付きテンプレートと CSSStyleSheet を受け取る", () => {
+  defineElement(
+    "type-styled",
+    (_props: object, { css }: Ctx) => {
+      css`
+        :host {
+          order: ${1};
+        }
+      `;
+      css(new CSSStyleSheet());
+      // @ts-expect-error 文字列は受け取らない
+      css(":host {}");
+      return null;
+    },
+    { props: [] },
+  );
+});

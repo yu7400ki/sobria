@@ -42,6 +42,7 @@ import {
   placeInSlot,
   type HostSlots,
 } from "./slots.ts";
+import { elementCss } from "./styles.ts";
 import { beginTakeover, whenArrived, whenStartable } from "./transfer.ts";
 
 /** 要素を描画する関数を表す。 */
@@ -285,8 +286,10 @@ export function registerElement<P, M extends object = object>(
           run.mounts = [];
           definition.shown.delete(instance);
         });
+        const sheets: CSSStyleSheet[] = [];
         const ctx: Ctx<M> = {
           host,
+          css: elementCss(sheets),
           form: formOf(host, instance.internals),
           internals: instance.internals,
           onMount: (mount) => run.mounts.push(mount),
@@ -318,9 +321,11 @@ export function registerElement<P, M extends object = object>(
           // oxlint-disable-next-line typescript/no-unsafe-type-assertion
           const current = definition.fn as ElementFn<P, M>;
           const content = untrack(() => withScope(scope, () => current(props, ctx)));
+          if (target === shadow) shadow.adoptedStyleSheets = sheets;
           onSettled(() => {
             removeServerAria(host);
             if (target !== shadow) {
+              shadow.adoptedStyleSheets = sheets;
               shadow.replaceChildren(target);
               target = shadow;
               instance.takeover = { phase: "done" };

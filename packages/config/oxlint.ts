@@ -12,6 +12,7 @@ export const base = defineConfig({
   },
   rules: {
     "import/no-cycle": "error",
+    "no-unused-expressions": ["error", { allowTaggedTemplates: true }],
     "typescript/consistent-return": "off",
     "typescript/no-unsafe-unary-minus": "off",
     "typescript/no-deprecated": "error",
