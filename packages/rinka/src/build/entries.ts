@@ -13,6 +13,9 @@ export const entries = {
   tsconfig: "rinka/tsconfig.json",
 } as const;
 
+/** プラグインが作成する仮想モジュールの指定子 `specifier` を、解決した ID にする。 */
+export const virtualId = (specifier: string): string => `\0${specifier}`;
+
 /** rinka のクライアントの実行時のコードが値として import する、rinka の外のモジュールである。 */
 export const clientImports = ["@solidjs/signals", "seroval"] as const;
 

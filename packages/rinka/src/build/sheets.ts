@@ -4,6 +4,8 @@ import type { ESTree } from "vite";
 import { walk } from "./ast.ts";
 import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
+import { directUrl } from "./paths.ts";
+import type { Scene } from "./settings.ts";
 
 /** `with { type: 'css' }` の import の指定子に付与する、シートのモジュールを表すクエリである。 */
 export const SHEET_QUERY = "?rinka-sheet";
@@ -96,4 +98,16 @@ import href from ${JSON.stringify(url)};
 import css from ${JSON.stringify(inline)};
 export default serverSheet(href, css);
 `;
+}
+
+/** 開発サーバーのパス `path` の CSS から、場面 `scene` の、`client` が真ならクライアントの、偽ならサーバーのシートのモジュールのコードを返す。 */
+export function sheetModule(path: string, scene: Scene, client: boolean): string {
+  if (scene === "app") {
+    return client
+      ? clientBuildSheetModule(`${path}?url`)
+      : serverBuildSheetModule(`${path}?url`, `${path}?inline`);
+  }
+  return client
+    ? clientSheetModule(`${path}?inline`)
+    : serverSheetModule(`${path}?inline`, directUrl(path));
 }
