@@ -81,8 +81,6 @@ interface Instance {
   run?: Run;
   /** 値の到着を待っているか、スロットに登録していれば、待機か登録を取り消す関数。 */
   cancel?: () => void;
-  /** SSR したホストが、起動スクリプトの起動の条件を待っていれば `waiting`、満たしていれば `open` である。 */
-  gate?: "waiting" | "open";
   /** 起動した後に呼ぶ、要素への `ref`。 */
   ref?: (host: HTMLElement) => unknown;
   /** 値の引き継ぎの段階。 */
@@ -92,10 +90,11 @@ interface Instance {
 /**
  * 値の引き継ぎの段階を表す。
  * `waiting` はまだ起動していない段階で、SSR したホストは、最初の起動でだけサーバーから値を引き継ぐ。`from` は、親が作り直した子要素が値を引き継ぐ SSR したホストの ID である。
+ * `activation` は、SSR したホストが起動スクリプトに起動の条件を問い合わせていれば `requested`、条件を満たしたと通知されていれば `granted` である。
  * `building` は、引き継いだ値で描画を組み立てている段階で、`done` は、Shadow DOM の中身を描画の結果に置き換えた後の段階である。
  */
 type Takeover =
-  | { readonly phase: "waiting"; from?: string }
+  | { readonly phase: "waiting"; from?: string; activation?: "requested" | "granted" }
   | { readonly phase: "building" }
   | { readonly phase: "done" };
 
@@ -399,11 +398,17 @@ function locate(el: HTMLElement): Position {
 function attach(el: HTMLElement, instance: Instance): void {
   instance.cancel?.();
   instance.cancel = undefined;
-  if (instance.gate !== "open" && el.hasAttribute("data-oh") && locate(el).kind !== "shadow") {
-    if (instance.gate === "waiting") return;
-    instance.gate = "waiting";
+  const { takeover } = instance;
+  if (
+    takeover.phase === "waiting" &&
+    takeover.activation !== "granted" &&
+    el.hasAttribute("data-oh") &&
+    locate(el).kind !== "shadow"
+  ) {
+    if (takeover.activation === "requested") return;
+    takeover.activation = "requested";
     whenStartable(el, () => {
-      instance.gate = "open";
+      takeover.activation = "granted";
       if (el.isConnected) attach(el, instance);
     });
     return;
