@@ -464,7 +464,7 @@ const positionNames = {
   headless: " <head> に移動しない位置（<svg> や <noscript> の配下、<head> に移動するタグの中）",
   element: "要素の中",
   fallback: " <Loading> のフォールバックの中",
-  loading: " <Loading> の内側（要素の中の <Loading> に配置される子を含む）",
+  loading: " <Loading> の内側",
 } as const satisfies Record<Exclude<Position, "shell">, string>;
 
 /** `placement` の位置にある `tag` の子の `HeadPlacement` を返す。 */
@@ -731,7 +731,7 @@ class Renderer {
           fallback: () =>
             this.chunks(node.fallback, {
               ...ctx,
-              head: ctx.head === "none" ? "none" : "fallback",
+              head: ctx.head === "none" || ctx.head === "light" ? ctx.head : "fallback",
             }),
         });
         return;
@@ -833,14 +833,13 @@ class Renderer {
       this.nativeTag(tag, props, key, ctx, out);
       return;
     }
-    const { slot: _, ...unslotted } = ctx;
     const id = ++this.seq;
     const headTagKey = this.settle(ctx, (tracked) =>
       headKey(tag, (name) => this.value(props[name], ctx, tracked)),
     );
     this.hoisted.set(id, { kind: "head", key: headTagKey, depth: ctx.depth });
     out.push(this.marker(id, ""));
-    this.nativeTag(tag, props, key, { ...unslotted, head: "none" }, out);
+    this.nativeTag(tag, props, key, { ...ctx, head: "none" }, out);
     out.push(this.marker(id, "/"));
   }
 

@@ -133,7 +133,9 @@ describe("文書の <head>", () => {
     );
     expect(head).toBe('<meta charset="utf-8">');
     expect(body).toBe("<title>inner</title>");
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("<title>"));
+    expect(warn).toHaveBeenCalledWith(
+      "[rinka] <title> は <Loading> の内側にあるので、<head> に移動せずに、記述した位置に出力します。",
+    );
   });
 
   it("後送りにした <Loading> のフォールバックと中身のタグは移動せず、開発時に警告する", async () => {
