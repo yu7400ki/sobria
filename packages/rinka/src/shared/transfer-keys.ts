@@ -4,6 +4,9 @@ export const BOUNDARIES_KEY = "@b";
 /** 属性にできない props の値を送るキーである。 */
 export const PROPS_KEY = "@p";
 
+/** 描き直しで、ページにある要素に設定する props の値を送るキーである。 */
+export const REFRESH_PROPS_KEY = "@r";
+
 /** 子要素のホストの ID を送るキーの接頭辞である。 */
 const CHILD_PREFIX = "@c:";
 

@@ -21,9 +21,9 @@ import { headKey } from "../shared/head.ts";
 import { isEventProp, propToAttribute, reservedProp } from "../shared/names.ts";
 import type { NavigationProps } from "../shared/navigation.ts";
 import { isFunction } from "../shared/objects.ts";
-import type { SwapSpec } from "../shared/receiver.ts";
+import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
 import { createScope, withScope, type ScopedChild } from "../shared/scope.ts";
-import { BOUNDARIES_KEY, childKey, PROPS_KEY } from "../shared/transfer-keys.ts";
+import { BOUNDARIES_KEY, childKey, PROPS_KEY, REFRESH_PROPS_KEY } from "../shared/transfer-keys.ts";
 import { checkSerializable, formProps } from "../shared/wire.ts";
 import {
   bootstrap,
@@ -85,10 +85,14 @@ interface Slotted {
   };
 }
 
-/** 要素のホストの属性を表す。`transfer` は、属性にできない props の値を、props の名前ごとに保持する。 */
+/**
+ * 要素のホストの属性を表す。`transfer` は、属性にできない props の値を、props の名前ごとに保持する。
+ * `current` は、描き直しで、ページにある要素に設定する props の値を、props の名前ごとに保持する。
+ */
 interface HostAttributes {
   readonly text: string;
   readonly transfer: Readonly<Record<string, unknown>> | undefined;
+  readonly current: Readonly<Record<string, unknown>> | undefined;
 }
 
 /** 要素のホストを表す。開始タグは、`chunks` を文字列にした後で、待つ境界を決定してから出力する。 */
@@ -216,6 +220,12 @@ function mergeByName<K, V>(
   return new Map([...chosen].map(([name, { value }]) => [name, value]));
 }
 
+/** `parts` の `<head>` のタグのうち、キーごとに選択したタグと、`<Navigation>` の出力を連結する。 */
+const headTags = (parts: DocumentParts): string =>
+  selectHead(parts.heads)
+    .map(({ html }) => html)
+    .join("") + navigationHead(parts.navigation);
+
 /** `<Navigation>` の props を、`<head>` に出力する View Transitions の `<style>` と Speculation Rules の `<script>` にする。 */
 function navigationHead(values: NavigationValues): string {
   const prefetch = values.get("prefetch");
@@ -256,9 +266,27 @@ interface DocumentParts {
   readonly rest: string;
 }
 
-/** 文書を出力する描画の設定を表す。`head` は、文書の `<head>` の末尾に出力するマークアップである。 */
-interface DocumentOutput {
+/**
+ * 描画の種類を表す。`fragment` は `renderToString` の描画で、文書の骨組みに何も移動しない。
+ * `document` は文書を出力する描画で、`head` は `<head>` の末尾に出力するマークアップである。
+ * `refresh` は `refreshPage()` の描き直しで、要素を実行せずに、Shadow DOM の中身を持たないホストを出力する。
+ */
+type Target =
+  | { readonly kind: "fragment" }
+  | { readonly kind: "document"; readonly head: string }
+  | { readonly kind: "refresh" };
+
+/** `refreshPage()` のレスポンスの JSON を表す。 */
+interface RefreshJson {
   readonly head: string;
+  readonly body: string;
+  /** ホストの ID ごとの、`@r` と `@p` の props を持つオブジェクトの JS の式である。 */
+  readonly data: Readonly<Record<string, string>>;
+  readonly elements: readonly ListedElement[];
+  readonly doc: {
+    readonly html: Readonly<Record<string, string | null>>;
+    readonly body: Readonly<Record<string, string | null>>;
+  };
 }
 
 /** 起動スクリプトに伝える要素を表す。`immediate` は、すぐ起動するインスタンスが 1 つでもあれば真である。 */
@@ -645,15 +673,17 @@ class Renderer {
   private readonly nonce = crypto.randomUUID();
   /** 文書の骨組みに移動するものを、目印の番号ごとに保持する。 */
   private readonly hoisted = new Map<number, Hoisted>();
+  /** 描き直しで、ホストの ID ごとに、`data` に入れる JS の式を保持する。 */
+  private readonly refreshData = new Map<string, string>();
 
   /**
    * `write` は、出力する文字列を受け取る。`blocking` なら、すべての境界を待って、フォールバックと差し替えを出力しない。
-   * `document` は、文書を出力する描画で渡す。文書を出力する描画では、シェルの中かつ要素の外の `<title>`、`<meta>`、`<link>` と `<head>` の子を `<head>` に移動し、`<html>` と `<body>` の属性を文書の開始タグに移動する。
+   * `target` が `document` か `refresh` の描画では、シェルの中かつ要素の外の `<title>`、`<meta>`、`<link>` と `<head>` の子を `<head>` に移動し、`<html>` と `<body>` の属性を文書の開始タグに移動する。
    */
   constructor(
     private readonly write: (text: string) => void,
     private readonly blocking: boolean,
-    private readonly document?: DocumentOutput,
+    private readonly target: Target = { kind: "fragment" },
   ) {}
 
   /** シェルの中の `<Errored>` が受け止めたときのステータスのうち、最も大きいものを返す。受け止めていなければ 200 を返す。 */
@@ -771,7 +801,7 @@ class Renderer {
     ctx: WalkCtx,
     out: Chunk[],
   ): void {
-    const role = this.document ? documentTags.get(tag) : undefined;
+    const role = this.target.kind === "fragment" ? undefined : documentTags.get(tag);
     const position = this.position(ctx);
     if (role === "html" || role === "body" || role === "transparent") {
       if (position !== "shell") {
@@ -816,7 +846,7 @@ class Renderer {
 
   /** 文書を出力する描画で、`<title>` を `<head>` に移動する位置の `<Navigation>` の props を、深さとともに記録する。 */
   private navigation(props: NavigationProps, ctx: WalkCtx, out: Chunk[]): void {
-    if (!this.document) return;
+    if (this.target.kind === "fragment") return;
     const position = this.position(ctx);
     if (position !== "shell") {
       this.warnOutside("Navigation", position, "反映しません");
@@ -922,13 +952,14 @@ class Renderer {
     child?: ScopedChild,
   ): void {
     this.interactive = true;
+    const refresh = this.target.kind === "refresh";
     const { tag, options, delivery } = component[elementInfo];
     const load = loadAttributeValue(props);
     const delivered: Delivered | undefined =
       delivery && ctx.owner === null
         ? { tag, delivery, immediate: (load ?? delivery.load) === "load" }
         : undefined;
-    const id = `h${++this.seq}`;
+    const id = refresh ? `r${this.nonce.slice(0, 8)}-h${++this.seq}` : `h${++this.seq}`;
     const record = new HostRecord(id, tag);
     this.hosts.add(record);
     let announce: string | undefined;
@@ -967,9 +998,11 @@ class Renderer {
     const hostAttributes = (tracked: boolean): HostAttributes => {
       let text = "";
       let transfer: Record<string, unknown> | undefined;
+      let current: Record<string, unknown> | undefined;
       for (const name of options.props) {
         if (slotNames.has(name)) continue;
         const value = propValue(name);
+        if (refresh && !functionProps.has(name)) (current ??= {})[name] = value;
         if ((typeof value === "object" && value !== null) || typeof value === "function") {
           if (ctx.owner !== null) continue;
           checkSerializable(value, `<${tag}> ${name}`, true);
@@ -987,50 +1020,13 @@ class Renderer {
       }
       if (key !== undefined) text += attribute(tagAttributeName("key"), key);
       if (ctx.slot !== undefined) text += attribute("slot", ctx.slot);
-      return { text, transfer };
+      return { text, transfer, current };
     };
     const attributes = this.settle(ctx, hostAttributes);
 
-    let owner: Owner | null = null;
-    let tree: Node = null;
-    const elementCtx: Ctx = {
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      host: serverHost as HTMLElement,
-      onMount: () => {},
-      expose: () => {},
-    };
-    const scope = createScope(
-      <T>(memoKey: string, fn: (prev: T | undefined) => T | PromiseLike<T>) =>
-        createMemo<T>((prev) => {
-          const result = fn(prev);
-          if (isPromiseLike(result) && record.listMemo(memoKey)) {
-            this.sendMemo(record, `<${tag}> の memo ${memoKey}`, memoKey, result);
-          }
-          return result;
-        }),
-      record,
-    );
-    createRoot((dispose) => {
-      this.disposers.push(dispose);
-      owner = getOwner();
-      tree = asNode(untrack(() => withScope(scope, () => component(elementProps, elementCtx))));
-    });
-
     const chunks: Chunk[] = [];
     const slots = new Map<string, Boundary>();
-    this.walk(
-      tree,
-      {
-        owner,
-        path: [...ctx.path, record],
-        boundary: ctx.boundary,
-        slots,
-        depth: ctx.depth,
-        head: "auto",
-      },
-      chunks,
-    );
-    chunks.push("</template>");
+    if (!refresh) this.runElement(component, elementProps, record, ctx, slots, chunks);
     for (const name of Object.keys(descriptors)) {
       if (!slotNames.has(name)) continue;
       const slot = name === "children" ? "" : name;
@@ -1055,11 +1051,65 @@ class Renderer {
     }
     chunks.push(`</${tag}>`);
     const open = ({ text, transfer }: HostAttributes, shown: Promise<boolean>): string => {
+      const start = `<${tag}${attribute("data-oh", id)}${attribute(loadAttributeName, load)}${text}`;
+      if (refresh) return `${start}>`;
       const keys = record.seal(transfer ? [PROPS_KEY] : [], shown);
       const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
-      return `<${tag}${attribute("data-oh", id)}${attribute(loadAttributeName, load)}${text}${om}><template shadowrootmode="open">`;
+      return `${start}${om}><template shadowrootmode="open">`;
     };
     out.push({ kind: "host", host: { record, attributes, open, chunks, announce, delivered } });
+  }
+
+  /**
+   * 要素の関数 `component` を `props` で実行し、Shadow DOM の中身を `chunks` に描画する。
+   * `slots` には、Shadow DOM の `<slot>` の名前ごとに、その `<slot>` を囲む境界を記録する。
+   */
+  private runElement(
+    component: ElementComponent<unknown>,
+    props: object,
+    record: HostRecord,
+    ctx: WalkCtx,
+    slots: Map<string, Boundary>,
+    chunks: Chunk[],
+  ): void {
+    const { tag } = record;
+    let owner: Owner | null = null;
+    let tree: Node = null;
+    const elementCtx: Ctx = {
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+      host: serverHost as HTMLElement,
+      onMount: () => {},
+      expose: () => {},
+    };
+    const scope = createScope(
+      <T>(memoKey: string, fn: (prev: T | undefined) => T | PromiseLike<T>) =>
+        createMemo<T>((prev) => {
+          const result = fn(prev);
+          if (isPromiseLike(result) && record.listMemo(memoKey)) {
+            this.sendMemo(record, `<${tag}> の memo ${memoKey}`, memoKey, result);
+          }
+          return result;
+        }),
+      record,
+    );
+    createRoot((dispose) => {
+      this.disposers.push(dispose);
+      owner = getOwner();
+      tree = asNode(untrack(() => withScope(scope, () => component(props, elementCtx))));
+    });
+    this.walk(
+      tree,
+      {
+        owner,
+        path: [...ctx.path, record],
+        boundary: ctx.boundary,
+        slots,
+        depth: ctx.depth,
+        head: "auto",
+      },
+      chunks,
+    );
+    chunks.push("</template>");
   }
 
   /**
@@ -1106,7 +1156,18 @@ class Renderer {
         if (delivered) out.addElement(delivered);
         const inner = await this.serialize(chunks, out);
         const resolved = await attributes;
-        if (resolved.transfer) {
+        if (this.target.kind === "refresh") {
+          this.refreshData.set(
+            record.id,
+            toScript(
+              {
+                [REFRESH_PROPS_KEY]: resolved.current ?? {},
+                ...(resolved.transfer && { [PROPS_KEY]: resolved.transfer }),
+              },
+              `<${record.tag}>`,
+            ),
+          );
+        } else if (resolved.transfer) {
           this.send(
             record,
             PROPS_KEY,
@@ -1373,15 +1434,10 @@ class Renderer {
         ? bootstrap + preloadLinks(fresh) + announceScript(fresh)
         : "";
       const parts = await this.takeDocument(shell);
-      const head =
-        '<meta charset="utf-8">' +
-        selectHead(parts.heads)
-          .map(({ html }) => html)
-          .join("") +
-        navigationHead(parts.navigation);
+      const head = `<meta charset="utf-8">${headTags(parts)}`;
       this.reveal(
         this.shellOut.flush,
-        `<!doctype html><html${attributesText(parts.html)}><head>${head}${script}${this.document?.head ?? ""}</head><body${attributesText(parts.body)}>${parts.rest}${this.shellOut.scriptText}`,
+        `<!doctype html><html${attributesText(parts.html)}><head>${head}${script}${this.target.kind === "document" ? this.target.head : ""}</head><body${attributesText(parts.body)}>${parts.rest}${this.shellOut.scriptText}`,
       );
       await this.drain();
       for (const host of this.hosts) host.hide();
@@ -1390,6 +1446,20 @@ class Renderer {
     } finally {
       this.dispose();
     }
+  }
+
+  /** 描き直しの `shell` から、`refreshPage()` のレスポンスの JSON の値を作成する。 */
+  async refresh(shell: string): Promise<RefreshJson> {
+    const parts = await this.takeDocument(shell);
+    return {
+      head: headTags(parts),
+      body: parts.rest,
+      data: Object.fromEntries(this.refreshData),
+      elements: this.takeUnannounced([this.shellOut]).map(
+        ({ tag, delivery }) => [tag, delivery.module, delivery.load] as const,
+      ),
+      doc: { html: Object.fromEntries(parts.html), body: Object.fromEntries(parts.body) },
+    };
   }
 
   /** 要素の描画の範囲を破棄する。 */
@@ -1429,7 +1499,7 @@ export function renderToStream(
       const renderer = new Renderer(
         (text) => controller.enqueue(encoder.encode(text)),
         options.blocking ?? false,
-        { head: "" },
+        { kind: "document", head: "" },
       );
       try {
         await renderer.finish(await renderer.shell(asNode(node)));
@@ -1485,14 +1555,14 @@ async function respond(node: unknown, options: DocumentOptions, status: number):
   const renderer = new Renderer(
     (text) => controller.enqueue(encoder.encode(text)),
     options.blocking ?? false,
-    { head: options.head ?? "" },
+    { kind: "document", head: options.head ?? "" },
   );
   let shell: string;
   try {
     shell = await renderer.shell(asNode(node));
   } catch (error) {
     renderer.dispose();
-    return failure(error, options);
+    return failure(error, options, respond);
   }
   renderer.finish(shell).then(
     () => controller.close(),
@@ -1504,8 +1574,43 @@ async function respond(node: unknown, options: DocumentOptions, status: number):
   });
 }
 
-/** シェルの中で投げられた値から、レスポンスを作成する。 */
-function failure(error: unknown, options: DocumentOptions): Response | Promise<Response> {
+/**
+ * `node` を描き直して、`refreshPage()` のレスポンスの JSON を返す。`<Loading>` の内側も含めて、すべて揃えてから返す。
+ * シェルの中で投げた値は、`renderToResponse` と同じ規則で扱い、`notFound` と `error` のページも描き直しの JSON で返す。
+ */
+export function renderRefresh(node: unknown, options: ResponseOptions = {}): Promise<Response> {
+  return refreshed(node, options, 200);
+}
+
+/** `node` を描き直した Response を返す。ステータスは、`status` と、シェルの中の `<Errored>` が決めたステータスのうち大きいほうである。 */
+async function refreshed(
+  node: unknown,
+  options: ResponseOptions,
+  status: number,
+): Promise<Response> {
+  const renderer = new Renderer(() => {}, true, { kind: "refresh" });
+  try {
+    let shell: string;
+    try {
+      shell = await renderer.shell(asNode(node));
+    } catch (error) {
+      return await failure(error, options, refreshed);
+    }
+    return Response.json(await renderer.refresh(shell), {
+      status: Math.max(status, renderer.status),
+      ...(options.headers && { headers: options.headers }),
+    });
+  } finally {
+    renderer.dispose();
+  }
+}
+
+/** シェルの中で投げられた値から、レスポンスを作成する。`notFound` と `error` のページは `render` で描画する。 */
+function failure<O extends ResponseOptions>(
+  error: unknown,
+  options: O,
+  render: (node: unknown, options: O, status: number) => Promise<Response>,
+): Response | Promise<Response> {
   const thrown = classify(error);
   switch (thrown.kind) {
     case "redirect":
@@ -1515,13 +1620,13 @@ function failure(error: unknown, options: DocumentOptions): Response | Promise<R
     case "notFound": {
       const page = options.notFound;
       return page
-        ? respond(page(), { ...options, notFound: undefined }, 404)
+        ? render(page(), { ...options, notFound: undefined }, 404)
         : new Response("Not Found", { status: 404 });
     }
     case "error": {
       const page = options.error;
       if (page)
-        return respond(page(error), { ...options, notFound: undefined, error: undefined }, 500);
+        return render(page(error), { ...options, notFound: undefined, error: undefined }, 500);
       throw error;
     }
   }
