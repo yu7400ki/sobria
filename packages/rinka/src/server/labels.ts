@@ -1,3 +1,5 @@
+import { escapeAttribute } from "./escape.ts";
+
 /**
  * `<label for>` の補完の目印を表す。`label` は `for` を持つ `<label>` で、`host` は `<label>` で名前を補うフォームの部品のホストである。
  * `key` は、tree scope（最も内側の Shadow DOM のホストの ID か、文書を表す空の文字列）と、`for` の値かホストの `id` の組である。
@@ -22,13 +24,10 @@ export class Labels {
   private readonly marks: LabelMark[] = [];
   private readonly prefix: string;
   private readonly pattern: RegExp;
-  /** `id` の要素を指す `aria-labelledby` の属性の文字列を返す。 */
-  private readonly labelledBy: (id: string) => string;
 
-  constructor(nonce: string, labelledBy: (id: string) => string) {
+  constructor(nonce: string) {
     this.prefix = `\u0000${nonce}:`;
     this.pattern = new RegExp(`${this.prefix}(\\d+)\u0000`, "g");
-    this.labelledBy = labelledBy;
   }
 
   /**
@@ -59,15 +58,15 @@ export class Labels {
    */
   resolve(htmls: readonly string[]): string[] {
     if (!htmls.some((html) => html.includes(this.prefix))) return [...htmls];
-    const markOf = (index: string): LabelMark => {
-      const mark = this.marks[Number(index)];
+    const markOf = (index: string | undefined): LabelMark => {
+      const mark = index === undefined ? undefined : this.marks[Number(index)];
       if (mark === undefined)
         throw new Error(`<label for> の補完の目印 ${index} の記録がありません。`);
       return mark;
     };
     const unit = new Map<string, string>();
     for (const html of htmls) {
-      for (const [, index = ""] of html.matchAll(this.pattern)) {
+      for (const [, index] of html.matchAll(this.pattern)) {
         const mark = markOf(index);
         if (mark.kind === "label" && !unit.has(mark.key)) unit.set(mark.key, mark.id);
       }
@@ -77,7 +76,7 @@ export class Labels {
         const mark = markOf(index);
         if (mark.kind === "label") return "";
         const id = this.written.get(mark.key) ?? unit.get(mark.key);
-        return id === undefined ? "" : this.labelledBy(id);
+        return id === undefined ? "" : ` aria-labelledby="${escapeAttribute(id)}"`;
       }),
     );
     for (const [key, id] of unit) if (!this.written.has(key)) this.written.set(key, id);

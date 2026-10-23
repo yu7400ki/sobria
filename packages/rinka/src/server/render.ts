@@ -48,6 +48,7 @@ import {
   swapScript,
 } from "./bootstrap.ts";
 import { classify } from "./errors.ts";
+import { escapeAttribute, escapeText } from "./escape.ts";
 import { Labels } from "./labels.ts";
 import { scriptJson } from "./script.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
@@ -480,7 +481,7 @@ interface WalkCtx {
 
 /**
  * `<fieldset>` の子の `<legend>` を表す。`taken` は、最初の `<legend>` を描画したかどうかで、
- * `outer` は、その `<fieldset>` の外側の `<fieldset disabled>` で無効になるかどうかである。最初の `<legend>` の中は、`outer` でだけ無効になる。
+ * `outer` は、その `<fieldset>` の外側の `<fieldset disabled>` で無効になるかどうかを返す関数である。最初の `<legend>` の中は、`outer` でだけ無効になる。
  * `taken` は、`<fieldset>` の子を walk する間に書き換えるので、穴の中の `<legend>` は、穴の外の `<legend>` より後に描画したものとして扱う。
  */
 interface Legend {
@@ -490,6 +491,9 @@ interface Legend {
 
 /** `disabled` の属性の値 `value` が、無効であることを表すかどうかを返す。 */
 const disables = (value: unknown): boolean => attributeValue("disabled", value) !== null;
+
+/** 常に無効でないことを返す。 */
+const notDisabled = (): boolean => false;
 
 /**
  * フォームの部品 `<tag>` の Light DOM の先頭に出力する hidden input を返す。ホストの `name` が文字列で、`form.value` の値 `value` が文字列のときだけ出力する。
@@ -507,9 +511,6 @@ function hiddenInput(tag: string, name: unknown, value: unknown, disabled: boole
   }
   return "";
 }
-
-/** 常に無効でないことを返す。 */
-const notDisabled = (): boolean => false;
 
 /**
  * タグを `<head>` に移動するかどうかを表す。
@@ -635,12 +636,6 @@ const voidTags: ReadonlySet<string> = new Set([
   "wbr",
 ]);
 
-const escapeText = (text: string): string =>
-  text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-
-const escapeAttribute = (text: string): string =>
-  text.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
-
 /** HTML の属性の名前として使用できる文字列に一致する正規表現である。 */
 const attributeName = /^[^\s"'>/=\p{Cc}]+$/u;
 
@@ -748,8 +743,8 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
   private caught = 200;
   /** 文書の骨組みに移動するものの目印に含める、描画ごとの値である。 */
   private readonly nonce = crypto.randomUUID();
-  /** `<label for>` の補完の目印である。 */
-  private readonly labels = new Labels(this.nonce, (id) => attribute("aria-labelledby", id));
+  /** `<label for>` の補完の目印を作成し、置換する。 */
+  private readonly labels = new Labels(this.nonce);
   /** 文書の骨組みに移動するものを、目印の番号ごとに保持する。 */
   private readonly hoisted = new Map<number, Hoisted>();
 
@@ -1229,7 +1224,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
    * 要素の関数 `component` を `props` で実行し、Shadow DOM の中身の出力の単位の列を返す。
    * `slots` は、Shadow DOM の `<slot>` の名前ごとに、その `<slot>` を囲む境界を表す。
    * `internals` は、要素の関数が ctx の `internals` に代入した値である。`disabled` は、要素の関数の `form.disabled()` に渡す関数である。
-   * 要素の関数が `form.value` を呼んだときは、要素の関数を実行した後に、渡した関数とホストの名前 `name` と `disabled` を 1 回だけ評価し、hidden input を `</template>` の後に出力する。
+   * 要素の関数が `form.value` を呼んだときは、要素の関数を実行した後に、渡した関数とホストの名前 `name` と `disabled` を評価し、hidden input を `</template>` の後に 1 つ出力する。値が未解決なら、解決してから評価し直す。
    */
   private runElement(
     component: ElementComponent<unknown>,
