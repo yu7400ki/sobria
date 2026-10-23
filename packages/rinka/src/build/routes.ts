@@ -73,6 +73,10 @@ const shapeOf = (path: string): string =>
     .map((segment) => (segment.startsWith(":") ? (isCatchAll(segment) ? "*" : ":") : segment))
     .join("/");
 
+/** 行のモジュールのファイルを返す。`not-found.tsx` の行では、その `not-found.tsx` のファイルを返す。 */
+const moduleOf = (route: ScannedRoute): string =>
+  route.kind === "not-found" ? route.notFound.module : route.module;
+
 /**
  * `not-found.tsx` の行を、ページと `route.ts` の行の後に、区切りの数が多い順に並べる。
  * ページと `route.ts` の行どうしと、区切りの数が同じ `not-found.tsx` の行どうしは、区切りの優先順位を前から比較し、一方が他方の前方と一致するなら短いほうを先にする。
@@ -90,7 +94,7 @@ function compareRoutes(a: ScannedRoute, b: ScannedRoute): number {
   }
   if (left.length !== right.length) return left.length - right.length;
   if (a.path !== b.path) return a.path < b.path ? -1 : 1;
-  return a.module.split("/").length - b.module.split("/").length;
+  return moduleOf(a).split("/").length - moduleOf(b).split("/").length;
 }
 
 /** 種類が `kind` の行を返す。ページには `fallbacks` を、`not-found.tsx` には `fallbacks` の `error` を付ける。 */
@@ -116,9 +120,8 @@ function rowOf({
       return {
         kind,
         path,
-        module,
-        layouts,
         middlewares,
+        notFound: { module, layouts },
         ...(fallbacks.error && { error: fallbacks.error }),
       };
     case "route":
@@ -197,7 +200,7 @@ export function scanRoutes(root: string, dir: string): Routes<PathFiles> {
     const other = handled.get(shape);
     if (other) {
       throw new Error(
-        `${other.module} と ${route.module} は、同じ URL に対応します。どちらか一方にしてください。`,
+        `${moduleOf(other)} と ${moduleOf(route)} は、同じ URL に対応します。どちらか一方にしてください。`,
       );
     }
     handled.set(shape, route);

@@ -83,9 +83,8 @@ function notFoundRoute(
   return {
     kind: "not-found",
     path: path === "/" ? "/*" : `${path}/*`,
-    module: notFoundPage.module,
-    layouts: notFoundPage.layouts,
     middlewares: middlewares.map(module),
+    notFound: notFoundPage,
     ...(error && { error }),
   };
 }

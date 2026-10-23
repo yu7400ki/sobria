@@ -4,8 +4,13 @@ import { dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { routesModule, scanRoutes } from "../../src/build/routes.ts";
-import { mapRouteFiles, type RouteFiles, type Routes } from "../../src/shared/routes.ts";
+import { routesModule, scanRoutes, type PathFiles } from "../../src/build/routes.ts";
+import {
+  mapRouteFiles,
+  type Route,
+  type RouteFiles,
+  type Routes,
+} from "../../src/shared/routes.ts";
 
 const roots: string[] = [];
 
@@ -26,6 +31,10 @@ function project(files: readonly string[]): string {
 }
 
 const scan = (files: readonly string[]) => scanRoutes(project(files), "src/routes");
+
+/** 行のモジュールのファイルを返す。`not-found.tsx` の行では、その `not-found.tsx` のファイルを返す。 */
+const moduleOf = (route: Route<PathFiles>): string =>
+  route.kind === "not-found" ? route.notFound.module : route.module;
 
 describe("scanRoutes", () => {
   it("特別な名前のファイルを、レイアウトとミドルウェアとともに、静的な区切り、動的な区切り、キャッチオールの順に列挙する", () => {
@@ -95,9 +104,8 @@ describe("scanRoutes", () => {
         {
           kind: "not-found",
           path: "/*",
-          module: "src/routes/not-found.tsx",
-          layouts: root,
           middlewares: [],
+          notFound: { module: "src/routes/not-found.tsx", layouts: root },
           error: fallbacks.error,
         },
       ],
@@ -172,7 +180,7 @@ describe("scanRoutes のエラーのページ", () => {
     };
     expect(
       routes.map((route) => ({
-        module: route.module,
+        module: moduleOf(route),
         notFound: route.kind === "page" ? route.notFound?.module : undefined,
         error: route.kind === "route" ? undefined : route.error,
       })),
@@ -204,7 +212,7 @@ describe("scanRoutes のエラーのページ", () => {
       "error.tsx",
       "api/route.ts",
     ]);
-    expect(routes.map((route) => [route.module, route.path, "error" in route])).toEqual([
+    expect(routes.map((route) => [moduleOf(route), route.path, "error" in route])).toEqual([
       ["src/routes/api/route.ts", "/api", false],
       ["src/routes/x/not-found.tsx", "/x/*", true],
       ["src/routes/(a)/x/not-found.tsx", "/x/*", true],

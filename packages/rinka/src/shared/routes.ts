@@ -55,13 +55,11 @@ export type Route<F extends RouteFiles = LoadedFiles> = {
       readonly module: F["component"];
       readonly layouts: readonly F["component"][];
     } & Fallbacks<F>)
-  | {
+  | ({
       readonly kind: "not-found";
-      readonly module: F["component"];
-      readonly layouts: readonly F["component"][];
-      /** そのディレクトリか祖先のディレクトリで最も近い `error.tsx` である。 */
-      readonly error?: Fallback<F>;
-    }
+      /** この行の `not-found.tsx` と、そのディレクトリのレイアウトである。 */
+      readonly notFound: Fallback<F>;
+    } & Pick<Fallbacks<F>, "error">)
   | { readonly kind: "route"; readonly module: F["handlers"] }
 );
 
@@ -96,8 +94,7 @@ export function mapRouteFiles<F extends RouteFiles, G extends RouteFiles>(
         return {
           ...common,
           kind: route.kind,
-          module: map.component(route.module),
-          layouts: route.layouts.map(map.component),
+          notFound: fallback(route.notFound),
           ...(route.error && { error: fallback(route.error) }),
         };
       case "route":
