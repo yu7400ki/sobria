@@ -7,17 +7,18 @@ import { rpcPrefix, rpcQuery, wireFormat, wireHeader } from "../shared/wire.ts";
 import { runInRequest } from "./context.ts";
 import { NotFound, Redirect } from "./errors.ts";
 import { formDataToInput } from "./form-data.ts";
-import { runChain, SchemaError, serverFnKey, type ServerFn } from "./server-fn.ts";
+import { definitionOf, runChain, SchemaError, type Definition } from "./server-fn.ts";
 import { fromRpcInput, toRpcBody } from "./wire.ts";
 
-type AnyServerFn = Pick<ServerFn<never, unknown>, typeof serverFnKey>;
-
-const registry = new Map<string, AnyServerFn>();
+const registry = new Map<string, Definition>();
 
 /** `fn` を、ID が `id` のサーバー関数として登録し、`fn` を返す。 */
-export function registerServerFn<F extends AnyServerFn>(id: string, fn: F): F {
-  registry.set(id, fn);
-  const ref: ServerFnRef = { id, method: fn[serverFnKey].method };
+export function registerServerFn<F extends object>(id: string, fn: F): F {
+  const definition = definitionOf(fn);
+  if (!definition)
+    throw new TypeError("registerServerFn には、defineServerFn が作成した関数を渡してください。");
+  registry.set(id, definition);
+  const ref: ServerFnRef = { id, method: definition.method };
   return Object.defineProperty(fn, serverFnRef, { value: ref });
 }
 
@@ -50,9 +51,9 @@ async function endpoint(
   responder: Responder,
   options: AppOptions,
 ): Promise<Response> {
-  const fn = await find(id, options);
-  if (!fn) return responder.reject(c, 404);
-  const { method, middlewares, handle } = fn[serverFnKey];
+  const definition = await find(id, options);
+  if (!definition) return responder.reject(c, 404);
+  const { method, middlewares, handle } = definition;
   const requested = c.req.method === "HEAD" ? "GET" : c.req.method;
   if (requested !== method) return responder.reject(c, 405);
   if (method !== "GET" && isCrossSite(c.req.raw, options.trustedOrigins ?? [])) {
@@ -173,8 +174,8 @@ function isFormSubmission(c: Context): boolean {
   );
 }
 
-/** ID が `id` のサーバー関数を返す。`options.loadServerFn` があれば、それが真を返したときだけ検索する。 */
-async function find(id: string, options: AppOptions): Promise<AnyServerFn | undefined> {
+/** ID が `id` のサーバー関数の定義を返す。`options.loadServerFn` があれば、それが真を返したときだけ検索する。 */
+async function find(id: string, options: AppOptions): Promise<Definition | undefined> {
   if (options.loadServerFn && !(await options.loadServerFn(id))) return undefined;
   return registry.get(id);
 }

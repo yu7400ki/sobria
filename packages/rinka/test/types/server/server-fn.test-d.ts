@@ -74,3 +74,11 @@ test("型を持たない Standard Schema では、validate() が返す value の
   });
   expectTypeOf(fn).parameter(0).toEqualTypeOf<number>();
 });
+
+/** `T` が 2 つ以上の型の共用体なら `true` になる。 */
+type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;
+
+test("サーバー関数の型が持つ symbol のキーは、ID とメソッドのキーの 1 つだけである", () => {
+  const fn = defineServerFn(() => null);
+  expectTypeOf<IsUnion<Extract<keyof typeof fn, symbol>>>().toEqualTypeOf<false>();
+});

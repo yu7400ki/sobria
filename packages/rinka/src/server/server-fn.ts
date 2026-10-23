@@ -59,11 +59,14 @@ type ServerFnHandler<M extends AnyMiddleware[], In, R> = (
 export type ServerFn<In, R, M extends ServerFnMethod = ServerFnMethod> = ([In] extends [undefined]
   ? (input?: In, options?: CallOptions) => Promise<Awaited<R>>
   : (input: In, options?: CallOptions) => Promise<Awaited<R>>) & {
-  readonly [serverFnKey]: Definition;
   readonly [serverFnRef]: ServerFnRef<M>;
 };
 
-export const serverFnKey: unique symbol = Symbol("rinka.serverFn");
+/** `defineServerFn` が作成した関数ごとの定義である。 */
+const definitions = new WeakMap<object, Definition>();
+
+/** `fn` が `defineServerFn` で作成した関数なら、その定義を返す。 */
+export const definitionOf = (fn: object): Definition | undefined => definitions.get(fn);
 
 /** サーバー関数の定義を表す。 */
 export interface Definition {
@@ -128,7 +131,8 @@ function create(options: ServerFnOptions<Validation>, steps: Step[]): unknown {
     handle: async (c, input) => handler(c, { input: await validate(options.input, input, c) }),
   };
   const fn = (input?: unknown) => callDirectly(currentContext(), definition, input);
-  return Object.assign(fn, { [serverFnKey]: definition });
+  definitions.set(fn, definition);
+  return fn;
 }
 
 async function validate(
