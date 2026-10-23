@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { rinka } from "rinka/vite";
+import { rinka, type RinkaApi } from "rinka/vite";
 import {
   type HotPayload,
   type InlineConfig,
@@ -242,8 +242,7 @@ describe(".rinka/ の生成", () => {
   });
 
   it("Vite の設定を解決する前に api の prepare を呼ぶと、エラーを投げる", () => {
-    const [plugin] = rinka();
-    const api = plugin!.api as { prepare: () => void };
+    const api: RinkaApi = rinka()[0]?.api;
     expect(() => api.prepare()).toThrow(/設定を解決した後/);
   });
 
