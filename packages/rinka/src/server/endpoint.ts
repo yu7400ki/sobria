@@ -33,26 +33,31 @@ export function rinkaMiddleware(options: AppOptions): MiddlewareHandler {
         await next();
         return undefined;
       }
+      const responder = responders[isFormSubmission(c) ? "form" : "rpc"];
       let id: string;
       try {
         id = decodeURIComponent(pathname.slice(rpcPrefix.length));
       } catch {
-        return rpc(c, null, 404);
+        return responder.reject(c, 404);
       }
-      return endpoint(c, id, options);
+      return endpoint(c, id, responder, options);
     });
 }
 
-async function endpoint(c: Context, id: string, options: AppOptions): Promise<Response> {
+async function endpoint(
+  c: Context,
+  id: string,
+  responder: Responder,
+  options: AppOptions,
+): Promise<Response> {
   const fn = await find(id, options);
-  if (!fn) return rpc(c, null, 404);
+  if (!fn) return responder.reject(c, 404);
   const { method, middlewares, handle } = fn[serverFnKey];
   const requested = c.req.method === "HEAD" ? "GET" : c.req.method;
-  if (requested !== method) return rpc(c, null, 405);
+  if (requested !== method) return responder.reject(c, 405);
   if (method !== "GET" && isCrossSite(c.req.raw, options.trustedOrigins ?? [])) {
-    return rpc(c, null, 403);
+    return responder.reject(c, 403);
   }
-  const responder = responders[isFormSubmission(c) ? "form" : "rpc"];
   let input: unknown;
   try {
     input = await responder.read(c);

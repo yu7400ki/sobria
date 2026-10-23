@@ -7,7 +7,7 @@ import { createApp, registerServerFn } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToString } from "../../src/server/render.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
-import { rpcPath } from "../../src/shared/wire.ts";
+import { rpcPath, wireHeader } from "../../src/shared/wire.ts";
 
 let count = 0;
 
@@ -151,12 +151,25 @@ describe("JS が無いときのフォームの送信", () => {
     expect(await response.text()).toBe("Bad Request");
   });
 
-  it("GET のサーバー関数への送信は 405 に、別のサイトからの送信は 403 にする", async () => {
+  it("GET のサーバー関数への送信は 405 に、別のサイトからの送信は 403 に、未登録の ID への送信は 404 にし、本文を素のテキストにする", async () => {
     const { id: get } = register(defineServerFn({ method: "GET" })(() => null));
-    expect((await submit(get, new FormData())).status).toBe(405);
     const { id: post } = register(defineServerFn(() => null));
-    expect((await submit(post, new FormData(), { "sec-fetch-site": "cross-site" })).status).toBe(
-      403,
+    const responses = await Promise.all([
+      submit(get, new FormData()),
+      submit(post, new FormData(), { "sec-fetch-site": "cross-site" }),
+      submit("src/forms-missing.ts#fn", new FormData()),
+    ]);
+    const actual = await Promise.all(
+      responses.map(async (response) => [
+        response.status,
+        response.headers.has(wireHeader),
+        await response.text(),
+      ]),
     );
+    expect(actual).toEqual([
+      [405, false, "Method Not Allowed"],
+      [403, false, "Forbidden"],
+      [404, false, "Not Found"],
+    ]);
   });
 });
