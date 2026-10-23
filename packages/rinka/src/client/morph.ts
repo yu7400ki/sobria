@@ -1,4 +1,4 @@
-import { tagAttributeName } from "../shared/attributes.ts";
+import { HOST_ATTRIBUTE, tagAttributeName } from "../shared/attributes.ts";
 
 /** `<script>` か `<template>` であるかを返す。 */
 const isKept = (node: Node): boolean =>
@@ -80,7 +80,7 @@ function update(node: Node, source: Node, onHost: (host: Element, id: string) =>
     if (node.nodeValue !== source.nodeValue) node.nodeValue = source.nodeValue;
     return;
   }
-  const host = node.hasAttribute("data-oh") ? source.getAttribute("data-oh") : null;
+  const host = node.hasAttribute(HOST_ATTRIBUTE) ? source.getAttribute(HOST_ATTRIBUTE) : null;
   if (host === null) syncAttributes(node, source);
   else onHost(node, host);
   morphChildren(node, source, onHost);

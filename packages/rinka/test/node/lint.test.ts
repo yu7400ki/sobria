@@ -33,6 +33,7 @@ const rules = new Map([
   ["rinka(no-directional-insert)", "insert"],
   ["rinka(no-entry-literal)", "entry"],
   ["rinka(no-receiver-literal)", "receiver"],
+  ["rinka(no-marker-attribute-literal)", "marker"],
 ]);
 
 type Diagnostic = { code: string; labels: { span: { line: number } }[] };
@@ -235,19 +236,39 @@ describe("起動スクリプトの受け口の文字列", () => {
         "export const b = (x: string) => `<script>$rinka.d(${x})</script>`;",
         'export const c = (x: string) => `<p ${x} data-rinka-load="idle">`;',
         'export const d = "rinka";',
-        'export const e = "data-oh";',
-        'export const f = (x: string) => "$rinka" + x;',
+        'export const e = (x: string) => "$rinka" + x;',
       ]),
     ).toEqual([
       [1, "receiver"],
       [2, "receiver"],
       [3, "receiver"],
-      [6, "receiver"],
+      [5, "receiver"],
     ]);
   });
 
   it("src/server/bootstrap.ts は報告しない", () => {
     expect(reports("src/server/bootstrap.ts", ['export const a = "$rinka.n";'])).toEqual([]);
+  });
+});
+
+describe("ホストと境界の目印の属性名", () => {
+  it("src/ の中の、data-o と 1 文字の属性名を含む文字列のリテラルとテンプレートリテラルを報告する", () => {
+    expect(
+      reports("src/client/marker-use.ts", [
+        'export const a = "data-oh";',
+        'export const b = (x: string) => `<p data-om="${x}">`;',
+        'export const c = "data-other";',
+        'export const d = "template[data-op=\\"1\\"]";',
+      ]),
+    ).toEqual([
+      [1, "marker"],
+      [2, "marker"],
+      [4, "marker"],
+    ]);
+  });
+
+  it("src/shared/attributes.ts の属性名の定義は報告しない", () => {
+    expect(reports("src/shared/attributes.ts", ['export const a = "data-oh";'])).toEqual([]);
   });
 });
 

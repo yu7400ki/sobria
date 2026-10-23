@@ -1,3 +1,9 @@
+import {
+  BOUNDARY_ATTRIBUTE,
+  BOUNDARY_CONTENT_ATTRIBUTE,
+  HOST_ATTRIBUTE,
+  PATCH_ATTRIBUTE,
+} from "../shared/attributes.ts";
 import { loadTimings } from "../shared/names.ts";
 import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
 import { serverFnRefName } from "../shared/server-fn.ts";
@@ -28,13 +34,13 @@ r(s){const me=document.currentScript;me&&me.remove();
 const fix=root=>{for(const t of root.querySelectorAll('template[shadowrootmode]')){fix(t.content);const host=t.parentElement;
 if(host&&!host.shadowRoot){host.attachShadow({mode:t.getAttribute('shadowrootmode')}).append(t.content);t.remove()}}};
 const apply=(id,path,holder)=>{const src=document.querySelector(holder);let root=document;
-for(const h of path){const el=root&&root.querySelector('[data-oh="'+h+'"]');root=el&&el.shadowRoot}
-const start=root&&root.querySelector('template[data-ob="'+id+'"]');let end=start&&start.nextSibling;
+for(const h of path){const el=root&&root.querySelector('[${HOST_ATTRIBUTE}="'+h+'"]');root=el&&el.shadowRoot}
+const start=root&&root.querySelector('template[${BOUNDARY_ATTRIBUTE}="'+id+'"]');let end=start&&start.nextSibling;
 while(end&&!(end.nodeType===8&&end.data==='/ob:'+id))end=end.nextSibling;
 if(!src)return;if(!end){src.remove();return}
 while(start.nextSibling!==end)start.nextSibling.remove();
 fix(src.content);end.parentNode.insertBefore(src.content,end);start.remove();end.remove();src.remove()};
-apply(s.b,s.bp,'template[data-os="'+s.b+'"]');for(const p of s.p)apply(p[0],p[1],'template[data-op="'+p[0]+'"]')},
+apply(s.b,s.bp,'template[${BOUNDARY_CONTENT_ATTRIBUTE}="'+s.b+'"]');for(const p of s.p)apply(p[0],p[1],'template[${PATCH_ATTRIBUTE}="'+p[0]+'"]')},
 m(list){for(const[t,u,l]of list)E[t]||(E[t]={u,l,s:0});scan(document);
 if(!O){O=new MutationObserver(rs=>{for(const r of rs)for(const n of r.addedNodes)if(n.nodeType===1){watch(n);scan(n)}});
 O.observe(document.documentElement,{childList:true,subtree:true})}},

@@ -116,6 +116,21 @@ export default {
         return { Literal: check, TemplateLiteral: check };
       },
     },
+    /** `data-o` と 1 文字の属性名を含む、文字列のリテラルとテンプレートリテラルを報告する。 */
+    "no-marker-attribute-literal": {
+      create(context: Context) {
+        const check = (node: StringNode) => {
+          const text = fullText(node);
+          if (text === undefined || !/data-o[a-z](?![\w-])/.test(text)) return;
+          context.report({
+            node,
+            message:
+              "ホストと境界の目印の属性名は、src/shared/attributes.ts の定数で記述してください。",
+          });
+        };
+        return { Literal: check, TemplateLiteral: check };
+      },
+    },
     /** MagicString の、挿入する位置の左右を選ぶメソッドの呼び出しを報告する。 */
     "no-directional-insert": {
       create(context: Context) {

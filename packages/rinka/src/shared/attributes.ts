@@ -24,5 +24,23 @@ export function attributeValue(name: string, value: unknown): string | null {
   return String(value);
 }
 
-/** ネイティブのタグに記述した props の名前から、属性の名前を返す。`key` は `data-ok` になり、ほかの名前は変わらない。 */
-export const tagAttributeName = (name: string): string => (name === "key" ? "data-ok" : name);
+/** ネイティブのタグの `key` を出力する属性の名前である。 */
+export const KEY_ATTRIBUTE = "data-ok";
+
+/** 要素のホストの ID を出力する属性の名前である。 */
+export const HOST_ATTRIBUTE = "data-oh";
+
+/** ホストが起動の前に待つ値のキーを、空白で区切って出力する属性の名前である。 */
+export const AWAITED_ATTRIBUTE = "data-om";
+
+/** 後送りの境界の開始の目印の `<template>` に、境界の ID を出力する属性の名前である。 */
+export const BOUNDARY_ATTRIBUTE = "data-ob";
+
+/** 後送りの境界の中身を運ぶ `<template>` に、境界の ID を出力する属性の名前である。 */
+export const BOUNDARY_CONTENT_ATTRIBUTE = "data-os";
+
+/** 境界の中の差し替えの中身を運ぶ `<template>` に、差し替えの ID を出力する属性の名前である。 */
+export const PATCH_ATTRIBUTE = "data-op";
+
+/** ネイティブのタグに記述した props の名前から、属性の名前を返す。`key` は `KEY_ATTRIBUTE` になり、ほかの名前は変わらない。 */
+export const tagAttributeName = (name: string): string => (name === "key" ? KEY_ATTRIBUTE : name);

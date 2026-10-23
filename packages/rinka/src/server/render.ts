@@ -9,7 +9,15 @@ import {
   type Owner,
 } from "@solidjs/signals";
 
-import { attributeValue, tagAttributeName } from "../shared/attributes.ts";
+import {
+  attributeValue,
+  AWAITED_ATTRIBUTE,
+  BOUNDARY_ATTRIBUTE,
+  BOUNDARY_CONTENT_ATTRIBUTE,
+  HOST_ATTRIBUTE,
+  PATCH_ATTRIBUTE,
+  tagAttributeName,
+} from "../shared/attributes.ts";
 import {
   elementInfo,
   isElementComponent,
@@ -610,7 +618,7 @@ function attribute(name: string, value: unknown): string {
 
 /** 目印の開始と終了の HTML を返す。 */
 const marker = (id: string, inner = ""): string =>
-  `<template data-ob="${id}"></template>${inner}<!--/ob:${id}-->`;
+  `<template ${BOUNDARY_ATTRIBUTE}="${id}"></template>${inner}<!--/ob:${id}-->`;
 
 /** サーバーの描画で、`ctx.host` の代わりに渡す値である。プロパティを参照すると、エラーを投げる。 */
 const serverHost = new Proxy(
@@ -1084,7 +1092,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     }
     chunks.push(`</${tag}>`);
     const open = ({ text, transfer, current }: HostAttributes, at: Out): string => {
-      const start = `<${tag}${attribute("data-oh", id)}${attribute(loadAttributeName, load)}${text}`;
+      const start = `<${tag}${attribute(HOST_ATTRIBUTE, id)}${attribute(loadAttributeName, load)}${text}`;
       if (shadow === undefined) {
         const values = {
           [REFRESH_PROPS_KEY]: current,
@@ -1095,7 +1103,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       }
       if (transfer) this.send(record, PROPS_KEY, Promise.resolve(toScript(transfer, `<${tag}>`)));
       const keys = record.seal(transfer ? [PROPS_KEY] : [], at.shown);
-      const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
+      const om = keys.length > 0 ? attribute(AWAITED_ATTRIBUTE, keys.join(" ")) : "";
       return `${start}${om}><template shadowrootmode="open">`;
     };
     out.push({ kind: "host", host: { attributes, open, chunks, announce, delivered } });
@@ -1299,9 +1307,11 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
         this.reveal(
           flush,
           noindex +
-            `<template data-os="${boundary.id}">${region}</template>` +
+            `<template ${BOUNDARY_CONTENT_ATTRIBUTE}="${boundary.id}">${region}</template>` +
             patches
-              .map(([patch, html]) => `<template data-op="${patch.id}">${html}</template>`)
+              .map(
+                ([patch, html]) => `<template ${PATCH_ATTRIBUTE}="${patch.id}">${html}</template>`,
+              )
               .join("") +
             this.tailOf([regionOut, ...patches.map(([patch]) => patch.out)]) +
             swapScript(spec),

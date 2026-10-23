@@ -12,6 +12,7 @@ import {
   type Owner,
 } from "@solidjs/signals";
 
+import { HOST_ATTRIBUTE } from "../shared/attributes.ts";
 import {
   createElementComponent,
   elementInfo,
@@ -402,7 +403,7 @@ function attach(el: HTMLElement, instance: Instance): void {
   if (
     takeover.phase === "waiting" &&
     takeover.activation !== "granted" &&
-    el.hasAttribute("data-oh") &&
+    el.hasAttribute(HOST_ATTRIBUTE) &&
     locate(el).kind !== "shadow"
   ) {
     if (takeover.activation === "requested") return;
@@ -428,7 +429,7 @@ function attach(el: HTMLElement, instance: Instance): void {
   const position = locate(el);
   if (position.kind === "shadow") {
     if (
-      position.host.hasAttribute("data-oh") &&
+      position.host.hasAttribute(HOST_ATTRIBUTE) &&
       instanceOf(position.host)?.takeover.phase !== "done"
     ) {
       return;
@@ -457,7 +458,9 @@ function attach(el: HTMLElement, instance: Instance): void {
 
 /** 要素がまだ起動しておらず、SSR したホストか、親が作り直した子要素なら、値を引き継ぐホストの ID を返す。 */
 const transferId = (host: HTMLElement, { takeover }: Instance): string | null =>
-  takeover.phase === "waiting" ? (host.getAttribute("data-oh") ?? takeover.from ?? null) : null;
+  takeover.phase === "waiting"
+    ? (host.getAttribute(HOST_ATTRIBUTE) ?? takeover.from ?? null)
+    : null;
 
 const instanceOf = (node: Node): Instance | undefined =>
   node instanceof HTMLElement ? instances.get(node) : undefined;

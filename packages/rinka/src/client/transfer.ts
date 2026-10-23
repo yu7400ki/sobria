@@ -1,5 +1,6 @@
 import { createMemo, type SourceAccessor } from "@solidjs/signals";
 
+import { AWAITED_ATTRIBUTE, HOST_ATTRIBUTE } from "../shared/attributes.ts";
 import { isPlainObject } from "../shared/objects.ts";
 import type { Receiver } from "../shared/receiver.ts";
 import { runSeeding, type ScopedMemo } from "../shared/scope.ts";
@@ -22,7 +23,7 @@ export function whenStartable(host: Element, start: () => void): void {
 
 /** ホストが起動の前に待つ、`data-om` のキーを返す。 */
 function waitedKeys(host: Element): string[] {
-  return (host.getAttribute("data-om") ?? "").split(" ").filter(Boolean);
+  return (host.getAttribute(AWAITED_ATTRIBUTE) ?? "").split(" ").filter(Boolean);
 }
 
 /**
@@ -32,7 +33,7 @@ function related(host: Element, id: string): [Element, string][] {
   const found: [Element, string][] = [[host, id]];
   for (const [key, child] of Object.entries(receiver()?.v[id] ?? {})) {
     if (!isChildKey(key) || typeof child !== "string") continue;
-    const el = host.shadowRoot?.querySelector(`[data-oh="${child}"]`);
+    const el = host.shadowRoot?.querySelector(`[${HOST_ATTRIBUTE}="${child}"]`);
     if (el) found.push(...related(el, child));
   }
   return found;
