@@ -122,3 +122,27 @@ describe("scanRoutes", () => {
     expect(() => scan(["docs/[...a]/page.tsx", "docs/[...b]/route.ts"])).toThrow("/docs/");
   });
 });
+
+describe("scanRoutes が拒否する構成", () => {
+  it("[ か ( で始まり、動的な区切り、キャッチオール、グループのどれでもない名前は、エラーにする", () => {
+    for (const dir of ["[user-id]", "[[...opt]]", "()"]) {
+      expect(() => scan([`${dir}/page.tsx`])).toThrow(`src/routes/${dir}`);
+    }
+  });
+
+  it("キャッチオールの配下のディレクトリにあるルートのファイルは、エラーにする", () => {
+    expect(() => scan(["docs/[...slug]/page.tsx", "docs/[...slug]/foo/page.tsx"])).toThrow(
+      "src/routes/docs/[...slug]/foo/page.tsx",
+    );
+    expect(scan(["docs/[...slug]/page.tsx", "docs/[...slug]/parts/toc.tsx"]).routes).toHaveLength(
+      1,
+    );
+  });
+
+  it("同じ URL に対応する 2 つの not-found.tsx は、エラーにする", () => {
+    expect(() => scan(["(a)/not-found.tsx", "(b)/not-found.tsx"])).toThrow(
+      "src/routes/(b)/not-found.tsx",
+    );
+    expect(scan(["not-found.tsx", "error.tsx", "page.tsx"]).routes).toHaveLength(3);
+  });
+});

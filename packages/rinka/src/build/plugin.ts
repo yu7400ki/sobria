@@ -222,18 +222,18 @@ function checkTags(dir: string, tagOf: (path: string, lang: Lang) => string | un
 }
 
 /** プロジェクトのルートからの相対パス `file` のモジュールを読み込む関数のコードを返す。 */
-const load = (file: string): string => `() => import(${JSON.stringify(`/${file}`)})`;
+const importCode = (file: string): string => `() => import(${JSON.stringify(`/${file}`)})`;
 
 /** `root` からの相対パス `dir` を走査し、ファイルごとにモジュールを読み込む関数を持つルートの表を export するモジュールのコードを返す。 */
 function routesModule(root: string, dir: string): string {
   const { routes, middleware } = scanRoutes(root, dir);
   const rows = routes.map(
     (route) =>
-      `{ kind: ${JSON.stringify(route.kind)}, path: ${JSON.stringify(route.path)}, load: ${load(route.file)}, layouts: [${route.layouts.map(load).join(", ")}], middlewares: [${route.middlewares.map(load).join(", ")}] }`,
+      `{ kind: ${JSON.stringify(route.kind)}, path: ${JSON.stringify(route.path)}, load: ${importCode(route.file)}, layouts: [${route.layouts.map(importCode).join(", ")}], middlewares: [${route.middlewares.map(importCode).join(", ")}] }`,
   );
   return [
     `export const routes = [\n${rows.join(",\n")}\n];`,
-    ...(middleware === undefined ? [] : [`export const middleware = ${load(middleware)};`]),
+    ...(middleware === undefined ? [] : [`export const middleware = ${importCode(middleware)};`]),
     "",
   ].join("\n");
 }

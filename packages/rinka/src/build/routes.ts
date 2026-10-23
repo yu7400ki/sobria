@@ -29,27 +29,39 @@ const routeFiles: readonly (readonly [string, RouteKind])[] = [
   ["error.tsx", "error"],
 ];
 
-/** ディレクトリの名前を、Hono のパスの区切りにする。グループは `undefined` にする。 */
-function segmentOf(name: string): string | undefined {
+/**
+ * ディレクトリの名前を、Hono のパスの区切りにする。グループは `undefined` にする。
+ * `[` か `(` で始まり、動的な区切り、キャッチオール、グループのどれの形でもない名前は、`file` を示すエラーにする。
+ */
+function segmentOf(name: string, file: string): string | undefined {
   if (/^\(.+\)$/.test(name)) return undefined;
   const catchAll = /^\[\.\.\.(\w+)\]$/.exec(name);
   if (catchAll) return `:${catchAll[1]}{.+}`;
   const param = /^\[(\w+)\]$/.exec(name);
-  return param ? `:${param[1]}` : name;
+  if (param) return `:${param[1]}`;
+  if (name.startsWith("[") || name.startsWith("(")) {
+    throw new Error(
+      `${file} の名前は、動的な区切り（[id]）、キャッチオール（[...slug]）、グループ（(name)）のどれの形でもありません。パラメータの名前には、英数字と _ を使用してください。`,
+    );
+  }
+  return name;
 }
+
+/** キャッチオールの区切りかどうかを返す。 */
+const isCatchAll = (segment: string): boolean => segment.endsWith("{.+}");
 
 /** 区切りの優先順位を返す。静的な区切り、動的な区切り、キャッチオールの順に小さい。 */
 const rankOf = (segment: string): number =>
-  segment.startsWith(":") ? (segment.endsWith("{.+}") ? 2 : 1) : 0;
+  segment.startsWith(":") ? (isCatchAll(segment) ? 2 : 1) : 0;
 
 /** パラメータの名前を除いた、パスが一致する URL の形を返す。 */
 const shapeOf = (path: string): string =>
   path
     .split("/")
-    .map((segment) => (segment.startsWith(":") ? (segment.endsWith("{.+}") ? "*" : ":") : segment))
+    .map((segment) => (segment.startsWith(":") ? (isCatchAll(segment) ? "*" : ":") : segment))
     .join("/");
 
-/** 区切りの優先順位を前から比べ、一方が他方の前方と一致するなら短いほうを先にする。 */
+/** 区切りの優先順位を前から比較し、一方が他方の前方と一致するなら短いほうを先にする。 */
 function compareRoutes(a: ScannedRoute, b: ScannedRoute): number {
   const left = a.path.split("/");
   const right = b.path.split("/");
@@ -63,11 +75,13 @@ function compareRoutes(a: ScannedRoute, b: ScannedRoute): number {
 /**
  * プロジェクトのルート `root` からの相対パス `dir` のディレクトリを走査し、ルートの表を返す。
  * ルートは、同じ位置では静的な区切り、動的な区切り、キャッチオールの順に並ぶ。
- * 同じディレクトリに `page.tsx` と `route.ts` があるときと、2 つのファイルが同じ URL を扱うときは、エラーを投げる。
+ * 同じディレクトリに `page.tsx` と `route.ts` があるときと、同じ種類の 2 つのファイルが同じ URL に対応するときは、エラーを投げる。`page.tsx` と `route.ts` は同じ種類とみなす。
+ * キャッチオールのディレクトリの配下のディレクトリにルートのファイルがあるときも、エラーを投げる。
  */
 export function scanRoutes(root: string, dir: string): ScannedRoutes {
   const routes: ScannedRoute[] = [];
   let middleware: string | undefined;
+  const start = resolve(root, dir);
   const fileOf = (path: string): string => relative(root, path).split(sep).join("/");
   const visit = (
     current: string,
@@ -85,7 +99,7 @@ export function scanRoutes(root: string, dir: string): ScannedRoutes {
     let middlewares = outerMiddlewares;
     if (files.has("middleware.ts")) {
       const file = fileOf(join(current, "middleware.ts"));
-      if (current === resolve(root, dir)) middleware = file;
+      if (current === start) middleware = file;
       else middlewares = [...outerMiddlewares, file];
     }
     if (files.has("page.tsx") && files.has("route.ts")) {
@@ -96,12 +110,17 @@ export function scanRoutes(root: string, dir: string): ScannedRoutes {
     const path = `/${segments.join("/")}`;
     for (const [name, kind] of routeFiles) {
       if (files.has(name)) {
+        if (segments.slice(0, -1).some(isCatchAll)) {
+          throw new Error(
+            `${fileOf(join(current, name))} は、キャッチオールのディレクトリの配下にあります。キャッチオールの配下には、ルートのファイルを置けません。`,
+          );
+        }
         routes.push({ kind, path, file: fileOf(join(current, name)), layouts, middlewares });
       }
     }
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      const segment = segmentOf(entry.name);
+      const segment = segmentOf(entry.name, fileOf(join(current, entry.name)));
       visit(
         join(current, entry.name),
         segment === undefined ? segments : [...segments, segment],
@@ -110,17 +129,15 @@ export function scanRoutes(root: string, dir: string): ScannedRoutes {
       );
     }
   };
-  const start = resolve(root, dir);
   if (existsSync(start)) visit(start, [], [], []);
 
   const handled = new Map<string, ScannedRoute>();
   for (const route of routes) {
-    if (route.kind !== "page" && route.kind !== "route") continue;
-    const shape = shapeOf(route.path);
+    const shape = `${route.kind === "route" ? "page" : route.kind} ${shapeOf(route.path)}`;
     const other = handled.get(shape);
     if (other) {
       throw new Error(
-        `${other.file} と ${route.file} が、同じ URL ${route.path} を扱います。どちらか一方にしてください。`,
+        `${other.file} と ${route.file} は、同じ URL に対応します。どちらか一方にしてください。`,
       );
     }
     handled.set(shape, route);
