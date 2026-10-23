@@ -448,6 +448,20 @@ interface WalkCtx {
  */
 type HeadPlacement = "auto" | "all" | "none" | "fallback";
 
+/**
+ * 文書を出力する描画で、描画している位置を表す。`shell` は、文書の骨組みに移動できる位置である。
+ * ほかの値は、移動できない理由を表す。`headless` は `HeadPlacement` が `none` の位置である。
+ */
+type Position = "shell" | "headless" | "element" | "fallback" | "loading";
+
+/** 移動できない位置ごとの、開発時の警告に表示する位置の説明である。 */
+const positionNames = {
+  headless: " <head> に移動しない位置（<svg> や <noscript> の配下、<head> に移動するタグの中）",
+  element: "要素の中",
+  fallback: " <Loading> のフォールバックの中",
+  loading: " <Loading> の内側（要素の中の <Loading> に配置される子を含む）",
+} as const satisfies Record<Exclude<Position, "shell">, string>;
+
 /** `placement` の位置にある `tag` の子の `HeadPlacement` を返す。 */
 function childPlacement(tag: string, placement: HeadPlacement): HeadPlacement {
   if (headlessParents.has(tag) || placement === "none") return "none";
@@ -781,10 +795,10 @@ class Renderer {
     out: Chunk[],
   ): void {
     const role = this.document ? documentTags.get(tag) : undefined;
-    const atShell = this.atShell(ctx);
+    const position = this.position(ctx);
     if (role === "html" || role === "body" || role === "transparent") {
-      if (!atShell) {
-        this.warnOutside(tag, ctx, `文書の <${tag}> に反映せずに、子だけを出力します`);
+      if (position !== "shell") {
+        this.warnOutside(tag, position, `文書の <${tag}> に反映せずに、子だけを出力します`);
         this.walk(asNode(props.children), ctx, out);
         return;
       }
@@ -803,13 +817,11 @@ class Renderer {
       return;
     }
     const movable =
-      role === "head" &&
-      ctx.head !== "none" &&
-      (tag === "title" || attributeValue("itemprop", props.itemprop) === null);
-    if (movable && !atShell && warnsOutOfHead(tag, props)) {
-      this.warnOutside(tag, ctx, "<head> に移動せずに、記述した位置に出力します");
+      role === "head" && (tag === "title" || attributeValue("itemprop", props.itemprop) === null);
+    if (movable && position !== "shell" && position !== "headless" && warnsOutOfHead(tag, props)) {
+      this.warnOutside(tag, position, "<head> に移動せずに、記述した位置に出力します");
     }
-    const hoist = atShell && (ctx.head === "all" || movable);
+    const hoist = position === "shell" && (ctx.head === "all" || movable);
     if (!hoist) {
       this.nativeTag(tag, props, key, ctx, out);
       return;
@@ -828,8 +840,9 @@ class Renderer {
   /** 文書を出力する描画で、`<title>` を `<head>` に移動する位置の `<Navigation>` の props を、深さとともに記録する。 */
   private navigation(props: NavigationProps, ctx: WalkCtx, out: Chunk[]): void {
     if (!this.document) return;
-    if (!this.atShell(ctx)) {
-      this.warnOutside("Navigation", ctx, "反映しません");
+    const position = this.position(ctx);
+    if (position !== "shell") {
+      this.warnOutside("Navigation", position, "反映しません");
       return;
     }
     const values = new Map<keyof NavigationProps, NavigationProps[keyof NavigationProps]>();
@@ -840,27 +853,18 @@ class Renderer {
     out.push(this.marker(id, ""), this.marker(id, "/"));
   }
 
-  /** `ctx` が、シェルの境界にあり、要素の外にあり、`<Loading>` のフォールバックの中と `<head>` に移動しない位置の外にあるかを返す。 */
-  private atShell(ctx: WalkCtx): boolean {
-    return (
-      ctx.owner === null &&
-      ctx.boundary === this.root &&
-      (ctx.head === "auto" || ctx.head === "all")
-    );
+  /** `ctx` の位置を返す。`<head>` に移動しない位置、要素の中、フォールバックの中、`<Loading>` の内側の順に判定する。 */
+  private position(ctx: WalkCtx): Position {
+    if (ctx.head === "none") return "headless";
+    if (ctx.owner !== null) return "element";
+    if (ctx.head === "fallback") return "fallback";
+    return ctx.boundary === this.root ? "shell" : "loading";
   }
 
-  /** 文書の骨組みに移動できない位置にある `tag` を、開発時に、位置と、`action` に記述した扱いとともに警告する。 */
-  private warnOutside(tag: string, ctx: WalkCtx, action: string): void {
+  /** `position` にある `tag` を、開発時に、位置の説明と、`action` に記述した扱いとともに警告する。 */
+  private warnOutside(tag: string, position: Exclude<Position, "shell">, action: string): void {
     if (!import.meta.env?.DEV) return;
-    const where =
-      ctx.head === "none"
-        ? " <head> に移動しない位置（<svg> や <noscript> の配下、<head> に移動するタグの中）"
-        : ctx.owner !== null
-          ? "要素の中"
-          : ctx.head === "fallback"
-            ? " <Loading> のフォールバックの中"
-            : " <Loading> の内側（要素の中の <Loading> に配置される子を含む）";
-    console.warn(`[rinka] <${tag}> は${where}にあるので、${action}。`);
+    console.warn(`[rinka] <${tag}> は${positionNames[position]}にあるので、${action}。`);
   }
 
   /** `<html>` か `<body>` の `props` を、属性の名前ごとの値にする。未解決の値を読む属性は除く。 */
@@ -1363,10 +1367,15 @@ class Renderer {
         return "";
       },
     );
+    const resolved = await Promise.all(heads);
+    const leftover = `<!--${this.nonce}:`;
+    if (rest.includes(leftover) || resolved.some(({ html }) => html.includes(leftover))) {
+      throw new Error("文書の骨組みに移動するものの目印が、取り出した後に残っています。");
+    }
     type Root = Extract<Hoisted, { kind: "html" | "body" }>;
     type Navigation = Extract<Hoisted, { kind: "navigation" }>;
     return {
-      heads: await Promise.all(heads),
+      heads: resolved,
       html: mergeByName(others.filter((record): record is Root => record.kind === "html")),
       body: mergeByName(others.filter((record): record is Root => record.kind === "body")),
       navigation: mergeByName(
