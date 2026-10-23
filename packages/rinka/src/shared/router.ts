@@ -1,4 +1,5 @@
 import type { ServerNode } from "./nodes.ts";
+import { parseSegment } from "./route-segments.ts";
 
 /** ページのファイルの形のパスごとに、そのルートのパラメータの名前から値への対応を表す。`declare module "rinka/router"` で拡張できる。 */
 export interface RouteParams {}
@@ -44,15 +45,22 @@ export function href<Route extends keyof RouteParams>(
   ...[params, query]: HrefArgs<Route>
 ): string {
   const values: Readonly<Record<string, string | number>> = params ?? {};
-  const path = String(route).replaceAll(
-    /\[(\.\.\.)?(\w+)\]/g,
-    (_, rest: string | undefined, name: string) => {
-      const value = String(values[name]);
-      return rest === undefined
-        ? encodeURIComponent(value)
-        : value.split("/").map(encodeURIComponent).join("/");
-    },
-  );
+  const path = String(route)
+    .split("/")
+    .map((part) => {
+      const segment = parseSegment(part);
+      switch (segment?.kind) {
+        case "param":
+          return encodeURIComponent(String(values[segment.name]));
+        case "catch-all":
+          return String(values[segment.name]).split("/").map(encodeURIComponent).join("/");
+        case "static":
+        case "group":
+        case undefined:
+          return part;
+      }
+    })
+    .join("/");
   const search = new URLSearchParams(
     query instanceof URLSearchParams
       ? query

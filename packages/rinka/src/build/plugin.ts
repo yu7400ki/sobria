@@ -20,7 +20,7 @@ import type { Lang } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
 import { entries, oxc, runtimes } from "./entries.ts";
 import { transformJsx } from "./jsx.ts";
-import { routeFileNames, scanRoutes, type ScannedFallback } from "./routes.ts";
+import { routeFileNames, routesModule } from "./routes.ts";
 
 /** rinka のプラグインの設定を表す。 */
 export interface RinkaOptions {
@@ -238,28 +238,6 @@ function checkTags(dir: string, tagOf: (path: string, lang: Lang) => string | un
     }
     owners.set(tag, file);
   }
-}
-
-/** プロジェクトのルートからの相対パス `file` のモジュールを読み込む関数のコードを返す。 */
-const importCode = (file: string): string => `() => import(${JSON.stringify(`/${file}`)})`;
-
-/** `root` からの相対パス `dir` を走査し、ファイルごとにモジュールを読み込む関数を持つルートの表を export するモジュールのコードを返す。 */
-function routesModule(root: string, dir: string): string {
-  const { routes, middleware } = scanRoutes(root, dir);
-  const list = (files: readonly string[]): string => `[${files.map(importCode).join(", ")}]`;
-  const fallback = (name: string, page: ScannedFallback | undefined): string =>
-    page === undefined
-      ? ""
-      : `, ${name}: { load: ${importCode(page.file)}, layouts: ${list(page.layouts)} }`;
-  const rows = routes.map(
-    (route) =>
-      `{ kind: ${JSON.stringify(route.kind)}, path: ${JSON.stringify(route.path)}, load: ${importCode(route.file)}, layouts: ${list(route.layouts)}, middlewares: ${list(route.middlewares)}${fallback("notFound", route.notFound)}${fallback("error", route.error)} }`,
-  );
-  return [
-    `export const routes = [\n${rows.join(",\n")}\n];`,
-    ...(middleware === undefined ? [] : [`export const middleware = ${importCode(middleware)};`]),
-    "",
-  ].join("\n");
 }
 
 /**

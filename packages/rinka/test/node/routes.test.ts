@@ -4,7 +4,8 @@ import { dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { scanRoutes } from "../../src/build/routes.ts";
+import { routesModule, scanRoutes } from "../../src/build/routes.ts";
+import { mapRouteFiles, type RouteFiles, type Routes } from "../../src/shared/routes.ts";
 
 const roots: string[] = [];
 
@@ -47,8 +48,8 @@ describe("scanRoutes", () => {
     ]);
     const root = ["src/routes/layout.tsx"];
     const fallbacks = {
-      notFound: { file: "src/routes/not-found.tsx", layouts: root },
-      error: { file: "src/routes/error.tsx", layouts: root },
+      notFound: { module: "src/routes/not-found.tsx", layouts: root },
+      error: { module: "src/routes/error.tsx", layouts: root },
     };
     const users = {
       layouts: [...root, "src/routes/users/layout.tsx"],
@@ -61,7 +62,7 @@ describe("scanRoutes", () => {
         {
           kind: "page",
           path: "/",
-          file: "src/routes/page.tsx",
+          module: "src/routes/page.tsx",
           layouts: root,
           middlewares: [],
           ...fallbacks,
@@ -69,25 +70,24 @@ describe("scanRoutes", () => {
         {
           kind: "page",
           path: "/about",
-          file: "src/routes/(marketing)/about/page.tsx",
+          module: "src/routes/(marketing)/about/page.tsx",
           layouts: [...root, "src/routes/(marketing)/layout.tsx"],
           middlewares: [],
           ...fallbacks,
         },
-        { kind: "page", path: "/users", file: "src/routes/users/page.tsx", ...users },
+        { kind: "page", path: "/users", module: "src/routes/users/page.tsx", ...users },
         {
           kind: "route",
           path: "/api/users",
-          file: "src/routes/api/users/route.ts",
-          layouts: root,
+          module: "src/routes/api/users/route.ts",
           middlewares: [],
         },
-        { kind: "page", path: "/users/new", file: "src/routes/users/new/page.tsx", ...users },
-        { kind: "page", path: "/users/:id", file: "src/routes/users/[id]/page.tsx", ...users },
+        { kind: "page", path: "/users/new", module: "src/routes/users/new/page.tsx", ...users },
+        { kind: "page", path: "/users/:id", module: "src/routes/users/[id]/page.tsx", ...users },
         {
           kind: "page",
           path: "/docs/:slug{.+}",
-          file: "src/routes/docs/[...slug]/page.tsx",
+          module: "src/routes/docs/[...slug]/page.tsx",
           layouts: root,
           middlewares: [],
           ...fallbacks,
@@ -95,7 +95,7 @@ describe("scanRoutes", () => {
         {
           kind: "not-found",
           path: "/*",
-          file: "src/routes/not-found.tsx",
+          module: "src/routes/not-found.tsx",
           layouts: root,
           middlewares: [],
           error: fallbacks.error,
@@ -165,27 +165,34 @@ describe("scanRoutes のエラーのページ", () => {
       "about/page.tsx",
       "about/not-found.tsx",
     ]);
-    const root = { file: "src/routes/error.tsx", layouts: [] };
-    const shop = { file: "src/routes/(shop)/error.tsx", layouts: ["src/routes/(shop)/layout.tsx"] };
+    const root = { module: "src/routes/error.tsx", layouts: [] };
+    const shop = {
+      module: "src/routes/(shop)/error.tsx",
+      layouts: ["src/routes/(shop)/layout.tsx"],
+    };
     expect(
-      routes.map(({ file, notFound, error }) => ({ file, notFound: notFound?.file, error })),
+      routes.map((route) => ({
+        module: route.module,
+        notFound: route.kind === "page" ? route.notFound?.module : undefined,
+        error: route.kind === "route" ? undefined : route.error,
+      })),
     ).toEqual([
       {
-        file: "src/routes/about/page.tsx",
+        module: "src/routes/about/page.tsx",
         notFound: "src/routes/about/not-found.tsx",
         error: root,
       },
       {
-        file: "src/routes/(shop)/cart/page.tsx",
+        module: "src/routes/(shop)/cart/page.tsx",
         notFound: "src/routes/not-found.tsx",
         error: shop,
       },
       {
-        file: "src/routes/about/not-found.tsx",
+        module: "src/routes/about/not-found.tsx",
         notFound: undefined,
         error: root,
       },
-      { file: "src/routes/not-found.tsx", notFound: undefined, error: root },
+      { module: "src/routes/not-found.tsx", notFound: undefined, error: root },
     ]);
   });
 
@@ -197,11 +204,43 @@ describe("scanRoutes のエラーのページ", () => {
       "error.tsx",
       "api/route.ts",
     ]);
-    expect(routes.map((route) => [route.file, route.path, "error" in route])).toEqual([
+    expect(routes.map((route) => [route.module, route.path, "error" in route])).toEqual([
       ["src/routes/api/route.ts", "/api", false],
       ["src/routes/x/not-found.tsx", "/x/*", true],
       ["src/routes/(a)/x/not-found.tsx", "/x/*", true],
       ["src/routes/(a)/not-found.tsx", "/*", true],
     ]);
+  });
+});
+
+/** モジュールを読み込む関数のコードから、読み込むファイルのパスを取り出す。 */
+const importedFile = (load: unknown): string =>
+  /import\("\/(.*)"\)/.exec(String(load))?.[1] ?? String(load);
+
+describe("routesModule", () => {
+  it("走査した表のすべてのファイルを、そのファイルを読み込む関数にした表を export する", () => {
+    const root = project([
+      "layout.tsx",
+      "page.tsx",
+      "middleware.ts",
+      "not-found.tsx",
+      "error.tsx",
+      "users/middleware.ts",
+      "users/[id]/page.tsx",
+      "api/route.ts",
+    ]);
+    const code = routesModule(root, "src/routes");
+    // oxlint-disable-next-line typescript/no-implied-eval
+    const evaluate = new Function(
+      `${code.replaceAll("export const ", "const ")}\nreturn { routes, middleware };`,
+    );
+    const table = evaluate() as Routes<RouteFiles>;
+    expect(
+      mapRouteFiles(table, {
+        component: importedFile,
+        middleware: importedFile,
+        handlers: importedFile,
+      }),
+    ).toEqual(scanRoutes(root, "src/routes"));
   });
 });

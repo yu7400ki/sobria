@@ -28,7 +28,7 @@ function requestPage(page: () => unknown, init?: RequestInit): Promise<Response>
       {
         kind: "page",
         path: "/posts",
-        load: async () => ({ default: page }),
+        module: async () => ({ default: page }),
         layouts: [],
         middlewares: [],
       },

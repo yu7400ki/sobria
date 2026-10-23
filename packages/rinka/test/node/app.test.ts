@@ -56,7 +56,7 @@ function pageRoute(
   return {
     kind: "page",
     path,
-    load: module(component),
+    module: module(component),
     layouts: layouts.map(module),
     middlewares: middlewares.map(module),
     ...fallbacks,
@@ -74,7 +74,7 @@ const fallbackOf = (
   component: RouteComponent,
   layouts: readonly RouteComponent[] = [],
 ): Fallback => ({
-  load: module(component),
+  module: module(component),
   layouts: layouts.map(module),
 });
 
@@ -88,7 +88,7 @@ function notFoundRoute(
   return {
     kind: "not-found",
     path: path === "/" ? "/*" : `${path}/*`,
-    load: notFoundPage.load,
+    module: notFoundPage.module,
     layouts: notFoundPage.layouts,
     middlewares: middlewares.map(module),
     ...(error && { error }),
@@ -104,8 +104,7 @@ function apiRoute(
   return {
     kind: "route",
     path,
-    load: async () => handlers,
-    layouts: [],
+    module: async () => handlers,
     middlewares: middlewares.map(module),
   };
 }

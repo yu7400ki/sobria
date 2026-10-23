@@ -15,44 +15,95 @@ export type Load<T> = () => Promise<{ readonly default: T }>;
 /** ページ、レイアウト、エラーのページのコンポーネントを表す。 */
 export type RouteComponent = (props: never) => unknown;
 
-/** エラーのページと、外側から順に列挙した、そのディレクトリのレイアウトを読み込む関数を表す。 */
-export interface Fallback {
-  readonly load: Load<RouteComponent>;
-  readonly layouts: readonly Load<RouteComponent>[];
+/** ルートの表が参照するファイルを、ファイルの種類ごとに表す型である。 */
+export interface RouteFiles {
+  readonly component: unknown;
+  readonly middleware: unknown;
+  readonly handlers: unknown;
+}
+
+/** 実行時のルートの表で、各ファイルを読み込む関数を表す型である。 */
+export interface LoadedFiles extends RouteFiles {
+  readonly component: Load<RouteComponent>;
+  readonly middleware: Load<MiddlewareHandler>;
+  readonly handlers: () => Promise<Partial<Readonly<Record<RouteMethod, Handler>>>>;
+}
+
+/** エラーのページと、外側から順に列挙した、そのディレクトリのレイアウトを表す。 */
+export interface Fallback<F extends RouteFiles = LoadedFiles> {
+  readonly module: F["component"];
+  readonly layouts: readonly F["component"][];
 }
 
 /** ルートの表の 1 行を表す。`layouts` と `middlewares` は、外側から順に列挙する。 */
-export type Route = {
+export type Route<F extends RouteFiles = LoadedFiles> = {
   /** Hono のパスである。`not-found.tsx` の行では、そのディレクトリの配下のすべての URL に一致するパスである。 */
   readonly path: string;
-  readonly layouts: readonly Load<RouteComponent>[];
   /** ルートのディレクトリ以外の `middleware.ts` である。 */
-  readonly middlewares: readonly Load<MiddlewareHandler>[];
+  readonly middlewares: readonly F["middleware"][];
 } & (
   | {
       readonly kind: "page";
-      readonly load: Load<RouteComponent>;
+      readonly module: F["component"];
+      readonly layouts: readonly F["component"][];
       /** そのディレクトリか祖先のディレクトリで最も近い `not-found.tsx` である。 */
-      readonly notFound?: Fallback;
+      readonly notFound?: Fallback<F>;
       /** そのディレクトリか祖先のディレクトリで最も近い `error.tsx` である。 */
-      readonly error?: Fallback;
+      readonly error?: Fallback<F>;
     }
   | {
       readonly kind: "not-found";
-      readonly load: Load<RouteComponent>;
+      readonly module: F["component"];
+      readonly layouts: readonly F["component"][];
       /** そのディレクトリか祖先のディレクトリで最も近い `error.tsx` である。 */
-      readonly error?: Fallback;
+      readonly error?: Fallback<F>;
     }
-  | {
-      readonly kind: "route";
-      readonly load: () => Promise<Partial<Readonly<Record<RouteMethod, Handler>>>>;
-    }
+  | { readonly kind: "route"; readonly module: F["handlers"] }
 );
 
-/** ルートの表を表す。`middleware` は、ルートのディレクトリの `middleware.ts` を読み込む。 */
-export interface Routes {
-  readonly routes: readonly Route[];
-  readonly middleware?: Load<MiddlewareHandler>;
+/** ルートの表を表す。`middleware` は、ルートのディレクトリの `middleware.ts` である。 */
+export interface Routes<F extends RouteFiles = LoadedFiles> {
+  readonly routes: readonly Route<F>[];
+  readonly middleware?: F["middleware"];
+}
+
+/** `routes` の各ファイルを、ファイルの種類ごとの関数 `map` で置き換えた表を返す。 */
+export function mapRouteFiles<F extends RouteFiles, G extends RouteFiles>(
+  routes: Routes<F>,
+  map: { readonly [K in keyof RouteFiles]: (file: F[K]) => G[K] },
+): Routes<G> {
+  const fallback = ({ module, layouts }: Fallback<F>): Fallback<G> => ({
+    module: map.component(module),
+    layouts: layouts.map(map.component),
+  });
+  const row = (route: Route<F>): Route<G> => {
+    const common = { path: route.path, middlewares: route.middlewares.map(map.middleware) };
+    switch (route.kind) {
+      case "page":
+        return {
+          ...common,
+          kind: route.kind,
+          module: map.component(route.module),
+          layouts: route.layouts.map(map.component),
+          ...(route.notFound && { notFound: fallback(route.notFound) }),
+          ...(route.error && { error: fallback(route.error) }),
+        };
+      case "not-found":
+        return {
+          ...common,
+          kind: route.kind,
+          module: map.component(route.module),
+          layouts: route.layouts.map(map.component),
+          ...(route.error && { error: fallback(route.error) }),
+        };
+      case "route":
+        return { ...common, kind: route.kind, module: map.handlers(route.module) };
+    }
+  };
+  return {
+    routes: routes.routes.map(row),
+    ...(routes.middleware !== undefined && { middleware: map.middleware(routes.middleware) }),
+  };
 }
 
 /** アプリの設定を表す。 */

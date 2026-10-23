@@ -60,7 +60,7 @@ interface Fallbacks {
 
 /** エラーのページを、そのレイアウトで包み、`props` を渡して描画するノードを返す。 */
 const fallbackNode = (page: Fallback, props: object): unknown =>
-  jsx(() => wrap(page.load, page.layouts, props), {});
+  jsx(() => wrap(page.module, page.layouts, props), {});
 
 /** `notFound()` を投げるページである。 */
 const missing = (): never => {
@@ -112,12 +112,12 @@ function register(app: Hono, route: Route, respond: Respond): void {
     case "page":
       app.get(route.path, directory, async (c) => {
         const props = propsOf(c);
-        return respond(c, await wrap(route.load, route.layouts, props), route, props);
+        return respond(c, await wrap(route.module, route.layouts, props), route, props);
       });
       return;
     case "route":
       app.all(route.path, directory, async (c, next) => {
-        const handlers = await route.load();
+        const handlers = await route.module();
         const requested = c.req.method === "HEAD" ? "GET" : c.req.method;
         const method = routeMethods.find((name) => name === requested);
         const handler = method === undefined ? undefined : handlers[method];
@@ -136,7 +136,7 @@ function register(app: Hono, route: Route, respond: Respond): void {
     case "not-found":
       app.all(route.path, directory, async (c) => {
         const fallbacks: Fallbacks = {
-          notFound: { load: route.load, layouts: route.layouts },
+          notFound: { module: route.module, layouts: route.layouts },
           ...(route.error && { error: route.error }),
         };
         return respond(c, jsx(missing, {}), fallbacks, propsOf(c));
