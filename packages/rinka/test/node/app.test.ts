@@ -4,6 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { getContext } from "../../src/server/api.ts";
+import { Loading } from "../../src/server/control.ts";
 import { notFound, redirect } from "../../src/server/errors.ts";
 import { createApp, registerServerFn } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
@@ -35,6 +36,16 @@ const shell = ({
   readonly url: URL;
   readonly children: unknown;
 }) => jsx("div", { "data-id": params["id"], "data-path": url.pathname, children });
+
+/** 10 ms 待ってから `<p>done</p>` を返すコンポーネントである。 */
+const slow = async () => {
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  return jsx("p", { children: "done" });
+};
+
+/** `slow` を `<Loading>` で包むページである。 */
+const view = () =>
+  jsx(Loading, { fallback: jsx("p", { children: "wait" }), children: jsx(slow, {}) });
 
 /** 受け取った props を文字列にして、`<p>` に出力するページを返す。 */
 const page =
@@ -167,6 +178,19 @@ describe("createApp のページ", () => {
       expect.stringContaining('<p>doc {"id":"a"} </p>'),
       expect.stringContaining('<p>all {"slug":"a/b"} </p>'),
     ]);
+  });
+
+  it("bot の User-Agent のリクエストには、すべての <Loading> の中身を待って、フォールバックと差し替えの無い HTML を返す", async () => {
+    const routes: Routes = { routes: [pageRoute("/", view)] };
+    const bot = await bodyOf(
+      await request(routes, "/", { headers: { "user-agent": "Googlebot/2.1" } }),
+    );
+    expect(bot).toContain("<p>done</p>");
+    expect(bot).not.toContain("wait");
+    expect(bot).not.toContain("$rinka");
+    const person = await bodyOf(await request(routes, "/"));
+    expect(person).toContain("<p>wait</p>");
+    expect(person).toContain("$rinka");
   });
 });
 

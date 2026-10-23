@@ -14,6 +14,7 @@ import {
   type RouteComponent,
   type Routes,
 } from "../shared/routes.ts";
+import { isBot } from "./bots.ts";
 import { runInRequest, withContextHeaders } from "./context.ts";
 import { formRedirects, serverFnMiddleware, type Failure } from "./endpoint.ts";
 import { notFound } from "./errors.ts";
@@ -123,7 +124,11 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     }
     const styles = options.styles && files.length > 0 ? await options.styles(files) : [];
     const head = `${options.head ?? ""}${styles.map(stylesheetLink).join("")}`;
-    const response = await renderDocument(node, { ...pages, ...(head !== "" && { head }) });
+    const response = await renderDocument(node, {
+      ...pages,
+      blocking: isBot(c.req.header("user-agent")),
+      ...(head !== "" && { head }),
+    });
     return withContextHeaders(c, response);
   };
   const find = finder(routes);
