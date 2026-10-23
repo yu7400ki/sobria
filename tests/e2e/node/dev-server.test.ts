@@ -179,6 +179,28 @@ writeFileSync(${JSON.stringify(marker)}, "x");
     }
   }, 30_000);
 
+  it("JS があるときのフォームの送信は、要素の状態を保ったまま本文を描き直し、失敗したら URL を変えずに error.tsx を表示する", async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage();
+      await page.goto(`${origin}/notes`);
+      await page.locator("app-refresher[data-started]").waitFor({ timeout: 5000 });
+      const before = await page.locator("#notes li").count();
+      await page.locator("app-refresher #count").dispatchEvent("click");
+      await page.locator("input[name=title]").fill("draft");
+      await page.locator("#add").dispatchEvent("click");
+      await page.locator("#notes li").nth(before).waitFor({ timeout: 5000 });
+      await page.locator("app-refresher #count", { hasText: "notes 1" }).waitFor({ timeout: 5000 });
+      expect(await page.locator("input[name=title]").inputValue()).toBe("");
+      expect(page.url()).toBe(`${origin}/notes`);
+      await page.locator("#fail").dispatchEvent("click");
+      await page.locator("#error", { hasText: "note failed" }).waitFor({ timeout: 5000 });
+      expect(page.url()).toBe(`${origin}/notes`);
+    } finally {
+      await browser.close();
+    }
+  }, 30_000);
+
   it("Vite が処理するリクエストは、Vite が返す", async () => {
     const response = await fetch(`${origin}/src/elements/counter.tsx`);
     expect(response.status).toBe(200);
