@@ -575,7 +575,7 @@ describe("表に無い URL の not-found.tsx", () => {
     expect(await render("/users/")).toEqual([404, "users /users/"]);
   });
 
-  it("ページがある URL への GET 以外のメソッドと、HEAD にも、最も深い not-found.tsx を 404 で返す", async () => {
+  it("ページがある URL への GET 以外のメソッドと、表に無い URL への HEAD にも、最も深い not-found.tsx を 404 で返す", async () => {
     expect(await render("/users/3", { method: "POST" })).toEqual([404, "user /users/3"]);
     expect((await request(routes, "/nothing", { method: "HEAD" })).status).toBe(404);
   });

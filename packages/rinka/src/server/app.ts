@@ -132,14 +132,15 @@ function register(app: Hono, route: Route, respond: Respond): void {
         return result === undefined ? c.body(null, 204) : c.json(result);
       });
       return;
-    case "not-found":
-      app.all(route.path, directory, async (c) => {
-        const fallbacks: Fallbacks = {
-          notFound: { module: route.module, layouts: route.layouts },
-          ...(route.error && { error: route.error }),
-        };
-        return respond(c, jsx(missing, {}), fallbacks, propsOf(c));
-      });
+    case "not-found": {
+      const fallbacks: Fallbacks = {
+        notFound: { module: route.module, layouts: route.layouts },
+        ...(route.error && { error: route.error }),
+      };
+      app.all(route.path, directory, async (c) =>
+        respond(c, jsx(missing, {}), fallbacks, propsOf(c)),
+      );
       return;
+    }
   }
 }

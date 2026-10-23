@@ -80,7 +80,7 @@ const shapeOf = (path: string): string =>
 
 /**
  * `not-found.tsx` の行を、ページと `route.ts` の行の後に、区切りの数が多い順に並べる。
- * そのほかは、区切りの優先順位を前から比較し、一方が他方の前方と一致するなら短いほうを先にする。
+ * ページと `route.ts` の行どうしと、区切りの数が同じ `not-found.tsx` の行どうしは、区切りの優先順位を前から比較し、一方が他方の前方と一致するなら短いほうを先にする。
  * 優先順位が同じなら、パスの文字列の順にし、同じパスならファイルのディレクトリが浅いほうを先にする。
  */
 function compareRoutes(a: ScannedRoute, b: ScannedRoute): number {
