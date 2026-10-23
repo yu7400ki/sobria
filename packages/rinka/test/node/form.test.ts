@@ -1,7 +1,8 @@
 import type { StandardSchema } from "hono/factory";
+import { HTTPException } from "hono/http-exception";
 import { describe, expect, it, vi } from "vitest";
 
-import { redirect } from "../../src/server/errors.ts";
+import { notFound, redirect } from "../../src/server/errors.ts";
 import { createApp, registerServerFn } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToString } from "../../src/server/render.ts";
@@ -104,7 +105,7 @@ describe("JS が無いときのフォームの送信", () => {
     });
   });
 
-  it("それ以外の例外は、素のテキストの 500 にする", async () => {
+  it("それ以外の例外はアプリの onError に渡し、onError が無ければ素のテキストの 500 にする", async () => {
     const { id } = register(
       defineServerFn(() => {
         throw new Error("boom");
@@ -114,8 +115,40 @@ describe("JS が無いときのフォームの送信", () => {
     const response = await submit(id, new FormData());
     expect(response.status).toBe(500);
     expect(await response.text()).toBe("Internal Server Error");
-    expect(error).toHaveBeenCalledOnce();
     error.mockRestore();
+    const app = createApp([], {
+      onError: (thrown) => new Response(String(thrown), { status: 500 }),
+    });
+    const handled = await app.fetch(
+      new Request(`http://localhost${rpcPath(id)}`, { method: "POST", body: new FormData() }),
+    );
+    expect(await handled.text()).toBe("Error: boom");
+  });
+
+  it("notFound() は素のテキストの 404 に、HTTPException はそのレスポンスにする", async () => {
+    const { id: missing } = register(
+      defineServerFn(() => {
+        throw notFound();
+      }),
+    );
+    expect((await submit(missing, new FormData())).status).toBe(404);
+    const { id: teapot } = register(
+      defineServerFn(() => {
+        throw new HTTPException(418, { message: "teapot" });
+      }),
+    );
+    const response = await submit(teapot, new FormData());
+    expect(response.status).toBe(418);
+    expect(await response.text()).toBe("teapot");
+  });
+
+  it("フォームの本文を読めなければ、素のテキストの 400 にする", async () => {
+    const { id } = register(defineServerFn(() => null));
+    const response = await submit(id, new URLSearchParams(), {
+      "content-type": "multipart/form-data; boundary=x",
+    });
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Bad Request");
   });
 
   it("GET のサーバー関数への送信は 405 に、別のサイトからの送信は 403 にする", async () => {

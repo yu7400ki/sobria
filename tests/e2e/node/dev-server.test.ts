@@ -110,7 +110,7 @@ writeFileSync(${JSON.stringify(marker)}, "x");
     try {
       const page = await browser.newPage();
       await page.goto(`${origin}/fns`);
-      await page.locator("app-pinger[data-started]").waitFor();
+      await page.locator("app-pinger[data-started]").waitFor({ timeout: 5000 });
       // 前のテストの /boom のエラーが、Vite のエラーのオーバーレイとしてボタンの上に表示されるので、click のイベントを直接送る
       await page.locator("app-pinger button").dispatchEvent("click");
       await page.locator("app-pinger button", { hasText: "pong pong" }).waitFor({ timeout: 5000 });

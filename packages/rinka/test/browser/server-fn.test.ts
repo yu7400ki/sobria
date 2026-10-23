@@ -156,8 +156,8 @@ describe("クライアントの form の action に渡したサーバー関数",
     expect(form.getAttribute("enctype")).toBe("multipart/form-data");
     const encoded = clientJsx("form", {
       action: save,
-      enctype: "text/plain",
+      enctype: "application/x-www-form-urlencoded",
     }) as unknown as HTMLFormElement;
-    expect(encoded.getAttribute("enctype")).toBe("text/plain");
+    expect(encoded.getAttribute("enctype")).toBe("application/x-www-form-urlencoded");
   });
 });

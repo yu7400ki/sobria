@@ -57,7 +57,7 @@ async function endpoint(c: Context, id: string, options: AppOptions): Promise<Re
   try {
     input = form ? formDataToInput(await c.req.formData()) : await readInput(c);
   } catch {
-    return rpc(c, null, 400);
+    return form ? c.text("Bad Request", 400) : rpc(c, null, 400);
   }
   await runChain(
     c,
@@ -82,14 +82,13 @@ function rpcError(c: Context, error: unknown): Response {
   throw error;
 }
 
-/** フォームの送信で、サーバー関数が投げた値をレスポンスにする。rinka が扱わない値は、素のテキストの 500 にする。 */
+/** フォームの送信で、サーバー関数が投げた値をレスポンスにする。rinka が扱わない値は投げ直す。 */
 function formError(c: Context, error: unknown): Response {
   if (error instanceof Redirect) return c.redirect(error.location, 303);
   if (error instanceof NotFound) return c.text("Not Found", 404);
   if (error instanceof SchemaError) return c.json({ issues: error.issues }, 422);
   if (error instanceof HTTPException) return httpResponse(c, error);
-  console.error(error);
-  return c.text("Internal Server Error", 500);
+  throw error;
 }
 
 /** `HTTPException` のレスポンスに、Context で設定したヘッダーを加えて返す。 */
