@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { chromium, type Browser } from "playwright";
 import { rinka } from "rinka/vite";
-import { preview, type PreviewServer, type ViteDevServer } from "vite";
+import { createServer, preview, type PreviewServer, type ViteDevServer } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createDevServer, originOf } from "../dev-server.ts";
@@ -83,8 +83,13 @@ describe("TSX のソースの形のライブラリ", () => {
   }, 120_000);
 
   it("アプリの要素とライブラリの要素のタグが重なると、エラーを投げる", async () => {
-    await expect(createDevServer(root, { plugins: [rinka({ prefix: "acme" })] })).rejects.toThrow(
-      /acme-badge/,
-    );
+    await expect(
+      createServer({
+        root,
+        configFile: false,
+        logLevel: "silent",
+        plugins: [rinka({ prefix: "acme" })],
+      }),
+    ).rejects.toThrow(/acme-badge/);
   });
 });

@@ -1,6 +1,6 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { rinka } from "rinka/vite";
@@ -28,18 +28,41 @@ describe("library: true のビルド", () => {
     const files = (await readdir(outDir, { recursive: true })).map((file) =>
       file.replaceAll("\\", "/"),
     );
-    expect(files.filter((file) => !file.startsWith("chunks/")).toSorted()).toEqual([
+    expect(files.filter((file) => !/^(chunks|assets)\//.test(file)).toSorted()).toEqual([
       "acme-badge.js",
       "acme-counter.js",
       "acme-rating.js",
+      "assets",
       "chunks",
     ]);
     expect(files.some((file) => /^chunks\/.+\.js$/.test(file))).toBe(true);
     expect(files.filter((file) => file.endsWith(".css"))).toEqual([]);
   });
 
-  it("接頭辞がデフォルトのままなら、警告を出力する", async () => {
+  it("出力は rinka と共通のコードを相対パスで import し、CSS の url() をモジュールからの相対パスで解決する", async () => {
+    const files = (await readdir(outDir, { recursive: true })).filter((file) =>
+      file.endsWith(".js"),
+    );
+    const code = (
+      await Promise.all(files.map((file) => readFile(join(outDir, file), "utf8")))
+    ).join("\n");
+    const specifiers = [...code.matchAll(/\bfrom\s*["'`]([^"'`]+)["'`]/g)].map(
+      ([, specifier]) => specifier!,
+    );
+    expect(specifiers.filter((specifier) => !specifier.startsWith("."))).toEqual([]);
+    const badge = await readFile(join(outDir, "acme-badge.js"), "utf8");
+    expect(badge).not.toContain("/assets/");
+    expect(badge).toContain("import.meta.url");
+  });
+
+  it("接頭辞がデフォルト値の rinka なら、警告を出力する", async () => {
     const out = await mkdtemp(join(tmpdir(), "rinka-library-default-"));
+    // ビルドは .rinka/ に書き込むので、ライブラリのコピーをビルドする。rinka を解決できるように、コピーは tests/e2e の中に置く
+    const copy = await mkdtemp(fileURLToPath(new URL("../.rinka-tmp-library-", import.meta.url)));
+    await cp(root, copy, {
+      recursive: true,
+      filter: (source) => ![".rinka", "dist", "types", "node_modules"].includes(basename(source)),
+    });
     const warnings: string[] = [];
     const logger = createLogger("warn");
     logger.warn = (message) => {
@@ -47,14 +70,15 @@ describe("library: true のビルド", () => {
     };
     try {
       const builder = await createBuilder({
-        root,
+        root: copy,
         configFile: false,
         customLogger: logger,
-        plugins: [rinka({ outDir: out, library: true })],
+        plugins: [rinka({ prefix: "rinka", outDir: out, library: true })],
       });
       await builder.buildApp();
     } finally {
       await rm(out, { recursive: true, force: true });
+      await rm(copy, { recursive: true, force: true });
     }
     expect(warnings.join("\n")).toMatch(/接頭辞/);
   }, 120_000);

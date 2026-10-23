@@ -2,8 +2,13 @@ import { existsSync, readdirSync } from "node:fs";
 import { join, sep } from "node:path";
 
 import { tagFromPath } from "../shared/names.ts";
-import type { ElementSource } from "./libraries.ts";
 import { inside } from "./paths.ts";
+
+/** 要素のタグ名の接頭辞と、要素のディレクトリの絶対パスの組を表す。 */
+export interface ElementSource {
+  readonly prefix: string;
+  readonly elementsDir: string;
+}
 
 /** 要素のファイルのパスと、タグ名を表す。 */
 export interface ElementFile {
@@ -15,7 +20,7 @@ export interface ElementFile {
  * パス `path` のファイルが、要素のディレクトリ `dir` の中の要素のファイルなら、接頭辞 `prefix` を付けたタグ名を返す。
  * 要素のファイルは、拡張子が `.tsx` か `.jsx` のファイルのうち、名前が `_` で始まらず、`_` で始まる名前のディレクトリの中にも無いファイルである。
  */
-export function elementTag(prefix: string, dir: string, path: string): string | undefined {
+function elementTag(prefix: string, dir: string, path: string): string | undefined {
   if (!/\.[jt]sx$/.test(path)) return undefined;
   const inner = inside(dir, path);
   if (inner === undefined || inner.split("/").some((part) => part.startsWith("_"))) {

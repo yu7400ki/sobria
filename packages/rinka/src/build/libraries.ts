@@ -1,11 +1,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-/** 要素のタグ名の接頭辞と、要素のディレクトリの絶対パスの組を表す。 */
-export interface ElementSource {
-  readonly prefix: string;
-  readonly elementsDir: string;
-}
+import type { ElementSource } from "./elements.ts";
 
 /** TSX のソースの形で配布された、要素のライブラリを表す。 */
 export interface Library extends ElementSource {
@@ -15,7 +11,7 @@ export interface Library extends ElementSource {
   readonly dir: string;
 }
 
-/** ディレクトリ `dir` から上位に向かって、最初に見つけた `name` を返す。見つからなければ undefined を返す。 */
+/** ディレクトリ `dir` から上位に向かって `name` を探し、最初に見つけたパスを返す。見つからなければ undefined を返す。 */
 function findUp(dir: string, name: string): string | undefined {
   const path = join(dir, name);
   if (existsSync(path)) return path;
@@ -31,6 +27,7 @@ const readJson = (path: string): Record<string, unknown> =>
 /**
  * アプリのルート `root` から最も近い `package.json` の `dependencies` と `devDependencies` のうち、
  * `package.json` に `rinka` のフィールドを持つパッケージを、名前の順に返す。
+ * `rinka` のフィールドに `prefix` か `elements` の文字列が無ければ、エラーを投げる。
  */
 export function findLibraries(root: string): Library[] {
   const manifest = findUp(root, "package.json");

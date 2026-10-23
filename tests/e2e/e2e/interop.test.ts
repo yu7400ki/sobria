@@ -34,6 +34,7 @@ async function check(target: HTMLElement, update: () => Promise<void> | void, ev
   await update();
   expect(target.querySelector("acme-counter")).toBe(element);
   await until(() => text() === "5");
+  expect(element.hasAttribute("count")).toBe(false);
   element.shadowRoot!.querySelector("button")!.click();
   await until(() => events.length > 0);
   expect(events).toEqual([6]);

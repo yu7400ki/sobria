@@ -21,11 +21,11 @@ import { moduleOfServerFnId } from "../shared/server-fn.ts";
 import { langs, type Lang } from "./ast.ts";
 import { embedRouteStyles, moveServerAssets } from "./build-styles.ts";
 import { transformSource } from "./compiler.ts";
-import { scanElements, sourceTag, type ElementFile } from "./elements.ts";
+import { scanElements, sourceTag, type ElementFile, type ElementSource } from "./elements.ts";
 import { entries, oxc, runtimes } from "./entries.ts";
 import { appModule, devHooks, serverEntry, type DevHooks } from "./entry.ts";
 import { transformJsx } from "./jsx.ts";
-import { findLibraries, type ElementSource, type Library } from "./libraries.ts";
+import { findLibraries, type Library } from "./libraries.ts";
 import { readClientAssets, type ClientAssets } from "./manifest.ts";
 import { rinkaPackage } from "./package.ts";
 import { devPath, directUrl, inside } from "./paths.ts";
@@ -71,6 +71,9 @@ export function rinkaApi(config: ResolvedConfig): RinkaApi | undefined {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   return plugin?.api as RinkaApi | undefined;
 }
+
+/** 要素のタグ名の接頭辞のデフォルト値である。 */
+const DEFAULT_PREFIX = "rinka";
 
 /** rinka のプラグインの名前である。 */
 const NAME = "rinka";
@@ -131,7 +134,7 @@ const isClient = (environment: Environment): boolean => environment.config.consu
  * プロジェクトのモジュールにコンパイラの変換を適用する。
  */
 export function rinka(options: RinkaOptions = {}): Plugin[] {
-  const prefix = options.prefix ?? "rinka";
+  const prefix = options.prefix ?? DEFAULT_PREFIX;
   const trustedOrigins = options.trustedOrigins ?? [];
   for (const origin of trustedOrigins) checkOrigin(origin);
   /** サーバーの環境で最後に変換したときに、サーバー関数を定義していたファイルの、ルートからの相対パスごとの ID の集合である。 */
@@ -152,7 +155,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   let libraries: readonly Library[] = [];
   /** アプリとライブラリの、接頭辞と要素のディレクトリの組である。 */
   const sourcesOf = (dir: string): ElementSource[] => [{ prefix, elementsDir: dir }, ...libraries];
-  /** 要素のファイル `target` を、ブラウザが読み込むときの URL と、静的に import するチャンクの URL を返す。 */
+  /** 要素のファイルを、ブラウザが読み込むときの URL と、静的に import するチャンクの URL にする。 */
   const elementAssets = ({ path, file }: ProjectFile, client: boolean) => {
     if (!isBuild || client) return { module: devPath(path, root) };
     clientAssets ??= readClientAssets(join(outDir, "client"));
@@ -213,6 +216,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         const out = dirs.outDir;
         libraries = findLibraries(dirs.root);
         const elements = scanElements(sourcesOf(dirs.elementsDir));
+        const own = elements.filter(({ path }) => inside(dirs.elementsDir, path) !== undefined);
         return {
           appType: "custom",
           oxc,
@@ -221,37 +225,10 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
             exclude: libraries.map((library) => library.name),
           },
           build: { outDir: options.library ? out : join(out, "client") },
-          ...(command === "build" && options.library && libraryBuild(out, elements)),
           ...(command === "build" &&
-            !options.library && {
-              environments: {
-                client: {
-                  build: {
-                    outDir: join(out, "client"),
-                    manifest: true,
-                    rolldownOptions: {
-                      input:
-                        elements.length > 0
-                          ? elements.map((element) => element.path)
-                          : [entries.noElements],
-                    },
-                  },
-                },
-                ssr: {
-                  build: {
-                    outDir: join(out, "server"),
-                    emitAssets: true,
-                    rolldownOptions: { input: { entry: resolveEntry(dirs.root) } },
-                  },
-                },
-              },
-              builder: {
-                buildApp: async (builder) => {
-                  await builder.build(builder.environments.client!);
-                  await builder.build(builder.environments.ssr!);
-                },
-              },
-            }),
+            (options.library
+              ? libraryBuild(out, own)
+              : appBuild(out, elements, resolveEntry(dirs.root)))),
         };
       },
       configEnvironment(name, config, { command }) {
@@ -273,7 +250,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         root = config.root;
         ({ elementsDir, outDir } = dirsOf(root, options));
         isBuild = config.command === "build";
-        if (isBuild && options.library && options.prefix === undefined) {
+        if (isBuild && options.library && prefix === DEFAULT_PREFIX) {
           config.logger.warn(
             "[rinka] library: true のビルドで、要素のタグ名の接頭辞がデフォルトの rinka のままです。ほかのライブラリとタグ名が重ならないように、rinka({ prefix }) に固有の接頭辞を指定してください。",
           );
@@ -461,8 +438,38 @@ const recordFailure: DevHooks["onError"] = (error) => {
   return new Response(null, { status: 500 });
 };
 
+/** ビルドの出力先 `out` に、要素 `elements` のクライアントのビルドと、サーバーのエントリー `entry` のサーバーのビルドを、この順に出力する設定を返す。 */
+const appBuild = (out: string, elements: readonly ElementFile[], entry: string): UserConfig => ({
+  environments: {
+    client: {
+      build: {
+        outDir: join(out, "client"),
+        manifest: true,
+        rolldownOptions: {
+          input:
+            elements.length > 0 ? elements.map((element) => element.path) : [entries.noElements],
+        },
+      },
+    },
+    ssr: {
+      build: {
+        outDir: join(out, "server"),
+        emitAssets: true,
+        rolldownOptions: { input: { entry } },
+      },
+    },
+  },
+  builder: {
+    buildApp: async (builder) => {
+      await builder.build(builder.environments.client!);
+      await builder.build(builder.environments.ssr!);
+    },
+  },
+});
+
 /** ビルドの出力先 `out` に、要素 `elements` を、自分自身を登録する ES モジュールとしてタグ名のファイルに出力する設定を返す。 */
 const libraryBuild = (out: string, elements: readonly ElementFile[]): UserConfig => ({
+  base: "./",
   environments: {
     client: {
       build: {
