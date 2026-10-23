@@ -1,6 +1,7 @@
 import type { Context, Handler, MiddlewareHandler } from "hono";
 import { describe, expect, it, vi } from "vitest";
 
+import { getContext } from "../../src/server/api.ts";
 import { notFound } from "../../src/server/errors.ts";
 import { createApp, registerServerFn } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
@@ -302,5 +303,18 @@ describe("createApp の not-found.tsx と error.tsx", () => {
       [404, "Not Found"],
       [500, "Internal Server Error"],
     ]);
+  });
+});
+
+/** リクエストのヘッダー `x-user` を `<p>` に出力するページである。 */
+const reading = () => jsx("p", { children: getContext()?.req.header("x-user") });
+
+describe("getContext", () => {
+  it("ページとレイアウトの描画中は処理中のリクエストの Context を返し、リクエストの外では undefined を返す", async () => {
+    const response = await request({ routes: [pageRoute("/", reading)] }, "/", {
+      headers: { "x-user": "ann" },
+    });
+    expect(await bodyOf(response)).toContain("<p>ann</p>");
+    expect(getContext()).toBeUndefined();
   });
 });

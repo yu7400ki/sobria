@@ -33,6 +33,10 @@
       "types": "./lib/server/api.d.ts",
       "default": "./lib/server/api.js"
     },
+    "./router": {
+      "types": "./lib/shared/router.d.ts",
+      "default": "./lib/shared/router.js"
+    },
     "./vite": {
       "types": "./lib/build/plugin.d.ts",
       "default": "./lib/build/plugin.js"

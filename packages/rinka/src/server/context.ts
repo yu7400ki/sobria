@@ -57,5 +57,10 @@ export async function runInRequest<T>(c: Context, fn: () => T | Promise<T>): Pro
 
 /** 処理中のリクエストの Context を返す。リクエストの外では、`/` へ GET するリクエストを表す空の Context を返す。 */
 export function currentContext(): Context {
-  return storage?.getStore() ?? new Context(new Request("http://localhost/"));
+  return getContext() ?? new Context(new Request("http://localhost/"));
+}
+
+/** 処理中のリクエストの Hono の Context を返す。リクエストの外では `undefined` を返す。 */
+export function getContext(): Context | undefined {
+  return storage?.getStore();
 }

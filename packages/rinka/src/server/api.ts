@@ -7,7 +7,8 @@ export {
   type RenderOptions,
   type ResponseOptions,
 } from "./render.ts";
-export { defineMiddleware } from "hono/factory";
+export { getContext } from "./context.ts";
+export { defineHandler, defineMiddleware } from "hono/factory";
 export {
   defineServerFn,
   SchemaError,
