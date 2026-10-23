@@ -67,8 +67,6 @@ interface ProjectFile {
 export function rinka(options: RinkaOptions = {}): Plugin[] {
   const trustedOrigins = options.trustedOrigins ?? [];
   for (const origin of trustedOrigins) checkOrigin(origin);
-  /** サーバーの環境で最後に変換したときに、サーバー関数を定義していたファイルの、ルートからの相対パスごとの ID の集合である。 */
-  const serverFnIds = new Map<string, ReadonlySet<string>>();
   /** `config` で求めたプラグインの設定である。 */
   let settings: Settings | undefined;
   /** プラグインの設定を返す。`config` のフックより前に呼び出すと、エラーを投げる。 */
@@ -91,7 +89,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
     );
   };
   const api: RinkaApi = { prepare: writeTypes };
-  const dev = serve({ options, settings: current, writeTypes, serverFnIds });
+  const dev = serve({ options, settings: current, writeTypes });
   const build = appBuild({ options, settings: current });
 
   /**
@@ -204,15 +202,6 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           throw new Error(
             `${target.file}: サーバー関数は、src/ の中のファイルで定義してください。`,
           );
-        }
-        if (!client) {
-          const defined = serverFnIds.has(target.file);
-          if (result.serverFns.length > 0) serverFnIds.set(target.file, new Set(result.serverFns));
-          else serverFnIds.delete(target.file);
-          const graph =
-            "moduleGraph" in this.environment ? this.environment.moduleGraph : undefined;
-          const app = graph?.getModuleById(APP);
-          if (app && defined !== serverFnIds.has(target.file)) graph?.invalidateModule(app);
         }
         return { code: result.code, map: result.map };
       },

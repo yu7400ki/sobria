@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { OutcomeKind } from "../../src/server/endpoint.ts";
 import { notFound, redirect } from "../../src/server/errors.ts";
-import { createApp, registerServerFn } from "../../src/server/internal.ts";
+import { createApp, registerServerFn, serverFnModule } from "../../src/server/internal.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
 import type { AppOptions } from "../../src/shared/routes.ts";
 import { rpcPath, wireHeader } from "../../src/shared/wire.ts";
@@ -441,5 +441,30 @@ describe("リクエストの種類ごとのレスポンス", () => {
     );
     expect(actual).toEqual(table);
     vi.restoreAllMocks();
+  });
+
+  it("serverFnModule は、同じモジュールで前に登録したサーバー関数を削除してから、登録する関数を返す", async () => {
+    const registerInModule = serverFnModule("src/module-reset.ts");
+    registerInModule(
+      "src/module-reset.ts#gone",
+      defineServerFn(() => "gone"),
+    );
+    registerInModule(
+      "src/module-reset.ts#kept",
+      defineServerFn(() => "old"),
+    );
+    registerServerFn(
+      "src/other.ts#other",
+      defineServerFn(() => "other"),
+    );
+    serverFnModule("src/module-reset.ts")(
+      "src/module-reset.ts#kept",
+      defineServerFn(() => "new"),
+    );
+    expect((await call("src/module-reset.ts#gone", post(null))).status).toBe(404);
+    expect(await (await call("src/module-reset.ts#kept", post(null))).json()).toEqual({
+      ok: "new",
+    });
+    expect(await (await call("src/other.ts#other", post(null))).json()).toEqual({ ok: "other" });
   });
 });

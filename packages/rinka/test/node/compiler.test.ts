@@ -718,7 +718,7 @@ export const config = { db: 1, limit };
   it("サーバー向けでは、定義の式を ID で登録する呼び出しで包む", () => {
     const code = module(source);
     expect(code).toContain(
-      'import { registerServerFn as __rinka_registerServerFn } from "rinka/internal";',
+      'import { serverFnModule as __rinka_serverFnModule } from "rinka/internal"; const __rinka_registerServerFn = __rinka_serverFnModule("src/lib/a.ts");',
     );
     expect(code).toContain(
       'export const like = __rinka_registerServerFn("src/lib/a.ts#like", define({ input: schema })(auth, async (c, { input }) => db.like(input)));',

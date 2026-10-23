@@ -1,6 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -10,7 +9,6 @@ import type { Environment, Plugin, RunnableDevEnvironment } from "vite";
 
 import { reloadEvent } from "../shared/hmr.ts";
 import type { AppOptions, CreateApp } from "../shared/routes.ts";
-import { moduleOfServerFnId } from "../shared/server-fn.ts";
 import { entries, serverImports, virtualId } from "./entries.ts";
 import { appCode, serverEntry, serverFnLoaderCode, type AppModuleOptions } from "./entry.ts";
 import { fromApp } from "./package.ts";
@@ -22,7 +20,7 @@ import { isServerFnSource } from "./server-fns.ts";
 import { SERVER_ENTRY_NAME, isClient, type SceneContext } from "./settings.ts";
 
 /** 開発サーバーが Vite のプロセスで実行し、`rinka/app` が使用する関数を表す。 */
-type DevHooks = Required<Pick<AppOptions, "styles" | "onError" | "loadServerFn">>;
+type DevHooks = Required<Pick<AppOptions, "styles" | "onError">>;
 
 /** 開発中の `rinka/app` が、プラグインのインスタンスの ID ごとの `DevHooks` を探す、グローバルの Map のキーである。 */
 const DEV_HOOKS = "rinka.dev";
@@ -46,7 +44,7 @@ const devAppModule = ({ serverFns, trustedOrigins }: AppModuleOptions, devId: st
       `  head: ${JSON.stringify(VITE_CLIENT)},`,
       "  styles: hooks?.styles,",
       "  onError: hooks?.onError,",
-      `  loadServerFn: hooks?.loadServerFn ?? ${serverFnLoaderCode(serverFns)},`,
+      `  loadServerFn: ${serverFnLoaderCode(serverFns)},`,
     ],
     trustedOrigins,
     [
@@ -59,36 +57,18 @@ const devAppModule = ({ serverFns, trustedOrigins }: AppModuleOptions, devId: st
 export interface ServeContext extends SceneContext {
   /** `.rinka/` を生成する。 */
   readonly writeTypes: () => void;
-  /** サーバーの環境で最後に変換したときに、サーバー関数を定義していたファイルの、ルートからの相対パスごとの ID の集合である。 */
-  readonly serverFnIds: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 /**
  * 開発サーバーと `vite preview` で、サーバーのエントリーにリクエストを渡すプラグインと、
  * 開発サーバーの環境 `environment` で読み込む `rinka/app` のコードを返す関数を返す。
  */
-export function serve({ settings, writeTypes, serverFnIds }: ServeContext): {
+export function serve({ settings, writeTypes }: ServeContext): {
   readonly plugin: Plugin;
   readonly appModule: (environment: Environment, options: AppModuleOptions) => string;
 } {
   /** 開発サーバーの ssr の環境ごとの、`DevHooks` の ID である。 */
   const devIds = new WeakMap<Environment, string>();
-  /**
-   * ID のサーバー関数を今のソースで定義していれば、`environment` のランナーでそのファイルを読み込んで真を返す。
-   * ID のファイルの部分がプロジェクトのファイルなら、`environment` で変換して最新の定義を確認する。`#` を含まない ID には偽を返す。
-   */
-  const loadServerFn = async (environment: RunnableDevEnvironment, id: string) => {
-    const file = moduleOfServerFnId(id);
-    if (file === undefined) return false;
-    if (!isServerFnSource(file) || !existsSync(resolve(settings().root, file))) {
-      return false;
-    }
-    await environment.transformRequest(`/${file}`);
-    if (!serverFnIds.get(file)?.has(id)) return false;
-    await environment.runner.import(`/${file}`);
-    return true;
-  };
-
   const plugin: Plugin = {
     name: "rinka:serve",
     apply: "serve",
@@ -109,12 +89,17 @@ export function serve({ settings, writeTypes, serverFnIds }: ServeContext): {
     configureServer(server) {
       const { root, elementsDir } = settings();
       const routesDir = resolve(root, ROUTES_DIR);
-      const routes = virtualId(entries.routes);
-      const invalidateRoutes = (): void => {
+      /** すべての環境のモジュールのグラフで、仮想モジュール `specifier` を無効にする。 */
+      const invalidate = (specifier: string): void => {
         for (const environment of Object.values(server.environments)) {
-          const node = environment.moduleGraph.getModuleById(routes);
+          const node = environment.moduleGraph.getModuleById(virtualId(specifier));
           if (node) environment.moduleGraph.invalidateModule(node);
         }
+      };
+      /** サーバー関数を定義できるファイル `path` が変わったら、`rinka/app` を無効にする。 */
+      const onSource = (path: string): void => {
+        const file = inside(root, path);
+        if (file !== undefined && isServerFnSource(file)) invalidate(entries.app);
       };
       const rewriteTypes = (): void => {
         try {
@@ -125,16 +110,18 @@ export function serve({ settings, writeTypes, serverFnIds }: ServeContext): {
       };
       const onFile = (path: string): void => {
         if (inside(routesDir, path) !== undefined && routeFileNames.has(basename(path))) {
-          invalidateRoutes();
+          invalidate(entries.routes);
         }
         if (isPrepareInput(root, elementsDir, path)) rewriteTypes();
+        onSource(path);
       };
       const onDir = (path: string): void => {
-        if (inside(routesDir, path) !== undefined) invalidateRoutes();
+        if (inside(routesDir, path) !== undefined) invalidate(entries.routes);
         if (isPrepareInput(root, elementsDir, path)) rewriteTypes();
       };
       server.watcher.on("add", onFile);
       server.watcher.on("unlink", onFile);
+      server.watcher.on("change", onSource);
       server.watcher.on("addDir", onDir);
       server.watcher.on("unlinkDir", onDir);
       for (const environment of Object.values(server.environments)) {
@@ -155,7 +142,6 @@ export function serve({ settings, writeTypes, serverFnIds }: ServeContext): {
             return routeStyles(nodes.filter((node) => node !== undefined));
           },
           onError: recordFailure,
-          loadServerFn: (id) => loadServerFn(environment, id),
         });
       }
       return () => {

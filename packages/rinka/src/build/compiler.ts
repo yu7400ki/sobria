@@ -78,6 +78,7 @@ const STOP = "__rinka_stop";
 const DEFINE = "__rinka_defineElement";
 /** サーバー関数を ID で登録する関数を、変換したコードの中で呼ぶ名前である。 */
 const REGISTER = "__rinka_registerServerFn";
+const SERVER_FN_MODULE = "__rinka_serverFnModule";
 /** RPC の関数を作成する関数を、変換したコードの中で呼ぶ名前である。 */
 const SERVER_FN = "__rinka_serverFn";
 
@@ -108,7 +109,7 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
     }
     replaceDefinitions(program, output, code, definitions);
   } else {
-    registerServerFns(output, definitions);
+    registerServerFns(output, definitions, options.fnModule ?? options.file);
   }
   return {
     code: output.toString(),
@@ -506,8 +507,15 @@ function methodOf(
   return method;
 }
 
-/** サーバー関数の定義の式を、ID で登録する呼び出しで包む。 */
-function registerServerFns(output: MagicString, definitions: readonly Definition[]): void {
+/**
+ * サーバー関数の定義の式を、ID で登録する呼び出しで包む。登録する関数は、モジュールを評価するたびに、
+ * ID のモジュールの部分が `fnModule` のサーバー関数の前の登録を削除してから取得する。
+ */
+function registerServerFns(
+  output: MagicString,
+  definitions: readonly Definition[],
+  fnModule: string,
+): void {
   let registered = false;
   for (const definition of definitions) {
     if (definition.kind !== "serverFn") continue;
@@ -515,7 +523,10 @@ function registerServerFns(output: MagicString, definitions: readonly Definition
     surround(output, definition.init, `${REGISTER}(${JSON.stringify(definition.id)}, `, ")");
   }
   if (registered) {
-    output.prepend(`import { registerServerFn as ${REGISTER} } from "${entries.internal}";\n`);
+    output.prepend(`const ${REGISTER} = ${SERVER_FN_MODULE}(${JSON.stringify(fnModule)});\n`);
+    output.prepend(
+      `import { serverFnModule as ${SERVER_FN_MODULE} } from "${entries.internal}";\n`,
+    );
   }
 }
 

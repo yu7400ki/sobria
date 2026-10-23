@@ -29,6 +29,14 @@ export function registerServerFn<F extends { readonly [serverFnRef]: ServerFnRef
   return withServerFnRef(fn, { id, method: definition.method });
 }
 
+/** ID のモジュールの部分が `fnModule` のサーバー関数の登録をすべて削除し、`registerServerFn` を返す。 */
+export function serverFnModule(fnModule: string): typeof registerServerFn {
+  for (const id of registry.keys()) {
+    if (moduleOfServerFnId(id) === fnModule) registry.delete(id);
+  }
+  return registerServerFn;
+}
+
 /**
  * サーバー関数のエンドポイントへのリクエストを処理し、それ以外のリクエストを後続の処理に渡す Hono のミドルウェアを返す。
  * rinka が扱わない例外は、リクエストの種類に対応する `failures` の関数が返すレスポンスにする。
