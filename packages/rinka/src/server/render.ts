@@ -93,16 +93,16 @@ interface Slotted {
 interface HostAttributes {
   readonly text: string;
   readonly transfer: Readonly<Record<string, unknown>> | undefined;
-  readonly current: Readonly<Record<string, unknown>> | undefined;
+  readonly current: Readonly<Record<string, unknown>>;
 }
 
 /** 要素のホストを表す。開始タグは、`chunks` を文字列にした後で、待つ境界を決定してから出力する。 */
 interface Host {
   readonly kind: "host";
   readonly host: {
-    readonly record: HostRecord;
     readonly attributes: HostAttributes | Promise<HostAttributes>;
-    readonly open: (attributes: HostAttributes, shown: Promise<boolean>) => string;
+    /** 開始タグを返し、ホストの値を `out` の位置で渡す。 */
+    readonly open: (attributes: HostAttributes, out: Out) => string;
     readonly chunks: Chunk[];
     /** 要素を作成したホストに、開始タグの後で `@c:キー` を送るスクリプトである。 */
     readonly announce: string | undefined;
@@ -275,12 +275,17 @@ interface DocumentParts {
 
 /**
  * 描画の種類を表す。`fragment` は `renderToString` の描画で、文書の骨組みに何も移動しない。
- * `document` は文書を出力する描画で、`head` は `<head>` の末尾に出力するマークアップである。
+ * `document` は文書を出力する描画で、`write` は出力する文字列を受け取る。`blocking` なら、すべての境界を待って、フォールバックと差し替えを出力しない。
  * `refresh` は `refreshPage()` の描き直しで、要素を実行せずに、Shadow DOM の中身を持たないホストを出力する。
+ * `fragment` と `refresh` は、すべての境界を待ち、文字列を書き込まない。
  */
 type Target =
   | { readonly kind: "fragment" }
-  | { readonly kind: "document"; readonly head: string }
+  | {
+      readonly kind: "document";
+      readonly write: (text: string) => void;
+      readonly blocking: boolean;
+    }
   | { readonly kind: "refresh" };
 
 /** 起動スクリプトに伝える要素を表す。`immediate` は、すぐ起動するインスタンスが 1 つでもあれば真である。 */
@@ -687,15 +692,28 @@ class Renderer {
   /** 文書の骨組みに移動するものを、目印の番号ごとに保持する。 */
   private readonly hoisted = new Map<number, Hoisted>();
 
+  /** ホストの ID の接頭辞である。 */
+  private readonly hostPrefix: string;
+
   /**
-   * `write` は、出力する文字列を受け取る。`blocking` なら、すべての境界を待って、フォールバックと差し替えを出力しない。
    * `target` が `document` か `refresh` の描画では、シェルの中かつ要素の外の `<title>`、`<meta>`、`<link>` と `<head>` の子を `<head>` に移動し、`<html>` と `<body>` の属性を文書の開始タグに移動する。
    */
-  constructor(
-    private readonly write: (text: string) => void,
-    private readonly blocking: boolean,
-    private readonly target: Target = { kind: "fragment" },
-  ) {}
+  constructor(private readonly target: Target) {
+    this.hostPrefix = target.kind === "refresh" ? `r${this.nonce.slice(0, 8)}-` : "";
+  }
+
+  /** すべての境界を待って、フォールバックと差し替えを出力しないかどうかである。 */
+  private get blocking(): boolean {
+    return this.target.kind !== "document" || this.target.blocking;
+  }
+
+  /** `text` を出力する。文書を出力しない描画では、エラーを投げる。 */
+  private write(text: string): void {
+    if (this.target.kind !== "document") {
+      throw new Error(`${this.target.kind} の描画は、文字列を書き込みません。`);
+    }
+    this.target.write(text);
+  }
 
   /** シェルの中の `<Errored>` が受け止めたときのステータスのうち、最も大きいものを返す。受け止めていなければ 200 を返す。 */
   get status(): number {
@@ -962,14 +980,13 @@ class Renderer {
     child?: ScopedChild,
   ): void {
     this.interactive = true;
-    const refresh = this.target.kind === "refresh";
     const { tag, options, delivery } = component[elementInfo];
     const load = loadAttributeValue(props);
     const delivered: Delivered | undefined =
       delivery && ctx.owner === null
         ? { tag, delivery, immediate: (load ?? delivery.load) === "load" }
         : undefined;
-    const id = refresh ? `r${this.nonce.slice(0, 8)}-h${++this.seq}` : `h${++this.seq}`;
+    const id = `${this.hostPrefix}h${++this.seq}`;
     const record = new HostRecord(id, tag);
     this.hosts.add(record);
     let announce: string | undefined;
@@ -1008,11 +1025,11 @@ class Renderer {
     const hostAttributes = (tracked: boolean): HostAttributes => {
       let text = "";
       let transfer: Record<string, unknown> | undefined;
-      let current: Record<string, unknown> | undefined;
+      const current: Record<string, unknown> = {};
       for (const name of options.props) {
         if (slotNames.has(name)) continue;
         const value = propValue(name);
-        if (refresh) (current ??= {})[name] = value;
+        current[name] = value;
         if ((typeof value === "object" && value !== null) || typeof value === "function") {
           if (ctx.owner !== null) continue;
           checkSerializable(value, `<${tag}> ${name}`, true);
@@ -1034,14 +1051,16 @@ class Renderer {
     };
     const attributes = this.settle(ctx, hostAttributes);
 
-    const chunks: Chunk[] = [];
-    const slots = new Map<string, Boundary>();
-    if (!refresh) this.runElement(component, elementProps, record, ctx, slots, chunks);
+    const shadow =
+      this.target.kind === "refresh"
+        ? undefined
+        : this.runElement(component, elementProps, record, ctx);
+    const chunks: Chunk[] = shadow?.chunks ?? [];
     for (const name of Object.keys(descriptors)) {
       if (!slotNames.has(name)) continue;
       const slot = name === "children" ? "" : name;
       const content = asNode(runWithOwner(ctx.owner, () => untrack(() => read(name))));
-      const boundary = slots.get(slot) ?? ctx.boundary;
+      const boundary = shadow?.slots.get(slot) ?? ctx.boundary;
       const light: WalkCtx = {
         owner: ctx.owner,
         path: ctx.path,
@@ -1060,29 +1079,37 @@ class Renderer {
       }
     }
     chunks.push(`</${tag}>`);
-    const open = ({ text, transfer }: HostAttributes, shown: Promise<boolean>): string => {
+    const open = ({ text, transfer, current }: HostAttributes, at: Out): string => {
       const start = `<${tag}${attribute("data-oh", id)}${attribute(loadAttributeName, load)}${text}`;
-      if (refresh) return `${start}>`;
-      const keys = record.seal(transfer ? [PROPS_KEY] : [], shown);
+      if (shadow === undefined) {
+        const values = {
+          [REFRESH_PROPS_KEY]: current,
+          ...(transfer && { [PROPS_KEY]: transfer }),
+        } satisfies RefreshValues;
+        at.addRefreshData(id, toScript(values, `<${tag}>`));
+        return `${start}>`;
+      }
+      if (transfer) this.send(record, PROPS_KEY, Promise.resolve(toScript(transfer, `<${tag}>`)));
+      const keys = record.seal(transfer ? [PROPS_KEY] : [], at.shown);
       const om = keys.length > 0 ? attribute("data-om", keys.join(" ")) : "";
       return `${start}${om}><template shadowrootmode="open">`;
     };
-    out.push({ kind: "host", host: { record, attributes, open, chunks, announce, delivered } });
+    out.push({ kind: "host", host: { attributes, open, chunks, announce, delivered } });
   }
 
   /**
-   * 要素の関数 `component` を `props` で実行し、Shadow DOM の中身を `chunks` に描画する。
-   * `slots` には、Shadow DOM の `<slot>` の名前ごとに、その `<slot>` を囲む境界を記録する。
+   * 要素の関数 `component` を `props` で実行し、Shadow DOM の中身の出力の単位の列を返す。
+   * `slots` は、Shadow DOM の `<slot>` の名前ごとに、その `<slot>` を囲む境界を表す。
    */
   private runElement(
     component: ElementComponent<unknown>,
     props: object,
     record: HostRecord,
     ctx: WalkCtx,
-    slots: Map<string, Boundary>,
-    chunks: Chunk[],
-  ): void {
+  ): { readonly chunks: Chunk[]; readonly slots: ReadonlyMap<string, Boundary> } {
     const { tag } = record;
+    const chunks: Chunk[] = [];
+    const slots = new Map<string, Boundary>();
     let owner: Owner | null = null;
     let tree: Node = null;
     const elementCtx: Ctx = {
@@ -1120,6 +1147,7 @@ class Renderer {
       chunks,
     );
     chunks.push("</template>");
+    return { chunks, slots };
   }
 
   /**
@@ -1162,30 +1190,13 @@ class Renderer {
         return marker(id);
       }
       case "host": {
-        const { record, attributes, open, chunks, announce, delivered } = chunk.host;
+        const { attributes, open, chunks, announce, delivered } = chunk.host;
         if (delivered) out.addElement(delivered);
         const inner = await this.serialize(chunks, out);
         const resolved = await attributes;
-        if (this.target.kind === "refresh") {
-          out.addRefreshData(
-            record.id,
-            toScript(
-              {
-                [REFRESH_PROPS_KEY]: resolved.current ?? {},
-                ...(resolved.transfer && { [PROPS_KEY]: resolved.transfer }),
-              } satisfies RefreshValues,
-              `<${record.tag}>`,
-            ),
-          );
-        } else if (resolved.transfer) {
-          this.send(
-            record,
-            PROPS_KEY,
-            Promise.resolve(toScript(resolved.transfer, `<${record.tag}>`)),
-          );
-        }
+        const start = open(resolved, out);
         if (announce) out.addScript(announce);
-        return open(resolved, out.shown) + inner;
+        return start + inner;
       }
       case "errored": {
         const { chunks, node, ctx } = chunk.errored;
@@ -1435,9 +1446,9 @@ class Renderer {
 
   /**
    * 文書の先頭と `shell` を出力し、後送りの境界をすべて出力してから、文書を閉じる。
-   * `<head>` には、rinka の `<meta charset="utf-8">`、キーが同じタグを 1 つにしたタグ、`<Navigation>` の出力の順に並べる。
+   * `<head>` には、rinka の `<meta charset="utf-8">`、キーが同じタグを 1 つにしたタグ、`<Navigation>` の出力、`extraHead` の順に並べる。
    */
-  async finish(shell: string): Promise<void> {
+  async finish(shell: string, extraHead: string): Promise<void> {
     try {
       const fresh = this.interactive ? this.takeUnannounced([this.shellOut]) : [];
       const script = this.interactive
@@ -1447,7 +1458,7 @@ class Renderer {
       const head = `<meta charset="utf-8">${headTags(parts)}`;
       this.reveal(
         this.shellOut.flush,
-        `<!doctype html><html${attributesText(parts.html)}><head>${head}${script}${this.target.kind === "document" ? this.target.head : ""}</head><body${attributesText(parts.body)}>${parts.rest}${this.shellOut.scriptText}`,
+        `<!doctype html><html${attributesText(parts.html)}><head>${head}${script}${extraHead}</head><body${attributesText(parts.body)}>${parts.rest}${this.shellOut.scriptText}`,
       );
       await this.drain();
       for (const host of this.hosts) host.hide();
@@ -1488,7 +1499,7 @@ export interface RenderOptions {
 
 /** `node` を描画し、すべての非同期の内容を待ってから、`node` の HTML の文字列を返す。 */
 export async function renderToString(node: unknown): Promise<string> {
-  const renderer = new Renderer(() => {}, true);
+  const renderer = new Renderer({ kind: "fragment" });
   try {
     return await renderer.shell(asNode(node));
   } finally {
@@ -1504,13 +1515,13 @@ export function renderToStream(
   const encoder = new TextEncoder();
   return new ReadableStream({
     async start(controller) {
-      const renderer = new Renderer(
-        (text) => controller.enqueue(encoder.encode(text)),
-        options.blocking ?? false,
-        { kind: "document", head: "" },
-      );
+      const renderer = new Renderer({
+        kind: "document",
+        write: (text) => controller.enqueue(encoder.encode(text)),
+        blocking: options.blocking ?? false,
+      });
       try {
-        await renderer.finish(await renderer.shell(asNode(node)));
+        await renderer.finish(await renderer.shell(asNode(node)), "");
         controller.close();
       } catch (error) {
         renderer.dispose();
@@ -1560,11 +1571,11 @@ async function respond(node: unknown, options: DocumentOptions, status: number):
       controller = c;
     },
   });
-  const renderer = new Renderer(
-    (text) => controller.enqueue(encoder.encode(text)),
-    options.blocking ?? false,
-    { kind: "document", head: options.head ?? "" },
-  );
+  const renderer = new Renderer({
+    kind: "document",
+    write: (text) => controller.enqueue(encoder.encode(text)),
+    blocking: options.blocking ?? false,
+  });
   let shell: string;
   try {
     shell = await renderer.shell(asNode(node));
@@ -1572,7 +1583,7 @@ async function respond(node: unknown, options: DocumentOptions, status: number):
     renderer.dispose();
     return failure(error, options, respond);
   }
-  renderer.finish(shell).then(
+  renderer.finish(shell, options.head ?? "").then(
     () => controller.close(),
     (error: unknown) => controller.error(error),
   );
@@ -1596,7 +1607,7 @@ async function refreshed(
   options: ResponseOptions,
   status: number,
 ): Promise<Response> {
-  const renderer = new Renderer(() => {}, true, { kind: "refresh" });
+  const renderer = new Renderer({ kind: "refresh" });
   try {
     let shell: string;
     try {
