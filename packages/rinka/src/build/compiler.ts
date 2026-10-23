@@ -9,7 +9,10 @@ import {
   lineColumn,
   lineStarts,
   follow,
+  forEachReference,
   moduleExportName,
+  topLevelVariables,
+  withoutTypes,
   importedNames,
   insertInside,
   parseModule,
@@ -52,21 +55,38 @@ const STOP_IF_SEEDING = "__rinka_stopIfSeeding";
 const STOP = "__rinka_stop";
 /** 要素を登録する関数を、変換したコードの中で呼ぶ名前である。 */
 const DEFINE = "__rinka_defineElement";
+/** サーバー関数を ID で登録する関数を、変換したコードの中で呼ぶ名前である。 */
+const REGISTER = "__rinka_registerServerFn";
+/** RPC の関数を作成する関数を、変換したコードの中で呼ぶ名前である。 */
+const SERVER_FN = "__rinka_serverFn";
 
 /**
  * 元のソースに、`rinka` の `memo` の呼び出し箇所の ID を付与する。
  * クライアント向けのコードでは、シード中に開始した async 関数を、最初の `await` で停止させる。
  * 要素のファイルでは、default export した関数を、要素を登録する呼び出しに書き換え、関数の中の JSX のスロットを `<slot>` にする。
+ * `rinka/server` の `defineServerFn` で初期化したトップレベルの const は、サーバー向けでは ID で登録し、クライアント向けでは RPC の関数を作成する呼び出しに置換する。
+ * クライアント向けでは、`defineMiddleware` で初期化したトップレベルの const の初期化の式を `undefined` に置換し、置換で使用されなくなった import を除去する。
  */
 export function transformSource(code: string, options: SourceOptions): SourceResult {
   const program = parseModule(code, options);
   const output = new MagicString(code);
-  addMemoSites(program, output, code, options.file);
+  const definitions = findDefinitions(program, options.file);
+  const replaced = new Set<Node>(
+    options.client ? definitions.map((definition) => definition.init) : [],
+  );
+  addMemoSites(program, output, code, options.file, replaced);
   const element =
     options.element &&
     registerElement(program, output, options.element, options.file, options.client);
-  if (options.client && stopAwaits(program, output)) {
-    output.prepend(`import { stopIfSeeding as ${STOP_IF_SEEDING} } from "${entries.internal}";\n`);
+  if (options.client) {
+    if (stopAwaits(program, output, replaced)) {
+      output.prepend(
+        `import { stopIfSeeding as ${STOP_IF_SEEDING} } from "${entries.internal}";\n`,
+      );
+    }
+    replaceDefinitions(program, output, code, definitions, options.file);
+  } else {
+    registerServerFns(output, definitions, options.file);
   }
   return {
     code: output.toString(),
@@ -97,13 +117,12 @@ function registerElement(
   const elementOptions = analyzeProps(program, fn, file);
   convertSlots(fn, elementOptions, output, file);
   output.remove(exported.start, fn.start);
-  const args = [JSON.stringify(tag), fn.id.name, JSON.stringify(elementOptions)];
-  if (client) args.push("import.meta.hot");
-  else args.push(JSON.stringify({ module, load: defaultLoad(program, file) } satisfies Delivery));
+  const [last, accept] = client
+    ? ["import.meta.hot", "if (import.meta.hot) import.meta.hot.accept();\n"]
+    : [JSON.stringify({ module, load: defaultLoad(program, file) } satisfies Delivery), ""];
   output.append(`
-export default ${DEFINE}(${args.join(", ")});
-`);
-  if (client) output.append("if (import.meta.hot) import.meta.hot.accept();\n");
+export default ${DEFINE}(${[JSON.stringify(tag), fn.id.name, JSON.stringify(elementOptions), last].join(", ")});
+${accept}`);
   output.prepend(`import { defineElement as ${DEFINE} } from "${entries.internal}";
 `);
   return { tag, options: elementOptions };
@@ -120,8 +139,9 @@ function defaultLoad(program: ESTree.Program, file: string): DefaultLoad {
     if (statement.specifiers.some((specifier) => moduleExportName(specifier.exported) === "load")) {
       throw form();
     }
-    const declaration = statement.declaration;
-    if (declaration?.type !== "VariableDeclaration") continue;
+  }
+  for (const { declaration, exported } of topLevelVariables(program)) {
+    if (!exported) continue;
     for (const declarator of declaration.declarations) {
       if (declarator.id.type !== "Identifier") {
         if (bindsLoad(declarator.id)) throw form();
@@ -129,7 +149,7 @@ function defaultLoad(program: ESTree.Program, file: string): DefaultLoad {
       }
       if (declarator.id.name !== "load") continue;
       if (declaration.kind !== "const") throw form();
-      const init = declarator.init && literalOf(declarator.init);
+      const init = declarator.init && withoutTypes(declarator.init);
       if (init?.type === "Literal" && isDefaultLoad(init.value)) return init.value;
       throw new CompileError(
         `${file}: export const load には、${defaultLoads.map((value) => `"${value}"`).join("、")} のどれかの文字列を記述してください。メディアクエリは、要素を配置するページで load:media に指定してください。`,
@@ -157,19 +177,6 @@ function bindsLoad(pattern: ESTree.BindingPattern | ESTree.BindingRestElement): 
   }
 }
 
-/** 括弧と、`as` と `satisfies` の型の記述を外した式を返す。 */
-function literalOf(node: ESTree.Expression): ESTree.Node {
-  let current: ESTree.Node = node;
-  while (
-    current.type === "ParenthesizedExpression" ||
-    current.type === "TSAsExpression" ||
-    current.type === "TSSatisfiesExpression"
-  ) {
-    current = current.expression;
-  }
-  return current;
-}
-
 /** `value` が、`export const load` に記述できる起動タイミングかどうかを返す。 */
 const isDefaultLoad = (value: unknown): value is DefaultLoad =>
   defaultLoads.some((load) => load === value);
@@ -180,24 +187,29 @@ function addMemoSites(
   output: MagicString,
   code: string,
   file: string,
+  replaced: ReadonlySet<Node>,
 ): void {
   const names = importedNames(program, entries.main).get("memo");
   if (!names) return;
   const starts = lineStarts(code);
-  walk(program, (node) => {
-    if (node.type !== "CallExpression") return;
-    if (node.callee.type !== "Identifier" || !names.has(node.callee.name)) return;
-    const [fn, options] = node.arguments;
-    if (!fn || fn.type === "SpreadElement" || options?.type === "SpreadElement") return;
-    const site = `site: ${JSON.stringify(`${file}:${lineColumn(starts, node.start)}`)}`;
-    if (!options) {
-      follow(output, fn, `, { ${site} }`);
-    } else if (options.type === "ObjectExpression") {
-      insertInside(output, options, options.properties.length > 0 ? ` ${site},` : ` ${site} `);
-    } else {
-      surround(output, options, "{ ...", `, ${site} }`);
-    }
-  });
+  walk(
+    program,
+    (node) => {
+      if (node.type !== "CallExpression") return;
+      if (node.callee.type !== "Identifier" || !names.has(node.callee.name)) return;
+      const [fn, options] = node.arguments;
+      if (!fn || fn.type === "SpreadElement" || options?.type === "SpreadElement") return;
+      const site = `site: ${JSON.stringify(`${file}:${lineColumn(starts, node.start)}`)}`;
+      if (!options) {
+        follow(output, fn, `, { ${site} }`);
+      } else if (options.type === "ObjectExpression") {
+        insertInside(output, options, options.properties.length > 0 ? ` ${site},` : ` ${site} `);
+      } else {
+        surround(output, options, "{ ...", `, ${site} }`);
+      }
+    },
+    (node) => replaced.has(node),
+  );
 }
 
 /**
@@ -205,9 +217,14 @@ function addMemoSites(
  * 内側の関数の `await` は、内側の関数の戻り値に渡す。1 つでも書き換えたら真を返す。
  * `for await` の文は、反復する値をその戻り値の `iterate` に渡す。
  */
-function stopAwaits(program: ESTree.Program, output: MagicString): boolean {
+function stopAwaits(
+  program: ESTree.Program,
+  output: MagicString,
+  replaced: ReadonlySet<Node>,
+): boolean {
   let stopped = false;
   const visit = (node: Node, owner: { used: boolean } | null): void => {
+    if (replaced.has(node)) return;
     if (isFunction(node)) {
       const own = node.async && !node.generator ? { used: false } : null;
       for (const child of children(node)) visit(child, own);
@@ -320,4 +337,163 @@ function slotOf(
     return undefined;
   }
   return names.has(property.name) ? { name: property.name } : undefined;
+}
+
+/** トップレベルの const の、サーバー関数かミドルウェアの定義を表す。`method` は、サーバー関数のメソッドである。 */
+interface Definition {
+  readonly name: string;
+  readonly init: ESTree.Expression;
+  readonly method: "GET" | "POST" | undefined;
+}
+
+/**
+ * `rinka/server` から import した `defineServerFn` と `defineMiddleware` で初期化したトップレベルの const を、ソースの順に返す。
+ * `defineServerFn` をそれ以外の位置で使用するか、サーバー関数のメソッドを静的に読み取れなければ、ビルドのエラーにする。
+ */
+function findDefinitions(program: ESTree.Program, file: string): Definition[] {
+  const imported = importedNames(program, entries.server);
+  const defineNames = imported.get("defineServerFn") ?? new Set<string>();
+  const middlewareNames = imported.get("defineMiddleware") ?? new Set<string>();
+  if (defineNames.size === 0 && middlewareNames.size === 0) return [];
+  const definitions: Definition[] = [];
+  const allowed = new Set<Node>();
+  for (const { declaration } of topLevelVariables(program)) {
+    if (declaration.kind !== "const") continue;
+    for (const { id, init } of declaration.declarations) {
+      if (id.type !== "Identifier" || !init || init.type !== "CallExpression") continue;
+      const { callee } = init;
+      if (callee.type === "Identifier" && middlewareNames.has(callee.name)) {
+        definitions.push({ name: id.name, init, method: undefined });
+        continue;
+      }
+      const first = callee.type === "CallExpression" ? callee : init;
+      if (first.callee.type !== "Identifier" || !defineNames.has(first.callee.name)) continue;
+      allowed.add(first.callee);
+      const options = first === init ? undefined : first.arguments[0];
+      definitions.push({ name: id.name, init, method: methodOf(options, file, id.name) });
+    }
+  }
+  forEachReference(
+    program,
+    (node) => node.type === "ImportDeclaration",
+    (node) => {
+      if (!defineNames.has(node.name) || allowed.has(node)) return;
+      throw new CompileError(
+        `${file}: defineServerFn は、const 名前 = defineServerFn(…) の形で、トップレベルの const の初期化の式で呼んでください。`,
+      );
+    },
+  );
+  return definitions;
+}
+
+/** `defineServerFn` の 1 段目のオプションから、サーバー関数のメソッドを読み取る。1 段目が無いか、`method` が無ければ `POST` を返す。 */
+function methodOf(
+  options: ESTree.Argument | undefined,
+  file: string,
+  name: string,
+): "GET" | "POST" {
+  const error = () =>
+    new CompileError(
+      `${file}: サーバー関数 ${name} の method は、defineServerFn の 1 段目のオブジェクトに "GET" か "POST" の文字列で記述してください。`,
+    );
+  if (options === undefined) return "POST";
+  if (options.type !== "ObjectExpression") throw error();
+  let method: "GET" | "POST" = "POST";
+  for (const property of options.properties) {
+    if (property.type === "SpreadElement") throw error();
+    if (property.computed) continue;
+    const key =
+      property.key.type === "Identifier"
+        ? property.key.name
+        : property.key.type === "Literal"
+          ? property.key.value
+          : undefined;
+    if (key !== "method") continue;
+    const value = withoutTypes(property.value);
+    if (value.type !== "Literal" || (value.value !== "GET" && value.value !== "POST"))
+      throw error();
+    method = value.value;
+  }
+  return method;
+}
+
+/** サーバー関数の定義の式を、ID で登録する呼び出しで包む。 */
+function registerServerFns(
+  output: MagicString,
+  definitions: readonly Definition[],
+  file: string,
+): void {
+  const serverFns = definitions.filter((definition) => definition.method !== undefined);
+  if (serverFns.length === 0) return;
+  for (const { name, init } of serverFns) {
+    surround(output, init, `${REGISTER}(${JSON.stringify(`${file}#${name}`)}, `, ")");
+  }
+  output.prepend(`import { registerServerFn as ${REGISTER} } from "${entries.internal}";\n`);
+}
+
+/**
+ * サーバー関数の定義の式を、RPC の関数を作成する呼び出しに、ミドルウェアの定義の式を `undefined` に置換する。
+ * 置換で使用されなくなった import の指定子を除去し、指定子が残らない import の文は文ごと除去する。
+ */
+function replaceDefinitions(
+  program: ESTree.Program,
+  output: MagicString,
+  code: string,
+  definitions: readonly Definition[],
+  file: string,
+): void {
+  if (definitions.length === 0) return;
+  const inits = new Set<Node>(definitions.map((definition) => definition.init));
+  const used = (skip: (node: Node) => boolean): Set<string> => {
+    const names = new Set<string>();
+    forEachReference(
+      program,
+      (node) => node.type === "ImportDeclaration" || skip(node),
+      (node) => {
+        names.add(node.name);
+      },
+    );
+    return names;
+  };
+  const before = used(() => false);
+  const after = used((node) => inits.has(node));
+  let serverFns = false;
+  for (const { name, init, method } of definitions) {
+    if (method === undefined) {
+      output.overwrite(init.start, init.end, "undefined");
+      continue;
+    }
+    serverFns = true;
+    output.overwrite(
+      init.start,
+      init.end,
+      `${SERVER_FN}(${JSON.stringify(`${file}#${name}`)}, ${JSON.stringify(method)})`,
+    );
+  }
+  for (const statement of program.body) {
+    if (statement.type !== "ImportDeclaration" || statement.importKind === "type") continue;
+    if (statement.specifiers.length === 0) continue;
+    const kept = statement.specifiers.filter(
+      (specifier) => after.has(specifier.local.name) || !before.has(specifier.local.name),
+    );
+    if (kept.length === statement.specifiers.length) continue;
+    if (
+      !kept.some(
+        (specifier) => specifier.type !== "ImportSpecifier" || specifier.importKind !== "type",
+      )
+    ) {
+      output.remove(statement.start, statement.end);
+      continue;
+    }
+    const text = (node: { start: number; end: number }) => code.slice(node.start, node.end);
+    const named = kept.filter((specifier) => specifier.type === "ImportSpecifier");
+    const parts = [
+      ...kept.filter((specifier) => specifier.type !== "ImportSpecifier").map(text),
+      ...(named.length > 0 ? [`{ ${named.map(text).join(", ")} }`] : []),
+    ];
+    output.overwrite(statement.start, statement.source.start, `import ${parts.join(", ")} from `);
+  }
+  if (serverFns) {
+    output.prepend(`import { serverFn as ${SERVER_FN} } from "${entries.internal}";\n`);
+  }
 }

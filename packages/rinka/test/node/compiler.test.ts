@@ -564,3 +564,101 @@ describe("括弧で囲んだ式", () => {
     expect(() => transformJsx("const = ;", source)).toThrow(/^src\/lib\/a\.ts を解析できません/);
   });
 });
+
+describe("サーバー関数の定義", () => {
+  const source = `import { defineMiddleware, defineServerFn as define } from "rinka/server";
+import { db } from "./db.ts";
+import { schema, limit } from "./schema.ts";
+import type { User } from "./user.ts";
+import "./side-effect.ts";
+const auth = defineMiddleware(async (c, next) => { await next(); });
+export const like = define({ input: schema })(auth, async (c, { input }) => db.like(input));
+const getUser = define({ method: "GET" })(async (): Promise<User> => db.users.find());
+export const ping = define(auth, () => "pong");
+export const config = { db: 1, limit };
+`;
+
+  it("サーバー向けでは、定義の式を ID で登録する呼び出しで包む", () => {
+    const code = module(source);
+    expect(code).toContain(
+      'import { registerServerFn as __rinka_registerServerFn } from "rinka/internal";',
+    );
+    expect(code).toContain(
+      'export const like = __rinka_registerServerFn("src/lib/a.ts#like", define({ input: schema })(auth, async (c, { input }) => db.like(input)));',
+    );
+    expect(code).toContain(
+      'const getUser = __rinka_registerServerFn("src/lib/a.ts#getUser", define(',
+    );
+    expect(code).toContain(
+      'export const ping = __rinka_registerServerFn("src/lib/a.ts#ping", define(auth, () => "pong"));',
+    );
+    expect(code).toContain("const auth = defineMiddleware(");
+  });
+
+  it("クライアント向けでは、定義の式を RPC の関数を作る呼び出しに、ミドルウェアの定義を undefined に置換し、使用されなくなった import を除去する", () => {
+    const code = module(source, true);
+    expect(code).toContain('import { serverFn as __rinka_serverFn } from "rinka/internal";');
+    expect(code).toContain('export const like = __rinka_serverFn("src/lib/a.ts#like", "POST");');
+    expect(code).toContain('const getUser = __rinka_serverFn("src/lib/a.ts#getUser", "GET");');
+    expect(code).toContain('export const ping = __rinka_serverFn("src/lib/a.ts#ping", "POST");');
+    expect(code).toContain("const auth = undefined;");
+    expect(code).not.toContain("rinka/server");
+    expect(code).not.toContain("./db.ts");
+    expect(code).toContain('import { limit } from "./schema.ts";');
+    expect(code).toContain('import "./side-effect.ts";');
+  });
+
+  it("import が使用されているかどうかの判定では、オブジェクトのキーとプロパティの名前を数えない", () => {
+    const code = module(
+      `import { defineServerFn } from "rinka/server";
+import { secret, kept } from "./secret.ts";
+export const fn = defineServerFn(() => secret);
+export const a = { secret: 1, kept };
+export const b = (config: { secret: number }) => config.secret;
+export class C { secret = 1; secret2() {} }`,
+      true,
+    );
+    expect(code).toContain('import { kept } from "./secret.ts";');
+  });
+
+  it("method は、1 段目のオブジェクトの文字列のリテラルから読み取る", () => {
+    const code = module(
+      `import { defineServerFn } from "rinka/server";
+export const a = defineServerFn({ method: "GET" as const })(() => 1);
+export const b = defineServerFn({ input: (v: number) => v })(() => 1);`,
+      true,
+    );
+    expect(code).toContain('export const a = __rinka_serverFn("src/lib/a.ts#a", "GET");');
+    expect(code).toContain('export const b = __rinka_serverFn("src/lib/a.ts#b", "POST");');
+  });
+
+  it("method を静的に読み取れなければ、ビルドのエラーにする", () => {
+    for (const options of ["options", "{ method }", "{ ...options }", '{ method: "PUT" }']) {
+      expect(() =>
+        module(
+          `import { defineServerFn } from "rinka/server";
+const method = "GET"; const options = {};
+export const a = defineServerFn(${options})(() => 1);`,
+          true,
+        ),
+      ).toThrow(CompileError);
+    }
+  });
+
+  it("トップレベルの const の初期化の式以外で defineServerFn を使用すると、ビルドのエラーにする", () => {
+    for (const body of [
+      "export let a = defineServerFn(() => 1);",
+      "function f() { const a = defineServerFn(() => 1); return a; }",
+      "export const a = [defineServerFn(() => 1)];",
+      "export const { a } = defineServerFn(() => 1);",
+      "export default defineServerFn(() => 1);",
+      "const define = defineServerFn;",
+    ]) {
+      for (const client of [false, true]) {
+        expect(() =>
+          module(`import { defineServerFn } from "rinka/server";\n${body}`, client),
+        ).toThrow(CompileError);
+      }
+    }
+  });
+});

@@ -5,6 +5,7 @@ export const entries = {
   main: "rinka",
   jsxRuntime: "rinka/jsx-runtime",
   internal: "rinka/internal",
+  server: "rinka/server",
   routes: "rinka/routes",
 } as const;
 

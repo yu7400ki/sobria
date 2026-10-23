@@ -33,10 +33,15 @@ export function children(node: Node): Node[] {
   return found;
 }
 
-/** `node` と、その子孫のノードを、親から順に `visit` に渡す。 */
-export function walk(node: Node, visit: (node: Node) => void): void {
+/** `node` と、その子孫のノードを、親から順に `visit` に渡す。`skip` が真を返すノードと、その子孫は渡さない。 */
+export function walk(
+  node: Node,
+  visit: (node: Node) => void,
+  skip: (node: Node) => boolean = () => false,
+): void {
+  if (skip(node)) return;
   visit(node);
-  for (const child of children(node)) walk(child, visit);
+  for (const child of children(node)) walk(child, visit, skip);
 }
 
 /** `node` が関数のノードかどうかを返す。 */
@@ -143,4 +148,116 @@ export function unwrap(node: Node): Node {
   let current = node;
   while (current.type === "ParenthesizedExpression") current = current.expression;
   return current;
+}
+
+/** 括弧と、`as` と `satisfies` の型の記述を外した式を返す。 */
+export function withoutTypes(node: Node): Node {
+  let current = node;
+  while (
+    current.type === "ParenthesizedExpression" ||
+    current.type === "TSAsExpression" ||
+    current.type === "TSSatisfiesExpression"
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
+/** トップレベルの変数の宣言を表す。`exported` は、`export` を付けた宣言なら真である。 */
+export interface TopLevelVariables {
+  readonly declaration: ESTree.VariableDeclaration;
+  readonly exported: boolean;
+}
+
+/** トップレベルの変数の宣言を、`export` を付けたものも含めて、ソースの順に返す。 */
+export function topLevelVariables(program: ESTree.Program): TopLevelVariables[] {
+  return program.body.flatMap((statement): TopLevelVariables[] => {
+    if (statement.type === "VariableDeclaration")
+      return [{ declaration: statement, exported: false }];
+    if (
+      statement.type === "ExportNamedDeclaration" &&
+      statement.declaration?.type === "VariableDeclaration"
+    ) {
+      return [{ declaration: statement.declaration, exported: true }];
+    }
+    return [];
+  });
+}
+
+/** 子に値の式を持つ、TypeScript の構文のノードの種類である。 */
+const valueTsNodes = new Set([
+  "TSAsExpression",
+  "TSSatisfiesExpression",
+  "TSNonNullExpression",
+  "TSTypeAssertion",
+  "TSInstantiationExpression",
+  "TSEnumDeclaration",
+  "TSEnumMember",
+  "TSModuleDeclaration",
+  "TSModuleBlock",
+  "TSExportAssignment",
+  "TSParameterProperty",
+]);
+
+/** 子の識別子が、常に名前として現れて変数を参照しない、ノードの種類である。 */
+const nameParents = new Set([
+  "JSXAttribute",
+  "JSXNamespacedName",
+  "MetaProperty",
+  "ImportSpecifier",
+  "ImportDefaultSpecifier",
+  "ImportNamespaceSpecifier",
+  "LabeledStatement",
+  "BreakStatement",
+  "ContinueStatement",
+]);
+
+/** 識別子が名前として現れ、変数を参照しない位置かどうかを返す。`key` は、親のノードで識別子を持つプロパティの名前である。 */
+function isNamePosition(parent: Node, key: string): boolean {
+  if (
+    parent.type === "Property" ||
+    parent.type === "MethodDefinition" ||
+    parent.type === "PropertyDefinition" ||
+    parent.type === "AccessorProperty"
+  ) {
+    return key === "key" && !parent.computed;
+  }
+  if (parent.type === "MemberExpression") return key === "property" && !parent.computed;
+  if (parent.type === "JSXMemberExpression") return key === "property";
+  if (parent.type === "ExportSpecifier") return key === "exported";
+  return nameParents.has(parent.type);
+}
+
+/** 識別子のノードを表す。 */
+export type NameNode = Extract<Node, { type: "Identifier" | "JSXIdentifier" }>;
+
+/**
+ * `root` の中で、値として変数を参照しうる識別子を、ソースの順に `visit` に渡す。
+ * オブジェクトのキー、プロパティの名前、import の指定子、型の記述の中の識別子は渡さない。`skip` が真を返すノードの中は確認しない。
+ * 宣言する位置の識別子も渡すので、同じ名前の変数を内側の関数で宣言すると、その識別子も渡す。
+ */
+export function forEachReference(
+  root: Node,
+  skip: (node: Node) => boolean,
+  visit: (node: NameNode) => void,
+): void {
+  const walkNode = (node: Node, parent: Node | undefined, key: string): void => {
+    if (skip(node)) return;
+    if (node.type.startsWith("TS") && !valueTsNodes.has(node.type)) return;
+    if (
+      (node.type === "Identifier" || node.type === "JSXIdentifier") &&
+      !(parent && isNamePosition(parent, key))
+    ) {
+      visit(node);
+    }
+    for (const [childKey, value] of Object.entries(node)) {
+      if (childKey === "parent") continue;
+      if (Array.isArray(value)) {
+        for (const item of value) if (isNode(item)) walkNode(item, node, childKey);
+      } else if (isNode(value)) {
+        walkNode(value, node, childKey);
+      }
+    }
+  };
+  walkNode(root, undefined, "");
 }
