@@ -223,6 +223,23 @@ describe("サーバー関数のエンドポイント", () => {
     expect(onError).toHaveBeenCalledWith(boom);
   });
 
+  it("handler から直接呼んだサーバー関数のミドルウェアが返した Response を、RPC とフォームの送信のレスポンスにする", async () => {
+    const deny = defineMiddleware(async (c) => c.text("Unauthorized", 401));
+    const inner = defineServerFn(deny, () => "inner");
+    const id = register(defineServerFn(async () => inner()));
+    const responses = await Promise.all([
+      call(id, post(null)),
+      call(id, { method: "POST", body: new FormData() }),
+    ]);
+    const actual = await Promise.all(
+      responses.map(async (response) => [response.status, await response.text()]),
+    );
+    expect(actual).toEqual([
+      [401, "Unauthorized"],
+      [401, "Unauthorized"],
+    ]);
+  });
+
   it("ミドルウェアが next() を呼ばずに、Response を返さずに終了すると、そのエラーをアプリの onError に渡す", async () => {
     const onError = vi.fn((_error: unknown) => new Response(null, { status: 500 }));
     const silent = defineMiddleware(async () => {});

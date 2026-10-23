@@ -74,10 +74,11 @@ async function endpoint(
       const value = await handle(c, input);
       return value instanceof Response ? value : responder.respond(c, { kind: "value", value });
     },
-    (error) =>
-      error instanceof HTTPException
-        ? httpResponse(c, error)
-        : responder.respond(c, outcomeOf(error)),
+    (error) => {
+      if (error instanceof Response) return error;
+      if (error instanceof HTTPException) return httpResponse(c, error);
+      return responder.respond(c, outcomeOf(error));
+    },
   );
   return c.res;
 }
