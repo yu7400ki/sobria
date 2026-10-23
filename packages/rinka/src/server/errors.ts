@@ -1,5 +1,7 @@
 import { HTTPException } from "hono/http-exception";
 
+import { SchemaError } from "./server-fn.ts";
+
 /** リダイレクトのステータスを表す。 */
 export type RedirectStatus = 301 | 302 | 303 | 307 | 308;
 
@@ -64,9 +66,12 @@ export type Thrown =
       readonly safe: boolean;
       /** 移動を表すレスポンスである。3xx の Response なら、その Response である。 */
       readonly response: Response;
+      /** `redirect()` が返した値なら真である。 */
+      readonly explicit: boolean;
     }
   | { readonly kind: "notFound" }
   | { readonly kind: "response"; readonly response: Response }
+  | { readonly kind: "schema"; readonly issues: SchemaError["issues"] }
   | { readonly kind: "error" };
 
 /** 投げられた値の種類を返す。`HTTPException` は、`getResponse()` が返す Response として扱う。 */
@@ -79,11 +84,19 @@ export function classify(error: unknown): Thrown {
       location,
       safe: isSafeLocation(location),
       response: new Response(null, { status, headers: { location } }),
+      explicit: true,
     };
   }
   if (error instanceof NotFound) return { kind: "notFound" };
+  if (error instanceof SchemaError) return { kind: "schema", issues: error.issues };
   if (!(error instanceof Response)) return { kind: "error" };
   const location = error.status >= 300 && error.status < 400 ? error.headers.get("location") : null;
   if (location === null) return { kind: "response", response: error };
-  return { kind: "redirect", location, safe: isSafeLocation(location), response: error };
+  return {
+    kind: "redirect",
+    location,
+    safe: isSafeLocation(location),
+    response: error,
+    explicit: false,
+  };
 }

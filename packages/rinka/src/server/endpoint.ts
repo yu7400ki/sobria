@@ -1,5 +1,4 @@
 import type { Context, MiddlewareHandler } from "hono";
-import { HTTPException } from "hono/http-exception";
 
 import { REFRESH_HEADER } from "../shared/refresh.ts";
 import type { AppOptions } from "../shared/routes.ts";
@@ -10,7 +9,7 @@ import {
   type ServerFnRef,
 } from "../shared/server-fn.ts";
 import { rpcPrefix, rpcQuery, wireFormat, wireHeader, type RedirectJson } from "../shared/wire.ts";
-import { NotFound, Redirect } from "./errors.ts";
+import { classify } from "./errors.ts";
 import { formDataToInput } from "./form-data.ts";
 import { definitionOf, runChain, SchemaError, type Definition } from "./server-fn.ts";
 import { fromRpcInput, toRpcBody } from "./wire.ts";
@@ -94,9 +93,20 @@ async function endpoint(
         : responder.respond(c, { kind: "value", value }, fail);
     },
     (error) => {
-      if (error instanceof Response) return error;
-      if (error instanceof HTTPException) return error.getResponse();
-      return responder.respond(c, outcomeOf(error), fail);
+      const thrown = classify(error);
+      switch (thrown.kind) {
+        case "redirect":
+          return thrown.explicit
+            ? responder.respond(c, { kind: "redirect", location: thrown.location }, fail)
+            : thrown.response;
+        case "response":
+          return thrown.response;
+        case "notFound":
+        case "schema":
+          return responder.respond(c, thrown, fail);
+        case "error":
+          return responder.respond(c, { kind: "error", error }, fail);
+      }
     },
   );
 }
@@ -111,14 +121,6 @@ type Outcome =
 
 /** handler の結果の分類の名前である。 */
 export type OutcomeKind = Outcome["kind"];
-
-/** handler が投げた値を分類する。`redirect()`、`notFound()`、スキーマの失敗以外の値は `error` にする。 */
-function outcomeOf(error: unknown): Outcome {
-  if (error instanceof Redirect) return { kind: "redirect", location: error.location };
-  if (error instanceof NotFound) return { kind: "notFound" };
-  if (error instanceof SchemaError) return { kind: "schema", issues: error.issues };
-  return { kind: "error", error };
-}
 
 /** サーバー関数のエンドポイントへのリクエストの種類である。`form` はフォームの送信で、`rpc` はそれ以外である。 */
 type RequestKind = "rpc" | "form";

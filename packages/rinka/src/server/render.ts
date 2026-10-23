@@ -1398,6 +1398,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
             case "response":
               if (flush.kind === "shell") throw error;
               break;
+            case "schema":
             case "error":
               if (flush.kind === "shell") this.caught = Math.max(this.caught, node.status ?? 500);
               break;
@@ -1862,6 +1863,7 @@ function failure<O extends ResponseOptions>(
         ? render(page(), { ...options, notFound: undefined }, 404)
         : new Response("Not Found", { status: 404 });
     }
+    case "schema":
     case "error": {
       const page = options.error;
       if (page)
