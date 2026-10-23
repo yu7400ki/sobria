@@ -806,9 +806,17 @@ class Renderer {
     out.push(this.marker(id, "/"));
   }
 
-  /** 文書を出力する描画で、シェルの中かつ要素の外の `<Navigation>` の props を、深さとともに記録する。 */
+  /** 文書を出力する描画で、`<title>` を `<head>` に移動する位置の `<Navigation>` の props を、深さとともに記録する。 */
   private navigation(props: NavigationProps, ctx: WalkCtx, out: Chunk[]): void {
     if (!this.document) return;
+    if (ctx.head === "none") {
+      if (import.meta.env?.DEV) {
+        console.warn(
+          "[rinka] <Navigation> は <svg> か <noscript> の配下にあるので、反映しません。",
+        );
+      }
+      return;
+    }
     if (ctx.owner !== null || ctx.boundary !== this.root) {
       this.warnOutside("Navigation", ctx, "反映しません");
       return;

@@ -37,7 +37,7 @@ export function Errored(props: {
   );
 }
 
-/** 要素の中では、ページの遷移の設定を反映しない。 */
+/** 何も描画しない。 */
 export function Navigation(_props: NavigationProps): ClientNode {
   return asClientNode(null);
 }

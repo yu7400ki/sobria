@@ -508,6 +508,13 @@ const navigationLayout = (props: LayoutProps) => [
   props.children,
 ];
 
+/** Shadow DOM に `<Navigation>` を持つ要素である。 */
+const Navigating = defineElement(
+  "x-navigating",
+  () => jsx(Navigation, { transitions: true, prefetch: "eager" }),
+  { props: [] },
+);
+
 const noPrefetchLayout = (props: LayoutProps) => [
   props.children,
   jsx(Navigation, { prefetch: false }),
@@ -527,6 +534,9 @@ describe("<Navigation>", () => {
     expect(await headOfPage(() => jsx(Navigation, { prefetch: "eager" }), [navigationLayout])).toBe(
       `<meta charset="utf-8">${viewTransition}${prefetchScript("eager")}`,
     );
+    expect(
+      await headOfPage(() => jsx(Navigation, { transitions: false }), [navigationLayout]),
+    ).toBe(`<meta charset="utf-8">${prefetchScript("moderate")}`);
   });
 
   it("<Loading> の内側に記述したものは反映せず、開発時に警告する", async () => {
@@ -537,6 +547,27 @@ describe("<Navigation>", () => {
     );
     expect(head).toBe('<meta charset="utf-8">');
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("<Navigation>"));
+  });
+
+  it("要素の中に記述したものは反映せず、開発時に警告する", async () => {
+    vi.stubEnv("DEV", true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { head } = await documentOf(jsx(Navigating, {}));
+    expect(head).not.toContain("view-transition");
+    expect(head).not.toContain("speculationrules");
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("要素の中"));
+  });
+
+  it("<svg> と <noscript> の配下に記述したものは反映せず、開発時に警告する", async () => {
+    vi.stubEnv("DEV", true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { head } = await documentOf([
+      jsx("svg", { children: jsx(Navigation, { transitions: true }) }),
+      jsx("noscript", { children: jsx(Navigation, { prefetch: "eager" }) }),
+    ]);
+    expect(head).toBe('<meta charset="utf-8">');
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("<svg> か <noscript>"));
   });
 
   it("renderToString は、何も出力しない", async () => {
