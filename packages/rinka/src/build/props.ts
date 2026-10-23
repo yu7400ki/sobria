@@ -7,7 +7,8 @@ import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 
 /** Props のメンバーの分類を表す。 */
-type Kind = AttributeType | "function" | "slot" | "object";
+/** props の分類を表す。`unknown` は、型の記述だけでは属性にできるかどうかが分からない props である。 */
+type Kind = AttributeType | "function" | "slot" | "object" | "unknown";
 
 /** `rinka` から import した型の、ファイルの中の名前を表す。 */
 interface Helpers {
@@ -57,7 +58,7 @@ export function analyzeProps(
       functionProps.push(name);
     } else if (kind === "object") {
       objectProps.push(name);
-    } else {
+    } else if (kind !== "unknown") {
       types[name] = kind;
     }
   }
@@ -174,15 +175,15 @@ function memberKind(
 
 /** 型の記述から、メンバーの分類を返す。 */
 function classify(type: ESTree.TSType | undefined, helpers: Helpers): Kind {
-  if (type === undefined) return "object";
+  if (type === undefined) return "unknown";
   if (type.type === "TSStringKeyword") return "string";
   if (type.type === "TSNumberKeyword") return "number";
   if (type.type === "TSBooleanKeyword") return "boolean";
   if (type.type === "TSFunctionType") return "function";
   if (type.type === "TSParenthesizedType") return classify(type.typeAnnotation, helpers);
-  if (type.type === "TSTemplateLiteralType") return type.types.length === 0 ? "string" : "object";
+  if (type.type === "TSTemplateLiteralType") return type.types.length === 0 ? "string" : "unknown";
   if (type.type === "TSTypeReference") {
-    return isSlotType(type.typeName, helpers) ? "slot" : "object";
+    return isSlotType(type.typeName, helpers) ? "slot" : "unknown";
   }
   if (type.type === "TSLiteralType") return literalKind(type.literal);
   if (type.type === "TSUnionType") {
@@ -192,10 +193,19 @@ function classify(type: ESTree.TSType | undefined, helpers: Helpers): Kind {
         .map((member) => classify(member, helpers)),
     );
     const [kind] = kinds;
-    return kinds.size === 1 && kind !== undefined ? kind : "object";
+    return kinds.size === 1 && kind !== undefined ? kind : "unknown";
   }
-  return "object";
+  return objectTypes.has(type.type) ? "object" : "unknown";
 }
+
+/** 値がオブジェクトになる型の記述の種類である。 */
+const objectTypes: ReadonlySet<string> = new Set([
+  "TSTypeLiteral",
+  "TSArrayType",
+  "TSTupleType",
+  "TSObjectKeyword",
+  "TSMappedType",
+]);
 
 /** リテラル型の分類を返す。 */
 function literalKind(literal: ESTree.TSLiteralType["literal"]): Kind {
@@ -205,14 +215,14 @@ function literalKind(literal: ESTree.TSLiteralType["literal"]): Kind {
       argument.type === "Literal" &&
       typeof argument.value === "number"
       ? "number"
-      : "object";
+      : "unknown";
   }
   if (literal.type === "TemplateLiteral") {
-    return literal.expressions.length === 0 ? "string" : "object";
+    return literal.expressions.length === 0 ? "string" : "unknown";
   }
-  if (literal.type !== "Literal") return "object";
+  if (literal.type !== "Literal") return "unknown";
   const kind = typeof literal.value;
-  return kind === "string" || kind === "number" || kind === "boolean" ? kind : "object";
+  return kind === "string" || kind === "number" || kind === "boolean" ? kind : "unknown";
 }
 
 /** 型の名前が、`JSX.Element` か、`rinka` から import した `Slot` かどうかを返す。 */

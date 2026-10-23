@@ -180,7 +180,7 @@ export default function X(props: Props) { return <p />; }`);
       },
       slots: ["header", "footer"],
       functionProps: ["onSelect", "open"],
-      objectProps: ["data", "mixed", "handler"],
+      objectProps: ["data"],
     });
   });
 
@@ -192,7 +192,25 @@ export default function X(props: Props) { return <p />; }`);
       props: ["n", "t", "g", "s", "o"],
       types: { n: "number", t: "string", g: "string" },
       slots: ["s"],
-      objectProps: ["o"],
+    });
+  });
+
+  it("型の記述からオブジェクトと分かる props だけを objectProps に列挙する", () => {
+    const { element: info } = element(`type Variant = "a" | "b";
+type Props = {
+  list: string[];
+  pair: [number, string];
+  map: { [key: string]: number };
+  any: object;
+  both: { a: 1 } | string[];
+  variant: Variant;
+  width: \`\${number}px\`;
+  mixed: string | { a: 1 };
+};
+export default function X(props: Props) { return <p />; }`);
+    expect(info?.options).toEqual({
+      props: ["list", "pair", "map", "any", "both", "variant", "width", "mixed"],
+      objectProps: ["list", "pair", "map", "any", "both"],
     });
   });
 
