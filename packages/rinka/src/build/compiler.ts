@@ -35,6 +35,7 @@ import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 import { usesForm } from "./form-usage.ts";
 import { analyzeProps } from "./props.ts";
+import { rewriteSheetImports } from "./sheets.ts";
 
 export { CompileError } from "./errors.ts";
 
@@ -72,7 +73,7 @@ const REGISTER = "__rinka_registerServerFn";
 const SERVER_FN = "__rinka_serverFn";
 
 /**
- * 元のソースに、`rinka` の `memo` の呼び出し箇所の ID を付与する。
+ * 元のソースに、`rinka` の `memo` の呼び出し箇所の ID を付与し、`with { type: 'css' }` の import をシートのモジュールの import にする。
  * クライアント向けのコードでは、シード中に開始した async 関数を、最初の `await` で停止させる。
  * 要素のファイルでは、default export した関数を、要素を登録する呼び出しに書き換え、関数の中の JSX のスロットを `<slot>` にする。
  * `rinka/server` の `defineServerFn` で初期化したトップレベルの const は、サーバー向けでは ID で登録し、クライアント向けでは RPC の関数を作成する呼び出しに置換する。
@@ -86,6 +87,7 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
     options.client ? definitions.map((definition) => definition.init) : [],
   );
   addMemoSites(program, output, code, options.file, replaced);
+  rewriteSheetImports(program, output, code, options.file);
   const element =
     options.element &&
     registerElement(program, output, options.element, options.file, options.client);

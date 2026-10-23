@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 
+import type { ViteDevServer } from "vite";
 import type { TestProject } from "vitest/node";
 
 import { createDevServer, originOf } from "./dev-server.ts";
@@ -12,6 +13,10 @@ declare module "vitest" {
     basicPage: string;
     /** `fixtures/basic` の開発サーバーが返した `/load` の HTML である。 */
     loadPage: string;
+    /** テスト用のアプリ `fixtures/styles` の開発サーバーのオリジンである。 */
+    stylesOrigin: string;
+    /** `fixtures/styles` の開発サーバーが返した `/` の HTML である。 */
+    stylesPage: string;
   }
 }
 
@@ -19,25 +24,41 @@ declare module "vitest" {
 async function page(origin: string, path: string): Promise<string> {
   const response = await fetch(`${origin}${path}`);
   if (!response.ok) {
-    throw new Error(`fixtures/basic の ${path} のページが ${response.status} を返しました。`);
+    throw new Error(`${origin} の ${path} のページが ${response.status} を返しました。`);
   }
   return response.text();
 }
 
-/** `fixtures/basic` の開発サーバーを起動し、オリジンとページの HTML をテストに渡す。 */
+/** `fixtures/<name>` の開発サーバーを起動し、オリジンを返す。 */
+async function start(name: string, servers: ViteDevServer[]): Promise<string> {
+  const server = await createDevServer(
+    fileURLToPath(new URL(`fixtures/${name}`, import.meta.url)),
+    {
+      server: { port: 0 },
+    },
+  );
+  servers.push(server);
+  await server.listen();
+  return originOf(server);
+}
+
+/** `fixtures/basic` と `fixtures/styles` の開発サーバーを起動し、オリジンとページの HTML をテストに渡す。 */
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
-  const server = await createDevServer(fileURLToPath(new URL("fixtures/basic", import.meta.url)), {
-    server: { port: 0 },
-  });
+  const servers: ViteDevServer[] = [];
+  const close = async () => {
+    await Promise.all(servers.map((server) => server.close()));
+  };
   try {
-    await server.listen();
-    const origin = originOf(server);
-    project.provide("basicOrigin", origin);
-    project.provide("basicPage", await page(origin, "/"));
-    project.provide("loadPage", await page(origin, "/load"));
+    const basic = await start("basic", servers);
+    project.provide("basicOrigin", basic);
+    project.provide("basicPage", await page(basic, "/"));
+    project.provide("loadPage", await page(basic, "/load"));
+    const styles = await start("styles", servers);
+    project.provide("stylesOrigin", styles);
+    project.provide("stylesPage", await page(styles, "/"));
   } catch (error) {
-    await server.close();
+    await close();
     throw error;
   }
-  return () => server.close();
+  return close;
 }

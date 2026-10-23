@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { getRequestListener } from "@hono/node-server";
@@ -20,7 +20,9 @@ import type { Lang } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
 import { entries, oxc, runtimes } from "./entries.ts";
 import { transformJsx } from "./jsx.ts";
+import { inside } from "./paths.ts";
 import { routeFileNames, routesModule } from "./routes.ts";
+import { SHEET_QUERY, sheetId, sheetModule, sheetPath } from "./sheets.ts";
 
 /** rinka のプラグインの設定を表す。 */
 export interface RinkaOptions {
@@ -137,6 +139,11 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       },
       resolveId(id, importer, resolveOptions) {
         if (id === entries.routes) return ROUTES;
+        if (id.endsWith(SHEET_QUERY)) {
+          return this.resolve(id.slice(0, -SHEET_QUERY.length), importer, { skipSelf: true }).then(
+            (resolved) => resolved && sheetId(resolved.id),
+          );
+        }
         if (id === entries.server && isClient(this.environment)) {
           if ("scan" in resolveOptions && resolveOptions.scan === true)
             return { id, external: true };
@@ -149,7 +156,9 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         return entry === undefined ? null : fileURLToPath(new URL(`../${entry}`, import.meta.url));
       },
       load(id) {
-        return id === ROUTES ? routesModule(root, "src/routes") : null;
+        if (id === ROUTES) return routesModule(root, "src/routes");
+        const sheet = sheetPath(id);
+        return sheet === undefined ? null : sheetModule(sheet, root, isClient(this.environment));
       },
       configureServer(server) {
         const routesDir = resolve(root, "src/routes");
@@ -209,14 +218,6 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       },
     },
   ];
-}
-
-/** `path` が `dir` の中にあれば、`dir` からの `/` で区切った相対パスを返す。 */
-function inside(dir: string, path: string): string | undefined {
-  const inner = relative(dir, path);
-  return isAbsolute(inner) || inner === ".." || inner.startsWith(`..${sep}`)
-    ? undefined
-    : inner.split(sep).join("/");
 }
 
 /** `dir` の中の要素のファイルを走査し、2 つのファイルが同じタグになればエラーにする。 */
