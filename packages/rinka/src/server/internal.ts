@@ -7,6 +7,7 @@ import {
 } from "../shared/element.ts";
 
 export { createApp } from "./app.ts";
+export { devErrorResponse } from "./dev-error.ts";
 export { registerServerFn, serverFnLoader, serverFnModule } from "./endpoint.ts";
 export { routeStyles, serverSheet } from "./styles.ts";
 

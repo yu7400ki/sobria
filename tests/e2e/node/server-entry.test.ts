@@ -48,31 +48,3 @@ describe("開発サーバーのサーバーのエントリー", () => {
     expect(await response.json()).toEqual({ ok: "orphan" });
   });
 });
-
-/** 開発中の rinka/app が使用する関数を保持する、グローバルの Map の大きさを返す。 */
-const hookCount = () =>
-  (globalThis as { [key: symbol]: Map<string, unknown> | undefined })[Symbol.for("rinka.dev")]
-    ?.size ?? 0;
-
-/** テスト用のアプリの開発サーバーを作成し、再起動してからページがサーバーコンポーネントの CSS の <link> を出力することを確認して、閉じる。 */
-async function startAndClose(): Promise<void> {
-  const dev = await createDevServer(root, {
-    server: { port: 0 },
-    cacheDir: fileURLToPath(new URL("../node_modules/.vite/server-entry", import.meta.url)),
-  });
-  await dev.listen();
-  await dev.restart();
-  const html = await (await fetch(`${originOf(dev)}/`)).text();
-  expect(html).toMatch(/<link rel="stylesheet" href="\/src\/styles\/app\.css[^"]*">/);
-  await dev.close();
-}
-
-describe("開発サーバーの終了", () => {
-  it("開発サーバーを閉じると、再起動した後でも、開発中の rinka/app が使用する関数を削除する", async () => {
-    const before = hookCount();
-    await startAndClose();
-    expect(hookCount()).toBe(before);
-    await startAndClose();
-    expect(hookCount()).toBe(before);
-  }, 60_000);
-});

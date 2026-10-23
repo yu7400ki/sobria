@@ -48,7 +48,7 @@ describe("@cloudflare/vite-plugin との組み合わせ", () => {
     await dev?.close();
   });
 
-  it("開発中は、workerd の Worker が rinka/app でページ、要素のモジュール、RPC に応答する", async () => {
+  it("開発中は、workerd の Worker が rinka/app で、サーバーコンポーネントの CSS を含むページ、エラーのページ、要素のモジュール、RPC に応答する", async () => {
     dev = await createDevServer(copy, {
       server: { port: 0 },
       cacheDir: join(copy, "node_modules/.vite"),
@@ -59,7 +59,13 @@ describe("@cloudflare/vite-plugin との組み合わせ", () => {
     const html = await (await fetch(`${origin}/`)).text();
     expect(html).toContain('<script type="module" src="/@vite/client"></script>');
     expect(html).toContain("<h1>deploy</h1>");
+    expect(html).toMatch(/<link rel="stylesheet" href="\/src\/styles\/app\.css[^"]*">/);
     expect((await fetch(`${origin}/src/elements/counter.tsx`)).status).toBe(200);
+    const boom = await fetch(`${origin}/boom`);
+    expect(boom.status).toBe(500);
+    const error = await boom.text();
+    expect(error).toContain("ページの描画に失敗しました");
+    expect(error).toContain("ErrorOverlay");
     const id = encodeURIComponent("src/lib/orphan.ts#orphan");
     const rpc = await fetch(`${origin}/_rinka/fn/${id}`, { method: "POST" });
     expect(await rpc.json()).toEqual({ ok: "orphan" });

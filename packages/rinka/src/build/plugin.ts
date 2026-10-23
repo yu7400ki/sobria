@@ -6,7 +6,7 @@ import type { Plugin, ResolvedConfig } from "vite";
 import { appBuild } from "./app-build.ts";
 import { langs, type Lang } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
-import { serve } from "./dev-server.ts";
+import { devAppModule, serve } from "./dev-server.ts";
 import { sourceTag } from "./elements.ts";
 import { clientImports, entries, oxc, runtimes, virtualId } from "./entries.ts";
 import { buildAppModule } from "./entry.ts";
@@ -89,7 +89,6 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
     );
   };
   const api: RinkaApi = { prepare: writeTypes };
-  const dev = serve({ options, settings: current, writeTypes });
   const build = appBuild({ options, settings: current });
 
   /**
@@ -169,7 +168,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         if (id === APP) {
           const serverFns = new Map(serverFnModules(root).map((file) => [fnModuleOf(file), file]));
           return scene === "serve"
-            ? dev.appModule(this.environment, { serverFns, trustedOrigins })
+            ? devAppModule({ serverFns, trustedOrigins })
             : buildAppModule({ serverFns, trustedOrigins });
         }
         const sheet = sheetPath(id);
@@ -216,7 +215,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         return { code: result.code, map: result.map };
       },
     },
-    dev.plugin,
+    serve({ options, settings: current, writeTypes }),
     build.plugin,
     libraryBuild({ options, settings: current }),
   ];

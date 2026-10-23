@@ -59,12 +59,12 @@ describe("開発サーバー", () => {
     expect(response.status).toBe(404);
   });
 
-  it("ページの描画で投げたエラーは、Vite のエラーの処理に渡す", async () => {
+  it("ページの描画で投げたエラーは、Vite のエラーのオーバーレイでメッセージを表示する 500 のページにする", async () => {
     const response = await fetch(`${origin}/boom`);
     expect(response.status).toBe(500);
     const body = await response.text();
-    expect(body).not.toBe("Internal Server Error");
     expect(body).toContain("ページの描画に失敗しました");
+    expect(body).toContain('import { ErrorOverlay } from "/@vite/client";');
   });
 
   it("サーバー関数のエンドポイントは、変換の時点でサーバー関数の定義を見つけたモジュールだけを読み込む", async () => {

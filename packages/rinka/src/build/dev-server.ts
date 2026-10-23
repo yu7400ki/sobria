@@ -1,5 +1,3 @@
-import { AsyncLocalStorage } from "node:async_hooks";
-import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -8,7 +6,7 @@ import { getRequestListener } from "@hono/node-server";
 import type { Environment, Plugin, RunnableDevEnvironment } from "vite";
 
 import { reloadEvent } from "../shared/hmr.ts";
-import type { AppOptions, CreateApp } from "../shared/routes.ts";
+import type { CreateApp } from "../shared/routes.ts";
 import { entries, serverImports, virtualId } from "./entries.ts";
 import { appCode, serverEntry, serverFnLoaderCode, type AppModuleOptions } from "./entry.ts";
 import { fromApp } from "./package.ts";
@@ -18,18 +16,6 @@ import { routeStyles } from "./route-styles.ts";
 import { ROUTES_DIR, routeFileNames } from "./routes.ts";
 import { isServerFnSource } from "./server-fns.ts";
 import { SERVER_ENTRY_NAME, isClient, type SceneContext } from "./settings.ts";
-
-/** 開発サーバーが Vite のプロセスで実行し、`rinka/app` が使用する関数を表す。 */
-type DevHooks = Required<Pick<AppOptions, "onError">>;
-
-/** 開発中の `rinka/app` が、プラグインのインスタンスの ID ごとの `DevHooks` を探す、グローバルの Map のキーである。 */
-const DEV_HOOKS = "rinka.dev";
-
-/** プラグインのインスタンスの ID ごとの `DevHooks` を保持する、グローバルの Map を返す。 */
-function devHooks(): Map<string, DevHooks> {
-  const global = globalThis as { [key: symbol]: Map<string, DevHooks> | undefined };
-  return (global[Symbol.for(DEV_HOOKS)] ??= new Map<string, DevHooks>());
-}
 
 /** `rinka/styles` の仮想モジュールの ID の、ルートのファイルの一覧を表すクエリの前までである。 */
 const STYLES = `${virtualId(entries.styles)}?files=`;
@@ -42,21 +28,18 @@ const VITE_CLIENT = '<script type="module" src="/@vite/client"></script>';
 
 /**
  * 開発中の `rinka/app` のコードを返す。アプリは、Vite のクライアントを読み込み、
- * ID が `devId` の `DevHooks` があればそれを使用する。
+ * サーバーコンポーネントの CSS の一覧を `rinka/styles` から読み込み、エラーを Vite のエラーのオーバーレイで表示する。
  */
-const devAppModule = ({ serverFns, trustedOrigins }: AppModuleOptions, devId: string): string =>
+export const devAppModule = ({ serverFns, trustedOrigins }: AppModuleOptions): string =>
   appCode(
+    ["createApp", "serverFnLoader", "devErrorResponse"],
     [
       `  head: ${JSON.stringify(VITE_CLIENT)},`,
       `  styles: async (files) => (await import(${JSON.stringify(STYLES_URL)} + encodeURIComponent(JSON.stringify(files)))).default,`,
-      "  onError: hooks?.onError,",
+      "  onError: devErrorResponse,",
       `  loadServerFn: ${serverFnLoaderCode(serverFns)},`,
     ],
     trustedOrigins,
-    [
-      `const hooks = globalThis[Symbol.for(${JSON.stringify(DEV_HOOKS)})]?.get(${JSON.stringify(devId)});`,
-      "",
-    ],
   );
 
 /** 開発サーバーのプラグインを作成する関数が受け取る値を表す。 */
@@ -65,20 +48,11 @@ export interface ServeContext extends SceneContext {
   readonly writeTypes: () => void;
 }
 
-/**
- * 開発サーバーと `vite preview` で、サーバーのエントリーにリクエストを渡すプラグインと、
- * 開発サーバーの環境 `environment` で読み込む `rinka/app` のコードを返す関数を返す。
- */
-export function serve({ settings, writeTypes }: ServeContext): {
-  readonly plugin: Plugin;
-  readonly appModule: (environment: Environment, options: AppModuleOptions) => string;
-} {
-  /** 開発サーバーの ssr の環境ごとの、`DevHooks` の ID である。 */
-  const devIds = new WeakMap<Environment, string>();
-  const plugin: Plugin = {
+/** 開発サーバーと `vite preview` で、サーバーのエントリーにリクエストを渡すプラグインを返す。 */
+export function serve({ settings, writeTypes }: ServeContext): Plugin {
+  return {
     name: "rinka:serve",
     apply: "serve",
-    perEnvironmentStartEndDuringDev: true,
     config: (user) =>
       hasCloudflare(user.plugins ?? [])
         ? { environments: { ssr: { optimizeDeps: { include: serverImports.map(fromApp) } } } }
@@ -86,10 +60,8 @@ export function serve({ settings, writeTypes }: ServeContext): {
     configurePreviewServer(server) {
       return () => {
         const entry = pathToFileURL(join(settings().serverDir, `${SERVER_ENTRY_NAME}.js`)).href;
-        server.middlewares.use(
-          // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-          entryMiddleware(() => import(entry) as Promise<ServerModule>, { forwardErrors: false }),
-        );
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+        server.middlewares.use(entryMiddleware(() => import(entry) as Promise<ServerModule>));
       };
     },
     resolveId: (id) => (id.startsWith(STYLES) ? id : null),
@@ -99,8 +71,8 @@ export function serve({ settings, writeTypes }: ServeContext): {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       const files = JSON.parse(decodeURIComponent(id.slice(STYLES.length))) as string[];
       const nodes = await Promise.all(files.map((file) => moduleGraph.getModuleByUrl(`/${file}`)));
-      return `export default ${JSON.stringify(routeStyles(nodes.filter((node) => node !== undefined)))};
-`;
+      const links = routeStyles(nodes.filter((node) => node !== undefined));
+      return `export default ${JSON.stringify(links)};\n`;
     },
     configureServer(server) {
       const { root, elementsDir } = settings();
@@ -112,7 +84,6 @@ export function serve({ settings, writeTypes }: ServeContext): {
           if (node) environment.moduleGraph.invalidateModule(node);
         }
       };
-      /** サーバー関数を定義できるファイル `path` が変わったら、`rinka/app` を無効にする。 */
       /**
        * ファイル `path` が追加、変更、削除されたら、すべての環境の `rinka/styles` を無効にし、
        * サーバー関数を定義できるファイルなら `rinka/app` も無効にする。
@@ -155,34 +126,17 @@ export function serve({ settings, writeTypes }: ServeContext): {
           client.send({ type: "full-reload" });
         });
       }
-      const environment = server.environments.ssr;
-      if (environment && isRunnable(environment)) {
-        const devId = randomUUID();
-        devIds.set(environment, devId);
-        devHooks().set(devId, { onError: recordFailure });
-      }
       return () => {
         const file = serverEntry(root);
         const entry = file === undefined ? entries.app : `/${file}`;
         server.middlewares.use(
-          entryMiddleware(
-            async () => {
-              const ssr = server.environments.ssr;
-              return ssr && isRunnable(ssr) ? ssr.runner.import<ServerModule>(entry) : undefined;
-            },
-            { forwardErrors: true },
-          ),
+          entryMiddleware(async () => {
+            const ssr = server.environments.ssr;
+            return ssr && isRunnable(ssr) ? ssr.runner.import<ServerModule>(entry) : undefined;
+          }),
         );
       };
     },
-    buildEnd() {
-      const id = devIds.get(this.environment);
-      if (id !== undefined) devHooks().delete(id);
-    },
-  };
-  return {
-    plugin,
-    appModule: (environment, options) => devAppModule(options, devIds.get(environment) ?? ""),
   };
 }
 
@@ -198,16 +152,6 @@ const hasCloudflare = (plugins: readonly unknown[]): boolean =>
         plugin.name.startsWith("vite-plugin-cloudflare"),
   );
 
-/** リクエストごとの、`rinka/app` の onError が受け取ったエラーの置き場である。 */
-const failures = new AsyncLocalStorage<{ error?: unknown }>();
-
-/** 開発中の `rinka/app` の onError で、エラーをリクエストの置き場に記録し、500 の Response を返す。 */
-const recordFailure: DevHooks["onError"] = (error) => {
-  const failure = failures.getStore();
-  if (failure) failure.error = error;
-  return new Response(null, { status: 500 });
-};
-
 /** サーバーのエントリーのモジュールを表す。 */
 interface ServerModule {
   readonly default: ReturnType<CreateApp>;
@@ -215,13 +159,11 @@ interface ServerModule {
 
 /**
  * `load` が返すサーバーのエントリーの default export の `fetch` に、リクエストを渡すミドルウェアを返す。
- * `forwardErrors` が真なら、`fetch` が投げたエラーと、開発中の `rinka/app` の onError が受け取ったエラーを `next` に渡す。
- * 偽なら、`fetch` が投げたエラーには本文の無い 500 の Response を返す。
- * `load` が undefined を返せば、リクエストを `next` に渡す。
+ * `fetch` が投げたエラーには、本文の無い 500 の Response を返す。
+ * `load` が投げたエラーは `next` に渡し、`load` が undefined を返せば、リクエストを `next` に渡す。
  */
 function entryMiddleware(
   load: () => Promise<ServerModule | undefined>,
-  { forwardErrors }: { readonly forwardErrors: boolean },
 ): (request: IncomingMessage, response: ServerResponse, next: (error?: unknown) => void) => void {
   return (request, response, next) => {
     (async () => {
@@ -230,23 +172,11 @@ function entryMiddleware(
         next();
         return;
       }
-      const listener = getRequestListener(
-        async (incoming) => {
-          const failure: { error?: unknown } = {};
-          const result = await failures.run(failure, () => entry.default.fetch(incoming));
-          if ("error" in failure) throw failure.error;
-          response.statusCode = result.status;
-          return result;
-        },
-        forwardErrors
-          ? {
-              errorHandler: (error) => {
-                next(error);
-              },
-            }
-          : {},
-      );
-      await listener(request, response);
+      await getRequestListener(async (incoming) => {
+        const result = await entry.default.fetch(incoming);
+        response.statusCode = result.status;
+        return result;
+      })(request, response);
     })().catch(next);
   };
 }

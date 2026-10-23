@@ -17,7 +17,7 @@ export const entries = {
 /** プラグインが生成するコードが、環境ごとに `rinka/internal` から import する名前である。 */
 export const internalNames = {
   client: ["createSheet", "updateSheet", "loadSheet"],
-  server: ["serverSheet", "createApp", "routeStyles", "serverFnLoader"],
+  server: ["serverSheet", "createApp", "routeStyles", "serverFnLoader", "devErrorResponse"],
 } as const;
 
 /** `environment` の `rinka/internal` から `names` を import する文を返す。 */
