@@ -20,7 +20,15 @@ export function Loading(props: { fallback?: unknown; children?: unknown }): Serv
  * シェルの中で受け止めたときのレスポンスのステータスは、`status` で指定する。
  */
 export function Errored(props: {
-  fallback: unknown;
+  fallback:
+    | ServerNode
+    | string
+    | number
+    | boolean
+    | null
+    | undefined
+    | readonly unknown[]
+    | ((error: unknown) => unknown);
   children?: unknown;
   status?: number;
 }): ServerNode {

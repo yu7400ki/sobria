@@ -1,4 +1,11 @@
-import { defineElement, type ClientNode, type Ctx, type ServerNode, type Slot } from "rinka";
+import {
+  defineElement,
+  Errored,
+  type ClientNode,
+  type Ctx,
+  type ServerNode,
+  type Slot,
+} from "rinka";
 import type { JSX } from "rinka/jsx-runtime";
 import { expectTypeOf, test } from "vitest";
 
@@ -67,4 +74,20 @@ declare function Chart(props: { data: number[] }, ctx: Ctx): ClientNode;
 test("要素のファイルの default export と同じ形の関数にも、load:* を付与できる", () => {
   void (<Chart data={[1]} load:visible />);
   void (<Chart data={[1]} load:media="(min-width: 800px)" />);
+});
+
+test("サーバーの Errored の fallback の関数は、エラーだけを受け取る", () => {
+  void (
+    <Errored fallback={(error) => <p>{String(error)}</p>}>
+      <p />
+    </Errored>
+  );
+  void (
+    (
+      // @ts-expect-error サーバーの fallback は retry を受け取らない
+      <Errored fallback={(_error: unknown, retry: () => void) => <p>{String(retry)}</p>}>
+        <p />
+      </Errored>
+    )
+  );
 });
