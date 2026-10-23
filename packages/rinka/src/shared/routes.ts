@@ -15,19 +15,22 @@ export type Load<T> = () => Promise<{ readonly default: T }>;
 /** ページ、レイアウト、エラーのページのコンポーネントを表す。 */
 export type RouteComponent = (props: never) => unknown;
 
-/** ルートの表が参照するファイルを、ファイルの種類ごとに表す型である。 */
-export interface RouteFiles {
-  readonly component: unknown;
-  readonly middleware: unknown;
-  readonly handlers: unknown;
+/** ルートの表が参照するファイルを、コンポーネント、ミドルウェア、`route.ts` の種類ごとに表す型である。 */
+export interface Files<C, M, H> {
+  readonly component: C;
+  readonly middleware: M;
+  readonly handlers: H;
 }
 
+/** ファイルの種類ごとの型を限定しない、ルートの表のファイルを表す型である。 */
+export type RouteFiles = Files<unknown, unknown, unknown>;
+
 /** 実行時のルートの表で、各ファイルを読み込む関数を表す型である。 */
-export interface LoadedFiles extends RouteFiles {
-  readonly component: Load<RouteComponent>;
-  readonly middleware: Load<MiddlewareHandler>;
-  readonly handlers: () => Promise<Partial<Readonly<Record<RouteMethod, Handler>>>>;
-}
+export type LoadedFiles = Files<
+  Load<RouteComponent>,
+  Load<MiddlewareHandler>,
+  () => Promise<Partial<Readonly<Record<RouteMethod, Handler>>>>
+>;
 
 /** エラーのページと、外側から順に列挙した、そのディレクトリのレイアウトを表す。 */
 export interface Fallback<F extends RouteFiles = LoadedFiles> {
@@ -70,40 +73,50 @@ export interface Routes<F extends RouteFiles = LoadedFiles> {
 }
 
 /** `routes` の各ファイルを、ファイルの種類ごとの関数 `map` で置き換えた表を返す。 */
-export function mapRouteFiles<F extends RouteFiles, G extends RouteFiles>(
-  routes: Routes<F>,
-  map: { readonly [K in keyof RouteFiles]: (file: F[K]) => G[K] },
-): Routes<G> {
-  const fallback = ({ module, layouts }: Fallback<F>): Fallback<G> => ({
-    module: map.component(module),
-    layouts: layouts.map(map.component),
+export function mapRouteFiles<C, M, H, C2, M2, H2>(
+  routes: Routes<Files<C, M, H>>,
+  map: {
+    readonly component: (file: C) => C2;
+    readonly middleware: (file: M) => M2;
+    readonly handlers: (file: H) => H2;
+  },
+): Routes<Files<C2, M2, H2>> {
+  type From = Files<C, M, H>;
+  type To = Files<C2, M2, H2>;
+  const fallback = (page: Fallback<From>): Fallback<To> => ({
+    ...page,
+    module: map.component(page.module),
+    layouts: page.layouts.map(map.component),
   });
-  const row = (route: Route<F>): Route<G> => {
-    const common = { path: route.path, middlewares: route.middlewares.map(map.middleware) };
+  const optional = (page: Fallback<From> | undefined): Fallback<To> | undefined =>
+    page === undefined ? undefined : fallback(page);
+  const row = (route: Route<From>): Route<To> => {
+    const middlewares = route.middlewares.map(map.middleware);
     switch (route.kind) {
       case "page":
         return {
-          ...common,
-          kind: route.kind,
+          ...route,
+          middlewares,
           module: map.component(route.module),
           layouts: route.layouts.map(map.component),
-          ...(route.notFound && { notFound: fallback(route.notFound) }),
-          ...(route.error && { error: fallback(route.error) }),
+          notFound: optional(route.notFound),
+          error: optional(route.error),
         };
       case "not-found":
         return {
-          ...common,
-          kind: route.kind,
+          ...route,
+          middlewares,
           notFound: fallback(route.notFound),
-          ...(route.error && { error: fallback(route.error) }),
+          error: optional(route.error),
         };
       case "route":
-        return { ...common, kind: route.kind, module: map.handlers(route.module) };
+        return { ...route, middlewares, module: map.handlers(route.module) };
     }
   };
   return {
+    ...routes,
     routes: routes.routes.map(row),
-    ...(routes.middleware !== undefined && { middleware: map.middleware(routes.middleware) }),
+    middleware: routes.middleware === undefined ? undefined : map.middleware(routes.middleware),
   };
 }
 

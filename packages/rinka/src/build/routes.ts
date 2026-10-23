@@ -7,17 +7,13 @@ import {
   type Fallback,
   type Fallbacks,
   type Route,
-  type RouteFiles,
+  type Files,
   type RouteKind,
   type Routes,
 } from "../shared/routes.ts";
 
 /** 走査したルートの表で、各ファイルを、プロジェクトのルートからの `/` で区切った相対パスで表す型である。 */
-export interface PathFiles extends RouteFiles {
-  readonly component: string;
-  readonly middleware: string;
-  readonly handlers: string;
-}
+export type PathFiles = Files<string, string, string>;
 
 /** 走査したルートの表の 1 行を表す。 */
 type ScannedRoute = Route<PathFiles>;
@@ -226,7 +222,7 @@ const toImport = (file: string): string => `${importMarker}/${file}`;
 
 /** `root` からの相対パス `dir` を走査し、ファイルごとにモジュールを読み込む関数を持つルートの表を export するモジュールのコードを返す。 */
 export function routesModule(root: string, dir: string): string {
-  const { routes, middleware } = mapRouteFiles<PathFiles, PathFiles>(scanRoutes(root, dir), {
+  const { routes, middleware } = mapRouteFiles(scanRoutes(root, dir), {
     component: toImport,
     middleware: toImport,
     handlers: toImport,

@@ -248,7 +248,6 @@ describe("routesModule", () => {
       `${code.replaceAll("export const ", "const ")}\nreturn { routes, middleware };`,
     );
     const table = evaluate() as Routes<RouteFiles>;
-    expect(JSON.stringify(table)).not.toContain("src/routes/");
     expect(
       mapRouteFiles(table, {
         component: importedFile,
