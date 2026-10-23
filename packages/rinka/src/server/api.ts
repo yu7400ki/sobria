@@ -11,9 +11,8 @@ export { defineMiddleware } from "hono/factory";
 export {
   defineServerFn,
   SchemaError,
-  type CallOptions,
   type ServerFn,
-  type ServerFnMethod,
   type ServerFnOptions,
   type Validation,
 } from "./server-fn.ts";
+export type { CallOptions, ServerFnMethod } from "../shared/server-fn.ts";

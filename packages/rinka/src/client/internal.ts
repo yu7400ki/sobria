@@ -1,6 +1,7 @@
 import { isSeeding } from "../shared/scope.ts";
 
 export { registerElement as defineElement } from "./element.ts";
+export { serverFn } from "./server-fn.ts";
 
 /** `await` する値を受け取り、シード中なら解決しない Promise を、それ以外では値をそのまま返す関数を表す。 */
 export interface SeedingStop {

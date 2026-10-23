@@ -16,3 +16,4 @@ export {
 } from "./signals.ts";
 export type { Ctx, ElementOptions, ElementRef, AttributeType } from "./element.ts";
 export type { Props } from "./prop-names.ts";
+export { ServerFnError } from "./server-fn.ts";

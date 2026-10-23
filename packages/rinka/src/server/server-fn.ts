@@ -2,6 +2,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import type { StandardSchema } from "hono/factory";
 import type { IntersectNonAnyTypes } from "hono/types";
 
+import type { CallOptions, ServerFnMethod } from "../shared/server-fn.ts";
 import { currentContext } from "./context.ts";
 
 type AnyMiddleware = MiddlewareHandler<any, any, any>;
@@ -35,23 +36,12 @@ type OutputOf<V> = [V] extends [never]
       ? Awaited<O>
       : never;
 
-/** サーバー関数を呼び出す HTTP のメソッドである。 */
-export type ServerFnMethod = "GET" | "POST";
-
 /** `defineServerFn` の 1 段目に指定するオプションである。 */
 export interface ServerFnOptions<V extends Validation> {
   /** デフォルトは `"POST"` である。 */
   method?: ServerFnMethod;
   /** 入力を検証する。検証を通過した値が、handler の `input` になる。 */
   input?: V;
-}
-
-/** クライアントからサーバー関数を呼び出すときのオプションである。 */
-export interface CallOptions {
-  /** 中止すると、リクエストを中止する。 */
-  signal?: AbortSignal;
-  /** リクエストに付与するヘッダーである。 */
-  headers?: HeadersInit;
 }
 
 type ServerFnHandler<M extends AnyMiddleware[], In, R> = (

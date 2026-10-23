@@ -11,8 +11,26 @@ export const wireFormat = { rpc: "rpc", seroval: "seroval" } as const;
 /** GET の RPC で入力を送るクエリの名前を表す。`json` は素の JSON を、`seroval` は seroval の JSON の形式を示す。 */
 export const rpcQuery = { json: "d", seroval: "s" } as const;
 
+/** サーバー関数のエンドポイントの URL のパスの接頭辞である。 */
+export const rpcPrefix = "/_rinka/fn/";
+
+/** ID が `id` のサーバー関数のエンドポイントの URL のパスを返す。 */
+export const rpcPath = (id: string): string => rpcPrefix + encodeURIComponent(id);
+
 /** rinka が構築した RPC のレスポンスのうち、値を返すときの本文を表す。 */
 export type RpcBody = { ok: unknown } | { s: SerovalJSON };
+
+/** `value` が、seroval の JSON の形式の外側の形を持つかどうかを返す。 */
+export const isSerovalJson = (value: unknown): value is SerovalJSON =>
+  typeof value === "object" &&
+  value !== null &&
+  "t" in value &&
+  typeof value.t === "object" &&
+  value.t !== null &&
+  "f" in value &&
+  typeof value.f === "number" &&
+  "m" in value &&
+  Array.isArray(value.m);
 
 /** `JSON.parse(JSON.stringify(value))` が `value` と同じ値を返すかどうかを返す。 */
 export function isJson(value: unknown): boolean {
