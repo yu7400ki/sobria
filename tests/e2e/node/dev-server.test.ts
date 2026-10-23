@@ -114,7 +114,8 @@ writeFileSync(${JSON.stringify(marker)}, "x");
     const file = join(root, "src/lib/removed.ts");
     try {
       await writeFile(file, removedSource("gone"));
-      expect((await callRemoved("gone")).status).toBe(200);
+      server.watcher.emit("add", posix(file));
+      await vi.waitUntil(async () => (await callRemoved("gone")).status === 200, { timeout: 2000 });
       await writeFile(file, removedSource("kept"));
       server.watcher.emit("change", posix(file));
       // Vite は変更の通知を非同期に処理するので、変換の結果が変わるまで待つ
