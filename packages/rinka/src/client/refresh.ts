@@ -1,4 +1,5 @@
 import { headKey } from "../shared/head.ts";
+import { isPlainObject } from "../shared/objects.ts";
 import type { Receiver } from "../shared/receiver.ts";
 import {
   REFRESH_HEADER,
@@ -37,21 +38,36 @@ export const refreshPage: RefreshPage = async () => {
     headers: { [REFRESH_HEADER]: "1" },
     redirect: "manual",
   }).then(async (response) => {
-    const json = response.headers.get("content-type")?.startsWith("application/json") ?? false;
     if (latest !== call) return latest;
-    if (response.type === "opaqueredirect" || !json) {
-      location.reload();
-      return undefined;
-    }
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-    const body = (await response.json()) as RefreshJson;
+    const body = response.type === "opaqueredirect" ? undefined : await jsonOf(response);
     if (latest !== call) return latest;
-    applyRefresh(body);
+    if (isRefreshJson(body)) applyRefresh(body);
+    else location.reload();
     return undefined;
   });
   latest = call;
   return call;
 };
+
+/** `response` の本文が JSON なら、解析した値を返す。JSON でなければ `undefined` を返す。 */
+export async function jsonOf(response: Response): Promise<unknown> {
+  const json = response.headers.get("content-type")?.startsWith("application/json") ?? false;
+  return json ? ((await response.json()) as unknown) : undefined;
+}
+
+/** `value` が、描き直しのレスポンスの JSON かどうかを返す。 */
+export const isRefreshJson = (value: unknown): value is RefreshJson =>
+  isPlainObject(value) &&
+  "head" in value &&
+  typeof value.head === "string" &&
+  "body" in value &&
+  typeof value.body === "string" &&
+  "data" in value &&
+  isPlainObject(value.data) &&
+  "elements" in value &&
+  Array.isArray(value.elements) &&
+  "doc" in value &&
+  isPlainObject(value.doc);
 
 /** 描き直しのレスポンスの `json` を、ページに反映する。起動スクリプトを読み込んでいないページでは、エラーを投げる。 */
 export function applyRefresh(json: RefreshJson): void {
