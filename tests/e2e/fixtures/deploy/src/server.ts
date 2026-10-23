@@ -18,4 +18,9 @@ server.route("/", app);
 
 if (import.meta.main) serve({ fetch: server.fetch, port: Number(process.env.PORT ?? 3000) });
 
-export default server;
+export default {
+  fetch: (request: Request) =>
+    new URL(request.url).pathname === "/reject"
+      ? Promise.reject(new Error("fetch rejected"))
+      : server.fetch(request),
+};

@@ -868,3 +868,24 @@ describe("Context のヘッダー", () => {
     expect(response.headers.get("vary")).toBe("cookie");
   });
 });
+
+describe("アプリの onError", () => {
+  it("HTTPException は、onError を呼ばずに、そのレスポンスにする", async () => {
+    const onError = vi.fn(handled);
+    const routes: Routes = {
+      routes: [
+        apiRoute("/http", {
+          GET: () => {
+            throw new HTTPException(401, { message: "denied" });
+          },
+        }),
+      ],
+    };
+    const response = await createApp(routes, { onError }).fetch(
+      new Request("http://localhost/http"),
+    );
+    expect(response.status).toBe(401);
+    expect(await response.text()).toBe("denied");
+    expect(onError).not.toHaveBeenCalled();
+  });
+});

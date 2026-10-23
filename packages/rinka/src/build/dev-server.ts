@@ -60,8 +60,10 @@ export function serve({ settings, writeTypes }: ServeContext): Plugin {
     configurePreviewServer(server) {
       return () => {
         const entry = pathToFileURL(join(settings().serverDir, `${SERVER_ENTRY_NAME}.js`)).href;
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-        server.middlewares.use(entryMiddleware(() => import(entry) as Promise<ServerModule>));
+        server.middlewares.use(
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+          entryMiddleware(() => import(entry) as Promise<ServerModule>, { forwardErrors: false }),
+        );
       };
     },
     resolveId: (id) => (id.startsWith(STYLES) ? id : null),
@@ -135,10 +137,13 @@ export function serve({ settings, writeTypes }: ServeContext): Plugin {
         const file = serverEntry(root);
         const entry = file === undefined ? entries.app : `/${file}`;
         server.middlewares.use(
-          entryMiddleware(async () => {
-            const ssr = server.environments.ssr;
-            return ssr && isRunnable(ssr) ? ssr.runner.import<ServerModule>(entry) : undefined;
-          }),
+          entryMiddleware(
+            async () => {
+              const ssr = server.environments.ssr;
+              return ssr && isRunnable(ssr) ? ssr.runner.import<ServerModule>(entry) : undefined;
+            },
+            { forwardErrors: true },
+          ),
         );
       };
     },
@@ -164,11 +169,12 @@ interface ServerModule {
 
 /**
  * `load` が返すサーバーのエントリーの default export の `fetch` に、リクエストを渡すミドルウェアを返す。
- * `fetch` が投げたエラーには、本文の無い 500 の Response を返す。
+ * `fetch` が投げたエラーは、`forwardErrors` が真なら `next` に渡し、偽なら本文の無い 500 の Response にする。
  * `load` が投げたエラーは `next` に渡し、`load` が undefined を返せば、リクエストを `next` に渡す。
  */
 function entryMiddleware(
   load: () => Promise<ServerModule | undefined>,
+  { forwardErrors }: { readonly forwardErrors: boolean },
 ): (request: IncomingMessage, response: ServerResponse, next: (error?: unknown) => void) => void {
   return (request, response, next) => {
     (async () => {
@@ -177,11 +183,20 @@ function entryMiddleware(
         next();
         return;
       }
-      await getRequestListener(async (incoming) => {
-        const result = await entry.default.fetch(incoming);
-        response.statusCode = result.status;
-        return result;
-      })(request, response);
+      await getRequestListener(
+        async (incoming) => {
+          const result = await entry.default.fetch(incoming);
+          response.statusCode = result.status;
+          return result;
+        },
+        forwardErrors
+          ? {
+              errorHandler: (error) => {
+                next(error);
+              },
+            }
+          : {},
+      )(request, response);
     })().catch(next);
   };
 }

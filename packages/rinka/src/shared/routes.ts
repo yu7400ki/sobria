@@ -126,7 +126,7 @@ export interface AppOptions {
   readonly head?: string;
   /** ページのレイアウトとページのファイルを外側から順に受け取り、ページの `<head>` の末尾に `<link rel="stylesheet">` として出力する CSS の URL を、出力する順に返す。 */
   readonly styles?: (files: readonly string[]) => Promise<readonly string[]>;
-  /** ページとサーバー関数のエンドポイントが投げた、rinka が扱わないエラーを受け取り、アプリが返す Response を返す。 */
+  /** ページとサーバー関数のエンドポイントが投げた、`HTTPException` 以外の、rinka が扱わないエラーを受け取り、アプリが返す Response を返す。 */
   readonly onError?: (error: unknown) => Response;
   /** GET 以外のサーバー関数のリクエストで、別のサイトからでも受け付ける `Origin` を列挙する。 */
   readonly trustedOrigins?: readonly string[];

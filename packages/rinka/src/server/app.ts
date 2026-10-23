@@ -22,9 +22,8 @@ import { jsx } from "./jsx-runtime.ts";
 import { renderDocument, renderRefresh } from "./render.ts";
 import { withDepth } from "./tree.ts";
 
-/** `HTTPException` はそのレスポンスにし、それ以外は記録して素のテキストの 500 にする。 */
+/** エラーを記録して、素のテキストの 500 にする。 */
 function defaultFailure(error: unknown): Response {
-  if (error instanceof HTTPException) return error.getResponse();
   console.error(error);
   return new Response("Internal Server Error", { status: 500 });
 }
@@ -97,7 +96,10 @@ const missing = (): never => {
 /** ルートの表から、各ページと `route.ts` を登録した Hono のアプリを作成する。 */
 export const createApp = (({ routes, middleware }: Routes, options: AppOptions = {}): Hono => {
   const app = new Hono();
-  const handle = options.onError ?? defaultFailure;
+  const onError = options.onError ?? defaultFailure;
+  /** `HTTPException` はそのレスポンスにし、それ以外のエラーは `onError` に渡す。 */
+  const handle = (error: unknown): Response =>
+    error instanceof HTTPException ? error.getResponse() : onError(error);
   app.onError((c) => withContextHeaders(c, handle(c.error)));
   const respond: Respond = async (
     c,

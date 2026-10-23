@@ -1,13 +1,10 @@
-import { HTTPException } from "hono/http-exception";
-
 import { escapeText } from "./html.ts";
 
 /**
- * `HTTPException` はそのレスポンスにする。それ以外の `error` は `console.error` で記録し、
- * エラーのメッセージとスタックを Vite のエラーのオーバーレイで表示する、HTML の 500 の Response にする。
+ * `error` を `console.error` で記録し、エラーのメッセージとスタックを Vite のエラーのオーバーレイで表示する、
+ * HTML の 500 の Response を返す。
  */
 export function devErrorResponse(error: unknown): Response {
-  if (error instanceof HTTPException) return error.getResponse();
   console.error(error);
   const message = error instanceof Error ? error.message : String(error);
   const stack = error instanceof Error ? (error.stack ?? "") : "";

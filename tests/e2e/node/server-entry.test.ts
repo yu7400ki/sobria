@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 import type { ViteDevServer } from "vite";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createDevServer, originOf } from "../dev-server.ts";
 
@@ -46,5 +46,18 @@ describe("開発サーバーのサーバーのエントリー", () => {
     const id = encodeURIComponent("src/lib/orphan.ts#orphan");
     const response = await fetch(`${origin}/_rinka/fn/${id}`, { method: "POST" });
     expect(await response.json()).toEqual({ ok: "orphan" });
+  });
+});
+
+describe("開発サーバーのサーバーのエントリーのエラー", () => {
+  it("サーバーのエントリーの fetch が投げたエラーは、Vite のエラーの処理に渡して記録する", async () => {
+    const logged = vi.spyOn(server.config.logger, "error").mockImplementation(() => {});
+    try {
+      const response = await fetch(`${origin}/reject`);
+      expect(response.status).toBe(500);
+      expect(logged.mock.calls.map(([message]) => message).join("\n")).toContain("fetch rejected");
+    } finally {
+      logged.mockRestore();
+    }
   });
 });
