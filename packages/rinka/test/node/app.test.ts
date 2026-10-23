@@ -78,7 +78,7 @@ const fallbackOf = (
   layouts: layouts.map(module),
 });
 
-/** `notFoundPage` の `not-found.tsx` の行を返す。 */
+/** ディレクトリのパス `path` にある `notFoundPage` の、`not-found.tsx` の行を返す。 */
 function notFoundRoute(
   path: string,
   notFoundPage: Fallback,
@@ -87,7 +87,7 @@ function notFoundRoute(
 ): Route {
   return {
     kind: "not-found",
-    path,
+    path: path === "/" ? "/*" : `${path}/*`,
     load: notFoundPage.load,
     layouts: notFoundPage.layouts,
     middlewares: middlewares.map(module),
@@ -375,10 +375,10 @@ describe("createApp の not-found.tsx と error.tsx", () => {
         notFound: rootNotFound,
         error: rootError,
       }),
-      notFoundRoute("/", rootNotFound, [], rootError),
       notFoundRoute("/café", fallbackOf(fallback("cafe")), [], rootError),
       notFoundRoute("/p/:id", fallbackOf(page("p")), [], rootError),
       notFoundRoute("/users", usersNotFound, [marking("x-dir")], rootError),
+      notFoundRoute("/", rootNotFound, [], rootError),
     ],
   };
   const render = async (path: string) => {

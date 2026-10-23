@@ -1,8 +1,6 @@
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { every } from "hono/combine";
 import { HTTPException } from "hono/http-exception";
-import type { BlankEnv } from "hono/types";
-import { tryDecodeURIComponent } from "hono/utils/url";
 
 import {
   routeMethods,
@@ -54,53 +52,10 @@ async function wrap(
   );
 }
 
-/** パスを、空でない区切りに分ける。 */
-const segmentsOf = (path: string): string[] => path.split("/").filter((segment) => segment !== "");
-
-/** `pattern` の区切りが `segments` の前方と一致すれば、そのパラメータを返す。 */
-function matchPrefix(
-  pattern: string,
-  segments: readonly string[],
-): Record<string, string> | undefined {
-  const params: Record<string, string> = {};
-  for (const [index, part] of segmentsOf(pattern).entries()) {
-    const segment = segments[index];
-    if (segment === undefined) return undefined;
-    if (part.endsWith("{.+}")) {
-      params[part.slice(1, -"{.+}".length)] = segments.slice(index).join("/");
-    } else if (part.startsWith(":")) params[part.slice(1)] = segment;
-    else if (part !== segment) return undefined;
-  }
-  return params;
-}
-
-/** `not-found.tsx` の行を表す。 */
-type NotFoundRoute = Extract<Route, { readonly kind: "not-found" }>;
-
 /** ページの描画で使用する `not-found.tsx` と `error.tsx` を表す。 */
 interface Fallbacks {
   readonly notFound?: Fallback;
   readonly error?: Fallback;
-}
-
-/** `not-found.tsx` の行のうち、行の区切りが、デコードした `url` の区切りに前方から一致し、区切りの数が最も多いものを、そのパラメータとともに返す。 */
-function nearestNotFound(
-  routes: readonly Route[],
-  url: URL,
-): { readonly route: NotFoundRoute; readonly params: Record<string, string> } | undefined {
-  const segments = segmentsOf(url.pathname).map(tryDecodeURIComponent);
-  let found: { readonly route: NotFoundRoute; readonly params: Record<string, string> } | undefined;
-  let depth = -1;
-  for (const route of routes) {
-    if (route.kind !== "not-found") continue;
-    const params = matchPrefix(route.path, segments);
-    const length = segmentsOf(route.path).length;
-    if (params && length > depth) {
-      found = { route, params };
-      depth = length;
-    }
-  }
-  return found;
 }
 
 /** エラーのページを、そのレイアウトで包み、`props` を渡して描画するノードを返す。 */
@@ -135,20 +90,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     return withContextHeaders(c, response);
   };
   for (const route of routes) register(app, route, respond);
-  app.notFound(async (c: Context<BlankEnv, string>) => {
-    const url = new URL(c.req.url);
-    const found = nearestNotFound(routes, url);
-    if (!found) return respond(c, jsx(missing, {}), {}, {});
-    const { route, params } = found;
-    const fallbacks: Fallbacks = {
-      notFound: { load: route.load, layouts: route.layouts },
-      ...(route.error && { error: route.error }),
-    };
-    await every(...route.middlewares.map(lazy))(c, async () => {
-      c.res = await respond(c, jsx(missing, {}), fallbacks, { params, url });
-    });
-    return c.res;
-  });
+  app.notFound((c) => respond(c, jsx(missing, {}), {}, {}));
   return app;
 }) satisfies CreateApp;
 
@@ -192,6 +134,13 @@ function register(app: Hono, route: Route, respond: Respond): void {
       });
       return;
     case "not-found":
+      app.all(route.path, directory, async (c) => {
+        const fallbacks: Fallbacks = {
+          notFound: { load: route.load, layouts: route.layouts },
+          ...(route.error && { error: route.error }),
+        };
+        return respond(c, jsx(missing, {}), fallbacks, propsOf(c));
+      });
       return;
   }
 }

@@ -67,14 +67,6 @@ describe("scanRoutes", () => {
           ...fallbacks,
         },
         {
-          kind: "not-found",
-          path: "/",
-          file: "src/routes/not-found.tsx",
-          layouts: root,
-          middlewares: [],
-          error: fallbacks.error,
-        },
-        {
           kind: "page",
           path: "/about",
           file: "src/routes/(marketing)/about/page.tsx",
@@ -99,6 +91,14 @@ describe("scanRoutes", () => {
           layouts: root,
           middlewares: [],
           ...fallbacks,
+        },
+        {
+          kind: "not-found",
+          path: "/*",
+          file: "src/routes/not-found.tsx",
+          layouts: root,
+          middlewares: [],
+          error: fallbacks.error,
         },
       ],
     });
@@ -170,15 +170,9 @@ describe("scanRoutes のエラーのページ", () => {
     expect(
       routes.map(({ file, notFound, error }) => ({ file, notFound: notFound?.file, error })),
     ).toEqual([
-      { file: "src/routes/not-found.tsx", notFound: undefined, error: root },
       {
         file: "src/routes/about/page.tsx",
         notFound: "src/routes/about/not-found.tsx",
-        error: root,
-      },
-      {
-        file: "src/routes/about/not-found.tsx",
-        notFound: undefined,
         error: root,
       },
       {
@@ -186,10 +180,16 @@ describe("scanRoutes のエラーのページ", () => {
         notFound: "src/routes/not-found.tsx",
         error: shop,
       },
+      {
+        file: "src/routes/about/not-found.tsx",
+        notFound: undefined,
+        error: root,
+      },
+      { file: "src/routes/not-found.tsx", notFound: undefined, error: root },
     ]);
   });
 
-  it("同じ URL の not-found.tsx は、グループの外のものを先に並べ、route.ts にはエラーのページを付けない", () => {
+  it("not-found.tsx は、ページと route.ts の後に、深い順に並べ、同じ URL ならグループの外のものを先に並べる。route.ts にはエラーのページを付けない", () => {
     const { routes } = scan([
       "(a)/not-found.tsx",
       "(a)/x/not-found.tsx",
@@ -197,11 +197,11 @@ describe("scanRoutes のエラーのページ", () => {
       "error.tsx",
       "api/route.ts",
     ]);
-    expect(routes.map((route) => [route.file, "error" in route])).toEqual([
-      ["src/routes/(a)/not-found.tsx", true],
-      ["src/routes/api/route.ts", false],
-      ["src/routes/x/not-found.tsx", true],
-      ["src/routes/(a)/x/not-found.tsx", true],
+    expect(routes.map((route) => [route.file, route.path, "error" in route])).toEqual([
+      ["src/routes/api/route.ts", "/api", false],
+      ["src/routes/x/not-found.tsx", "/x/*", true],
+      ["src/routes/(a)/x/not-found.tsx", "/x/*", true],
+      ["src/routes/(a)/not-found.tsx", "/*", true],
     ]);
   });
 });

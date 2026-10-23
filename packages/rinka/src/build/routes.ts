@@ -12,7 +12,7 @@ export interface ScannedFallback {
 /** 走査したルートの 1 行を表す。ファイルは、プロジェクトのルートからの相対パスで、区切りは `/` である。 */
 export interface ScannedRoute {
   readonly kind: RouteKind;
-  /** Hono のパスである。 */
+  /** Hono のパスである。`not-found.tsx` の行では、そのディレクトリの配下のすべての URL に一致するパスである。 */
   readonly path: string;
   readonly file: string;
   /** 外側から順に列挙したレイアウトのファイルである。 */
@@ -79,10 +79,16 @@ const shapeOf = (path: string): string =>
     .join("/");
 
 /**
- * 区切りの優先順位を前から比較し、一方が他方の前方と一致するなら短いほうを先にする。
+ * `not-found.tsx` の行を、ページと `route.ts` の行の後に、区切りの数が多い順に並べる。
+ * そのほかは、区切りの優先順位を前から比較し、一方が他方の前方と一致するなら短いほうを先にする。
  * 優先順位が同じなら、パスの文字列の順にし、同じパスならファイルのディレクトリが浅いほうを先にする。
  */
 function compareRoutes(a: ScannedRoute, b: ScannedRoute): number {
+  const isNotFound = a.kind === "not-found";
+  if (isNotFound !== (b.kind === "not-found")) return isNotFound ? 1 : -1;
+  if (isNotFound && a.path.split("/").length !== b.path.split("/").length) {
+    return b.path.split("/").length - a.path.split("/").length;
+  }
   const left = a.path.split("/");
   const right = b.path.split("/");
   for (let index = 0; index < Math.min(left.length, right.length); index++) {
@@ -133,8 +139,8 @@ export function scanRoutes(root: string, dir: string): ScannedRoutes {
       ...(notFound !== undefined && { notFound }),
       ...(error !== undefined && { error }),
     };
-    const path = `/${segments.join("/")}`;
     for (const [name, kind] of routeFiles) {
+      const path = `/${(kind === "not-found" ? [...segments, "*"] : segments).join("/")}`;
       if (files.has(name)) {
         if (segments.slice(0, -1).some(isCatchAll)) {
           throw new Error(

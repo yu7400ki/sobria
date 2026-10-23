@@ -23,7 +23,7 @@ export interface Fallback {
 
 /** ルートの表の 1 行を表す。`layouts` と `middlewares` は、外側から順に列挙する。 */
 export type Route = {
-  /** Hono のパスである。 */
+  /** Hono のパスである。`not-found.tsx` の行では、そのディレクトリの配下のすべての URL に一致するパスである。 */
   readonly path: string;
   readonly layouts: readonly Load<RouteComponent>[];
   /** ルートのディレクトリ以外の `middleware.ts` である。 */
