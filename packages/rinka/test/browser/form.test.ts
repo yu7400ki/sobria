@@ -97,13 +97,13 @@ describe("JS があるときのフォームの送信", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("移動先が現在のページなら、フォームを初期値に戻してから、ページを描き直して反映する", async () => {
+  it("送信先の URL で解決した移動先が現在のページなら、フォームを初期値に戻してから、ページを描き直して反映する", async () => {
     const order: string[] = [];
     const fetch = vi
       .spyOn(globalThis, "fetch")
       .mockImplementationOnce(async () => {
         order.push("submit");
-        return Response.json({ redirect: `${location.href.split("#")[0]}#top` });
+        return Response.json({ redirect: `${location.pathname}${location.search}#top` });
       })
       .mockImplementationOnce(async () => {
         order.push("refresh");
@@ -136,7 +136,7 @@ describe("JS があるときのフォームの送信", () => {
     const { form, button } = placeForm();
     button.click();
     await vi.waitFor(() => expect(error).toHaveBeenCalledTimes(1));
-    expect(String(error.mock.calls[0]?.[0])).toContain("ステータスが 422");
+    expect(String(error.mock.calls[0]?.[0])).toContain("ステータス 422 ");
     expect(document.body.contains(form)).toBe(true);
     expect(document.title).toBe(titleBefore);
   });

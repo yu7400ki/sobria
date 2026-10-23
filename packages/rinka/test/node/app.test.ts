@@ -364,7 +364,7 @@ describe("x-rinka-refresh: 1 のフォームの送信のリダイレクト", () 
     return [response.status, response.headers.get("location"), await response.json()];
   };
 
-  it("PRG、redirect()、handler とサーバー関数のミドルウェアとルートの middleware.ts が返したリダイレクトを、移動先の URL を持つ JSON にして 200 で返す", async () => {
+  it("PRG、redirect()、handler とサーバー関数のミドルウェアとルートの middleware.ts が返したリダイレクトを、Location の値を持つ JSON にして 200 で返す", async () => {
     expect(
       await Promise.all([
         result(ids.saved),
@@ -375,9 +375,9 @@ describe("x-rinka-refresh: 1 のフォームの送信のリダイレクト", () 
       ]),
     ).toEqual([
       [200, null, { redirect: "http://localhost/form?x=1" }],
-      [200, null, { redirect: "http://localhost/done" }],
+      [200, null, { redirect: "/done" }],
       [200, null, { redirect: "https://auth.example.com/login" }],
-      [200, null, { redirect: "http://localhost/login" }],
+      [200, null, { redirect: "/login" }],
       [200, null, { redirect: "https://auth.example.com/login" }],
     ]);
   });

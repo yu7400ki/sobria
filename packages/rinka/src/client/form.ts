@@ -30,7 +30,7 @@ export function handleSubmit(event: Event): void {
   const { submitter } = event;
   const action = new URL(
     submitter?.getAttribute("formaction") ?? form.getAttribute("action") ?? "",
-    location.href,
+    document.baseURI,
   );
   const method = (
     submitter?.getAttribute("formmethod") ??
@@ -61,7 +61,7 @@ async function submit(
     });
     const body = response.type === "opaqueredirect" ? undefined : await jsonOf(response);
     if (isRedirectJson(body)) {
-      const target = new URL(body.redirect, location.href);
+      const target = new URL(body.redirect, action);
       if (withoutHash(target) === withoutHash(new URL(location.href))) {
         form.reset();
         await refreshPage();
@@ -72,14 +72,17 @@ async function submit(
       applyRefresh(body);
     } else {
       const kind =
-        response.type === "opaqueredirect" ? "リダイレクト" : `ステータスが ${response.status}`;
+        response.type === "opaqueredirect" ? "リダイレクト" : `ステータス ${response.status} `;
       console.error(
-        `[rinka] 送信した結果の、${kind}のレスポンスは、ページに反映できないので無視しました。`,
+        `[rinka] サーバー関数にフォームを送信して、${kind}のレスポンスを受け取りました。ページに反映できないので無視します。`,
         body,
       );
     }
   } catch (error) {
-    console.error("[rinka] フォームを送信した結果を、ページに反映できませんでした。", error);
+    console.error(
+      "[rinka] フォームを送信できなかったか、送信した結果をページに反映できませんでした。",
+      error,
+    );
   } finally {
     busy.delete(form);
     form.removeAttribute("aria-busy");
