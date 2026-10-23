@@ -96,21 +96,18 @@ export default {
         return { Literal: check, TemplateLiteral: check };
       },
     },
-    /** `$rinka` か `data-rinka-load` を含む、文字列のリテラルとテンプレートリテラルを報告する。 */
+    /** `$rinka` か、`data-rinka-` で始まる属性名を含む、文字列のリテラルとテンプレートリテラルを報告する。 */
     "no-receiver-literal": {
       create(context: Context) {
         const check = (node: StringNode) => {
           const text = fullText(node);
-          if (
-            text === undefined ||
-            !(text.includes("$rinka") || text.includes("data-rinka-load"))
-          ) {
+          if (text === undefined || !(text.includes("$rinka") || text.includes("data-rinka-"))) {
             return;
           }
           context.report({
             node,
             message:
-              "起動スクリプトの受け口と、起動のタイミングの属性の名前は、src/server/bootstrap.ts の関数と定数を通して記述し、ほかのファイルの文字列に記述しないでください。",
+              "起動スクリプトの受け口と、data-rinka- で始まる属性の名前は、src/server/bootstrap.ts と src/shared/attributes.ts の関数と定数を通して記述し、ほかのファイルの文字列に記述しないでください。",
           });
         };
         return { Literal: check, TemplateLiteral: check };

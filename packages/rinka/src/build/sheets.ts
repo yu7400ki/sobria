@@ -4,7 +4,7 @@ import type { ESTree } from "vite";
 import { walk } from "./ast.ts";
 import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
-import { inside } from "./paths.ts";
+import { devPath, directUrl } from "./paths.ts";
 
 /** `with { type: 'css' }` の import の指定子に付与する、シートのモジュールを表すクエリである。 */
 export const SHEET_QUERY = "?rinka-sheet";
@@ -65,13 +65,13 @@ const isCssType = ({ key, value }: ESTree.ImportAttribute): boolean =>
  * サーバーのモジュールは、DSD の `<link>` に出力する URL と、CSS の `@property` の規則を、シートの情報として default export する。
  */
 export function sheetModule(path: string, root: string, client: boolean): string {
-  const url = urlOf(path, root);
+  const url = devPath(path, root);
   const inline = JSON.stringify(`${url}?inline`);
   if (!client) {
     return `import { propertiesOf } from "${entries.internal}";
 import css from ${inline};
 export default {
-  [Symbol.for("rinka.sheet")]: { href: ${JSON.stringify(`${encodeUrl(url)}?direct`)}, properties: propertiesOf(css) },
+  [Symbol.for("rinka.sheet")]: { href: ${JSON.stringify(directUrl(url))}, properties: propertiesOf(css) },
 };
 `;
   }
@@ -90,16 +90,3 @@ if (import.meta.hot) {
 export default sheet;
 `;
 }
-
-/**
- * ファイル `path` を開発サーバーが配信するパスを返す。ルートの外のファイルは `/@fs/` のパスにする。
- */
-function urlOf(path: string, root: string): string {
-  const file = inside(root, path);
-  const absolute = path.replaceAll("\\", "/");
-  return file === undefined ? `/@fs${absolute.startsWith("/") ? "" : "/"}${absolute}` : `/${file}`;
-}
-
-/** パス `path` を、URL に使用できない文字をパーセントエンコードした URL にする。 */
-const encodeUrl = (path: string): string =>
-  encodeURI(path).replaceAll("#", "%23").replaceAll("?", "%3F");

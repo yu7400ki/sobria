@@ -18,6 +18,7 @@ import {
   FORM_VALUE_ATTRIBUTE,
   HOST_ATTRIBUTE,
   PATCH_ATTRIBUTE,
+  PROPERTIES_ATTRIBUTE,
   tagAttributeName,
 } from "../shared/attributes.ts";
 import {
@@ -49,7 +50,13 @@ import {
   swapScript,
 } from "./bootstrap.ts";
 import { classify } from "./errors.ts";
-import { attribute, checkAttributeName, escapeAttribute, escapeText } from "./html.ts";
+import {
+  attribute,
+  checkAttributeName,
+  escapeAttribute,
+  escapeText,
+  stylesheetLink,
+} from "./html.ts";
 import { Labels } from "./labels.ts";
 import { scriptJson } from "./script.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
@@ -1271,7 +1278,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       }
       const { href, properties } = sheetOf(input);
       if (properties !== "") this.properties.set(href, properties);
-      styles.push(`<link rel="stylesheet"${attribute("href", href)}>`);
+      styles.push(stylesheetLink(href));
     };
     const elementCtx: Ctx = {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
@@ -1644,7 +1651,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /**
    * 文書の先頭と `shell` を出力し、後送りの境界をすべて出力してから、文書を閉じる。
-   * `<head>` には、rinka の `<meta charset="utf-8">`、キーが同じタグを 1 つにしたタグ、`<Navigation>` の出力、`extraHead`、シェルまでに使用したシートの `@property` の規則の `<style data-rinka-properties>` の順に並べる。
+   * `<head>` には、rinka の `<meta charset="utf-8">`、キーが同じタグを 1 つにしたタグ、`<Navigation>` の出力、`extraHead`、シェルまでに使用したシートの `@property` の規則の `<style>` の順に並べる。
    */
   async finish(this: Renderer<"document">, shell: string, extraHead: string): Promise<void> {
     try {
@@ -1678,10 +1685,10 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     return rules.join("\n");
   }
 
-  /** まだ出力していないシートの `@property` の規則の `<style data-rinka-properties>` を返す。規則が無ければ空の文字列を返す。 */
+  /** まだ出力していないシートの `@property` の規則の `<style>` を返す。規則が無ければ空の文字列を返す。 */
   private propertiesStyle(): string {
     const properties = this.unsentProperties();
-    return properties === "" ? "" : styleTag(properties, " data-rinka-properties");
+    return properties === "" ? "" : styleTag(properties, ` ${PROPERTIES_ATTRIBUTE}`);
   }
 
   /** 描き直しの `shell` から、`refreshPage()` のレスポンスの JSON の値を作成する。 */

@@ -28,3 +28,7 @@ export function attribute(name: string, value: unknown): string {
   if (text === null) return "";
   return value === true && text === "" ? ` ${name}` : ` ${name}="${escapeAttribute(text)}"`;
 }
+
+/** URL `href` の CSS を読み込む `<link rel="stylesheet">` を返す。 */
+export const stylesheetLink = (href: string): string =>
+  `<link rel="stylesheet"${attribute("href", href)}>`;

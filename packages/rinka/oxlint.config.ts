@@ -2,7 +2,9 @@ import { base, defineConfig, testRelaxations } from "@rinka/config/oxlint";
 
 type Pattern = { regex: string; message: string; allowTypeImports?: boolean };
 
-type Restrict = { "no-restricted-imports": ["error", { patterns: Pattern[] }] };
+type Restrict = {
+  "no-restricted-imports": ["error", { patterns: Pattern[] }];
+};
 
 const restrict = (...patterns: Pattern[]): Restrict => ({
   "no-restricted-imports": ["error", { patterns }],
@@ -104,7 +106,20 @@ export default defineConfig({
       files: ["src/build/**"],
       env: { node: true },
       rules: {
-        ...restrict(...build, seroval),
+        "no-restricted-imports": [
+          "error",
+          {
+            patterns: [...build, seroval],
+            paths: [
+              {
+                name: "vite",
+                importNames: ["isRunnableDevEnvironment"],
+                message:
+                  "isRunnableDevEnvironment はクラスで判定するので、アプリと rinka の vite が別のインスタンスに解決されると偽になります。runner の有無で判定してください。",
+              },
+            ],
+          },
+        ],
         "no-undef": "error",
         "rinka/no-directional-insert": "error",
         "rinka/no-entry-literal": "error",
@@ -114,7 +129,10 @@ export default defineConfig({
     { files: ["src/build/entries.ts"], rules: { "rinka/no-entry-literal": "off" } },
     { files: ["src/shared/transfer-keys.ts"], rules: { "rinka/no-transfer-key-literal": "off" } },
     { files: ["src/server/bootstrap.ts"], rules: { "rinka/no-receiver-literal": "off" } },
-    { files: ["src/shared/attributes.ts"], rules: { "rinka/no-marker-attribute-literal": "off" } },
+    {
+      files: ["src/shared/attributes.ts"],
+      rules: { "rinka/no-marker-attribute-literal": "off", "rinka/no-receiver-literal": "off" },
+    },
     { files: ["test/**"], rules: testRelaxations },
   ],
 });

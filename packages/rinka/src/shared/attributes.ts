@@ -50,3 +50,6 @@ export const ARIA_ATTRIBUTE = "data-rinka-aria";
 
 /** サーバーが、フォームの部品の Light DOM に出力した hidden input に付与する属性の名前である。 */
 export const FORM_VALUE_ATTRIBUTE = "data-rinka-form";
+
+/** 要素が使用したシートの `@property` の規則を出力する `<style>` の属性の名前である。 */
+export const PROPERTIES_ATTRIBUTE = "data-rinka-properties";
