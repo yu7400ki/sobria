@@ -614,6 +614,17 @@ describe("スロット化の範囲", () => {
       /関数の中の関数/,
     );
   });
+
+  it("<slot> にできない位置でスロットの props を参照すると、ビルドのエラーにする", () => {
+    for (const body of [
+      "return <p>{show ? props.children : null}</p>;",
+      "return <p>{[props.children]}</p>;",
+      "return <p>{() => props.children}</p>;",
+      "const content = props.children; return <p>{content}</p>;",
+    ]) {
+      expect(() => slotted(body), body).toThrow(/スロット children は/);
+    }
+  });
 });
 
 describe("括弧で囲んだ式", () => {

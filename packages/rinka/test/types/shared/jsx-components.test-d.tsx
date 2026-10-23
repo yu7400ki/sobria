@@ -1,4 +1,4 @@
-import type { ClientNode, ServerNode } from "rinka";
+import type { ClientNode, ServerNode, Slot } from "rinka";
 import type { JSX } from "rinka/jsx-runtime";
 import { expectTypeOf, test } from "vitest";
 
@@ -34,4 +34,8 @@ test("共通のコンポーネントの SVG と名前に - を含むタグに、
 
 test("共通のコンポーネントの HTML のタグは、イベントハンドラーの名前を props の候補に含めない", () => {
   expectTypeOf<Extract<keyof JSX.IntrinsicElements["div"], `on${string}`>>().toEqualTypeOf<never>();
+});
+
+test("共通のコンポーネントは、スロットの型の children を JSX の子に配置できる", () => {
+  void ((props: { children?: Slot }) => <div>{props.children}</div>);
 });

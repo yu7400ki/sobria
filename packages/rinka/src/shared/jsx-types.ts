@@ -77,6 +77,7 @@ export type ServerChild =
 /** 共通のコンポーネントの JSX の子に記述できる値を表す。 */
 export type SharedChild =
   | (ClientNode & ServerNode)
+  | Slot
   | string
   | number
   | bigint

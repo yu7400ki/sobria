@@ -277,6 +277,8 @@ function convertSlots(
   if (param?.type !== "Identifier" || !fn.body) return;
   const names = new Set(["children", ...(elementOptions.slots ?? [])]);
   const placed = new Set<string>();
+  /** `<slot>` に変換した `props` のスロットの参照である。 */
+  const converted = new Set<Node>();
   const visit = (node: Node, nested: boolean): void => {
     if (isFunction(node)) {
       const rebinds = node.params.some(
@@ -309,6 +311,7 @@ function convertSlots(
         );
       }
       placed.add(slot.name);
+      converted.add(slot.member);
       const name = slot.name === "children" ? "" : ` name=${JSON.stringify(slot.name)}`;
       const { fallback } = slot;
       if (!fallback) {
@@ -321,14 +324,30 @@ function convertSlots(
     }
   };
   visit(fn.body, false);
+  const check = (node: Node): void => {
+    if (isFunction(node)) {
+      const rebinds = node.params.some(
+        (other) => other.type === "Identifier" && other.name === param.name,
+      );
+      if (rebinds) return;
+    }
+    const slot = slotOf(node, param.name, names);
+    if (slot && !slot.fallback && !converted.has(slot.member)) {
+      throw new CompileError(
+        `${file}: スロット ${slot.name} は、要素の関数が返す JSX の子に、{${param.name}.${slot.name}} か {${param.name}.${slot.name} ?? デフォルトの中身} の形で置いてください。それ以外の位置ではスロットの内容を参照できません。`,
+      );
+    }
+    for (const child of children(node)) check(child);
+  };
+  check(fn.body);
 }
 
-/** 式が `props` のスロットの参照なら、スロットの名前とデフォルトの中身を返す。式を囲む括弧は外して判定する。 */
+/** 式が `props` のスロットの参照なら、スロットの名前、`props` のメンバーの式、デフォルトの中身を返す。式を囲む括弧は外して判定する。 */
 function slotOf(
   node: Node,
   props: string,
   names: ReadonlySet<string>,
-): { name: string; fallback?: ESTree.Expression } | undefined {
+): { name: string; member: Node; fallback?: ESTree.Expression } | undefined {
   const expression = unwrap(node);
   if (expression.type === "LogicalExpression" && expression.operator === "??") {
     const slot = slotOf(expression.left, props, names);
@@ -339,7 +358,7 @@ function slotOf(
   if (object.type !== "Identifier" || object.name !== props || property.type !== "Identifier") {
     return undefined;
   }
-  return names.has(property.name) ? { name: property.name } : undefined;
+  return names.has(property.name) ? { name: property.name, member: expression } : undefined;
 }
 
 /** トップレベルの const の、サーバー関数の定義かミドルウェアの定義を表す。 */

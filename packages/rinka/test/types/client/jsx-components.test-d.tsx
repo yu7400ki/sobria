@@ -130,3 +130,12 @@ test("要素は、Props の型に記述していない name と disabled を受�
   // @ts-expect-error disabled は真偽値である
   void (<Field disabled="yes" />);
 });
+
+test("要素の関数は、スロットの props を JSX の子に配置できる", () => {
+  void ((props: DialogProps) => (
+    <section>
+      <header>{props.header}</header>
+      {props.children}
+    </section>
+  ));
+});
