@@ -15,7 +15,7 @@ import {
   type Routes,
 } from "../shared/routes.ts";
 import { runInRequest, withContextHeaders } from "./context.ts";
-import { formRedirects, serverFnMiddleware, type FormFailure } from "./endpoint.ts";
+import { formRedirects, serverFnMiddleware, type Failure } from "./endpoint.ts";
 import { notFound } from "./errors.ts";
 import { jsx } from "./jsx-runtime.ts";
 import { renderDocument, renderRefresh } from "./render.ts";
@@ -119,7 +119,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     return withContextHeaders(c, response);
   };
   const find = finder(routes);
-  const formFailure: FormFailure = async (c, error) => {
+  const formFailure: Failure = async (c, error) => {
     const referer = c.req.header("referer");
     const url = referer !== undefined && URL.canParse(referer) ? new URL(referer) : undefined;
     if (url === undefined || url.host !== new URL(c.req.url).host) return handle(error);
@@ -135,7 +135,10 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
       },
     );
   };
-  const serverFns = serverFnMiddleware(options, handle, formFailure);
+  const serverFns = serverFnMiddleware(options, {
+    rpc: (_c, error) => handle(error),
+    form: formFailure,
+  });
   const rinka = middleware === undefined ? serverFns : every(lazy(middleware), serverFns);
   app.use(formRedirects);
   app.use((c, next) => runInRequest(c, () => rinka(c, next)));

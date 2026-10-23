@@ -29,7 +29,7 @@ import { isFunction } from "../shared/objects.ts";
 import { createScope, scopedChild, withScope } from "../shared/scope.ts";
 import { childKey } from "../shared/transfer-keys.ts";
 import { applyAttribute, asClientNode, bind, callRef, insert, setter } from "./dom.ts";
-import { handleSubmit, listenForms } from "./form.ts";
+import { handleSubmit } from "./form.ts";
 import {
   activateInSlot,
   addChild,
@@ -179,7 +179,6 @@ export function registerElement<P, M extends object = object>(
   options: ElementOptions,
   hot?: HotContext,
 ): ElementComponent<P, M> {
-  listenForms();
   const signature = JSON.stringify(options);
   const defined = definitions.get(tag);
   if (defined) {

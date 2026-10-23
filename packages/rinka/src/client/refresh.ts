@@ -10,8 +10,11 @@ import {
 import { PROPS_KEY, REFRESH_PROPS_KEY } from "../shared/transfer-keys.ts";
 import { morph } from "./morph.ts";
 
-/** 最後に呼び出した `refreshPage()` が返した Promise である。 */
-let latest: Promise<void> | undefined;
+/** ページの描き直しを始めた回数である。 */
+let startedCount = 0;
+
+/** 反映した描き直しのうち、最も後に始まったものの番号である。 */
+let reflectedOrder = 0;
 
 /** 前回の描き直しで、`<html>` と `<body>` に設定した属性の名前である。 */
 const applied = new WeakMap<Element, readonly string[]>();
@@ -28,32 +31,56 @@ function receiver(): Receiver {
 }
 
 /**
+ * ページの描き直しを始め、その結果を `reflect` で反映する関数を返す。
+ * 返した関数は、この描き直しより後に始まった描き直しを既に反映していれば、`reflect` を呼ばない。
+ */
+export function startRewrite(): (reflect: () => void) => void {
+  const order = ++startedCount;
+  return (reflect) => {
+    if (order < reflectedOrder) return;
+    reflectedOrder = order;
+    reflect();
+  };
+}
+
+/** 描き直しを要求するリクエストのレスポンスを表す。`body` は、本文が JSON なら解析した値で、JSON でなければ `undefined` である。 */
+export type Received =
+  | { readonly kind: "redirect" }
+  | { readonly kind: "response"; readonly response: Response; readonly body: unknown };
+
+/** `x-rinka-refresh: 1` を付与し、リダイレクトを追跡せずに `url` にリクエストを送信する。 */
+export async function sendRefresh(
+  url: string | URL,
+  init: Omit<RequestInit, "headers" | "redirect"> = {},
+): Promise<Received> {
+  const response = await fetch(url, {
+    ...init,
+    headers: { [REFRESH_HEADER]: "1" },
+    redirect: "manual",
+  });
+  if (response.type === "opaqueredirect") return { kind: "redirect" };
+  const json = response.headers.get("content-type")?.startsWith("application/json") ?? false;
+  return {
+    kind: "response",
+    response,
+    body: json ? ((await response.json()) as unknown) : undefined,
+  };
+}
+
+/**
  * 現在の URL をサーバーで描き直して、ページに反映する。
  * レスポンスがリダイレクトのときと、描き直しの JSON でないときは、ページを読み込み直す。
- * 反映する前に後の `refreshPage()` を呼び出したときは、後のレスポンスだけを反映し、後の反映が終わってから解決する。
+ * レスポンスが届く前に、後に始まった描き直しを反映していたら、このレスポンスは反映しない。
  */
 export const refreshPage: RefreshPage = async () => {
   receiver();
-  const call: Promise<void> = fetch(location.href, {
-    headers: { [REFRESH_HEADER]: "1" },
-    redirect: "manual",
-  }).then(async (response) => {
-    if (latest !== call) return latest;
-    const body = response.type === "opaqueredirect" ? undefined : await jsonOf(response);
-    if (latest !== call) return latest;
-    if (isRefreshJson(body)) applyRefresh(body);
+  const reflect = startRewrite();
+  const received = await sendRefresh(location.href);
+  reflect(() => {
+    if (received.kind === "response" && isRefreshJson(received.body)) applyRefresh(received.body);
     else location.reload();
-    return undefined;
   });
-  latest = call;
-  return call;
 };
-
-/** `response` の本文が JSON なら、解析した値を返す。JSON でなければ `undefined` を返す。 */
-export async function jsonOf(response: Response): Promise<unknown> {
-  const json = response.headers.get("content-type")?.startsWith("application/json") ?? false;
-  return json ? ((await response.json()) as unknown) : undefined;
-}
 
 /** `value` が、描き直しのレスポンスの JSON かどうかを返す。 */
 export const isRefreshJson = (value: unknown): value is RefreshJson =>

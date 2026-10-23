@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineElement } from "../../src/client/element.ts";
 import { listenForms } from "../../src/client/form.ts";
 import { jsx } from "../../src/client/jsx-runtime.ts";
+import { refreshPage } from "../../src/client/refresh.ts";
 import { bootstrapSource } from "../../src/server/bootstrap.ts";
 import type { RefreshJson } from "../../src/shared/refresh.ts";
-import { rpcPath } from "../../src/shared/wire.ts";
+import { rpcPath, wireFormat, wireHeader } from "../../src/shared/wire.ts";
 
 /** 最後の submit のイベントが、window に届いた時点でデフォルトの動作を止められていたかどうかである。 */
 let prevented: boolean | undefined;
@@ -34,6 +35,9 @@ afterEach(() => {
 });
 
 const action = rpcPath("src/form-test.ts#save");
+
+/** rinka が組み立てた RPC のレスポンスを示すヘッダーである。 */
+const rpcHeaders = { [wireHeader]: wireFormat.rpc };
 
 /** サーバー関数を送信先にするフォームを body に配置し、フォームと送信のボタンを返す。 */
 function placeForm(html = `<form action="${action}" method="post">`): {
@@ -103,7 +107,10 @@ describe("JS があるときのフォームの送信", () => {
       .spyOn(globalThis, "fetch")
       .mockImplementationOnce(async () => {
         order.push("submit");
-        return Response.json({ redirect: `${location.pathname}${location.search}#top` });
+        return Response.json(
+          { redirect: `${location.pathname}${location.search}#top` },
+          { headers: rpcHeaders },
+        );
       })
       .mockImplementationOnce(async () => {
         order.push("refresh");
@@ -119,6 +126,69 @@ describe("JS があるときのフォームの送信", () => {
     const [url, init] = fetch.mock.calls[1] ?? [];
     expect(url).toBe(location.href);
     expect(new Headers(init?.headers).get("x-rinka-refresh")).toBe("1");
+  });
+
+  it("rinka が組み立てたことを示すヘッダーの無い { redirect } は、移動せずにコンソールに記録する", async () => {
+    const fetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(Response.json({ redirect: "/x" }));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { button } = placeForm();
+    button.click();
+    await vi.waitFor(() => expect(error).toHaveBeenCalledTimes(1));
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("送信の後に始まった描き直しがあれば、送信の結果の描き直しは反映しない", async () => {
+    const submitted = Promise.withResolvers<Response>();
+    vi.spyOn(globalThis, "fetch")
+      .mockReturnValueOnce(submitted.promise)
+      .mockResolvedValueOnce(Response.json(refreshJson({ head: "<title>refreshed</title>" })));
+    const { form, button } = placeForm();
+    button.click();
+    await refreshPage();
+    submitted.resolve(
+      Response.json(refreshJson({ head: "<title>error page</title>" }), { status: 500 }),
+    );
+    await vi.waitFor(() => expect(form.hasAttribute("aria-busy")).toBe(false));
+    expect(document.title).toBe("refreshed");
+  });
+
+  it("送信がページに反映できない結果で終わっても、前に始まった描き直しは反映する", async () => {
+    const refreshed = Promise.withResolvers<Response>();
+    vi.spyOn(globalThis, "fetch")
+      .mockReturnValueOnce(refreshed.promise)
+      .mockResolvedValueOnce(new Response("Bad Gateway", { status: 502 }));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { form, button } = placeForm();
+    const refreshing = refreshPage();
+    button.click();
+    await vi.waitFor(() => expect(form.hasAttribute("aria-busy")).toBe(false));
+    refreshed.resolve(Response.json(refreshJson({ head: "<title>refreshed</title>" })));
+    await refreshing;
+    expect(document.title).toBe("refreshed");
+  });
+
+  it("送信の結果を受け取ったフォームは、後に始まった送信が終わる前に、送信中の状態を解除する", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        Response.json(refreshJson({ head: "<title>error page</title>" }), { status: 500 }),
+      )
+      .mockReturnValueOnce(new Promise(() => {}));
+    document.body.innerHTML = `<form id="a" action="${action}" method="post"><button>a</button></form><form id="b" action="${action}" method="post"><button>b</button></form>`;
+    const first = document.querySelector<HTMLFormElement>("#a")!;
+    first.querySelector("button")!.click();
+    document.querySelector<HTMLButtonElement>("#b button")!.click();
+    await vi.waitFor(() => expect(first.hasAttribute("aria-busy")).toBe(false));
+    expect(document.title).toBe("error page");
+  });
+
+  it("起動スクリプトを読み込んでいないページでは、ブラウザの通常の送信のまま扱う", () => {
+    delete (globalThis as { $rinka?: unknown }).$rinka;
+    const fetch = vi.spyOn(globalThis, "fetch");
+    placeForm().button.click();
+    expect(prevented).toBe(false);
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("描き直しの JSON のレスポンスは、そのままページに反映する", async () => {

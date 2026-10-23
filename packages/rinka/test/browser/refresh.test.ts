@@ -174,24 +174,31 @@ describe("refreshPage", () => {
     expect(document.title).toBe("refreshed");
   });
 
-  it("後に呼び出した描き直しのレスポンスだけを反映し、前の呼び出しは後の反映が終わってから解決する", async () => {
+  it("後に呼び出した描き直しを反映した後に届いた、前の呼び出しのレスポンスは反映しない", async () => {
     run(bootstrapSource);
     const firstResponse = Promise.withResolvers<Response>();
-    const secondResponse = Promise.withResolvers<Response>();
     vi.spyOn(globalThis, "fetch")
       .mockReturnValueOnce(firstResponse.promise)
-      .mockReturnValueOnce(secondResponse.promise);
-    let firstDone = false;
-    const first = refreshPage().then(() => {
-      firstDone = true;
-    });
-    const second = refreshPage();
+      .mockResolvedValueOnce(Response.json(refreshJson({ head: "<title>second</title>" })));
+    const first = refreshPage();
+    await refreshPage();
     firstResponse.resolve(Response.json(refreshJson({ head: "<title>first</title>" })));
-    await tick();
-    expect(firstDone).toBe(false);
-    expect(document.title).toBe(titleBefore);
+    await first;
+    expect(document.title).toBe("second");
+  });
+
+  it("前の呼び出しのレスポンスが先に届いたら、前と後のレスポンスを届いた順に反映する", async () => {
+    run(bootstrapSource);
+    const secondResponse = Promise.withResolvers<Response>();
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(Response.json(refreshJson({ head: "<title>first</title>" })))
+      .mockReturnValueOnce(secondResponse.promise);
+    const first = refreshPage();
+    const second = refreshPage();
+    await first;
+    expect(document.title).toBe("first");
     secondResponse.resolve(Response.json(refreshJson({ head: "<title>second</title>" })));
-    await Promise.all([first, second]);
+    await second;
     expect(document.title).toBe("second");
   });
 

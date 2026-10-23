@@ -3,6 +3,7 @@ import type { CallOptions, ServerFnMethod } from "../shared/server-fn.ts";
 import { ServerFnError, withServerFnRef } from "../shared/server-fn.ts";
 import {
   isJson,
+  isRedirectJson,
   isSerovalJson,
   rpcPath,
   rpcQuery,
@@ -50,7 +51,7 @@ export function serverFn(id: string, method: ServerFnMethod): RpcFn {
       ...(body !== undefined && { body }),
       ...(signal !== undefined && { signal }),
     });
-    return read(response);
+    return read(response, new URL(url, location.href));
   };
   return withServerFnRef(call, { id, method });
 }
@@ -60,7 +61,8 @@ export function installRpc(): void {
   if (globalThis.$rinka) globalThis.$rinka.c = serverFn;
 }
 
-async function read(response: Response): Promise<unknown> {
+/** RPC の `response` から値を返す。移動先を伝える JSON なら、`endpoint` を基準に解決した移動先に移動し、解決しない Promise を返す。 */
+async function read(response: Response, endpoint: URL): Promise<unknown> {
   const built = response.headers.get(wireHeader) === wireFormat.rpc;
   if (!response.ok) throw new ServerFnError(response, await parsed(response.clone()));
   if (!built) return response;
@@ -68,8 +70,8 @@ async function read(response: Response): Promise<unknown> {
   if (typeof body === "object" && body !== null) {
     if ("ok" in body) return body.ok;
     if ("s" in body && isSerovalJson(body.s)) return (await codec()).fromJSON(body.s);
-    if ("redirect" in body && typeof body.redirect === "string") {
-      location.assign(body.redirect);
+    if (isRedirectJson(body)) {
+      location.assign(new URL(body.redirect, endpoint));
       return never();
     }
   }

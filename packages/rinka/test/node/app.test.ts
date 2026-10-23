@@ -361,7 +361,12 @@ describe("x-rinka-refresh: 1 のフォームの送信のリダイレクト", () 
   /** `id` のサーバー関数にフォームを送信し、ステータス、Location、本文の JSON を返す。 */
   const result = async (id: string, headers?: Record<string, string>) => {
     const response = await submit(id, headers);
-    return [response.status, response.headers.get("location"), await response.json()];
+    return [
+      response.status,
+      response.headers.get("location"),
+      response.headers.get("x-rinka-wire"),
+      await response.json(),
+    ];
   };
 
   it("PRG、redirect()、handler とサーバー関数のミドルウェアとルートの middleware.ts が返したリダイレクトを、Location の値を持つ JSON にして 200 で返す", async () => {
@@ -374,11 +379,11 @@ describe("x-rinka-refresh: 1 のフォームの送信のリダイレクト", () 
         result(ids.saved, { "x-login": "1" }),
       ]),
     ).toEqual([
-      [200, null, { redirect: "http://localhost/form?x=1" }],
-      [200, null, { redirect: "/done" }],
-      [200, null, { redirect: "https://auth.example.com/login" }],
-      [200, null, { redirect: "/login" }],
-      [200, null, { redirect: "https://auth.example.com/login" }],
+      [200, null, "rpc", { redirect: "http://localhost/form?x=1" }],
+      [200, null, "rpc", { redirect: "/done" }],
+      [200, null, "rpc", { redirect: "https://auth.example.com/login" }],
+      [200, null, "rpc", { redirect: "/login" }],
+      [200, null, "rpc", { redirect: "https://auth.example.com/login" }],
     ]);
   });
 

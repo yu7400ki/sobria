@@ -4,7 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { REFRESH_HEADER } from "../shared/refresh.ts";
 import type { AppOptions } from "../shared/routes.ts";
 import { withServerFnRef, type serverFnRef, type ServerFnRef } from "../shared/server-fn.ts";
-import { rpcPrefix, rpcQuery, wireFormat, wireHeader } from "../shared/wire.ts";
+import { rpcPrefix, rpcQuery, wireFormat, wireHeader, type RedirectJson } from "../shared/wire.ts";
 import { NotFound, Redirect } from "./errors.ts";
 import { formDataToInput } from "./form-data.ts";
 import { definitionOf, runChain, SchemaError, type Definition } from "./server-fn.ts";
@@ -26,12 +26,11 @@ export function registerServerFn<F extends { readonly [serverFnRef]: ServerFnRef
 
 /**
  * サーバー関数のエンドポイントへのリクエストを処理し、それ以外のリクエストを後続の処理に渡す Hono のミドルウェアを返す。
- * rinka が扱わない例外は、RPC では `fail` が返すレスポンスにし、フォームの送信では `formFailure` が返すレスポンスにする。
+ * rinka が扱わない例外は、リクエストの種類に対応する `failures` の関数が返すレスポンスにする。
  */
 export function serverFnMiddleware(
   options: AppOptions,
-  fail: Failure,
-  formFailure: FormFailure,
+  failures: Record<RequestKind, Failure>,
 ): MiddlewareHandler {
   return async (c, next) => {
     const { pathname } = new URL(c.req.url);
@@ -39,16 +38,15 @@ export function serverFnMiddleware(
       await next();
       return undefined;
     }
-    const form = isFormSubmission(c);
-    const responder = responders[form ? "form" : "rpc"];
-    const failure: Failure = form ? (error) => formFailure(c, error) : fail;
+    const kind: RequestKind = isFormSubmission(c) ? "form" : "rpc";
+    const responder = responders[kind];
     let id: string;
     try {
       id = decodeURIComponent(pathname.slice(rpcPrefix.length));
     } catch {
       return responder.reject(c, 404);
     }
-    return endpoint(c, id, responder, options, failure);
+    return endpoint(c, id, responder, options, failures[kind]);
   };
 }
 
@@ -109,11 +107,11 @@ function outcomeOf(error: unknown): Outcome {
   return { kind: "error", error };
 }
 
-/** rinka が扱わない例外から、レスポンスを作成する。 */
-export type Failure = (error: unknown) => Response | Promise<Response>;
+/** サーバー関数のエンドポイントへのリクエストの種類である。`form` はフォームの送信で、`rpc` はそれ以外である。 */
+type RequestKind = "rpc" | "form";
 
-/** フォームの送信先のサーバー関数が投げた、rinka が扱わない例外から、リクエスト `c` のレスポンスを作成する。 */
-export type FormFailure = (c: Context, error: unknown) => Response | Promise<Response>;
+/** サーバー関数が投げた、rinka が扱わない例外から、リクエスト `c` のレスポンスを作成する。 */
+export type Failure = (c: Context, error: unknown) => Response | Promise<Response>;
 
 /** rinka が handler を呼ばずに拒否するときのステータスである。 */
 type Rejection = 400 | 403 | 404 | 405;
@@ -144,13 +142,13 @@ const responders = {
         case "value":
           return rpc(c, toRpcBody(outcome.value));
         case "redirect":
-          return rpc(c, { redirect: outcome.location }, 200);
+          return rpc(c, { redirect: outcome.location } satisfies RedirectJson, 200);
         case "notFound":
           return rpc(c, null, 404);
         case "schema":
           return rpc(c, { issues: outcome.issues }, 422);
         case "error":
-          return fail(outcome.error);
+          return fail(c, outcome.error);
         default:
           return unreachable(outcome);
       }
@@ -170,13 +168,13 @@ const responders = {
         case "schema":
           return c.json({ issues: outcome.issues }, 422);
         case "error":
-          return fail(outcome.error);
+          return fail(c, outcome.error);
         default:
           return unreachable(outcome);
       }
     },
   },
-} satisfies Record<"rpc" | "form", Responder>;
+} satisfies Record<RequestKind, Responder>;
 
 /** 型の上で到達しない値を受け取り、エラーを投げる。 */
 function unreachable(value: never): never {
@@ -185,7 +183,7 @@ function unreachable(value: never): never {
 
 /**
  * `x-rinka-refresh: 1` を付与したサーバー関数のエンドポイントへのフォームの送信で、3xx で `Location` を持つレスポンスを、
- * `Location` の値を持つ `{ redirect }` の 200 の JSON にする。`Location`、`Content-Length`、`Content-Type` のほかのヘッダーは引き継ぐ。
+ * `Location` の値を持つ `{ redirect }` の 200 の JSON に、rinka が組み立てたことを示す `x-rinka-wire: rpc` を付与して置き換える。`Location`、`Content-Length`、`Content-Type` のほかのヘッダーは引き継ぐ。
  */
 export const formRedirects: MiddlewareHandler = async (c, next) => {
   await next();
@@ -199,7 +197,11 @@ export const formRedirects: MiddlewareHandler = async (c, next) => {
   headers.delete("location");
   headers.delete("content-length");
   headers.set("content-type", "application/json");
-  const json = new Response(JSON.stringify({ redirect: location }), { status: 200, headers });
+  headers.set(wireHeader, wireFormat.rpc);
+  const json = new Response(JSON.stringify({ redirect: location } satisfies RedirectJson), {
+    status: 200,
+    headers,
+  });
   // c.res の setter に前のレスポンスのヘッダーをマージさせない
   c.res = undefined;
   c.res = json;

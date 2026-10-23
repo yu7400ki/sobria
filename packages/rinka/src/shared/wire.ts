@@ -9,6 +9,15 @@ export const wireHeader = "x-rinka-wire";
 /** `wireHeader` に設定する値。`rpc` は rinka が構築したレスポンスを示し、`seroval` は本文が seroval の JSON の形式であることを示す。 */
 export const wireFormat = { rpc: "rpc", seroval: "seroval" } as const;
 
+/** サーバー関数のレスポンスで移動先を伝える JSON を表す。`redirect` は `Location` の値で、相対の URL はエンドポイントの URL を基準にする。 */
+export interface RedirectJson {
+  readonly redirect: string;
+}
+
+/** `value` が、移動先を伝える JSON かどうかを返す。 */
+export const isRedirectJson = (value: unknown): value is RedirectJson =>
+  isPlainObject(value) && "redirect" in value && typeof value.redirect === "string";
+
 /** GET の RPC で入力を送るクエリの名前を表す。`json` は素の JSON を、`seroval` は seroval の JSON の形式を示す。 */
 export const rpcQuery = { json: "d", seroval: "s" } as const;
 

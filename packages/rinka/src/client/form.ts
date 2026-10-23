@@ -1,16 +1,8 @@
-import { REFRESH_HEADER } from "../shared/refresh.ts";
-import { rpcPrefix } from "../shared/wire.ts";
-import { applyRefresh, isRefreshJson, jsonOf, refreshPage } from "./refresh.ts";
+import { isRedirectJson, rpcPrefix, wireFormat, wireHeader } from "../shared/wire.ts";
+import { applyRefresh, isRefreshJson, refreshPage, sendRefresh, startRewrite } from "./refresh.ts";
 
 /** 送信中のフォームである。 */
 const busy = new WeakSet<HTMLFormElement>();
-
-/** `value` が、フォームの送信のリダイレクトを表す JSON かどうかを返す。 */
-const isRedirectJson = (value: unknown): value is { readonly redirect: string } =>
-  typeof value === "object" &&
-  value !== null &&
-  "redirect" in value &&
-  typeof value.redirect === "string";
 
 /** hash を除いた `url` の文字列を返す。 */
 const withoutHash = (url: URL): string => {
@@ -20,11 +12,11 @@ const withoutHash = (url: URL): string => {
 };
 
 /**
- * リスナーを登録した `document` か `ShadowRoot` の木の中にあり、サーバー関数を送信先にして `post` で送信するフォームの submit のイベントで、
+ * 起動スクリプトを読み込んだページで、リスナーを登録した `document` か `ShadowRoot` の木の中にあり、サーバー関数を送信先にして `post` で送信するフォームの submit のイベントで、
  * ブラウザの通常の送信を止めて、fetch で送信した結果をページに反映する。送信中のフォームのイベントは、デフォルトの動作だけを止める。
  */
 export function handleSubmit(event: Event): void {
-  if (!(event instanceof SubmitEvent) || event.defaultPrevented) return;
+  if (!globalThis.$rinka || !(event instanceof SubmitEvent) || event.defaultPrevented) return;
   const form = event.target;
   if (!(form instanceof HTMLFormElement) || form.getRootNode() !== event.currentTarget) return;
   const { submitter } = event;
@@ -41,51 +33,54 @@ export function handleSubmit(event: Event): void {
   if (method !== "post") return;
   event.preventDefault();
   if (busy.has(form)) return;
-  void submit(form, action, submitter);
+  busy.add(form);
+  form.setAttribute("aria-busy", "true");
+  submit(form, action, submitter)
+    .catch((error: unknown) => {
+      console.error(
+        "[rinka] フォームを送信できなかったか、送信した結果をページに反映できませんでした。",
+        error,
+      );
+    })
+    .finally(() => {
+      busy.delete(form);
+      form.removeAttribute("aria-busy");
+    });
 }
 
-/** `form` を `action` に送信し、結果をページに反映する。 */
+/** `form` を `action` に送信し、結果をページに反映する。レスポンスが届く前に、後に始まった描き直しを反映していたら、描き直しの JSON は反映しない。 */
 async function submit(
   form: HTMLFormElement,
   action: URL,
   submitter: HTMLElement | null,
 ): Promise<void> {
-  busy.add(form);
-  form.setAttribute("aria-busy", "true");
-  try {
-    const response = await fetch(action, {
-      method: "POST",
-      body: new FormData(form, submitter),
-      headers: { [REFRESH_HEADER]: "1" },
-      redirect: "manual",
-    });
-    const body = response.type === "opaqueredirect" ? undefined : await jsonOf(response);
-    if (isRedirectJson(body)) {
-      const target = new URL(body.redirect, action);
-      if (withoutHash(target) === withoutHash(new URL(location.href))) {
-        form.reset();
-        await refreshPage();
-      } else {
-        location.assign(target.href);
-      }
-    } else if (isRefreshJson(body)) {
-      applyRefresh(body);
-    } else {
-      const kind =
-        response.type === "opaqueredirect" ? "リダイレクト" : `ステータス ${response.status} `;
-      console.error(
-        `[rinka] サーバー関数にフォームを送信して、${kind}のレスポンスを受け取りました。ページに反映できないので無視します。`,
-        body,
-      );
-    }
-  } catch (error) {
+  const reflect = startRewrite();
+  const received = await sendRefresh(action, {
+    method: "POST",
+    body: new FormData(form, submitter),
+  });
+  if (received.kind === "redirect") {
     console.error(
-      "[rinka] フォームを送信できなかったか、送信した結果をページに反映できませんでした。",
-      error,
+      "[rinka] サーバー関数にフォームを送信して、リダイレクトのレスポンスを受け取りました。ページに反映できないので無視します。",
     );
-  } finally {
-    busy.delete(form);
-    form.removeAttribute("aria-busy");
+    return;
+  }
+  const { response, body } = received;
+  if (response.headers.get(wireHeader) === wireFormat.rpc && isRedirectJson(body)) {
+    const target = new URL(body.redirect, action);
+    if (withoutHash(target) !== withoutHash(new URL(location.href))) {
+      location.assign(target.href);
+      return;
+    }
+    form.reset();
+    await refreshPage();
+  } else if (isRefreshJson(body)) {
+    reflect(() => applyRefresh(body));
+  } else {
+    console.error(
+      `[rinka] サーバー関数にフォームを送信して、ステータス ${response.status} のレスポンスを受け取りました。ページに反映できないので無視します。`,
+      body,
+    );
   }
 }
 

@@ -115,7 +115,12 @@ describe("serverFn", () => {
   });
 
   it("{ redirect } を受け取ったら、その URL に移動し、解決しない", async () => {
-    stubFetch(() => Response.json({ redirect: "#moved" }, { headers: rpcHeaders }));
+    stubFetch(() =>
+      Response.json(
+        { redirect: `${location.pathname}${location.search}#moved` },
+        { headers: rpcHeaders },
+      ),
+    );
     let settled = false;
     void serverFn("src/fns.ts#move", "POST")().finally(() => {
       settled = true;
@@ -126,6 +131,20 @@ describe("serverFn", () => {
       expect(settled).toBe(false);
     } finally {
       history.replaceState(null, "", location.pathname + location.search);
+    }
+  });
+
+  it("{ redirect } の相対の URL は、エンドポイントの URL を基準に解決する", async () => {
+    const original = `${location.pathname}${location.search}`;
+    const page = `/a/b/c/d${location.search}`;
+    history.replaceState(null, "", page);
+    stubFetch(() => Response.json({ redirect: `../..${page}#moved` }, { headers: rpcHeaders }));
+    void serverFn("src/fns.ts#move", "POST")();
+    try {
+      await vi.waitUntil(() => location.hash === "#moved");
+      expect(location.pathname).toBe("/a/b/c/d");
+    } finally {
+      history.replaceState(null, "", original);
     }
   });
 
