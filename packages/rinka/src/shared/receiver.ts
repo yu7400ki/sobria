@@ -1,4 +1,5 @@
 import type { DefaultLoad } from "./element.ts";
+import type { ServerFnMethod } from "./server-fn.ts";
 
 /**
  * 1 つの境界の中身と、その境界の中の差し替えを表す。`b` は境界の ID で、`bp` は境界の目印を含む Shadow DOM のホストの ID の列である。
@@ -27,6 +28,10 @@ export interface Receiver {
   readonly r: (spec: SwapSpec) => void;
   /** 要素の一覧を保持し、各要素の最初のインスタンスが起動の条件を満たした時点で、モジュールを 1 回だけ読み込む。 */
   readonly m: (list: readonly ListedElement[]) => void;
+  /** 同じ ID とメソッドには同じ関数を返す。返す関数は、呼ばれるたびに `c` から RPC の関数を取得して呼ぶ。 */
+  readonly f: (id: string, method: ServerFnMethod) => (...args: unknown[]) => Promise<unknown>;
+  /** ID とメソッドから、RPC で呼び出す関数を返す。クライアントのランタイムが登録する。 */
+  c?: (id: string, method: ServerFnMethod) => (...args: never[]) => Promise<unknown>;
   /** インスタンスの起動のタイミングの属性か、一覧のデフォルトの起動タイミングの条件を満たした時点で `start` を呼ぶ。一覧に無いタグなら、すぐに呼ぶ。 */
   readonly w: (host: Element, start: () => void) => void;
 }
@@ -40,4 +45,6 @@ export const receiverKeys = [
   "r",
   "m",
   "w",
+  "f",
+  "c",
 ] as const satisfies readonly (keyof Receiver)[];

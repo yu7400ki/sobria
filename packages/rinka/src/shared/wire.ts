@@ -1,6 +1,7 @@
 import type { SerovalJSON } from "seroval";
 
 import { isPlainObject } from "./objects.ts";
+import { serverFnRefOf } from "./server-fn.ts";
 
 /** RPC のリクエストとレスポンスで、値の形式を示すヘッダーの名前。 */
 export const wireHeader = "x-rinka-wire";
@@ -66,7 +67,7 @@ export function checkSerializable(value: unknown, path: string): void {
 }
 
 function check(value: unknown, path: string, seen: Set<object>): void {
-  if (typeof value === "function") {
+  if (typeof value === "function" && serverFnRefOf(value) === undefined) {
     throw new Error(
       `${path} は関数なので、シリアライズできません。サーバーから要素に渡せる関数は、サーバー関数だけです。`,
     );

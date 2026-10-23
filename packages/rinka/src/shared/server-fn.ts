@@ -1,6 +1,26 @@
 /** サーバー関数を呼び出す HTTP のメソッドである。 */
 export type ServerFnMethod = "GET" | "POST";
 
+/** サーバー関数の ID とメソッドを、関数に保持するときのキーである。 */
+export const serverFnRef: unique symbol = Symbol.for("rinka.serverFnRef");
+
+/** サーバー関数の ID とメソッドを表す。 */
+export interface ServerFnRef<M extends ServerFnMethod = ServerFnMethod> {
+  readonly id: string;
+  readonly method: M;
+}
+
+/** `value` が ID とメソッドを保持するサーバー関数なら、その ID とメソッドを返す。 */
+export function serverFnRefOf(value: unknown): ServerFnRef | undefined {
+  if (typeof value !== "function" || !(serverFnRef in value)) return undefined;
+  const ref: unknown = value[serverFnRef];
+  if (typeof ref !== "object" || ref === null || !("id" in ref) || !("method" in ref))
+    return undefined;
+  const { id, method } = ref;
+  if (typeof id !== "string" || (method !== "GET" && method !== "POST")) return undefined;
+  return { id, method };
+}
+
 /** クライアントからサーバー関数を呼び出すときのオプションである。 */
 export interface CallOptions {
   /** 中止すると、リクエストを中止する。 */

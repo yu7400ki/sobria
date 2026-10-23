@@ -2,6 +2,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 
 import type { AppOptions } from "../shared/routes.ts";
+import { serverFnRef, type ServerFnRef } from "../shared/server-fn.ts";
 import { rpcPrefix, rpcQuery, wireFormat, wireHeader } from "../shared/wire.ts";
 import { runInRequest } from "./context.ts";
 import { NotFound, Redirect } from "./errors.ts";
@@ -15,7 +16,8 @@ const registry = new Map<string, AnyServerFn>();
 /** `fn` を、ID が `id` のサーバー関数として登録し、`fn` を返す。 */
 export function registerServerFn<F extends AnyServerFn>(id: string, fn: F): F {
   registry.set(id, fn);
-  return fn;
+  const ref: ServerFnRef = { id, method: fn[serverFnKey].method };
+  return Object.defineProperty(fn, serverFnRef, { value: ref });
 }
 
 /**

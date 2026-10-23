@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
+import { registerServerFn } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToStream, renderToString } from "../../src/server/render.ts";
+import { defineServerFn } from "../../src/server/server-fn.ts";
 import { memo } from "../../src/shared/signals.ts";
 import { read } from "./stream-order.ts";
 
@@ -21,6 +23,7 @@ async function render(node: unknown) {
   const rinka = {
     n: missing,
     d: (id: string, values: Record<string, unknown>) => sent.push([id, values]),
+    f: (id: string, method: string) => ({ serverFn: [id, method] }),
     r: () => {},
   };
   for (const [, script] of html.matchAll(/<script>(.*?)<\/script>/gs)) {
@@ -121,6 +124,16 @@ describe("props の値", () => {
     const { html, sent } = await render(jsx(Card, { data: { a: [1] } }));
     expect(html).toContain('<x-tr-card data-oh="h1" data-om="@p">');
     expect(sent).toEqual([["h1", { "@p": { data: { a: [1] } } }]]);
+  });
+
+  it("サーバー関数の props は、オブジェクトの中にあっても、$rinka.f の呼び出しにして送る", async () => {
+    const like = registerServerFn(
+      "src/fns.ts#like",
+      defineServerFn(() => null),
+    );
+    const { sent } = await render(jsx(Card, { onPick: like, data: { like } }));
+    const reference = { serverFn: ["src/fns.ts#like", "POST"] };
+    expect(sent).toEqual([["h1", { "@p": { onPick: reference, data: { like: reference } } }]]);
   });
 
   it("要素の Shadow DOM の中の子要素には、属性にできない props を送らない", async () => {

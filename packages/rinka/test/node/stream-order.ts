@@ -22,8 +22,9 @@ function calls(html: string): Call[] {
     const at = match.index;
     const receiver = {
       n: {},
-      // 要素の一覧の受け口は、受け口の順序の検査に関係しないので、空の関数にする
+      // 要素の一覧とサーバー関数の受け口は、受け口の順序の検査に関係しないので、値を返すだけの関数にする
       m: () => {},
+      f: (id: string, method: string) => ({ serverFn: [id, method] }),
       r: (spec: Spec) => found.push({ kind: "r", at, spec }),
       d: (host: string, values: Record<string, unknown>) =>
         found.push({ kind: "d", at, host, values }),

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { installRpc, serverFn } from "../../src/client/server-fn.ts";
 import { bootstrapSource } from "../../src/server/bootstrap.ts";
 import { loadTimings, type LoadTiming } from "../../src/shared/names.ts";
 import { receiverKeys, type Receiver } from "../../src/shared/receiver.ts";
@@ -164,6 +165,30 @@ describe("$rinka.m", () => {
       expect(loads(tag)).toBe(1);
     },
   );
+});
+
+describe("$rinka.f", () => {
+  it("同じ ID とメソッドには同じ関数を返し、その関数は呼ばれるたびに $rinka.c から RPC の関数を取得して呼ぶ", async () => {
+    const rinka = receiver();
+    const like = rinka.f("src/fns.ts#like", "POST");
+    expect(rinka.f("src/fns.ts#like", "POST")).toBe(like);
+    expect(rinka.f("src/fns.ts#like", "GET")).not.toBe(like);
+    const calls: unknown[][] = [];
+    rinka.c =
+      (id, method) =>
+      async (...args: unknown[]) => {
+        calls.push([id, method, ...args]);
+        return "liked";
+      };
+    expect(await like(1)).toBe("liked");
+    expect(calls).toEqual([["src/fns.ts#like", "POST", 1]]);
+  });
+
+  it("クライアントのランタイムは、$rinka.c に serverFn を登録する", () => {
+    receiver();
+    installRpc();
+    expect(globalThis.$rinka?.c).toBe(serverFn);
+  });
 });
 
 describe("$rinka.w", () => {

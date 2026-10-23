@@ -33,8 +33,9 @@ import {
   swapScript,
 } from "./bootstrap.ts";
 import { classify } from "./errors.ts";
+import { scriptJson } from "./script.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
-import { toScript, scriptJson } from "./wire.ts";
+import { toScript } from "./wire.ts";
 
 /**
  * 出力の単位を表す。文字列、穴、投げられた値、`<Loading>` の位置、`<Errored>` の領域、スロットの内容、要素のホストのいずれかである。

@@ -1,6 +1,6 @@
 import { loadTimings } from "../shared/names.ts";
 import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
-import { scriptJson } from "./wire.ts";
+import { scriptJson } from "./script.ts";
 
 /** インスタンスの起動のタイミングを指定する属性の名前である。 */
 export const loadAttributeName = "data-rinka-load";
@@ -19,7 +19,9 @@ else f()};
 const watch=el=>{const e=E[el.localName];if(!e||e.s||Q.has(el))return;Q.add(el);
 when(el,e.l,()=>{if(!e.s){e.s=1;import(e.u)}})};
 const scan=root=>{for(const t in E)if(!E[t].s)for(const el of root.querySelectorAll(t))watch(el)};
-window.$rinka=Object.assign(R,{v:R.v||{},l:R.l||{},n:R.n||{},
+const F={};
+window.$rinka=Object.assign(R,{v:R.v||{},l:R.l||{},n:R.n||{},c:R.c,
+f(id,m){const k=m+' '+id;return F[k]||(F[k]=(...a)=>this.c(id,m)(...a))},
 d(id,o){Object.assign(this.v[id]||(this.v[id]={}),o);(this.l[id]||[]).slice().forEach(f=>f())},
 r(s){const me=document.currentScript;me&&me.remove();
 const fix=root=>{for(const t of root.querySelectorAll('template[shadowrootmode]')){fix(t.content);const host=t.parentElement;
@@ -67,3 +69,6 @@ export function loadAttributeValue(props: Record<string, unknown>): string | und
   }
   return undefined;
 }
+
+/** サーバー関数の代わりの関数を作る、`$rinka.f` の式を返す。`id` と `method` は、ID とメソッドの文字列を作る JS の式である。 */
+export const serverFnCall = (id: string, method: string): string => `$rinka.f(${id},${method})`;
