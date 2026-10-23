@@ -134,6 +134,22 @@ const card = `export default function Card(props: { a: string }) { return <p>{pr
 export const load = async () => { await 0; };
 `;
 
+describe("サーバー関数を定義できる範囲", () => {
+  it("src/ の外のファイルでサーバー関数を定義すると、サーバー向けの変換をエラーにする", async () => {
+    await withProject(
+      {
+        "test/fns.ts":
+          'import { defineServerFn } from "rinka/server";\nexport const f = defineServerFn(() => 1);\n',
+      },
+      async (dev) => {
+        await expect(dev.environments.ssr.transformRequest("/test/fns.ts")).rejects.toThrow(
+          /src\/ の中のファイルで定義してください/,
+        );
+      },
+    );
+  });
+});
+
 describe("変換の対象", () => {
   it("import と export の無い JSX のモジュールも、ES モジュールとして変換する", async () => {
     await withProject({ "src/main.tsx": "console.log(<p>1</p>);\n" }, async (dev) => {

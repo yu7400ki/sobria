@@ -6,6 +6,14 @@ import { CompileError } from "./errors.ts";
 /** 変換するソースの言語を表す。 */
 export type Lang = "ts" | "tsx" | "js" | "jsx";
 
+/** 拡張子ごとの、変換する言語である。 */
+export const langs: Readonly<Record<string, Lang>> = {
+  ".ts": "ts",
+  ".tsx": "tsx",
+  ".js": "js",
+  ".jsx": "jsx",
+};
+
 /** oxc のパーサーが返す AST のノードを表す。 */
 export type Node = ESTree.Node;
 

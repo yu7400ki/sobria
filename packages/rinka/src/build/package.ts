@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-/** rinka の package.json の欄のうち、ビルドと CLI が使用する欄を表す。 */
+/** rinka の package.json の欄のうち、版と依存の欄を表す。 */
 export interface RinkaPackage {
   readonly version: string;
   readonly dependencies: Readonly<Record<string, string>>;

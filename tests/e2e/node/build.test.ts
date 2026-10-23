@@ -271,3 +271,25 @@ describe("起動用のエントリー", () => {
     }
   }, 60_000);
 });
+
+describe("要素の無いアプリ", () => {
+  it("要素が 1 つも無いアプリもビルドでき、ページに応答する", async () => {
+    const out = await mkdtemp(join(tmpdir(), "rinka-build-empty-"));
+    try {
+      const builder = await createBuilder({
+        root: fileURLToPath(new URL("../fixtures/no-elements", import.meta.url)),
+        configFile: false,
+        logLevel: "error",
+        plugins: [rinka({ prefix: "app", outDir: out })],
+      });
+      await builder.buildApp();
+      const { app: empty } = (await import(pathToFileURL(join(out, "server/entry.js")).href)) as {
+        app: typeof app;
+      };
+      const html = await (await empty.fetch(new Request("http://localhost/"))).text();
+      expect(html).toContain("<h1>no elements</h1>");
+    } finally {
+      await rm(out, { recursive: true, force: true });
+    }
+  }, 120_000);
+});
