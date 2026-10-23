@@ -50,6 +50,7 @@ export interface ChildrenAttribute {
 /** 要素の JSX の子に記述できる値を表す。 */
 export type ClientChild =
   | ClientNode
+  | Slot
   | Node
   | string
   | number
