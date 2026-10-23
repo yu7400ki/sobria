@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,6 +41,17 @@ const callRemoved = (name: string) =>
   fetch(`${origin}/_rinka/fn/${encodeURIComponent(`src/lib/removed.ts#${name}`)}`, {
     method: "POST",
   });
+
+/** `css` が真なら `./styled.css` を import する、`src/routes/styled/page.tsx` のソースを返す。 */
+const pageSource = (css: boolean) =>
+  `${css ? 'import "./styled.css";\n' : ""}export default function Styled() {\n  return <p>styled</p>;\n}\n`;
+
+/** 開発サーバーの `/styled` が `styled.css` の <link> を出力するかどうかを返す。ページが 200 を返さなければ undefined を返す。 */
+const link = async () => {
+  const response = await fetch(`${origin}/styled`);
+  if (response.status !== 200) return undefined;
+  return (await response.text()).includes('href="/src/routes/styled/styled.css?direct"');
+};
 
 describe("開発サーバー", () => {
   it("src/routes の page.tsx を描画したページを返す", async () => {
@@ -110,6 +121,25 @@ writeFileSync(${JSON.stringify(marker)}, "x");
       await vi.waitUntil(async () => (await callRemoved("gone")).status === 404, { timeout: 2000 });
     } finally {
       await rm(file, { force: true });
+    }
+  });
+
+  it("ページの CSS の import を追加か削除すると、HMR が無効でも、次のリクエストの <link> に反映する", async () => {
+    const dir = join(root, "src/routes/styled");
+    const pageFile = join(dir, "page.tsx");
+    try {
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, "styled.css"), "p { color: red; }\n");
+      await writeFile(pageFile, pageSource(false));
+      await vi.waitUntil(async () => (await link()) === false, { timeout: 5000 });
+      await writeFile(pageFile, pageSource(true));
+      server.watcher.emit("change", posix(pageFile));
+      await vi.waitUntil(async () => (await link()) === true, { timeout: 5000 });
+      await writeFile(pageFile, pageSource(false));
+      server.watcher.emit("change", posix(pageFile));
+      await vi.waitUntil(async () => (await link()) === false, { timeout: 5000 });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
     }
   });
 
