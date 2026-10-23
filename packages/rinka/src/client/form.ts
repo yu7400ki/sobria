@@ -2,9 +2,6 @@ import { REFRESH_HEADER } from "../shared/refresh.ts";
 import { rpcPrefix } from "../shared/wire.ts";
 import { applyRefresh, isRefreshJson, jsonOf, refreshPage } from "./refresh.ts";
 
-/** `document` の submit のイベントを受け取っているかどうかである。 */
-let listening = false;
-
 /** 送信中のフォームである。 */
 const busy = new WeakSet<HTMLFormElement>();
 
@@ -23,16 +20,23 @@ const withoutHash = (url: URL): string => {
 };
 
 /**
- * サーバー関数を送信先にして `post` で送信するフォームの submit のイベントで、ブラウザの通常の送信を止めて、fetch で送信した結果をページに反映する。
- * デフォルトの動作を止められていたイベントと、ほかのフォームのイベントは扱わない。送信中のフォームのイベントは、デフォルトの動作だけを止める。
+ * リスナーを登録した `document` か `ShadowRoot` の木の中にあり、サーバー関数を送信先にして `post` で送信するフォームの submit のイベントで、
+ * ブラウザの通常の送信を止めて、fetch で送信した結果をページに反映する。送信中のフォームのイベントは、デフォルトの動作だけを止める。
  */
 export function handleSubmit(event: Event): void {
   if (!(event instanceof SubmitEvent) || event.defaultPrevented) return;
   const form = event.target;
-  if (!(form instanceof HTMLFormElement)) return;
+  if (!(form instanceof HTMLFormElement) || form.getRootNode() !== event.currentTarget) return;
   const { submitter } = event;
-  const action = new URL(submitter?.getAttribute("formaction") ?? form.action, location.href);
-  const method = (submitter?.getAttribute("formmethod") ?? form.method).toLowerCase();
+  const action = new URL(
+    submitter?.getAttribute("formaction") ?? form.getAttribute("action") ?? "",
+    location.href,
+  );
+  const method = (
+    submitter?.getAttribute("formmethod") ??
+    form.getAttribute("method") ??
+    "get"
+  ).toLowerCase();
   if (action.origin !== location.origin || !action.pathname.startsWith(rpcPrefix)) return;
   if (method !== "post") return;
   event.preventDefault();
@@ -67,22 +71,22 @@ async function submit(
     } else if (isRefreshJson(body)) {
       applyRefresh(body);
     } else {
+      const kind =
+        response.type === "opaqueredirect" ? "リダイレクト" : `ステータスが ${response.status}`;
       console.error(
-        `[rinka] フォームの送信のレスポンス（${response.status}）は、ページに反映できないので無視しました。`,
+        `[rinka] 送信した結果の、${kind}のレスポンスは、ページに反映できないので無視しました。`,
         body,
       );
     }
   } catch (error) {
-    console.error("[rinka] フォームを送信できませんでした。", error);
+    console.error("[rinka] フォームを送信した結果を、ページに反映できませんでした。", error);
   } finally {
     busy.delete(form);
     form.removeAttribute("aria-busy");
   }
 }
 
-/** サーバーコンポーネントが出力したフォームを送信できるように、`document` の submit のイベントを受け取る。2 回目以降の呼び出しでは何もしない。 */
+/** `document` の木の中のフォームの submit のイベントを、`handleSubmit` で受け取る。 */
 export function listenForms(): void {
-  if (listening) return;
-  listening = true;
   document.addEventListener("submit", handleSubmit);
 }

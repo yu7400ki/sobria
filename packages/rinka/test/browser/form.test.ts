@@ -90,15 +90,24 @@ describe("JS があるときのフォームの送信", () => {
   });
 
   it("移動先が現在のページなら、フォームを初期値に戻してから、ページを描き直して反映する", async () => {
+    const order: string[] = [];
     const fetch = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(Response.json({ redirect: `${location.href.split("#")[0]}#top` }))
-      .mockResolvedValueOnce(Response.json(refreshJson({ head: "<title>saved</title>" })));
+      .mockImplementationOnce(async () => {
+        order.push("submit");
+        return Response.json({ redirect: `${location.href.split("#")[0]}#top` });
+      })
+      .mockImplementationOnce(async () => {
+        order.push("refresh");
+        return Response.json(refreshJson({ head: "<title>saved</title>" }));
+      });
     const { form, button } = placeForm();
-    const reset = vi.spyOn(form, "reset");
+    vi.spyOn(form, "reset").mockImplementation(() => {
+      order.push("reset");
+    });
     button.click();
     await vi.waitFor(() => expect(document.title).toBe("saved"));
-    expect(reset).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["submit", "reset", "refresh"]);
     const [url, init] = fetch.mock.calls[1] ?? [];
     expect(url).toBe(location.href);
     expect(new Headers(init?.headers).get("x-rinka-refresh")).toBe("1");
@@ -119,7 +128,7 @@ describe("JS があるときのフォームの送信", () => {
     const { form, button } = placeForm();
     button.click();
     await vi.waitFor(() => expect(error).toHaveBeenCalledTimes(1));
-    expect(String(error.mock.calls[0]?.[0])).toContain("422");
+    expect(String(error.mock.calls[0]?.[0])).toContain("ステータスが 422");
     expect(document.body.contains(form)).toBe(true);
     expect(document.title).toBe(titleBefore);
   });
@@ -133,6 +142,26 @@ describe("JS があるときのフォームの送信", () => {
     expect(prevented).toBe(false);
     placeForm(`<form action="${action}">`).button.click();
     expect(prevented).toBe(false);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("action と method という名前のコントロールがあるフォームも、属性の送信先と method で送信する", () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise(() => {}));
+    const { button } = placeForm(
+      `<form action="${action}" method="post"><input name="action" value="x"><input name="method" value="get">`,
+    );
+    button.click();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("要素のスロットに配置したフォームは、ホストより外側の onSubmit の後に扱う", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise(() => {}));
+    defineElement("test-form-slot", () => jsx("slot", {}), { props: [] });
+    document.body.innerHTML = `<div id="wrap"><test-form-slot><form action="${action}" method="post"><button>go</button></form></test-form-slot></div>`;
+    const host = document.querySelector("test-form-slot")!;
+    await vi.waitFor(() => expect(host.shadowRoot?.querySelector("slot")).toBeTruthy());
+    document.querySelector("#wrap")!.addEventListener("submit", (event) => event.preventDefault());
+    document.querySelector("button")!.click();
     expect(fetch).not.toHaveBeenCalled();
   });
 
