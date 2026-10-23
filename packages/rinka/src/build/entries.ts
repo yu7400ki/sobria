@@ -16,18 +16,39 @@ export const entries = {
 
 /** プラグインが生成するコードが、環境ごとに `rinka/internal` から import する名前である。 */
 export const internalNames = {
-  client: ["createSheet", "updateSheet", "loadSheet"],
-  server: ["serverSheet", "createApp", "routeStyles", "serverFnLoader", "devErrorResponse"],
+  client: ["createSheet", "updateSheet", "loadSheet", "defineElement", "stopIfSeeding", "serverFn"],
+  server: [
+    "serverSheet",
+    "createApp",
+    "routeStyles",
+    "serverFnLoader",
+    "devErrorResponse",
+    "defineElement",
+    "serverFnModule",
+  ],
 } as const;
+
+/** 環境 `E` の `rinka/internal` から import できる名前である。 */
+type InternalName<E extends keyof typeof internalNames> = (typeof internalNames)[E][number];
 
 /** `environment` の `rinka/internal` から `names` を import する文を返す。 */
 export const importInternal = <E extends keyof typeof internalNames>(
   _environment: E,
-  ...names: readonly (typeof internalNames)[E][number][]
+  ...names: readonly InternalName<E>[]
 ): string => `import { ${names.join(", ")} } from "${entries.internal}";`;
+
+/** `environment` の `rinka/internal` から `name` を `local` の名前で import する文を、改行を付けて返す。 */
+export const importInternalAs = <E extends keyof typeof internalNames>(
+  _environment: E,
+  name: InternalName<E>,
+  local: string,
+): string => `import { ${name} as ${local} } from "${entries.internal}";\n`;
 
 /** プラグインが作成する仮想モジュールの指定子 `specifier` を、解決した ID にする。 */
 export const virtualId = (specifier: string): string => `\0${specifier}`;
+
+/** ランナーが動的に import して、プラグインが作成する仮想モジュール `specifier` を読み込む指定子を返す。 */
+export const virtualUrl = (specifier: string): string => `/@id/__x00__${specifier}`;
 
 /** rinka のクライアントの実行時のコードが値として import する、rinka の外のモジュールである。 */
 export const clientImports = ["@solidjs/signals", "seroval"] as const;

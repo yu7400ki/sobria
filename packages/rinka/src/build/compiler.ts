@@ -31,7 +31,7 @@ import {
   type ModuleSource,
   type Node,
 } from "./ast.ts";
-import { entries } from "./entries.ts";
+import { entries, importInternalAs } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 import { usesForm } from "./form-usage.ts";
 import { analyzeProps } from "./props.ts";
@@ -93,7 +93,8 @@ const SERVER_FN = "__rinka_serverFn";
 export function transformSource(code: string, options: SourceOptions): SourceResult {
   const program = parseModule(code, options);
   const output = new MagicString(code);
-  const definitions = findDefinitions(program, options.file, options.fnModule ?? options.file);
+  const fnModule = options.fnModule ?? options.file;
+  const definitions = findDefinitions(program, options.file, fnModule);
   const replaced = new Set<Node>(
     options.client ? definitions.map((definition) => definition.init) : [],
   );
@@ -104,13 +105,11 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
     registerElement(program, output, options.element, options.file, options.client);
   if (options.client) {
     if (stopAwaits(program, output, replaced)) {
-      output.prepend(
-        `import { stopIfSeeding as ${STOP_IF_SEEDING} } from "${entries.internal}";\n`,
-      );
+      output.prepend(importInternalAs("client", "stopIfSeeding", STOP_IF_SEEDING));
     }
     replaceDefinitions(program, output, code, definitions);
   } else {
-    registerServerFns(output, definitions, options.fnModule ?? options.file);
+    registerServerFns(output, definitions, fnModule);
   }
   return {
     code: output.toString(),
@@ -160,8 +159,7 @@ function registerElement(
   output.append(`
 export default ${DEFINE}(${[JSON.stringify(tag), fn.id.name, JSON.stringify(elementOptions), last].join(", ")});
 ${accept}`);
-  output.prepend(`import { defineElement as ${DEFINE} } from "${entries.internal}";
-`);
+  output.prepend(importInternalAs(client ? "client" : "server", "defineElement", DEFINE));
   return { tag, options: elementOptions };
 }
 
@@ -525,9 +523,7 @@ function registerServerFns(
   }
   if (registered) {
     output.prepend(`const ${REGISTER} = ${SERVER_FN_MODULE}(${JSON.stringify(fnModule)});\n`);
-    output.prepend(
-      `import { serverFnModule as ${SERVER_FN_MODULE} } from "${entries.internal}";\n`,
-    );
+    output.prepend(importInternalAs("server", "serverFnModule", SERVER_FN_MODULE));
   }
 }
 
@@ -630,7 +626,7 @@ function replaceDefinitions(
     output.overwrite(statement.start, statement.source.start, `import ${parts.join(", ")} from `);
   }
   if (serverFns) {
-    output.prepend(`import { serverFn as ${SERVER_FN} } from "${entries.internal}";\n`);
+    output.prepend(importInternalAs("client", "serverFn", SERVER_FN));
   }
 }
 

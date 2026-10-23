@@ -46,15 +46,6 @@ describe("入口", () => {
     expect(missing).toEqual([]);
   });
 
-  it("内部の入口は、コンパイラと開発サーバーが使用する関数を export する", async () => {
-    const clientInternal = await lib(runtimes.client[entries.internal]!);
-    const serverInternal = await lib(runtimes.server[entries.internal]!);
-    expect(typeof clientInternal.stopIfSeeding).toBe("function");
-    expect(typeof clientInternal.defineElement).toBe("function");
-    expect(typeof serverInternal.createApp).toBe("function");
-    expect(typeof serverInternal.defineElement).toBe("function");
-  });
-
   it("実行時のコードが値として import する rinka の外のモジュールは、環境ごとの一覧と一致する", () => {
     const src = fileURLToPath(new URL("../../src", import.meta.url));
     const imported = (dirs: readonly string[]) => {

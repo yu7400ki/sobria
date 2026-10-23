@@ -7,7 +7,7 @@ import type { Environment, Plugin, RunnableDevEnvironment } from "vite";
 
 import { reloadEvent } from "../shared/hmr.ts";
 import type { CreateApp } from "../shared/routes.ts";
-import { entries, serverImports, virtualId } from "./entries.ts";
+import { entries, serverImports, virtualId, virtualUrl } from "./entries.ts";
 import { appCode, serverEntry, serverFnLoaderCode, type AppModuleOptions } from "./entry.ts";
 import { fromApp } from "./package.ts";
 import { inside } from "./paths.ts";
@@ -21,7 +21,7 @@ import { SERVER_ENTRY_NAME, isClient, type SceneContext } from "./settings.ts";
 const STYLES = `${virtualId(entries.styles)}?files=`;
 
 /** ランナーが動的に import して、`rinka/styles` の仮想モジュールを読み込む指定子の、クエリの前までである。 */
-const STYLES_URL = `/@id/__x00__${entries.styles}?files=`;
+const STYLES_URL = `${virtualUrl(entries.styles)}?files=`;
 
 /** 開発中のページの `<head>` に出力する、Vite のクライアントを読み込むスクリプトである。 */
 const VITE_CLIENT = '<script type="module" src="/@vite/client"></script>';
