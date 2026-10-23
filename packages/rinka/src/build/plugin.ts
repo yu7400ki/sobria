@@ -136,11 +136,9 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       },
       resolveId(id, importer, resolveOptions) {
         if (id === entries.routes) return ROUTES;
-        if (
-          id === entries.server &&
-          isClient(this.environment) &&
-          !("scan" in resolveOptions && resolveOptions.scan === true)
-        ) {
+        if (id === entries.server && isClient(this.environment)) {
+          if ("scan" in resolveOptions && resolveOptions.scan === true)
+            return { id, external: true };
           const from = importer === undefined ? undefined : (inside(root, importer) ?? importer);
           throw new Error(
             `${from ?? "(不明なファイル)"}: クライアント向けのコードから ${entries.server} を参照しています。${entries.server} の値は、サーバー関数とミドルウェアの定義の式の中でだけ使用できます。型だけを使用する名前は、import type か export type で記述してください。`,

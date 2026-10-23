@@ -188,9 +188,11 @@ function scopedContext(page: Context): Context {
   return c;
 }
 
-/** Error 以外の値を、Hono と同じく、その値の文字列をメッセージにし、`cause` にその値を持つ Error に包む。 */
+/** Error 以外の値を、Hono と同じく、`cause` にその値を持つ Error に包む。文字列なら、その文字列をメッセージにする。 */
 const toError = (value: unknown): Error =>
-  value instanceof Error ? value : new Error(String(value), { cause: value });
+  value instanceof Error
+    ? value
+    : new Error(typeof value === "string" ? value : undefined, { cause: value });
 
 /** ミドルウェアのチェーンが、`last` を呼ばずにレスポンスも確定させずに終了したことを表すエラーを返す。 */
 const unfinished = () => new Error("ミドルウェアは、next() を呼ぶか、Response を返してください。");

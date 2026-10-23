@@ -190,7 +190,7 @@ describe("変換の対象", () => {
       join(root, "src/lib/fns.ts"),
       scan,
     );
-    expect(scanned).not.toBeNull();
+    expect(scanned).toMatchObject({ id: "rinka/server", external: true });
   });
 
   it("consumer が client の環境は、名前に関わらずクライアント向けに変換する", async () => {
