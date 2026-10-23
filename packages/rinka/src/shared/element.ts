@@ -46,6 +46,22 @@ export interface FormControls {
   readonly disabled: () => boolean;
 }
 
+/** フォームの部品でない `<tag>` の要素の関数に渡す ctx の `form` を返す。`form.value` と `form.validity` はエラーを送出し、`form.disabled()` は `false` を返す。 */
+export function unsupportedFormControls(tag: string): FormControls {
+  const unsupported = (name: string) => () => {
+    throw new Error(
+      `[rinka] <${tag}> はフォームの部品として登録されていないので、form.${name}() を呼び出せません。defineElement の設定に form: true を指定してください。`,
+    );
+  };
+  return {
+    value: unsupported("value"),
+    validity: unsupported("validity"),
+    onReset: () => {},
+    onRestore: () => {},
+    disabled: () => false,
+  };
+}
+
 /** 要素の関数が 2 番目の引数で受け取る、ホストに依存する能力を表す。 */
 export interface Ctx<M extends object = object> {
   /** ホストの要素。 */

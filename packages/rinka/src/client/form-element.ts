@@ -91,22 +91,6 @@ export function formElementClass(
   };
 }
 
-/** フォームの部品でない `<tag>` の要素の関数に渡す ctx の `form` を返す。`form.value` と `form.validity` はエラーを送出し、`form.disabled()` は `false` を返す。 */
-export function unsupportedFormControls(tag: string): FormControls {
-  const unsupported = (name: string) => () => {
-    throw new Error(
-      `[rinka] <${tag}> はフォームの部品として登録されていないので、form.${name}() を呼び出せません。defineElement の設定に form: true を指定してください。`,
-    );
-  };
-  return {
-    value: unsupported("value"),
-    validity: unsupported("validity"),
-    onReset: () => {},
-    onRestore: () => {},
-    disabled: () => false,
-  };
-}
-
 /**
  * フォームの部品のホスト `host` の要素の関数に渡す ctx の `form` を返す。
  * `form.value` は、値を設定した後に、サーバーが Light DOM に出力した hidden input を削除する。`form.onReset` と `form.onRestore` に渡した関数は、呼び出した root を破棄すると登録を解除する。

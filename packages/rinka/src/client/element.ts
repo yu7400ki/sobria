@@ -21,6 +21,7 @@ import {
   type Ctx,
   type ElementComponent,
   type ElementOptions,
+  unsupportedFormControls,
 } from "../shared/element.ts";
 import { checkExposeName } from "../shared/expose-names.ts";
 import { reloadEvent } from "../shared/hmr.ts";
@@ -36,7 +37,6 @@ import {
   reflectAttribute,
   reflectedProps,
   reflectedValue,
-  unsupportedFormControls,
 } from "./form-element.ts";
 import { handleSubmit } from "./form.ts";
 import {

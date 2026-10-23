@@ -232,6 +232,28 @@ describe("フォームの部品の SSR", () => {
     );
     expect(html).toContain("<button></button>");
   });
+
+  it("フォームの部品でない要素で form.value か form.validity を呼ぶと、エラーを送出する", async () => {
+    const calls = [
+      (form: Ctx["form"]) => form.value(() => "a"),
+      (form: Ctx["form"]) => form.validity(() => null),
+    ];
+    await Promise.all(
+      calls.map((call, index) => {
+        const Plain = defineElement(
+          `x-plain-form-${index}`,
+          (_props: object, { form }: Ctx) => {
+            call(form);
+            return null;
+          },
+          { props: [] },
+        );
+        return expect(renderToString(jsx(Plain, {}))).rejects.toThrow(
+          "フォームの部品として登録されていない",
+        );
+      }),
+    );
+  });
 });
 
 describe("<label for> の補完", () => {

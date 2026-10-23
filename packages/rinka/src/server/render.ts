@@ -26,6 +26,7 @@ import {
   type Ctx,
   type Delivery,
   type ElementComponent,
+  unsupportedFormControls,
 } from "../shared/element.ts";
 import { headKey } from "../shared/head.ts";
 import { isEventProp, propToAttribute, reservedProp } from "../shared/names.ts";
@@ -1254,15 +1255,17 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       host: serverHost as HTMLElement,
       onMount: () => {},
       expose: () => {},
-      form: {
-        value: (fn) => {
-          valueOf = fn;
-        },
-        validity: () => {},
-        onReset: () => {},
-        onRestore: () => {},
-        disabled,
-      },
+      form: component[elementInfo].options.form
+        ? {
+            value: (fn) => {
+              valueOf = fn;
+            },
+            validity: () => {},
+            onReset: () => {},
+            onRestore: () => {},
+            disabled,
+          }
+        : unsupportedFormControls(tag),
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       internals: internals as ElementInternals,
     };
@@ -1292,7 +1295,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       disabled: notDisabled,
       fallback: false,
     };
-    const read = component[elementInfo].options.form ? valueOf : undefined;
+    const read = valueOf;
     const input =
       read &&
       this.chunkOf(
