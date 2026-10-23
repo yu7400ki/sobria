@@ -236,13 +236,15 @@ describe("起動スクリプトの受け口の文字列", () => {
         "export const b = (x: string) => `<script>$rinka.d(${x})</script>`;",
         'export const c = (x: string) => `<p ${x} data-rinka-load="idle">`;',
         'export const d = "rinka";',
-        'export const e = (x: string) => "$rinka" + x;',
+        'export const e = "data-oh";',
+        'export const f = (x: string) => "$rinka" + x;',
       ]),
     ).toEqual([
       [1, "receiver"],
       [2, "receiver"],
       [3, "receiver"],
-      [5, "receiver"],
+      [5, "marker"],
+      [6, "receiver"],
     ]);
   });
 
@@ -251,13 +253,13 @@ describe("起動スクリプトの受け口の文字列", () => {
   });
 });
 
-describe("ホストと境界の目印の属性名", () => {
-  it("src/ の中の、data-o と 1 文字の属性名を含む文字列のリテラルとテンプレートリテラルを報告する", () => {
+describe("rinka が HTML に出力する目印の属性名", () => {
+  it("src/ の中の、data-o に英小文字 1 文字が続く属性名を含む文字列のリテラルとテンプレートリテラルを報告する", () => {
     expect(
       reports("src/client/marker-use.ts", [
         'export const a = "data-oh";',
         'export const b = (x: string) => `<p data-om="${x}">`;',
-        'export const c = "data-other";',
+        'export const c = "data-other metadata-ok";',
         'export const d = "template[data-op=\\"1\\"]";',
       ]),
     ).toEqual([

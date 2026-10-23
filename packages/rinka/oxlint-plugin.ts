@@ -116,16 +116,16 @@ export default {
         return { Literal: check, TemplateLiteral: check };
       },
     },
-    /** `data-o` と 1 文字の属性名を含む、文字列のリテラルとテンプレートリテラルを報告する。 */
+    /** `data-o` に英小文字 1 文字が続く属性名を含む、文字列のリテラルとテンプレートリテラルを報告する。 */
     "no-marker-attribute-literal": {
       create(context: Context) {
         const check = (node: StringNode) => {
           const text = fullText(node);
-          if (text === undefined || !/data-o[a-z](?![\w-])/.test(text)) return;
+          if (text === undefined || !/(?<![\w-])data-o[a-z](?![\w-])/.test(text)) return;
           context.report({
             node,
             message:
-              "ホストと境界の目印の属性名は、src/shared/attributes.ts の定数で記述してください。",
+              "rinka が HTML に出力する目印の属性名（data-o に英小文字 1 文字が続く名前）は、src/shared/attributes.ts の定数で記述してください。",
           });
         };
         return { Literal: check, TemplateLiteral: check };

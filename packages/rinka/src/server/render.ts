@@ -475,7 +475,7 @@ type HeadPlacement = "auto" | "all" | "none" | "fallback" | "element";
 
 /**
  * 文書を出力する描画で、描画している位置を表す。`shell` は、文書の骨組みに移動できる位置である。
- * ほかの値は、移動できない理由を表す。`loading` は `<Loading>` の内側で、ほかの値は同じ名前の `HeadPlacement` の位置である。
+ * `shell` 以外の値は、移動できない理由を表す。`loading` は `<Loading>` の内側を表し、`none`、`element`、`fallback` は同じ名前の `HeadPlacement` の位置を表す。
  */
 type Position = Exclude<HeadPlacement, "auto" | "all"> | "shell" | "loading";
 
@@ -708,14 +708,12 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
   private readonly blocking: boolean;
   /** 文字列を出力する。文書を出力しない描画では、エラーを投げる。 */
   private readonly write: (text: string) => void;
-  /** シェルの中の `<head>` のタグと、`<html>` と `<body>` の属性を、文書の骨組みに移動するかどうかである。 */
+  /** シェルの中かつ要素の外の `<title>`、`<meta>`、`<link>` と `<head>` の子を `<head>` に移動し、`<html>` と `<body>` の属性を文書の開始タグに移動するかどうかである。 */
   private readonly hoists: boolean;
   /** 要素を実行して、Shadow DOM の中身を出力するかどうかである。 */
   private readonly runsElements: boolean;
 
-  /**
-   * `target` が `document` か `refresh` の描画では、シェルの中かつ要素の外の `<title>`、`<meta>`、`<link>` と `<head>` の子を `<head>` に移動し、`<html>` と `<body>` の属性を文書の開始タグに移動する。
-   */
+  /** `given` の種類の描画を作成する。 */
   constructor(given: Extract<Target, { readonly kind: K }>) {
     const target: Target = given;
     this.hoists = target.kind !== "fragment";
@@ -903,7 +901,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     out.push(this.marker(id, ""), this.marker(id, "/"));
   }
 
-  /** `ctx` の位置を返す。`<head>` に移動しない位置、要素の中と要素に渡した Light DOM の子、フォールバックの中、`<Loading>` の内側の順に判定する。 */
+  /** `ctx` の位置を返す。 */
   private position(ctx: WalkCtx): Position {
     if (ctx.head !== "auto" && ctx.head !== "all") return ctx.head;
     return ctx.boundary === this.root ? "shell" : "loading";

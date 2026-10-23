@@ -33,13 +33,13 @@ export const HOST_ATTRIBUTE = "data-oh";
 /** ホストが起動の前に待つ値のキーを、空白で区切って出力する属性の名前である。 */
 export const AWAITED_ATTRIBUTE = "data-om";
 
-/** 後送りの境界の開始の目印の `<template>` に、境界の ID を出力する属性の名前である。 */
+/** 後送りの境界が始まる位置に置く `<template>` に、境界の ID を出力する属性の名前である。 */
 export const BOUNDARY_ATTRIBUTE = "data-ob";
 
-/** 後送りの境界の中身を運ぶ `<template>` に、境界の ID を出力する属性の名前である。 */
+/** 後送りにした境界の中身を入れて送る `<template>` に、境界の ID を出力する属性の名前である。 */
 export const BOUNDARY_CONTENT_ATTRIBUTE = "data-os";
 
-/** 境界の中の差し替えの中身を運ぶ `<template>` に、差し替えの ID を出力する属性の名前である。 */
+/** 境界の中で差し替える内容を入れて送る `<template>` に、差し替えの ID を出力する属性の名前である。 */
 export const PATCH_ATTRIBUTE = "data-op";
 
 /** ネイティブのタグに記述した props の名前から、属性の名前を返す。`key` は `KEY_ATTRIBUTE` になり、ほかの名前は変わらない。 */
