@@ -214,6 +214,7 @@ export async function runChain(
       value = middleware ? await middleware(c, () => dispatch(index + 1)) : await last();
     } catch (error) {
       if (!onError) throw error;
+      if (error instanceof Error) c.error = error;
       value = await onError(error);
       failed = true;
     }

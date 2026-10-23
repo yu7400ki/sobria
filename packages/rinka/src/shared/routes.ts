@@ -12,7 +12,7 @@ export interface AppOptions {
   readonly onError?: (error: unknown) => Response;
   /** GET 以外のサーバー関数のリクエストで、別のサイトからでも受け付ける `Origin` を列挙する。 */
   readonly trustedOrigins?: readonly string[];
-  /** プロジェクトからの相対パスで指定したモジュールに、サーバー関数の定義があれば読み込む。未登録のサーバー関数の ID の、モジュールの部分を受け取る。 */
+  /** プロジェクトからの相対パスで指定したモジュールに、サーバー関数の定義があれば読み込む。サーバー関数のリクエストごとに、ID のモジュールの部分を受け取る。 */
   readonly loadModule?: (path: string) => Promise<unknown>;
 }
 

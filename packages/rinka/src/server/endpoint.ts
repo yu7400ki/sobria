@@ -28,13 +28,14 @@ export function registerServerFn<F extends AnyServerFn>(id: string, fn: F): F {
 export function rinkaMiddleware(options: AppOptions): MiddlewareHandler {
   return (c, next) =>
     runInRequest(c, async () => {
-      if (!c.req.path.startsWith(rpcPrefix)) {
+      const { pathname } = new URL(c.req.url);
+      if (!pathname.startsWith(rpcPrefix)) {
         await next();
         return undefined;
       }
       let id: string;
       try {
-        id = decodeURIComponent(c.req.path.slice(rpcPrefix.length));
+        id = decodeURIComponent(pathname.slice(rpcPrefix.length));
       } catch {
         return rpc(c, null, 404);
       }

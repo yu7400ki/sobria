@@ -19,7 +19,11 @@ let server: ViteDevServer;
 let origin: string;
 
 beforeAll(async () => {
-  server = await createDevServer(root, { server: { port: 0 } });
+  // e2e のプロジェクトの開発サーバーと依存の事前バンドルを共有しないように、キャッシュのディレクトリを分ける
+  server = await createDevServer(root, {
+    server: { port: 0 },
+    cacheDir: fileURLToPath(new URL("../node_modules/.vite/node-dev-server", import.meta.url)),
+  });
   await server.listen();
   origin = originOf(server);
 });
@@ -75,15 +79,14 @@ writeFileSync(${JSON.stringify(marker)}, "x");
     }
   });
 
-  it("client の環境で変換したモジュールのサーバー関数を、RPC で呼び出せる", async () => {
-    await server.environments.client.transformRequest("/src/lib/fns.ts");
+  it("まだ変換していないモジュールのサーバー関数を、RPC で呼び出せる", async () => {
     const response = await fetch(
-      `${origin}/_rinka/fn/${encodeURIComponent("src/lib/fns.ts#ping")}`,
+      `${origin}/_rinka/fn/${encodeURIComponent("src/lib/late.ts#echo")}`,
       {
         method: "POST",
       },
     );
-    expect(await response.json()).toEqual({ ok: "pong" });
+    expect(await response.json()).toEqual({ ok: "late" });
   });
 
   it("form の action に渡したサーバー関数に、JS が無いときと同じ multipart の送信をすると、Referer に 303 でリダイレクトする", async () => {

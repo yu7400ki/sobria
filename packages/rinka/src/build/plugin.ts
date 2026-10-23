@@ -4,7 +4,13 @@ import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { getRequestListener } from "@hono/node-server";
-import { isRunnableDevEnvironment, type Environment, type Plugin, type ViteDevServer } from "vite";
+import {
+  isRunnableDevEnvironment,
+  type Environment,
+  type Plugin,
+  type RunnableDevEnvironment,
+  type ViteDevServer,
+} from "vite";
 
 import { reloadEvent } from "../shared/hmr.ts";
 import { tagFromPath } from "../shared/names.ts";
@@ -74,6 +80,21 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
     return file === undefined ? undefined : { path: id, file, lang };
   };
 
+  /**
+   * ルートからの相対パスのファイルにサーバー関数の定義があれば、`environment` のランナーで読み込む。
+   * まだ変換していないプロジェクトのファイルは、先に変換して定義を探す。
+   */
+  const loadServerFns = async (environment: RunnableDevEnvironment, path: string) => {
+    if (
+      !serverFnFiles.has(path) &&
+      projectFile(`${root}/${path}`)?.file === path &&
+      existsSync(resolve(root, path))
+    ) {
+      await environment.transformRequest(`/${path}`);
+    }
+    if (serverFnFiles.has(path)) await environment.runner.import(`/${path}`);
+  };
+
   /** 要素のファイルなら、タグ名を返す。 */
   const tagOf = (path: string, lang: Lang): string | undefined => {
     if (lang !== "tsx" && lang !== "jsx") return undefined;
@@ -125,7 +146,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           });
         }
         return () => {
-          server.middlewares.use(appMiddleware(server, trustedOrigins, serverFnFiles));
+          server.middlewares.use(appMiddleware(server, trustedOrigins, loadServerFns));
         };
       },
       transform(code, id) {
@@ -212,12 +233,12 @@ function routesModule(dir: string, root: string): string {
 /**
  * `ssr` の環境のランナーで読み込んだ `rinka/routes` からアプリを作成し、リクエストを渡すミドルウェアを返す。
  * アプリはリクエストごとに作成する。アプリの onError が受け取ったエラーは `next` に渡す。
- * サーバー関数の ID のモジュールは、変換の時点でサーバー関数の定義を見つけたファイルだけを、同じランナーで読み込む。
+ * サーバー関数の ID のモジュールの部分は、`loadServerFns` に `ssr` の環境とともに渡す。
  */
 function appMiddleware(
   server: ViteDevServer,
   trustedOrigins: readonly string[],
-  serverFnFiles: ReadonlySet<string>,
+  loadServerFns: (environment: RunnableDevEnvironment, path: string) => Promise<void>,
 ): (request: IncomingMessage, response: ServerResponse, next: (error?: unknown) => void) => void {
   return (request, response, next) => {
     const environment = server.environments.ssr;
@@ -235,9 +256,7 @@ function appMiddleware(
       const app = createApp(routes, {
         head: VITE_CLIENT,
         trustedOrigins,
-        loadModule: async (path) => {
-          if (serverFnFiles.has(path)) await runner.import(`/${path}`);
-        },
+        loadModule: (path) => loadServerFns(environment, path),
         onError: (error) => {
           failure = { error };
           return new Response(null, { status: 500 });
