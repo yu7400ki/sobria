@@ -11,10 +11,12 @@
   },
   "devDependencies": {
     "@rinka/config": "workspace:*",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "catalog:",
     "@vitest/browser-playwright": "catalog:",
     "axe-core": "^4.14.0",
     "playwright": "catalog:",
+    "tailwindcss": "^4.3.3",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:"
