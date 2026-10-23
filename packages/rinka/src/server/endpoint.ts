@@ -1,6 +1,7 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 
+import { REFRESH_HEADER } from "../shared/refresh.ts";
 import type { AppOptions } from "../shared/routes.ts";
 import { withServerFnRef, type serverFnRef, type ServerFnRef } from "../shared/server-fn.ts";
 import { rpcPrefix, rpcQuery, wireFormat, wireHeader } from "../shared/wire.ts";
@@ -181,6 +182,29 @@ const responders = {
 function unreachable(value: never): never {
   throw new Error(`想定していない値です: ${JSON.stringify(value)}`);
 }
+
+/**
+ * `x-rinka-refresh: 1` を付与したサーバー関数のエンドポイントへのフォームの送信で、後のミドルウェアと handler が返した、3xx で `Location` を持つレスポンスを、
+ * `Location` をリクエストの URL で解決した URL を持つ `{ redirect }` の 200 の JSON にする。`Location`、`Content-Length`、`Content-Type` のほかのヘッダーは引き継ぐ。
+ */
+export const formRedirects: MiddlewareHandler = async (c, next) => {
+  await next();
+  if (!new URL(c.req.url).pathname.startsWith(rpcPrefix) || !isFormSubmission(c)) return;
+  const location = c.res.headers.get("location");
+  if (c.req.header(REFRESH_HEADER) !== "1" || location === null) return;
+  if (c.res.status < 300 || c.res.status >= 400) return;
+  const headers = new Headers(c.res.headers);
+  headers.delete("location");
+  headers.delete("content-length");
+  headers.set("content-type", "application/json");
+  const json = new Response(JSON.stringify({ redirect: new URL(location, c.req.url).href }), {
+    status: 200,
+    headers,
+  });
+  // 前のレスポンスのヘッダーを引き継がずに置き換える
+  c.res = undefined;
+  c.res = json;
+};
 
 /** フォームの送信と同じ `Content-Type` の POST かどうかを返す。 */
 function isFormSubmission(c: Context): boolean {

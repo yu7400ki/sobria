@@ -1,10 +1,10 @@
-import type { Context, Handler, MiddlewareHandler } from "hono";
+import type { Context, Handler, MiddlewareHandler, Next } from "hono";
 import { setCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { getContext } from "../../src/server/api.ts";
-import { notFound } from "../../src/server/errors.ts";
+import { notFound, redirect } from "../../src/server/errors.ts";
 import { createApp, registerServerFn } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
@@ -284,6 +284,118 @@ describe("フォームの送信先のサーバー関数が投げたエラー", (
     ).toEqual([
       [503, "handled"],
       [503, "handled"],
+    ]);
+  });
+});
+
+/** x-login のあるリクエストを、別のオリジンのログインのページにリダイレクトするミドルウェアである。 */
+const loginGate: MiddlewareHandler = async (c, next) => {
+  if (c.req.header("x-login") !== undefined)
+    return c.redirect("https://auth.example.com/login", 302);
+  await next();
+  return undefined;
+};
+
+describe("x-rinka-refresh: 1 のフォームの送信のリダイレクト", () => {
+  const ids = {
+    saved: "src/app-test.ts#saved",
+    moved: "src/app-test.ts#moved",
+    handed: "src/app-test.ts#handed",
+    guarded: "src/app-test.ts#guarded",
+    flashing: "src/app-test.ts#flashing",
+  };
+  registerServerFn(
+    ids.saved,
+    defineServerFn(() => "saved"),
+  );
+  registerServerFn(
+    ids.moved,
+    defineServerFn(() => {
+      throw redirect("/done");
+    }),
+  );
+  registerServerFn(
+    ids.handed,
+    defineServerFn((c) => c.redirect("https://auth.example.com/login", 302)),
+  );
+  registerServerFn(
+    ids.guarded,
+    defineServerFn(
+      async (c: Context, next: Next) =>
+        c.req.method === "POST" ? c.redirect("/login", 302) : next(),
+      () => "unreachable",
+    ),
+  );
+  registerServerFn(
+    ids.flashing,
+    defineServerFn((c) => {
+      setCookie(c, "flash", "1");
+      return c.redirect("/form", 303);
+    }),
+  );
+  const routes: Routes = {
+    middleware: module(loginGate),
+    routes: [
+      pageRoute("/", () => jsx("p", { children: "page" })),
+      notFoundRoute("/", fallbackOf(fallback("missing"))),
+    ],
+  };
+  /** `id` のサーバー関数にフォームを送信する。 */
+  const submit = (id: string, headers: Record<string, string> = {}) =>
+    request(routes, rpcPath(id), {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        referer: "http://localhost/form?x=1",
+        "x-rinka-refresh": "1",
+        ...headers,
+      },
+      body: "a=1",
+    });
+  /** `id` のサーバー関数にフォームを送信し、ステータス、Location、本文の JSON を返す。 */
+  const result = async (id: string, headers?: Record<string, string>) => {
+    const response = await submit(id, headers);
+    return [response.status, response.headers.get("location"), await response.json()];
+  };
+
+  it("PRG、redirect()、handler とサーバー関数のミドルウェアとルートの middleware.ts が返したリダイレクトを、移動先の URL を持つ JSON にして 200 で返す", async () => {
+    expect(
+      await Promise.all([
+        result(ids.saved),
+        result(ids.moved),
+        result(ids.handed),
+        result(ids.guarded),
+        result(ids.saved, { "x-login": "1" }),
+      ]),
+    ).toEqual([
+      [200, null, { redirect: "http://localhost/form?x=1" }],
+      [200, null, { redirect: "http://localhost/done" }],
+      [200, null, { redirect: "https://auth.example.com/login" }],
+      [200, null, { redirect: "http://localhost/login" }],
+      [200, null, { redirect: "https://auth.example.com/login" }],
+    ]);
+  });
+
+  it("リダイレクトのレスポンスの Set-Cookie を、JSON のレスポンスに引き継ぐ", async () => {
+    const response = await submit(ids.flashing);
+    expect([response.status, response.headers.getSetCookie()]).toEqual([200, ["flash=1; Path=/"]]);
+  });
+
+  it("x-rinka-refresh の無いフォームの送信と、RPC には、リダイレクトのまま返す", async () => {
+    const plain = await request(routes, rpcPath(ids.moved), {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "a=1",
+    });
+    const rpc = await request(routes, rpcPath(ids.saved), {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-rinka-refresh": "1", "x-login": "1" },
+      body: "null",
+    });
+    expect([plain.status, plain.headers.get("location")]).toEqual([303, "/done"]);
+    expect([rpc.status, rpc.headers.get("location")]).toEqual([
+      302,
+      "https://auth.example.com/login",
     ]);
   });
 });
