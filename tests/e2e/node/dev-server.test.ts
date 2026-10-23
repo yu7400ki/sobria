@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright";
 import type { ViteDevServer } from "vite";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createDevServer, originOf } from "../dev-server.ts";
 
@@ -31,6 +31,16 @@ beforeAll(async () => {
 afterAll(async () => {
   await server.close();
 });
+
+/** `name` のサーバー関数を 1 つだけ定義するモジュールのソースを返す。 */
+const removedSource = (name: string) =>
+  `import { defineServerFn } from "rinka/server";\nexport const ${name} = defineServerFn(() => "${name}");\n`;
+
+/** 開発サーバーの、`src/lib/removed.ts` の `name` のサーバー関数を RPC で呼び出す。 */
+const callRemoved = (name: string) =>
+  fetch(`${origin}/_rinka/fn/${encodeURIComponent(`src/lib/removed.ts#${name}`)}`, {
+    method: "POST",
+  });
 
 describe("開発サーバー", () => {
   it("src/routes の page.tsx を描画したページを返す", async () => {
@@ -87,6 +97,20 @@ writeFileSync(${JSON.stringify(marker)}, "x");
       },
     );
     expect(await response.json()).toEqual({ ok: "late" });
+  });
+
+  it("ファイルから削除したサーバー関数の ID は、サーバーのランナーがモジュールを評価し直さなくても、ファイルを変更した後に 404 になる", async () => {
+    const file = join(root, "src/lib/removed.ts");
+    try {
+      await writeFile(file, removedSource("gone"));
+      expect((await callRemoved("gone")).status).toBe(200);
+      await writeFile(file, removedSource("kept"));
+      server.watcher.emit("change", posix(file));
+      // Vite は変更の通知を非同期に処理するので、変換の結果が変わるまで待つ
+      await vi.waitUntil(async () => (await callRemoved("gone")).status === 404, { timeout: 2000 });
+    } finally {
+      await rm(file, { force: true });
+    }
   });
 
   it("form の action に渡したサーバー関数に、JS が無いときと同じ multipart の送信をすると、Referer に 303 でリダイレクトする", async () => {

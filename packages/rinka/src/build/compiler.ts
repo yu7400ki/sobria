@@ -53,8 +53,8 @@ export interface Transformed {
 export interface SourceResult extends Transformed {
   /** 要素のファイルなら、要素の情報を持つ。 */
   readonly element: ElementInfo | undefined;
-  /** サーバー関数を 1 つ以上定義していれば真である。 */
-  readonly serverFns: boolean;
+  /** ファイルで定義したサーバー関数の ID を、ソースの順に列挙する。 */
+  readonly serverFns: readonly string[];
 }
 
 /** 変換したコードで `stopIfSeeding` を呼ぶときの名前である。 */
@@ -92,15 +92,17 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
         `import { stopIfSeeding as ${STOP_IF_SEEDING} } from "${entries.internal}";\n`,
       );
     }
-    replaceDefinitions(program, output, code, definitions, options.file);
+    replaceDefinitions(program, output, code, definitions);
   } else {
-    registerServerFns(output, definitions, options.file);
+    registerServerFns(output, definitions);
   }
   return {
     code: output.toString(),
     map: output.generateMap({ hires: true, source: options.id, includeContent: true }),
     element,
-    serverFns: definitions.some((definition) => definition.kind === "serverFn"),
+    serverFns: definitions.flatMap((definition) =>
+      definition.kind === "serverFn" ? [definition.id] : [],
+    ),
   };
 }
 
@@ -353,6 +355,8 @@ type Definition =
   | {
       readonly kind: "serverFn";
       readonly name: string;
+      /** `<ファイル>#<名前>` の形式の ID である。 */
+      readonly id: string;
       readonly init: ESTree.Expression;
       readonly method: ServerFnMethod;
     }
@@ -397,6 +401,7 @@ function findDefinitions(program: ESTree.Program, file: string, client: boolean)
       definitions.push({
         kind: "serverFn",
         name: id.name,
+        id: `${file}#${id.name}`,
         init,
         method: methodOf(options, file, id.name),
       });
@@ -450,17 +455,12 @@ function methodOf(
 }
 
 /** サーバー関数の定義の式を、ID で登録する呼び出しで包む。 */
-function registerServerFns(
-  output: MagicString,
-  definitions: readonly Definition[],
-  file: string,
-): void {
+function registerServerFns(output: MagicString, definitions: readonly Definition[]): void {
   let registered = false;
   for (const definition of definitions) {
     if (definition.kind !== "serverFn") continue;
     registered = true;
-    const id = JSON.stringify(`${file}#${definition.name}`);
-    surround(output, definition.init, `${REGISTER}(${id}, `, ")");
+    surround(output, definition.init, `${REGISTER}(${JSON.stringify(definition.id)}, `, ")");
   }
   if (registered) {
     output.prepend(`import { registerServerFn as ${REGISTER} } from "${entries.internal}";\n`);
@@ -499,7 +499,6 @@ function replaceDefinitions(
   output: MagicString,
   code: string,
   definitions: readonly Definition[],
-  file: string,
 ): void {
   if (definitions.length === 0) return;
   const helpers = helpersOf(program);
@@ -538,11 +537,10 @@ function replaceDefinitions(
       continue;
     }
     serverFns = true;
-    const id = JSON.stringify(`${file}#${definition.name}`);
     output.overwrite(
       init.start,
       init.end,
-      `${SERVER_FN}(${id}, ${JSON.stringify(definition.method)})`,
+      `${SERVER_FN}(${JSON.stringify(definition.id)}, ${JSON.stringify(definition.method)})`,
     );
   }
   for (const statement of program.body) {

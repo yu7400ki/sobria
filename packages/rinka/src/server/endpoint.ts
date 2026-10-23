@@ -173,10 +173,9 @@ function isFormSubmission(c: Context): boolean {
   );
 }
 
-/** ID が `id` のサーバー関数を返す。`options.loadModule` があれば、ID のモジュールの部分を読み込んでから検索する。 */
+/** ID が `id` のサーバー関数を返す。`options.loadServerFn` があれば、それが真を返したときだけ検索する。 */
 async function find(id: string, options: AppOptions): Promise<AnyServerFn | undefined> {
-  const separator = id.lastIndexOf("#");
-  if (options.loadModule && separator !== -1) await options.loadModule(id.slice(0, separator));
+  if (options.loadServerFn && !(await options.loadServerFn(id))) return undefined;
   return registry.get(id);
 }
 

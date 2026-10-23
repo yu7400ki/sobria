@@ -197,14 +197,14 @@ describe("サーバー関数のエンドポイント", () => {
     expect((await app.fetch(new Request("http://localhost/_rinka/fn/%E0%A4%A"))).status).toBe(404);
   });
 
-  it("loadModule が投げたエラーは、アプリの onError に渡す", async () => {
+  it("loadServerFn が投げたエラーは、アプリの onError に渡す", async () => {
     const broken = new Error("構文エラー");
     const onError = vi.fn(() => new Response(null, { status: 500 }));
-    const loadModule = vi.fn(async () => {
+    const loadServerFn = vi.fn(async (): Promise<boolean> => {
       throw broken;
     });
     const response = await call("src/broken.ts#fn", post(null), {
-      options: { loadModule, onError },
+      options: { loadServerFn, onError },
     });
     expect(response.status).toBe(500);
     expect(onError).toHaveBeenCalledWith(broken);
@@ -234,18 +234,21 @@ describe("サーバー関数のエンドポイント", () => {
     );
   });
 
-  it("未登録の ID は、loadModule で ID のモジュールの部分を読み込んでから探し直す", async () => {
+  it("loadServerFn が真を返したら ID のサーバー関数を探し、偽を返したら登録済みの ID でも 404 を返す", async () => {
     const id = "src/later.ts#fn";
-    const loadModule = vi.fn(async (path: string) => {
-      if (path === "src/later.ts")
-        registerServerFn(
-          id,
-          defineServerFn(() => "loaded"),
-        );
+    const loadServerFn = vi.fn(async (requested: string) => {
+      if (requested !== id) return false;
+      registerServerFn(
+        id,
+        defineServerFn(() => "loaded"),
+      );
+      return true;
     });
-    const response = await call(id, post(null), { options: { loadModule } });
-    expect(loadModule).toHaveBeenCalledWith("src/later.ts");
+    const response = await call(id, post(null), { options: { loadServerFn } });
+    expect(loadServerFn).toHaveBeenCalledWith(id);
     expect(await response.json()).toEqual({ ok: "loaded" });
+    const stale = register(defineServerFn(() => "stale"));
+    expect((await call(stale, post(null), { options: { loadServerFn } })).status).toBe(404);
   });
 });
 

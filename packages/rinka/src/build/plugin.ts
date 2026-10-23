@@ -65,8 +65,8 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   const prefix = options.prefix ?? "rinka";
   const trustedOrigins = options.trustedOrigins ?? [];
   for (const origin of trustedOrigins) checkOrigin(origin);
-  /** サーバー関数を定義したファイルの、ルートからの相対パスの集合である。 */
-  const serverFnFiles = new Set<string>();
+  /** `ssr` の環境で最後に変換したときに、サーバー関数を定義していたファイルの、ルートからの相対パスごとの ID の集合である。 */
+  const serverFnIds = new Map<string, ReadonlySet<string>>();
   let root = "";
   let elementsDir = "";
 
@@ -81,18 +81,18 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   };
 
   /**
-   * ルートからの相対パスのファイルにサーバー関数の定義があれば、`environment` のランナーで読み込む。
-   * まだ変換していないプロジェクトのファイルは、先に変換して定義を探す。
+   * ID のサーバー関数を今のソースで定義していれば、`environment` のランナーでそのファイルを読み込んで真を返す。
+   * ID のファイルの部分がプロジェクトのファイルなら、`environment` で変換して最新の定義を確認する。変更が無ければ、Vite は前回の変換の結果を使用する。
    */
-  const loadServerFns = async (environment: RunnableDevEnvironment, path: string) => {
-    if (
-      !serverFnFiles.has(path) &&
-      projectFile(`${root}/${path}`)?.file === path &&
-      existsSync(resolve(root, path))
-    ) {
-      await environment.transformRequest(`/${path}`);
+  const loadServerFn = async (environment: RunnableDevEnvironment, id: string) => {
+    const file = id.slice(0, id.lastIndexOf("#"));
+    if (projectFile(`${root}/${file}`)?.file !== file || !existsSync(resolve(root, file))) {
+      return false;
     }
-    if (serverFnFiles.has(path)) await environment.runner.import(`/${path}`);
+    await environment.transformRequest(`/${file}`);
+    if (!serverFnIds.get(file)?.has(id)) return false;
+    await environment.runner.import(`/${file}`);
+    return true;
   };
 
   /** 要素のファイルなら、タグ名を返す。 */
@@ -148,7 +148,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           });
         }
         return () => {
-          server.middlewares.use(appMiddleware(server, trustedOrigins, loadServerFns));
+          server.middlewares.use(appMiddleware(server, trustedOrigins, loadServerFn));
         };
       },
       transform(code, id) {
@@ -162,7 +162,10 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           client: isClient(this.environment),
           ...(tag !== undefined && { element: { tag, module: `/${target.file}` } }),
         });
-        if (result.serverFns) serverFnFiles.add(target.file);
+        if (!isClient(this.environment)) {
+          if (result.serverFns.length > 0) serverFnIds.set(target.file, new Set(result.serverFns));
+          else serverFnIds.delete(target.file);
+        }
         return { code: result.code, map: result.map };
       },
     },
@@ -235,12 +238,12 @@ function routesModule(dir: string, root: string): string {
 /**
  * `ssr` の環境のランナーで読み込んだ `rinka/routes` からアプリを作成し、リクエストを渡すミドルウェアを返す。
  * アプリはリクエストごとに作成する。アプリの onError が受け取ったエラーは `next` に渡す。
- * サーバー関数の ID のモジュールの部分は、`loadServerFns` に `ssr` の環境とともに渡す。
+ * サーバー関数の ID は、`loadServerFn` に `ssr` の環境とともに渡す。
  */
 function appMiddleware(
   server: ViteDevServer,
   trustedOrigins: readonly string[],
-  loadServerFns: (environment: RunnableDevEnvironment, path: string) => Promise<void>,
+  loadServerFn: (environment: RunnableDevEnvironment, id: string) => Promise<boolean>,
 ): (request: IncomingMessage, response: ServerResponse, next: (error?: unknown) => void) => void {
   return (request, response, next) => {
     const environment = server.environments.ssr;
@@ -258,7 +261,7 @@ function appMiddleware(
       const app = createApp(routes, {
         head: VITE_CLIENT,
         trustedOrigins,
-        loadModule: (path) => loadServerFns(environment, path),
+        loadServerFn: (id) => loadServerFn(environment, id),
         onError: (error) => {
           failure = { error };
           return new Response(null, { status: 500 });

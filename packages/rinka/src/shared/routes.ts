@@ -12,8 +12,8 @@ export interface AppOptions {
   readonly onError?: (error: unknown) => Response;
   /** GET 以外のサーバー関数のリクエストで、別のサイトからでも受け付ける `Origin` を列挙する。 */
   readonly trustedOrigins?: readonly string[];
-  /** プロジェクトからの相対パスで指定したモジュールに、サーバー関数の定義があれば読み込む。サーバー関数のリクエストごとに、ID のモジュールの部分を受け取る。 */
-  readonly loadModule?: (path: string) => Promise<unknown>;
+  /** サーバー関数のリクエストごとに ID を受け取り、その ID のサーバー関数の定義を読み込めたら真を返す。偽を返した ID のリクエストには 404 を返す。 */
+  readonly loadServerFn?: (id: string) => Promise<boolean>;
 }
 
 /** ルートの表から、各ページを描画するアプリを作成する関数を表す。 */
