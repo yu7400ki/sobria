@@ -174,7 +174,7 @@ function unreachable(value: never): never {
 }
 
 /** `response` に、Context で設定したヘッダーを加えて返す。 */
-export function withContextHeaders(c: Context, response: Response): Response {
+export function withContextHeaders(c: Pick<Context, "newResponse">, response: Response): Response {
   return c.newResponse(response.body, response);
 }
 

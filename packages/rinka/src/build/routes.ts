@@ -75,7 +75,7 @@ function compareRoutes(a: ScannedRoute, b: ScannedRoute): number {
 /**
  * プロジェクトのルート `root` からの相対パス `dir` のディレクトリを走査し、ルートの表を返す。
  * ルートは、同じ位置では静的な区切り、動的な区切り、キャッチオールの順に並ぶ。
- * 同じディレクトリに `page.tsx` と `route.ts` があるときと、同じ種類の 2 つのファイルが同じ URL に対応するときは、エラーを投げる。`page.tsx` と `route.ts` は同じ種類とみなす。
+ * 同じ種類の 2 つのファイルが同じ URL に対応するときは、エラーを投げる。`page.tsx` と `route.ts` は同じ種類とみなすので、同じディレクトリに両方を置くとエラーになる。
  * キャッチオールのディレクトリの配下のディレクトリにルートのファイルがあるときも、エラーを投げる。
  */
 export function scanRoutes(root: string, dir: string): ScannedRoutes {
@@ -101,11 +101,6 @@ export function scanRoutes(root: string, dir: string): ScannedRoutes {
       const file = fileOf(join(current, "middleware.ts"));
       if (current === start) middleware = file;
       else middlewares = [...outerMiddlewares, file];
-    }
-    if (files.has("page.tsx") && files.has("route.ts")) {
-      throw new Error(
-        `${fileOf(current)} に page.tsx と route.ts の両方があります。どちらか一方にしてください。`,
-      );
     }
     const path = `/${segments.join("/")}`;
     for (const [name, kind] of routeFiles) {

@@ -32,11 +32,6 @@ const lazy =
     return middleware(c, next);
   };
 
-/** `next()` だけを呼ぶミドルウェアである。 */
-const passThrough: MiddlewareHandler = async (_c, next) => {
-  await next();
-};
-
 /** ページとレイアウトが受け取る、リクエストの props を返す。 */
 const propsOf = (c: Context) => ({ params: c.req.param(), url: new URL(c.req.url) });
 
@@ -114,14 +109,9 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   const app = new Hono();
   const handle = options.onError ?? defaultFailure;
   const fail: Failure = (error, c) => withContextHeaders(c, handle(error));
-  app.onError((c) => {
-    const response = handle(c.error);
-    return c.newResponse(response.body, response);
-  });
-  const rinka = every(
-    middleware === undefined ? passThrough : lazy(middleware),
-    serverFnMiddleware(options, fail),
-  );
+  app.onError((c) => withContextHeaders(c, handle(c.error)));
+  const serverFns = serverFnMiddleware(options, fail);
+  const rinka = middleware === undefined ? serverFns : every(lazy(middleware), serverFns);
   app.use((c, next) => runInRequest(c, () => rinka(c, next)));
   const respond: Respond = async (c, node) => {
     const url = new URL(c.req.url);
@@ -132,7 +122,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
       ...(missingPage && { notFound: () => fallback(missingPage, url, {}) }),
       ...(errorPage && { error: (error: unknown) => fallback(errorPage, url, { error }) }),
     });
-    return c.newResponse(response.body, response);
+    return withContextHeaders(c, response);
   };
   for (const route of routes) register(app, route, respond);
   app.notFound((c) => respond(c, jsx(missing, {})));
@@ -144,24 +134,28 @@ type Respond = (c: Pick<Context, "req" | "newResponse">, node: unknown) => Promi
 
 /** `route` を、ディレクトリのミドルウェアの後に `app` に登録する。 */
 function register(app: Hono, route: Route, respond: Respond): void {
-  const middlewares = every(...route.middlewares.map(lazy));
+  const directory = every(...route.middlewares.map(lazy));
   switch (route.kind) {
     case "page":
-      app.get(route.path, middlewares, async (c) =>
+      app.get(route.path, directory, async (c) =>
         respond(c, await wrap(route.load, route.layouts, propsOf(c))),
       );
       return;
     case "route":
-      app.on([...routeMethods], route.path, middlewares, async (c, next) => {
+      app.all(route.path, directory, async (c, next) => {
         const handlers = await route.load();
-        const method = routeMethods.find((name) => name === c.req.method);
+        const requested = c.req.method === "HEAD" ? "GET" : c.req.method;
+        const method = routeMethods.find((name) => name === requested);
         const handler = method === undefined ? undefined : handlers[method];
         if (handler === undefined) {
-          const allow = routeMethods.filter((name) => handlers[name] !== undefined).join(", ");
+          const allow = routeMethods
+            .filter((name) => handlers[name] !== undefined)
+            .flatMap((name) => (name === "GET" ? ["GET", "HEAD"] : [name]))
+            .join(", ");
           return c.body(null, 405, { allow });
         }
         const result: unknown = await handler(c, next);
-        if (result instanceof Response) return result;
+        if (result instanceof Response) return withContextHeaders(c, result);
         return result === undefined ? c.body(null, 204) : c.json(result);
       });
       return;

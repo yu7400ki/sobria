@@ -14,7 +14,7 @@ const module =
   <T>(value: T) =>
   async () => ({ default: value });
 
-/** `tag` の要素で子を包み、`id` 属性を付けるレイアウトを返す。 */
+/** `tag` の要素で子を包み、`id` 属性を付与するレイアウトを返す。 */
 const layout =
   (tag: string, id: string) =>
   ({ children }: { readonly children: unknown }) =>
@@ -225,9 +225,27 @@ describe("createApp の route.ts", () => {
     expect([deleted.status, await deleted.text()]).toEqual([410, "gone"]);
   });
 
-  it("export の無いメソッドには、export したメソッドを Allow に列挙した 405 を返す", async () => {
-    const response = await request(routes, "/api/items/5", { method: "PUT" });
-    expect([response.status, response.headers.get("allow")]).toEqual([405, "GET, POST, DELETE"]);
+  it("export の無いメソッドには、5 つ以外のメソッドも含めて、export したメソッドと HEAD を Allow に列挙した 405 を返す", async () => {
+    const responses = await Promise.all(
+      ["PUT", "OPTIONS"].map((method) => request(routes, "/api/items/5", { method })),
+    );
+    expect(responses.map((response) => [response.status, response.headers.get("allow")])).toEqual([
+      [405, "GET, HEAD, POST, DELETE"],
+      [405, "GET, HEAD, POST, DELETE"],
+    ]);
+  });
+
+  it("HEAD は GET の関数で処理する", async () => {
+    const response = await request(routes, "/api/items/5", { method: "HEAD" });
+    expect(response.status).toBe(200);
+  });
+
+  it("関数が直接作成した Response にも、ミドルウェアが next() の前に設定したヘッダーを付ける", async () => {
+    const response = await request(
+      { routes: [apiRoute("/raw", { GET: () => new Response("raw") }, [marking("x-dir")])] },
+      "/raw",
+    );
+    expect([await response.text(), response.headers.get("x-dir")]).toEqual(["raw", "1"]);
   });
 });
 
