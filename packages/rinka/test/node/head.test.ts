@@ -178,10 +178,27 @@ describe("文書の <head>", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it("名前付きのスロットに配置する Light DOM の子は、slot 属性を付けずに移動する", async () => {
-    const { head, body } = await documentOf(jsx(Side, { side: title("T") }));
-    expect(head.startsWith('<meta charset="utf-8"><title>T</title><script>')).toBe(true);
-    expect(body).not.toContain("<title");
+  it("要素に渡した Light DOM の子は、<slot> の位置にかかわらず移動せず、開発時に警告する", async () => {
+    vi.stubEnv("DEV", true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const html = await (
+      await renderToResponse(
+        jsx(Side, {
+          side: [
+            title("T"),
+            jsx("html", { lang: "en" }),
+            jsx(Navigation, { transitions: true }),
+            jsx("div", { children: title("nested") }),
+          ],
+        }),
+      )
+    ).text();
+    expect(html.startsWith('<!doctype html><html><head><meta charset="utf-8"><script>')).toBe(true);
+    expect(html).not.toContain("view-transition");
+    expect(html).toContain('<title slot="side">T</title>');
+    expect(html).toContain("<title>nested</title>");
+    expect(warn).toHaveBeenCalledTimes(4);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("要素の中"));
   });
 
   it("要素の Shadow DOM の <Loading> の中のスロットに配置する Light DOM の子は、移動しない", async () => {

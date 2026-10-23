@@ -445,8 +445,9 @@ interface WalkCtx {
  * タグを `<head>` に移動するかどうかを表す。
  * `auto` は `<title>`、`<meta>`、`<link>` を移動し、`all` はシェルの `<head>` の子として、すべてのタグを移動し、`none` は `<svg>` か `<noscript>` の配下と、`<head>` に移動するタグの子孫として、どのタグも移動しない。
  * `fallback` は `<Loading>` のフォールバックの中として、どのタグも移動せずに、`<Loading>` の内側と同じく警告する。
+ * `light` は要素に渡した Light DOM の子として、どのタグも移動せずに、要素の中と同じく警告する。
  */
-type HeadPlacement = "auto" | "all" | "none" | "fallback";
+type HeadPlacement = "auto" | "all" | "none" | "fallback" | "light";
 
 /**
  * 文書を出力する描画で、描画している位置を表す。`shell` は、文書の骨組みに移動できる位置である。
@@ -465,7 +466,7 @@ const positionNames = {
 /** `placement` の位置にある `tag` の子の `HeadPlacement` を返す。 */
 function childPlacement(tag: string, placement: HeadPlacement): HeadPlacement {
   if (headlessParents.has(tag) || placement === "none") return "none";
-  return placement === "fallback" ? "fallback" : "auto";
+  return placement === "all" ? "auto" : placement;
 }
 
 /** 要素のホストごとの状態を表す。 */
@@ -853,10 +854,10 @@ class Renderer {
     out.push(this.marker(id, ""), this.marker(id, "/"));
   }
 
-  /** `ctx` の位置を返す。`<head>` に移動しない位置、要素の中、フォールバックの中、`<Loading>` の内側の順に判定する。 */
+  /** `ctx` の位置を返す。`<head>` に移動しない位置、要素の中と要素に渡した Light DOM の子、フォールバックの中、`<Loading>` の内側の順に判定する。 */
   private position(ctx: WalkCtx): Position {
     if (ctx.head === "none") return "headless";
-    if (ctx.owner !== null) return "element";
+    if (ctx.owner !== null || ctx.head === "light") return "element";
     if (ctx.head === "fallback") return "fallback";
     return ctx.boundary === this.root ? "shell" : "loading";
   }
@@ -1064,7 +1065,7 @@ class Renderer {
         path: ctx.path,
         boundary,
         depth: ctx.depth,
-        head: ctx.head,
+        head: ctx.head === "none" ? "none" : "light",
         ...(ctx.slots && { slots: ctx.slots }),
         ...(slot !== "" && { slot }),
       };
