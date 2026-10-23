@@ -662,7 +662,9 @@ describe("描き直しのレスポンス", () => {
     );
     expect(response.headers.get("vary")).toBe("cookie, x-rinka-refresh");
   });
+});
 
+describe("Context のヘッダー", () => {
   it("Context の Vary を含むレスポンスでは、Vary の値を重ねない", async () => {
     const response = await request(
       { routes: [apiRoute("/", { GET: (c) => c.text("ok") }, [varying])] },
