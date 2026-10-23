@@ -65,7 +65,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   const prefix = options.prefix ?? "rinka";
   const trustedOrigins = options.trustedOrigins ?? [];
   for (const origin of trustedOrigins) checkOrigin(origin);
-  /** `ssr` の環境で最後に変換したときに、サーバー関数を定義していたファイルの、ルートからの相対パスごとの ID の集合である。 */
+  /** サーバーの環境で最後に変換したときに、サーバー関数を定義していたファイルの、ルートからの相対パスごとの ID の集合である。 */
   const serverFnIds = new Map<string, ReadonlySet<string>>();
   let root = "";
   let elementsDir = "";
@@ -82,10 +82,12 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
 
   /**
    * ID のサーバー関数を今のソースで定義していれば、`environment` のランナーでそのファイルを読み込んで真を返す。
-   * ID のファイルの部分がプロジェクトのファイルなら、`environment` で変換して最新の定義を確認する。変更が無ければ、Vite は前回の変換の結果を使用する。
+   * ID のファイルの部分がプロジェクトのファイルなら、`environment` で変換して最新の定義を確認する。`#` を含まない ID には偽を返す。
    */
   const loadServerFn = async (environment: RunnableDevEnvironment, id: string) => {
-    const file = id.slice(0, id.lastIndexOf("#"));
+    const separator = id.lastIndexOf("#");
+    if (separator === -1) return false;
+    const file = id.slice(0, separator);
     if (projectFile(`${root}/${file}`)?.file !== file || !existsSync(resolve(root, file))) {
       return false;
     }

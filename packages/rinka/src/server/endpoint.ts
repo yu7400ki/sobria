@@ -2,7 +2,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 
 import type { AppOptions } from "../shared/routes.ts";
-import { withServerFnRef } from "../shared/server-fn.ts";
+import { withServerFnRef, type serverFnRef, type ServerFnRef } from "../shared/server-fn.ts";
 import { rpcPrefix, rpcQuery, wireFormat, wireHeader } from "../shared/wire.ts";
 import { runInRequest } from "./context.ts";
 import { NotFound, Redirect } from "./errors.ts";
@@ -13,7 +13,10 @@ import { fromRpcInput, toRpcBody } from "./wire.ts";
 const registry = new Map<string, Definition>();
 
 /** `fn` を、ID が `id` のサーバー関数として登録し、`fn` を返す。 */
-export function registerServerFn<F extends object>(id: string, fn: F): F {
+export function registerServerFn<F extends { readonly [serverFnRef]: ServerFnRef }>(
+  id: string,
+  fn: F,
+): F {
   const definition = definitionOf(fn);
   if (!definition)
     throw new TypeError("registerServerFn には、defineServerFn が作成した関数を渡してください。");
