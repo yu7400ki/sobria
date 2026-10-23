@@ -104,17 +104,11 @@ interface Host {
   };
 }
 
-/** 起動スクリプトに伝える要素のインスタンスを表す。`immediate` は、インスタンスがすぐ起動するなら真である。 */
+/** 起動スクリプトに伝える要素を表す。`immediate` は、すぐ起動するインスタンスが 1 つでもあれば真である。 */
 interface Delivered {
   readonly tag: string;
   readonly delivery: Delivery;
   readonly immediate: boolean;
-}
-
-/** チャンクで起動スクリプトに伝える要素を表す。`preload` は、すぐ起動するインスタンスが 1 つでもあれば真である。 */
-interface Listed {
-  readonly delivery: Delivery;
-  preload: boolean;
 }
 
 /** 境界の差し替えを表す。 */
@@ -163,12 +157,12 @@ interface DeferredFlush extends Resolvable {
   noindex: boolean;
 }
 
-/** `source` の要素を `target` に加える。同じタグなら、どちらかがすぐ起動するインスタンスを持つときに先読みする。 */
-function mergeListed(target: Map<string, Listed>, source: Iterable<[string, Listed]>): void {
-  for (const [tag, listed] of source) {
-    const current = target.get(tag);
-    if (current) current.preload ||= listed.preload;
-    else target.set(tag, { ...listed });
+/** `source` の要素を、タグ名ごとに `target` に加える。同じタグなら、どちらかがすぐ起動するインスタンスを持つときに `immediate` を真にする。 */
+function mergeDelivered(target: Map<string, Delivered>, source: Iterable<Delivered>): void {
+  for (const delivered of source) {
+    const current = target.get(delivered.tag);
+    if (!current || (!current.immediate && delivered.immediate))
+      target.set(delivered.tag, delivered);
   }
 }
 
@@ -190,11 +184,12 @@ class Out {
   /** この位置の出力と同じ書き込みで、出力の後に書き込むスクリプトである。 */
   readonly scripts: string[] = [];
   /** この位置に出力した、起動スクリプトに伝える要素を、タグ名ごとに表す。 */
-  readonly elements = new Map<string, Listed>();
+  readonly elements = new Map<string, Delivered>();
 
-  /** `elements` を、この位置の要素に加える。 */
-  merge(elements: Iterable<[string, Listed]>): void {
-    mergeListed(this.elements, elements);
+  /** `other` の位置のスクリプトと要素を、この位置に加える。 */
+  absorb(other: Out): void {
+    this.scripts.push(...other.scripts);
+    mergeDelivered(this.elements, other.elements.values());
   }
 
   private constructor(
@@ -397,16 +392,14 @@ function hasHole(chunks: readonly Chunk[]): boolean {
 }
 
 /** `elements` を起動スクリプトに伝えるスクリプトを返す。要素が無ければ空の文字列を返す。 */
-const announceScript = (elements: readonly [string, Listed][]): string =>
-  listScript(elements.map(([tag, { delivery }]) => [tag, delivery.module, delivery.load] as const));
+const announceScript = (elements: readonly Delivered[]): string =>
+  listScript(elements.map(({ tag, delivery }) => [tag, delivery.module, delivery.load] as const));
 
 /** `elements` のうち、すぐ起動するインスタンスがある要素の `modulepreload` を返す。 */
-const preloadLinks = (elements: readonly [string, Listed][]): string =>
+const preloadLinks = (elements: readonly Delivered[]): string =>
   elements
-    .filter(([, listed]) => listed.preload)
-    .map(
-      ([, { delivery }]) => `<link rel="modulepreload" href="${escapeAttribute(delivery.module)}">`,
-    )
+    .filter((delivered) => delivered.immediate)
+    .map(({ delivery }) => `<link rel="modulepreload" href="${escapeAttribute(delivery.module)}">`)
     .join("");
 
 /** サーバーで木を描画する。 */
@@ -431,7 +424,7 @@ class Renderer {
     kind: "shell",
   } satisfies ShellFlush);
   /** 起動スクリプトに伝えた要素のタグ名を保持する。 */
-  private readonly listed = new Set<string>();
+  private readonly announcedTags = new Set<string>();
   /** シェルの中の `<Errored>` が受け止めたときのステータスのうち、最も大きいものを表す。 */
   private caught = 200;
 
@@ -761,11 +754,7 @@ class Renderer {
       }
       case "host": {
         const { record, attributes, open, chunks, announce, delivered } = chunk.host;
-        if (delivered) {
-          out.merge([
-            [delivered.tag, { delivery: delivered.delivery, preload: delivered.immediate }],
-          ]);
-        }
+        if (delivered) mergeDelivered(out.elements, [delivered]);
         const inner = await this.serialize(chunks, out);
         const resolved = await attributes;
         if (resolved.transfer) {
@@ -784,8 +773,7 @@ class Renderer {
         const kept = out.conditional(() => !failed);
         try {
           const html = await this.serialize(chunks, kept);
-          out.scripts.push(...kept.scripts);
-          out.merge(kept.elements);
+          out.absorb(kept);
           return html;
         } catch (error) {
           failed = true;
@@ -880,10 +868,7 @@ class Renderer {
             patches
               .map(([patch, html]) => `<template data-op="${patch.id}">${html}</template>`)
               .join("") +
-            [regionOut, ...patches.map(([patch]) => patch.out)]
-              .flatMap((position) => position.scripts)
-              .join("") +
-            announceScript(this.announce([regionOut, ...patches.map(([patch]) => patch.out)])) +
+            this.tailOf([regionOut, ...patches.map(([patch]) => patch.out)]) +
             swapScript(spec),
         );
         this.finishBoundary(boundary);
@@ -977,18 +962,26 @@ class Renderer {
   }
 
   /** `outs` に出力した要素のうち、まだ起動スクリプトに伝えていない要素を、伝えたものとして記録して返す。 */
-  private announce(outs: readonly Out[]): [string, Listed][] {
-    const merged = new Map<string, Listed>();
-    for (const out of outs) mergeListed(merged, out.elements);
-    const fresh = [...merged].filter(([tag]) => !this.listed.has(tag));
-    for (const [tag] of fresh) this.listed.add(tag);
+  private takeUnannounced(outs: readonly Out[]): Delivered[] {
+    const merged = new Map<string, Delivered>();
+    for (const out of outs) mergeDelivered(merged, out.elements.values());
+    const fresh = [...merged.values()].filter(({ tag }) => !this.announcedTags.has(tag));
+    for (const { tag } of fresh) this.announcedTags.add(tag);
     return fresh;
+  }
+
+  /** `outs` のスクリプトと、まだ起動スクリプトに伝えていない要素を伝えるスクリプトを、連結して返す。 */
+  private tailOf(outs: readonly Out[]): string {
+    return (
+      outs.flatMap((position) => position.scripts).join("") +
+      announceScript(this.takeUnannounced(outs))
+    );
   }
 
   /** 文書の先頭と `shell` を出力し、後送りの境界をすべて出力してから、文書を閉じる。 */
   async finish(shell: string): Promise<void> {
     try {
-      const fresh = this.interactive ? this.announce([this.shellOut]) : [];
+      const fresh = this.interactive ? this.takeUnannounced([this.shellOut]) : [];
       const script = this.interactive
         ? bootstrap + preloadLinks(fresh) + announceScript(fresh)
         : "";
