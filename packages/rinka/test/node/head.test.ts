@@ -34,6 +34,19 @@ const Failing = async () => {
   throw new Error("failed");
 };
 
+/** 名前付きのスロット `side` を Shadow DOM の最上位に持つ要素である。 */
+const Side = defineElement("x-side", () => jsx("slot", { name: "side" }), {
+  props: ["side"],
+  slots: ["side"],
+});
+
+/** Shadow DOM の `<Loading>` の中に、名前の無いスロットを持つ要素である。 */
+const Lazy = defineElement(
+  "x-lazy",
+  () => jsx(Loading, { fallback: "wait", children: jsx("slot", {}) }),
+  { props: [] },
+);
+
 const Titled = defineElement(
   "x-titled",
   () => [title("inner"), jsx("link", { rel: "stylesheet", href: "/x.css" })],
@@ -118,6 +131,72 @@ describe("文書の <head>", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  it("名前付きのスロットに配置する Light DOM の子は、slot 属性を付けずに移動する", async () => {
+    const { head, body } = await documentOf(jsx(Side, { side: title("T") }));
+    expect(head.startsWith('<meta charset="utf-8"><title>T</title><script>')).toBe(true);
+    expect(body).not.toContain("<title");
+  });
+
+  it("要素の Shadow DOM の <Loading> の中のスロットに配置する Light DOM の子は、移動しない", async () => {
+    const { head, body } = await documentOf(jsx(Lazy, { children: title("L") }));
+    expect(head).not.toContain("<title>");
+    expect(body).toContain("<title>L</title>");
+  });
+
+  it("移動したタグの子に移動するタグがあっても、目印を出力しない", async () => {
+    const { head, body } = await documentOf(
+      jsx("title", { children: ["a", jsx("meta", { name: "x" })] }),
+    );
+    expect(head).toBe('<meta charset="utf-8"><title>a<meta name="x"></title>');
+    expect(body).toBe("");
+  });
+
+  it("<svg> と <noscript> の配下のタグと、itemprop を持つ <meta> は、警告せずに記述した位置に出力する", async () => {
+    vi.stubEnv("DEV", true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { head, body } = await documentOf([
+      jsx("svg", { children: title("icon") }),
+      jsx("noscript", { children: jsx("link", { rel: "stylesheet", href: "/n.css" }) }),
+      jsx("div", {
+        itemscope: true,
+        children: [
+          jsx("meta", { itemprop: "name", content: "c" }),
+          jsx("link", { itemprop: "url", href: "/u" }),
+        ],
+      }),
+    ]);
+    expect(head).toBe('<meta charset="utf-8">');
+    expect(body).toBe(
+      '<svg><title>icon</title></svg><noscript><link rel="stylesheet" href="/n.css"></noscript><div itemscope><meta itemprop="name" content="c"><link itemprop="url" href="/u"></div>',
+    );
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("<noscript> の中の要素の Light DOM の子は、移動しない", async () => {
+    const { head, body } = await documentOf(
+      jsx("noscript", { children: jsx(Side, { side: jsx("link", { rel: "icon", href: "/i" }) }) }),
+    );
+    expect(head).not.toContain("/i");
+    expect(body).toContain('<link rel="icon" href="/i" slot="side">');
+  });
+
+  it("移動できない位置の <link> は、rel の値がすべて <body> でも効果のある値でなければ、開発時に警告する", async () => {
+    vi.stubEnv("DEV", true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await documentOf(
+      jsx(Loading, {
+        fallback: "wait",
+        children: [
+          jsx("link", { rel: "stylesheet", href: "/a.css" }),
+          jsx("link", { rel: "Preload  prefetch", href: "/b.js" }),
+          jsx("link", { rel: "canonical", href: "/c" }),
+          jsx("link", { rel: "stylesheet icon", href: "/d" }),
+        ],
+      }),
+    );
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
   it("renderToString は、タグを記述した位置に出力する", async () => {
     expect(await renderToString(jsx("main", { children: title("Home") }))).toBe(
       "<main><title>Home</title></main>",
@@ -169,7 +248,6 @@ const keyedLayout = (props: LayoutProps) => [
   meta({ property: "og:title", content: "a" }),
   meta({ name: "og:title", content: "b" }),
   meta({ "http-equiv": "refresh", content: "5" }),
-  meta({ itemprop: "name", content: "c" }),
   jsx("link", { rel: "canonical", href: "/a" }),
   jsx("link", { rel: "stylesheet", href: "/s.css" }),
   meta({ content: "free" }),
@@ -179,7 +257,6 @@ const keyedLayout = (props: LayoutProps) => [
 const keyedPage = () => [
   meta({ property: "og:title", content: "A" }),
   meta({ "http-equiv": "refresh", content: "10" }),
-  meta({ itemprop: "name", content: "C" }),
   jsx("link", { rel: "canonical", href: "/b" }),
   jsx("link", { rel: "stylesheet", href: "/s.css" }),
   meta({ content: "free" }),
@@ -204,7 +281,6 @@ describe("キーが同じ <head> のタグ", () => {
         '<meta property="og:title" content="A">' +
         '<meta name="og:title" content="b">' +
         '<meta http-equiv="refresh" content="10">' +
-        '<meta itemprop="name" content="C">' +
         '<link rel="canonical" href="/b">' +
         '<link rel="stylesheet" href="/s.css">' +
         '<meta content="free">' +

@@ -114,8 +114,36 @@ const documentTags: ReadonlyMap<string, DocumentTag> = new Map([
   ["link", "head"],
 ]);
 
+/** 配下の `<title>`、`<meta>`、`<link>` を `<head>` に移動しないタグである。 */
+const headlessParents: ReadonlySet<string> = new Set(["svg", "noscript"]);
+
+/** `<body>` に置いても効果のある `<link>` の `rel` の値である。 */
+const bodyOkRels: ReadonlySet<string> = new Set([
+  "stylesheet",
+  "preload",
+  "modulepreload",
+  "prefetch",
+  "preconnect",
+  "dns-prefetch",
+  "pingback",
+]);
+
+/** `<head>` に移動できない位置にある `tag` を、開発時に警告するかどうかを返す。`<link>` は、`rel` の値がすべて `<body>` でも効果のある値なら警告しない。 */
+function warnsOutOfHead(tag: string, props: Record<string, unknown>): boolean {
+  if (tag !== "link") return true;
+  const rel = props.rel;
+  return (
+    typeof rel !== "string" ||
+    !rel
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((value) => value !== "")
+      .every((value) => bodyOkRels.has(value))
+  );
+}
+
 /** `<meta>` のキーになる属性のうち、`charset` 以外のものである。キーになる属性を複数持つ `<meta>` は、この順で最初の属性をキーにする。 */
-const metaKeyNames = ["name", "property", "http-equiv", "itemprop"] as const;
+const metaKeyNames = ["name", "property", "http-equiv"] as const;
 
 /**
  * `<head>` に移動するタグのキーを返す。`read` は、属性の名前から値を返す。
@@ -167,7 +195,7 @@ function dedupeHead(tags: readonly HeadOutput[]): string {
   return [...chosen.values()].map(({ html }) => html).join("");
 }
 
-/** 文書を表す。`head` は、文書の `<head>` の末尾に出力するマークアップである。 */
+/** 文書を出力する描画の設定を表す。`head` は、文書の `<head>` の末尾に出力するマークアップである。 */
 interface DocumentOutput {
   readonly head: string;
 }
@@ -324,6 +352,8 @@ interface WalkCtx {
   readonly slot?: string;
   /** この位置を記述したルートのファイルの深さである。ルートのファイルの外では 0 である。 */
   readonly depth: number;
+  /** `<svg>` か `<noscript>` の配下なら真である。 */
+  readonly headless: boolean;
 }
 
 /** 要素のホストごとの状態を表す。 */
@@ -636,7 +666,12 @@ class Renderer {
     ctx: WalkCtx,
     out: Chunk[],
   ): void {
-    if (this.document && documentTags.get(tag) === "head") {
+    if (
+      this.document &&
+      documentTags.get(tag) === "head" &&
+      !ctx.headless &&
+      (tag === "title" || attributeValue("itemprop", props.itemprop) === null)
+    ) {
       if (ctx.owner === null && ctx.boundary === this.root) {
         const { slot: _, ...unslotted } = ctx;
         const id = ++this.seq;
@@ -649,9 +684,9 @@ class Renderer {
         out.push(this.headMarker(id, "/"));
         return;
       }
-      if (tag !== "link" && import.meta.env?.DEV) {
+      if (import.meta.env?.DEV && warnsOutOfHead(tag, props)) {
         console.warn(
-          `[rinka] <${tag}> は${ctx.owner === null ? " <Loading> の内側" : "要素の中"}にあるので、<head> に移動せずに、記述した位置に出力します。`,
+          `[rinka] <${tag}> は${ctx.owner === null ? " <Loading> の内側（要素の中の <Loading> に配置される子を含む）" : "要素の中"}にあるので、<head> に移動せずに、記述した位置に出力します。`,
         );
       }
     }
@@ -690,7 +725,11 @@ class Renderer {
     out.push(typeof open === "string" ? open : this.hole(open.then((text) => [text])));
     if (voidTags.has(tag)) return;
     const { slot: _, ...inner } = ctx;
-    this.walk(asNode(props.children), inner, out);
+    this.walk(
+      asNode(props.children),
+      headlessParents.has(tag) ? { ...inner, headless: true } : inner,
+      out,
+    );
     out.push(`</${tag}>`);
   }
 
@@ -815,7 +854,14 @@ class Renderer {
     const slots = new Map<string, Boundary>();
     this.walk(
       tree,
-      { owner, path: [...ctx.path, record], boundary: ctx.boundary, slots, depth: ctx.depth },
+      {
+        owner,
+        path: [...ctx.path, record],
+        boundary: ctx.boundary,
+        slots,
+        depth: ctx.depth,
+        headless: false,
+      },
       chunks,
     );
     chunks.push("</template>");
@@ -829,6 +875,7 @@ class Renderer {
         path: ctx.path,
         boundary,
         depth: ctx.depth,
+        headless: ctx.headless,
         ...(ctx.slots && { slots: ctx.slots }),
         ...(slot !== "" && { slot }),
       };
@@ -1092,7 +1139,7 @@ class Renderer {
   /** シェルを描画し、シェルの HTML を返す。 */
   async shell(node: Node): Promise<string> {
     return this.serialize(
-      this.chunks(node, { owner: null, path: [], boundary: this.root, depth: 0 }),
+      this.chunks(node, { owner: null, path: [], boundary: this.root, depth: 0, headless: false }),
       this.shellOut,
     );
   }
