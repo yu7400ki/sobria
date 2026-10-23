@@ -94,7 +94,7 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
       );
     }
     const kept = replaceDefinitions(program, output, code, definitions);
-    checkServerImports(program, options.file, kept);
+    checkServerReferences(program, options.file, kept);
   } else {
     registerServerFns(output, definitions);
   }
@@ -572,7 +572,7 @@ type ImportSpecifierNode = ESTree.ImportDeclaration["specifiers"][number];
  * クライアント向けの出力に、`kept` が真を返す `rinka/server` の値の import の指定子か、`rinka/server` の値の再 export が残るなら、
  * ビルドのエラーを投げる。
  */
-function checkServerImports(
+function checkServerReferences(
   program: ESTree.Program,
   file: string,
   kept: (specifier: ImportSpecifierNode) => boolean,
@@ -604,10 +604,13 @@ function checkServerImports(
       exported.push("*");
     }
   }
-  const [action, names] = imported.length > 0 ? ["import", imported] : ["export", exported];
-  if (names.length === 0) return;
+  const left = [
+    ...(imported.length > 0 ? [`${entries.server} から import した ${imported.join("、")}`] : []),
+    ...(exported.length > 0 ? [`${entries.server} から export した ${exported.join("、")}`] : []),
+  ];
+  if (left.length === 0) return;
   throw new CompileError(
-    `${file}: クライアント向けの出力に、${entries.server} から ${action} した ${names.join("、")} が残ります。${entries.server} の値は、サーバー関数とミドルウェアの定義の式の中でだけ使用できます。型だけを使用する名前は、import type で import してください。`,
+    `${file}: クライアント向けの出力に、${left.join(" と、")} が残ります。${entries.server} の値は、サーバー関数とミドルウェアの定義の式の中でだけ使用できます。型だけを使用する名前は、import type か export type で記述してください。`,
   );
 }
 

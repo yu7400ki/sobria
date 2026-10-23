@@ -696,6 +696,14 @@ export const go = () => redirect("/b");`;
     );
     expect(() => module(`export type { ServerFn } from "rinka/server";`, true)).not.toThrow();
     expect(() =>
+      module(
+        `import { notFound } from "rinka/server";\nexport { redirect } from "rinka/server";\nnotFound();`,
+        true,
+      ),
+    ).toThrow(
+      "rinka/server から import した notFound と、rinka/server から export した redirect が残ります。",
+    );
+    expect(() =>
       module(`import { notFound } from "rinka/server";\nexport const f = () => notFound();`, true),
     ).toThrow("import した notFound が残ります。");
   });
