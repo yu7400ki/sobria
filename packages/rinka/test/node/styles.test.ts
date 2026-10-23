@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToResponse, renderToString } from "../../src/server/render.ts";
@@ -94,5 +95,40 @@ describe("@property の規則", () => {
 
   it("@property の規則を持つシートを使用しなければ、<style data-rinka-properties> を出力しない", async () => {
     expect(await document(jsx("main", {}))).not.toContain("data-rinka-properties");
+  });
+});
+
+describe("後送りの内容の @property の規則", () => {
+  it("後送りの内容で初めて使用したシートの規則を、その内容の先頭の <style data-rinka-properties> に出力し、シェルで出力した規則は繰り返さない", async () => {
+    const shellRule = '@property --a { syntax: "*"; inherits: false; }';
+    const lateRule = '@property --b { syntax: "*"; inherits: false; }';
+    const Shell = defineElement(
+      "x-styled-shell",
+      (_props: object, { css }: Ctx) => {
+        css(sheet("/src/a.css?direct", shellRule));
+        return null;
+      },
+      { props: [] },
+    );
+    const Late = defineElement(
+      "x-styled-late",
+      (_props: object, { css }: Ctx) => {
+        css(sheet("/src/a.css?direct", shellRule));
+        css(sheet("/src/b.css?direct", lateRule));
+        return null;
+      },
+      { props: [] },
+    );
+    const Slow = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return jsx(Late, {});
+    };
+    const html = await document(
+      jsx("main", {
+        children: [jsx(Shell, {}), jsx(Loading, { fallback: "wait", children: jsx(Slow, {}) })],
+      }),
+    );
+    expect(html.split(shellRule)).toHaveLength(2);
+    expect(html).toContain(`<style data-rinka-properties>${lateRule}</style><x-styled-late`);
   });
 });

@@ -752,6 +752,8 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
   private readonly nonce = crypto.randomUUID();
   /** 描画した要素が `css` に渡したシートの `@property` の規則を、シートの URL ごとに表す。 */
   private readonly properties = new Map<string, string>();
+  /** `@property` の規則を出力したシートの URL である。 */
+  private readonly sentProperties = new Set<string>();
   /** `<label for>` の補完の目印を作成し、置換する。 */
   private readonly labels = new Labels(this.nonce);
   /** 文書の骨組みに移動するものを、目印の番号ごとに保持する。 */
@@ -1479,7 +1481,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
         this.reveal(
           flush,
           noindex +
-            `<template ${BOUNDARY_CONTENT_ATTRIBUTE}="${boundary.id}">${resolvedRegion}</template>` +
+            `<template ${BOUNDARY_CONTENT_ATTRIBUTE}="${boundary.id}">${this.propertiesStyle()}${resolvedRegion}</template>` +
             patches
               .map(
                 ([patch], index) =>
@@ -1651,11 +1653,10 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
         ? bootstrap + preloadLinks(fresh) + announceScript(fresh)
         : "";
       const parts = await this.takeDocument(shell);
-      const properties = [...this.properties.values()].join("\n");
       const head = `<meta charset="utf-8">${headTags(parts)}`;
       this.reveal(
         this.shellOut.flush,
-        `<!doctype html><html${attributesText(parts.html)}><head>${head}${script}${extraHead}${properties === "" ? "" : styleTag(properties, " data-rinka-properties")}</head><body${attributesText(parts.body)}>${parts.rest}${this.shellOut.scriptText}`,
+        `<!doctype html><html${attributesText(parts.html)}><head>${head}${script}${extraHead}${this.propertiesStyle()}</head><body${attributesText(parts.body)}>${parts.rest}${this.shellOut.scriptText}`,
       );
       await this.drain();
       for (const host of this.hosts) host.hide();
@@ -1664,6 +1665,23 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     } finally {
       this.dispose();
     }
+  }
+
+  /** まだ出力していないシートの `@property` の規則を返し、出力したものとして記録する。 */
+  private unsentProperties(): string {
+    const rules: string[] = [];
+    for (const [href, properties] of this.properties) {
+      if (this.sentProperties.has(href)) continue;
+      this.sentProperties.add(href);
+      rules.push(properties);
+    }
+    return rules.join("\n");
+  }
+
+  /** まだ出力していないシートの `@property` の規則の `<style data-rinka-properties>` を返す。規則が無ければ空の文字列を返す。 */
+  private propertiesStyle(): string {
+    const properties = this.unsentProperties();
+    return properties === "" ? "" : styleTag(properties, " data-rinka-properties");
   }
 
   /** 描き直しの `shell` から、`refreshPage()` のレスポンスの JSON の値を作成する。 */

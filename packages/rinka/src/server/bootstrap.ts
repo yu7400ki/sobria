@@ -39,6 +39,7 @@ const start=root&&root.querySelector('template[${BOUNDARY_ATTRIBUTE}="'+id+'"]')
 while(end&&!(end.nodeType===8&&end.data==='/ob:'+id))end=end.nextSibling;
 if(!src)return;if(!end){src.remove();return}
 while(start.nextSibling!==end)start.nextSibling.remove();
+for(const y of src.content.querySelectorAll('style[data-rinka-properties]'))document.head.append(y);
 fix(src.content);end.parentNode.insertBefore(src.content,end);start.remove();end.remove();src.remove()};
 const hs=[[s.b,s.bp,'template[${BOUNDARY_CONTENT_ATTRIBUTE}="'+s.b+'"]'],...s.p.map(p=>[p[0],p[1],'template[${PATCH_ATTRIBUTE}="'+p[0]+'"]'])];
 const run=()=>{for(const h of hs)apply(...h)};const w=[];
