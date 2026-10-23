@@ -104,6 +104,21 @@ interface Host {
   };
 }
 
+/** 文書を出力する描画で、特別に扱うタグの扱いを表す。`head` は、`<head>` に移動するタグである。 */
+type DocumentTag = "head";
+
+/** 文書を出力する描画で、特別に扱うタグと、その扱いである。 */
+const documentTags: ReadonlyMap<string, DocumentTag> = new Map([
+  ["title", "head"],
+  ["meta", "head"],
+  ["link", "head"],
+]);
+
+/** 文書を表す。`head` は、文書の `<head>` の末尾に出力するマークアップである。 */
+interface DocumentOutput {
+  readonly head: string;
+}
+
 /** 起動スクリプトに伝える要素を表す。`immediate` は、すぐ起動するインスタンスが 1 つでもあれば真である。 */
 interface Delivered {
   readonly tag: string;
@@ -447,15 +462,17 @@ class Renderer {
   private readonly announcedTags = new Set<string>();
   /** シェルの中の `<Errored>` が受け止めたときのステータスのうち、最も大きいものを表す。 */
   private caught = 200;
+  /** `<head>` に移動するタグを囲む目印に含める、描画ごとの値である。 */
+  private readonly nonce = crypto.randomUUID();
 
   /**
    * `write` は、出力する文字列を受け取る。`blocking` なら、すべての境界を待って、フォールバックと差し替えを出力しない。
-   * `head` は、文書の `<head>` の末尾に出力するマークアップである。
+   * `document` は、文書を出力する描画で渡す。文書を出力する描画では、シェルの中かつ要素の外の `<title>`、`<meta>`、`<link>` を `<head>` に移動する。
    */
   constructor(
     private readonly write: (text: string) => void,
     private readonly blocking: boolean,
-    private readonly head = "",
+    private readonly document?: DocumentOutput,
   ) {}
 
   /** シェルの中の `<Errored>` が受け止めたときのステータスのうち、最も大きいものを返す。受け止めていなければ 200 を返す。 */
@@ -553,6 +570,36 @@ class Renderer {
   }
 
   private tag(
+    tag: string,
+    props: Record<string, unknown>,
+    key: string | undefined,
+    ctx: WalkCtx,
+    out: Chunk[],
+  ): void {
+    if (this.document && documentTags.get(tag) === "head") {
+      if (ctx.owner === null && ctx.boundary === this.root) {
+        const { slot: _, ...unslotted } = ctx;
+        const id = ++this.seq;
+        out.push(this.headMarker(id, ""));
+        this.nativeTag(tag, props, key, unslotted, out);
+        out.push(this.headMarker(id, "/"));
+        return;
+      }
+      if (tag !== "link" && import.meta.env?.DEV) {
+        console.warn(
+          `[rinka] <${tag}> は${ctx.owner === null ? " <Loading> の内側" : "要素の中"}にあるので、<head> に移動せずに、記述した位置に出力します。`,
+        );
+      }
+    }
+    this.nativeTag(tag, props, key, ctx, out);
+  }
+
+  /** `<head>` に移動するタグの前（`end` が空）と後（`end` が `/`）に置く目印である。 */
+  private headMarker(id: number, end: "" | "/"): string {
+    return `<!--${this.nonce}:${id}${end}-->`;
+  }
+
+  private nativeTag(
     tag: string,
     props: Record<string, unknown>,
     key: string | undefined,
@@ -998,6 +1045,20 @@ class Renderer {
     );
   }
 
+  /** シェルの文字列 `shell` から、目印で囲んだタグを取り除き、取り除いたタグを文書の順序で連結した文字列と、残りの文字列を返す。 */
+  private takeHead(shell: string): { readonly tags: string; readonly body: string } {
+    const tags: string[] = [];
+    const inner = new RegExp(`<!--${this.nonce}:\\d+/?-->`, "g");
+    const body = shell.replace(
+      new RegExp(`<!--${this.nonce}:(\\d+)-->([\\s\\S]*?)<!--${this.nonce}:\\1/-->`, "g"),
+      (_match, _id: string, tag: string) => {
+        tags.push(tag.replace(inner, ""));
+        return "";
+      },
+    );
+    return { tags: tags.join(""), body };
+  }
+
   /** 文書の先頭と `shell` を出力し、後送りの境界をすべて出力してから、文書を閉じる。 */
   async finish(shell: string): Promise<void> {
     try {
@@ -1005,9 +1066,10 @@ class Renderer {
       const script = this.interactive
         ? bootstrap + preloadLinks(fresh) + announceScript(fresh)
         : "";
+      const { tags, body } = this.takeHead(shell);
       this.reveal(
         this.shellOut.flush,
-        `<!doctype html><html><head><meta charset="utf-8">${script}${this.head}</head><body>${shell}${this.shellOut.scriptText}`,
+        `<!doctype html><html><head><meta charset="utf-8">${tags}${script}${this.document?.head ?? ""}</head><body>${body}${this.shellOut.scriptText}`,
       );
       await this.drain();
       for (const host of this.hosts) host.hide();
@@ -1055,6 +1117,7 @@ export function renderToStream(
       const renderer = new Renderer(
         (text) => controller.enqueue(encoder.encode(text)),
         options.blocking ?? false,
+        { head: "" },
       );
       try {
         await renderer.finish(await renderer.shell(asNode(node)));
@@ -1110,7 +1173,7 @@ async function respond(node: unknown, options: DocumentOptions, status: number):
   const renderer = new Renderer(
     (text) => controller.enqueue(encoder.encode(text)),
     options.blocking ?? false,
-    options.head,
+    { head: options.head ?? "" },
   );
   let shell: string;
   try {
