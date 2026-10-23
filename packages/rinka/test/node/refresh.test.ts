@@ -3,7 +3,7 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { Errored, Loading, Navigation } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { notFound, redirect } from "../../src/server/errors.ts";
-import { registerServerFn } from "../../src/server/internal.ts";
+import { defineElement as defineDelivered, registerServerFn } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { refreshPage } from "../../src/server/refresh.ts";
 import { renderRefresh } from "../../src/server/render.ts";
@@ -141,6 +141,19 @@ describe("renderRefresh", () => {
     const id = /data-oh="([^"]+)"/.exec(json.body)?.[1] ?? "";
     expect(json.body).toContain("failed");
     expect(Object.keys(json.data)).toEqual([id]);
+  });
+
+  it("描き直しで使用した、モジュールを持つ要素を elements に入れる", async () => {
+    const Delivered = defineDelivered(
+      "x-refresh-delivered",
+      () => null,
+      { props: [] },
+      { module: "/src/elements/x-refresh-delivered.tsx", load: "idle" },
+    );
+    const { json } = await refreshOf(jsx(Delivered, {}));
+    expect(json.elements).toEqual([
+      ["x-refresh-delivered", "/src/elements/x-refresh-delivered.tsx", "idle"],
+    ]);
   });
 
   it("描画ごとに、ホストの ID の接頭辞を変える", async () => {
