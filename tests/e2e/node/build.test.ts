@@ -110,7 +110,8 @@ describe("本番のビルド", () => {
     const counter = html.slice(html.indexOf("<app-counter"), html.indexOf("</app-counter>"));
     const sheet = /<link rel="stylesheet" href="([^"]+)">/.exec(counter)?.[1];
     expect(sheet).toMatch(/^\/assets\/.+\.css$/);
-    expect(await contents(join(outDir, "client"))).toContain(sheet);
+    const module = /\$rinka\.m\(\[\["app-counter","([^"]+)"/.exec(html)![1]!;
+    expect(await readFile(join(outDir, "client", module), "utf8")).toContain(sheet);
   });
 
   it("サーバーの出力の CSS はクライアントの出力に移動し、ソースマップと JSON と Vite の manifest はクライアントの出力に残らない", async () => {

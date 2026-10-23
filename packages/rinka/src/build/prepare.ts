@@ -21,7 +21,7 @@ export const projectConfig = (project: Project): string => `tsconfig.${project}.
 /** 生成する tsconfig が extends する、アプリの tsconfig のファイルの名前である。 */
 const BASE_CONFIG = "tsconfig.base.json";
 
-/** パス `path` が、アプリのルート `root` のルートのディレクトリの中か、要素のディレクトリ `elementsDir` の中か、`tsconfig.base.json` なら真を返す。 */
+/** パス `path` が、アプリのルート `root` の `src/routes` の中か、要素のディレクトリ `elementsDir` の中か、`tsconfig.base.json` なら真を返す。 */
 export const isPrepareInput = (root: string, elementsDir: string, path: string): boolean =>
   inside(join(root, ROUTES_DIR), path) !== undefined ||
   inside(elementsDir, path) !== undefined ||
