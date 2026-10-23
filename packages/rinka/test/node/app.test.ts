@@ -547,15 +547,15 @@ describe("Context のヘッダーを加えるレスポンスの出口", () => {
 });
 
 /** ヘッダー `x-mw` と Cookie の `mw` を設定してから、Set-Cookie を持つ 401 の Response を返すミドルウェアである。 */
-const own: MiddlewareHandler = async (c) => {
+const returningOwn: MiddlewareHandler = async (c) => {
   c.header("x-mw", "1");
   setCookie(c, "mw", "1");
   return raw(401, "own=1");
 };
 
 describe("ルートの middleware.ts が返した Response", () => {
-  it("next() の前に設定したヘッダーと Set-Cookie を加える", async () => {
-    const response = await request({ middleware: module(own), routes: [] }, "/");
+  it("Response を返す前に設定したヘッダーと Set-Cookie を加える", async () => {
+    const response = await request({ middleware: module(returningOwn), routes: [] }, "/");
     expect([
       response.status,
       response.headers.get("x-mw"),
