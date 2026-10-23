@@ -1,7 +1,4 @@
-import type { EnvironmentModuleNode } from "vite";
-
-/** サーバーコンポーネントの CSS として収集するモジュールの拡張子に一致する正規表現である。 */
-const styleExtension = /\.(?:css|scss|sass|less|styl|stylus|pcss|postcss)$/;
+import { isCSSRequest, type EnvironmentModuleNode } from "vite";
 
 /**
  * モジュール `roots` から import をたどり、普通の import で読み込んだ CSS を開発サーバーが CSS として配信する URL を返す。
@@ -22,7 +19,7 @@ export function routeStyles(roots: readonly EnvironmentModuleNode[]): string[] {
     }
     visited.add(node);
     for (const imported of node.importedModules) visit(imported);
-    if (styleExtension.test(node.id)) {
+    if (isCSSRequest(node.id)) {
       links.push(`${node.url}?direct`);
     }
   };

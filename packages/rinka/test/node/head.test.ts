@@ -339,7 +339,8 @@ describe("文書の <head>", () => {
 });
 
 /** `component` を default export するモジュールを読み込む関数を返す。 */
-const moduleOf = (component: RouteComponent) => async () => ({ default: component });
+const moduleOf = (component: RouteComponent) =>
+  Object.assign(async () => ({ default: component }), { file: "src/routes/test.tsx" });
 
 /** `layouts` で包んだ `page` を `/` に置いたアプリで、`/` の文書の `<head>` の中身を返す。 */
 async function headOfPage(

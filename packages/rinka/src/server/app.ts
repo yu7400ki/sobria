@@ -177,9 +177,7 @@ function register(app: Hono, route: Route, respond: Respond): void {
           await wrap(route.module, route.layouts, props),
           route,
           props,
-          [...route.layouts, route.module].flatMap((load) =>
-            load.file === undefined ? [] : [load.file],
-          ),
+          [...route.layouts, route.module].map((load) => load.file),
         );
       });
       return;

@@ -28,7 +28,7 @@ function requestPage(page: () => unknown, init?: RequestInit): Promise<Response>
       {
         kind: "page",
         path: "/posts",
-        module: async () => ({ default: page }),
+        module: Object.assign(async () => ({ default: page }), { file: "src/routes/page.tsx" }),
         layouts: [],
         middlewares: [],
       },

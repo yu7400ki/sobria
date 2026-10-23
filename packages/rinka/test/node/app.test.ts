@@ -19,9 +19,8 @@ import type {
 import { rpcPath } from "../../src/shared/wire.ts";
 
 /** `value` を default export するモジュールを読み込む関数を返す。 */
-const module =
-  <T>(value: T) =>
-  async () => ({ default: value });
+const module = <T>(value: T) =>
+  Object.assign(async () => ({ default: value }), { file: "src/routes/test.tsx" });
 
 /** `tag` の要素で子を包み、`id` 属性を付与するレイアウトを返す。 */
 const layout =

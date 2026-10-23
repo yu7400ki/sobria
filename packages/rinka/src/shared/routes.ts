@@ -10,7 +10,7 @@ export const routeMethods = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 export type RouteMethod = (typeof routeMethods)[number];
 
 /** モジュールを読み込み、その default export を返す関数を表す。`file` は、Vite プラグインが作成したルートの表で、モジュールのファイルのプロジェクトのルートからのパスである。 */
-export type Load<T> = (() => Promise<{ readonly default: T }>) & { readonly file?: string };
+export type Load<T> = (() => Promise<{ readonly default: T }>) & { readonly file: string };
 
 /** ページ、レイアウト、エラーのページのコンポーネントを表す。 */
 export type RouteComponent = (props: never) => unknown;
