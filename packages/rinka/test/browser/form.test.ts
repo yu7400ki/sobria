@@ -57,6 +57,14 @@ const refreshJson = (json: Partial<RefreshJson>): RefreshJson => ({
   ...json,
 });
 
+/** スロットに配置したフォームを持つ要素を配置し、要素が描画した後に送信のボタンを返す。 */
+const placeSlotted = async () => {
+  document.body.innerHTML = `<div id="wrap"><test-form-slot><form action="${action}" method="post"><button>go</button></form></test-form-slot></div>`;
+  const host = document.querySelector("test-form-slot")!;
+  await vi.waitFor(() => expect(host.shadowRoot?.querySelector("slot")).toBeTruthy());
+  return document.querySelector("button")!;
+};
+
 describe("JS があるときのフォームの送信", () => {
   it("押したボタンの値を含む FormData を、x-rinka-refresh: 1 を付けて送信先に POST し、送信中は aria-busy を付与する", async () => {
     const response = Promise.withResolvers<Response>();
@@ -154,15 +162,15 @@ describe("JS があるときのフォームの送信", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("要素のスロットに配置したフォームは、ホストより外側の onSubmit の後に扱う", async () => {
+  it("要素のスロットに配置したフォームは、ホストより外側の onSubmit の後に、document で 1 回だけ送信する", async () => {
     const fetch = vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise(() => {}));
     defineElement("test-form-slot", () => jsx("slot", {}), { props: [] });
-    document.body.innerHTML = `<div id="wrap"><test-form-slot><form action="${action}" method="post"><button>go</button></form></test-form-slot></div>`;
-    const host = document.querySelector("test-form-slot")!;
-    await vi.waitFor(() => expect(host.shadowRoot?.querySelector("slot")).toBeTruthy());
+    (await placeSlotted()).click();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const button = await placeSlotted();
     document.querySelector("#wrap")!.addEventListener("submit", (event) => event.preventDefault());
-    document.querySelector("button")!.click();
-    expect(fetch).not.toHaveBeenCalled();
+    button.click();
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("要素の Shadow DOM の中のフォームも送信する", async () => {
