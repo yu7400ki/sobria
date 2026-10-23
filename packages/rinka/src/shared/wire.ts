@@ -111,3 +111,14 @@ function check(value: unknown, path: string, seen: Set<object>): void {
   }
   for (const [key, item] of Object.entries(value)) next(item, `${path}.${key}`);
 }
+
+/**
+ * `<form>` の props を返す。`action` がサーバー関数なら、`action` をエンドポイントの URL に、`method` を `post` に、
+ * `enctype` を `multipart/form-data` にする。`enctype` を記述していれば、その値を使用する。
+ */
+export function formProps(props: Record<string, unknown>): Record<string, unknown> {
+  const ref = serverFnRefOf(props.action);
+  if (!ref) return props;
+  const { enctype = "multipart/form-data" } = props;
+  return { ...props, action: rpcPath(ref.id), method: "post", enctype };
+}

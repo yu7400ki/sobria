@@ -6,6 +6,7 @@ import { serverFnRef, type ServerFnRef } from "../shared/server-fn.ts";
 import { rpcPrefix, rpcQuery, wireFormat, wireHeader } from "../shared/wire.ts";
 import { runInRequest } from "./context.ts";
 import { NotFound, Redirect } from "./errors.ts";
+import { formDataToInput } from "./form-data.ts";
 import { runChain, SchemaError, serverFnKey, type ServerFn } from "./server-fn.ts";
 import { fromRpcInput, toRpcBody } from "./wire.ts";
 
@@ -50,9 +51,10 @@ async function endpoint(c: Context, id: string, options: AppOptions): Promise<Re
   if (method !== "GET" && isCrossSite(c.req.raw, options.trustedOrigins ?? [])) {
     return rpc(c, null, 403);
   }
+  const form = isFormSubmission(c);
   let input: unknown;
   try {
-    input = await readInput(c);
+    input = form ? formDataToInput(await c.req.formData()) : await readInput(c);
   } catch {
     return rpc(c, null, 400);
   }
@@ -61,9 +63,10 @@ async function endpoint(c: Context, id: string, options: AppOptions): Promise<Re
     middlewares,
     async () => {
       const value = await handle(c, input);
-      return value instanceof Response ? value : rpc(c, toRpcBody(value));
+      if (value instanceof Response) return value;
+      return form ? c.redirect(c.req.header("referer") ?? "/", 303) : rpc(c, toRpcBody(value));
     },
-    (error) => rpcError(c, error),
+    (error) => (form ? formError(c, error) : rpcError(c, error)),
   );
   if (!c.finalized) throw new Error("ミドルウェアは、next() を呼ぶか、Response を返してください。");
   return c.res;
@@ -74,11 +77,33 @@ function rpcError(c: Context, error: unknown): Response {
   if (error instanceof Redirect) return rpc(c, { redirect: error.location }, 200);
   if (error instanceof NotFound) return rpc(c, null, 404);
   if (error instanceof SchemaError) return rpc(c, { issues: error.issues }, 422);
-  if (error instanceof HTTPException) {
-    const response = error.getResponse();
-    return c.newResponse(response.body, response);
-  }
+  if (error instanceof HTTPException) return httpResponse(c, error);
   throw error;
+}
+
+/** フォームの送信で、サーバー関数が投げた値をレスポンスにする。rinka が扱わない値は、素のテキストの 500 にする。 */
+function formError(c: Context, error: unknown): Response {
+  if (error instanceof Redirect) return c.redirect(error.location, 303);
+  if (error instanceof NotFound) return c.text("Not Found", 404);
+  if (error instanceof SchemaError) return c.json({ issues: error.issues }, 422);
+  if (error instanceof HTTPException) return httpResponse(c, error);
+  console.error(error);
+  return c.text("Internal Server Error", 500);
+}
+
+/** `HTTPException` のレスポンスに、Context で設定したヘッダーを加えて返す。 */
+function httpResponse(c: Context, error: HTTPException): Response {
+  const response = error.getResponse();
+  return c.newResponse(response.body, response);
+}
+
+/** フォームの送信と同じ `Content-Type` の POST かどうかを返す。 */
+function isFormSubmission(c: Context): boolean {
+  if (c.req.method !== "POST") return false;
+  const type = c.req.header("content-type")?.toLowerCase() ?? "";
+  return (
+    type.startsWith("multipart/form-data") || type.startsWith("application/x-www-form-urlencoded")
+  );
 }
 
 /** ID が `id` のサーバー関数を返す。`options.loadModule` があれば、ID のモジュールの部分を読み込んでから検索する。 */

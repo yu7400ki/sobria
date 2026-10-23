@@ -1,6 +1,7 @@
 import { toJSON } from "seroval";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { jsx as clientJsx } from "../../src/client/jsx-runtime.ts";
 import { serverFn } from "../../src/client/server-fn.ts";
 import { runSeeding } from "../../src/shared/scope.ts";
 import { ServerFnError } from "../../src/shared/server-fn.ts";
@@ -143,5 +144,20 @@ describe("serverFn", () => {
     await tick();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(settled).toBe(false);
+  });
+});
+
+describe("クライアントの form の action に渡したサーバー関数", () => {
+  it("action をエンドポイントの URL に、method を post に、enctype を multipart/form-data にする", () => {
+    const save = serverFn("src/fns.ts#save", "POST");
+    const form = clientJsx("form", { action: save }) as unknown as HTMLFormElement;
+    expect(form.getAttribute("action")).toBe("/_rinka/fn/src%2Ffns.ts%23save");
+    expect(form.getAttribute("method")).toBe("post");
+    expect(form.getAttribute("enctype")).toBe("multipart/form-data");
+    const encoded = clientJsx("form", {
+      action: save,
+      enctype: "text/plain",
+    }) as unknown as HTMLFormElement;
+    expect(encoded.getAttribute("enctype")).toBe("text/plain");
   });
 });

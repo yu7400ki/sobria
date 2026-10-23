@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { chromium } from "playwright";
 import type { ViteDevServer } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -84,6 +85,36 @@ writeFileSync(${JSON.stringify(marker)}, "x");
     );
     expect(await response.json()).toEqual({ ok: "pong" });
   });
+
+  it("form の action に渡したサーバー関数に、JS が無いときと同じ multipart の送信をすると、Referer に 303 でリダイレクトする", async () => {
+    const html = await (await fetch(`${origin}/fns`)).text();
+    const action = `/_rinka/fn/${encodeURIComponent("src/lib/fns.ts#save")}`;
+    expect(html).toContain(`<form action="${action}" method="post" enctype="multipart/form-data">`);
+    const body = new FormData();
+    body.append("title", "a");
+    const response = await fetch(`${origin}${action}`, {
+      method: "POST",
+      body,
+      headers: { referer: `${origin}/fns` },
+      redirect: "manual",
+    });
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(`${origin}/fns`);
+  });
+
+  it("ページの要素の中から、props で受け取ったサーバー関数と import したサーバー関数を RPC で呼び出せる", async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage();
+      await page.goto(`${origin}/fns`);
+      await page.locator("app-pinger[data-started]").waitFor();
+      // 前のテストの /boom のエラーが、Vite のエラーのオーバーレイとしてボタンの上に表示されるので、click のイベントを直接送る
+      await page.locator("app-pinger button").dispatchEvent("click");
+      await page.locator("app-pinger button", { hasText: "pong pong" }).waitFor({ timeout: 5000 });
+    } finally {
+      await browser.close();
+    }
+  }, 30_000);
 
   it("Vite が処理するリクエストは、Vite が返す", async () => {
     const response = await fetch(`${origin}/src/elements/counter.tsx`);

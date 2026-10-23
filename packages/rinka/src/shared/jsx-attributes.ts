@@ -1,3 +1,5 @@
+import type { serverFnRef, ServerFnRef } from "./server-fn.ts";
+
 /** 属性の値か、値を返す関数を表す。関数を渡すと、要素の中では、関数が返す値が変わるたびに属性に反映する。 */
 export type AttributeValue<T> = T | (() => T);
 
@@ -103,7 +105,7 @@ export interface TagAttributes {
   dialog: { open?: Bool; closedby?: V<"any" | "closerequest" | "none"> };
   fieldset: FormControl;
   form: {
-    action?: Text;
+    action?: Text | { readonly [serverFnRef]: ServerFnRef<"POST"> };
     method?: V<"get" | "post" | "dialog">;
     enctype?: Text;
     novalidate?: Bool;

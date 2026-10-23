@@ -2,7 +2,7 @@ import { Context, type MiddlewareHandler } from "hono";
 import type { StandardSchema } from "hono/factory";
 import type { IntersectNonAnyTypes } from "hono/types";
 
-import type { CallOptions, ServerFnMethod } from "../shared/server-fn.ts";
+import type { CallOptions, serverFnRef, ServerFnMethod, ServerFnRef } from "../shared/server-fn.ts";
 import { currentContext } from "./context.ts";
 
 type AnyMiddleware = MiddlewareHandler<any, any, any>;
@@ -37,9 +37,9 @@ type OutputOf<V> = [V] extends [never]
       : never;
 
 /** `defineServerFn` の 1 段目に指定するオプションである。 */
-export interface ServerFnOptions<V extends Validation> {
+export interface ServerFnOptions<V extends Validation, M extends ServerFnMethod = ServerFnMethod> {
   /** デフォルトは `"POST"` である。 */
-  method?: ServerFnMethod;
+  method?: M;
   /** 入力を検証する。検証を通過した値が、handler の `input` になる。 */
   input?: V;
 }
@@ -50,10 +50,11 @@ type ServerFnHandler<M extends AnyMiddleware[], In, R> = (
 ) => R;
 
 /** 入力の型が `undefined` なら、入力を省略して呼び出せる。 */
-export type ServerFn<In, R> = ([In] extends [undefined]
+export type ServerFn<In, R, M extends ServerFnMethod = ServerFnMethod> = ([In] extends [undefined]
   ? (input?: In, options?: CallOptions) => Promise<Awaited<R>>
   : (input: In, options?: CallOptions) => Promise<Awaited<R>>) & {
   readonly [serverFnKey]: Definition;
+  readonly [serverFnRef]: ServerFnRef<M>;
 };
 
 export const serverFnKey: unique symbol = Symbol("rinka.serverFn");
@@ -87,15 +88,18 @@ type StandardSchemaIssues = Extract<
  * ミドルウェアが `next()` を呼ばずに Response を返したら、その Response を投げる。
  * Standard Schema の検証が失敗したら、`issues` を持つ `SchemaError` を投げる。
  */
-export function defineServerFn<V extends Validation = never>(
-  options: ServerFnOptions<V>,
+export function defineServerFn<
+  V extends Validation = never,
+  Method extends ServerFnMethod = "POST",
+>(
+  options: ServerFnOptions<V, Method>,
 ): <M extends AnyMiddleware[], R>(
   ...args: [...middleware: M, handler: ServerFnHandler<M, OutputOf<V>, R>]
-) => ServerFn<InputOf<V>, R>;
+) => ServerFn<InputOf<V>, R, Method>;
 /** オプションを省略して、ミドルウェアと handler からサーバー関数を作成する。 */
 export function defineServerFn<M extends AnyMiddleware[], R>(
   ...args: [...middleware: M, handler: ServerFnHandler<M, undefined, R>]
-): ServerFn<undefined, R>;
+): ServerFn<undefined, R, "POST">;
 export function defineServerFn(...args: (ServerFnOptions<Validation> | Step)[]): unknown {
   const [first] = args;
   if (typeof first === "object") return (...steps: Step[]) => create(first, steps);

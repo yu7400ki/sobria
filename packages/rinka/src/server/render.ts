@@ -22,7 +22,7 @@ import { isFunction } from "../shared/objects.ts";
 import type { SwapSpec } from "../shared/receiver.ts";
 import { createScope, withScope, type ScopedChild } from "../shared/scope.ts";
 import { BOUNDARIES_KEY, childKey, PROPS_KEY } from "../shared/transfer-keys.ts";
-import { checkSerializable } from "../shared/wire.ts";
+import { checkSerializable, formProps } from "../shared/wire.ts";
 import {
   bootstrap,
   dataScript,
@@ -561,7 +561,7 @@ class Renderer {
   ): void {
     const openTag = (tracked: boolean): string => {
       let attributes = "";
-      for (const [name, raw] of Object.entries(props)) {
+      for (const [name, raw] of Object.entries(tag === "form" ? formProps(props) : props)) {
         if (name === "children" || name === "ref") continue;
         if (name === "slot" && ctx.slot !== undefined) continue;
         if (isEventProp(name) && isFunction(raw)) continue;

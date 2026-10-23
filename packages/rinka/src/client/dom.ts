@@ -5,6 +5,7 @@ import { isEventProp, listenerEventName } from "../shared/names.ts";
 import type { ClientNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
 import { outsideScope } from "../shared/scope.ts";
+import { formProps } from "../shared/wire.ts";
 import { registerSlot } from "./slots.ts";
 
 /** DOM に挿入できる値を表す。関数は、値が変化するたびに挿入し直す領域になる。 */
@@ -68,7 +69,8 @@ export function applyAttribute(el: Element, name: string, value: unknown): void 
 }
 
 /** ネイティブのタグのノードを作成する。子、属性、プロパティの順に設定する。 */
-function createTag(tag: string, props: Record<string, unknown>): Element {
+function createTag(tag: string, given: Record<string, unknown>): Element {
+  const props = tag === "form" ? formProps(given) : given;
   const el = document.createElement(tag);
   if (props.children !== undefined) insert(el, props.children);
   const propertyNames = properties[tag] ?? [];
