@@ -495,6 +495,23 @@ interface Legend {
 /** `disabled` の属性の値 `value` が、無効であることを表すかどうかを返す。 */
 const disables = (value: unknown): boolean => attributeValue("disabled", value) !== null;
 
+/**
+ * フォームの部品 `<tag>` の Light DOM の先頭に出力する hidden input を返す。ホストの `name` が文字列で、`form.value` の値 `value` が文字列のときだけ出力する。
+ * `name` があり、`value` が文字列、`null`、`undefined` のどれでもなければ、開発時に警告する。
+ */
+function hiddenInput(tag: string, name: unknown, value: unknown, disabled: boolean): string {
+  if (typeof name !== "string") return "";
+  if (typeof value === "string") {
+    return `<input type="hidden"${attribute("name", name)}${attribute("value", value)}${attribute(FORM_VALUE_ATTRIBUTE, true)}${attribute("disabled", disabled)}>`;
+  }
+  if (value !== null && value !== undefined && import.meta.env?.DEV) {
+    console.warn(
+      `[rinka] <${tag}> の form.value に渡した関数が文字列以外の値を返したので、JS が届く前にフォームを送信すると、この部品の値は送信されません。`,
+    );
+  }
+  return "";
+}
+
 /** 常に無効でないことを返す。 */
 const notDisabled = (): boolean => false;
 
@@ -919,19 +936,21 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /** `compute` を追跡せずに呼び出した値を返す。未解決の値を参照したときは、追跡して呼び出した値が解決する Promise を返す。 */
   private settle<T>(ctx: WalkCtx, compute: (tracked: boolean) => T): T | Promise<T> {
-    return this.settleIn(ctx.owner, compute);
-  }
-
-  /** `owner` の下で、`settle` と同じく `compute` を呼び出した値を返す。 */
-  private settleIn<T>(owner: Owner | null, compute: (tracked: boolean) => T): T | Promise<T> {
     try {
-      return runWithOwner(owner, () => untrack(() => compute(false)));
+      return runWithOwner(ctx.owner, () => untrack(() => compute(false)));
     } catch (error) {
       if (!(error instanceof NotReadyError)) throw error;
-      const settled = runWithOwner(owner, () => resolve(() => compute(true)));
+      const settled = runWithOwner(ctx.owner, () => resolve(() => compute(true)));
       settled.catch(() => {});
       return settled;
     }
+  }
+
+  /** 確定した値か、解決する Promise の `value` を、`text` で文字列にした出力の単位にする。 */
+  private chunkOf<T>(value: T | Promise<T>, text: (value: T) => string): Chunk {
+    return value instanceof Promise
+      ? this.hole(value.then((settled) => [text(settled)]))
+      : text(value);
   }
 
   private tag(
@@ -1062,7 +1081,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       ctx.slots?.set(typeof name === "string" ? name : "", ctx.boundary);
     }
     const open = this.settle(ctx, openTag);
-    out.push(typeof open === "string" ? open : this.hole(open.then((text) => [text])));
+    out.push(this.chunkOf(open, (text) => text));
     if (label) out.push(label.mark);
     if (voidTags.has(tag)) return;
     const { slot: _, legend, disabled: outer, ...inner } = ctx;
@@ -1190,27 +1209,11 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       ? () => ctx.disabled() || disables(propValue("disabled"))
       : notDisabled;
     const shadow = this.runsElements
-      ? this.runElement(component, elementProps, record, ctx, disabled)
+      ? this.runElement(component, elementProps, record, ctx, disabled, () => propValue("name"))
       : undefined;
     const chunks: Chunk[] = shadow?.chunks ?? [];
     const aria = ariaAttributes(shadow?.internals ?? {});
     const hostId = options.form && shadow ? this.settle(ctx, () => propValue("id")) : undefined;
-    if (options.form && shadow?.form) {
-      const parts = [
-        this.settle(ctx, () => propValue("name")),
-        shadow.form.value,
-        this.settle(ctx, disabled),
-      ];
-      chunks.push(
-        parts.some((part) => part instanceof Promise)
-          ? this.hole(
-              Promise.all(parts).then(([name, value, off]) => [
-                this.hiddenInput(tag, name, value, off === true),
-              ]),
-            )
-          : this.hiddenInput(tag, parts[0], parts[1], parts[2] === true),
-      );
-    }
     for (const name of Object.keys(descriptors)) {
       if (!slotNames.has(name)) continue;
       const slot = name === "children" ? "" : name;
@@ -1265,27 +1268,10 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
   }
 
   /**
-   * フォームの部品 `<tag>` の Light DOM の先頭に出力する hidden input を返す。ホストの `name` が文字列で、`form.value` の値 `value` が文字列のときだけ出力する。
-   * `name` があり、`value` が文字列、`null`、`undefined` のどれでもなければ、開発時に警告する。
-   */
-  private hiddenInput(tag: string, name: unknown, value: unknown, disabled: boolean): string {
-    if (typeof name !== "string") return "";
-    if (typeof value === "string") {
-      return `<input type="hidden"${attribute("name", name)}${attribute("value", value)}${attribute(FORM_VALUE_ATTRIBUTE, true)}${attribute("disabled", disabled)}>`;
-    }
-    if (value !== null && value !== undefined && import.meta.env?.DEV) {
-      console.warn(
-        `[rinka] <${tag}> の form.value に渡した関数が文字列以外の値を返したので、JS が届く前にフォームを送信すると、この部品の値は送信されません。`,
-      );
-    }
-    return "";
-  }
-
-  /**
    * 要素の関数 `component` を `props` で実行し、Shadow DOM の中身の出力の単位の列を返す。
    * `slots` は、Shadow DOM の `<slot>` の名前ごとに、その `<slot>` を囲む境界を表す。
-   * `internals` は、要素の関数が ctx の `internals` に代入した値である。要素の関数が `form.value` を呼んだときは、要素の関数を実行した後に、渡した関数を 1 回だけ評価した値を `form` に持つ。
-   * 値が未解決なら、`form` の値は解決する Promise である。`disabled` は、要素の関数の `form.disabled()` が返す値である。
+   * `internals` は、要素の関数が ctx の `internals` に代入した値である。`disabled` は、要素の関数の `form.disabled()` に渡す関数である。
+   * 要素の関数が `form.value` を呼んだときは、要素の関数を実行した後に、渡した関数とホストの名前 `name` と `disabled` を 1 回だけ評価し、hidden input を `</template>` の後に出力する。
    */
   private runElement(
     component: ElementComponent<unknown>,
@@ -1293,11 +1279,11 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     record: HostRecord,
     ctx: WalkCtx,
     disabled: () => boolean,
+    name: () => unknown,
   ): {
     readonly chunks: Chunk[];
     readonly slots: ReadonlyMap<string, Boundary>;
     readonly internals: object;
-    readonly form?: { readonly value: unknown };
   } {
     const { tag } = record;
     const chunks: Chunk[] = [];
@@ -1339,23 +1325,26 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       owner = getOwner();
       tree = asNode(untrack(() => withScope(scope, () => component(props, elementCtx))));
     });
-    const read = valueOf;
-    const form = read && { value: this.settleIn(owner, () => read()) };
-    this.walk(
-      tree,
-      {
-        owner,
-        path: [...ctx.path, record],
-        boundary: ctx.boundary,
-        slots,
-        depth: ctx.depth,
-        head: "element",
-        disabled: notDisabled,
-      },
-      chunks,
-    );
+    const shadowCtx: WalkCtx = {
+      owner,
+      path: [...ctx.path, record],
+      boundary: ctx.boundary,
+      slots,
+      depth: ctx.depth,
+      head: "element",
+      disabled: notDisabled,
+    };
+    const read = component[elementInfo].options.form ? valueOf : undefined;
+    const input =
+      read &&
+      this.chunkOf(
+        this.settle(shadowCtx, () => [name(), read(), disabled()] as const),
+        ([given, value, off]) => hiddenInput(tag, given, value, off),
+      );
+    this.walk(tree, shadowCtx, chunks);
     chunks.push("</template>");
-    return { chunks, slots, internals, ...(form && { form }) };
+    if (input !== undefined) chunks.push(input);
+    return { chunks, slots, internals };
   }
 
   /**
