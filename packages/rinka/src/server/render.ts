@@ -479,6 +479,14 @@ interface WalkCtx {
   readonly fallback: boolean;
 }
 
+/** SSR するフォームの部品のホストの `name` と `disabled` を返す関数を表す。 */
+interface FormProps {
+  /** ホストの `name` を返す。 */
+  readonly name: () => unknown;
+  /** ホストの `disabled` か、同じ tree の外側にある `<fieldset disabled>` で無効になるかどうかを返す。値が未解決なら `NotReadyError` を投げる。 */
+  readonly disabled: () => boolean;
+}
+
 /**
  * `<fieldset>` の子の `<legend>` を表す。`taken` は、最初の `<legend>` を描画したかどうかで、
  * `outer` は、その `<fieldset>` の外側の `<fieldset disabled>` で無効になるかどうかを返す関数である。最初の `<legend>` の中は、`outer` でだけ無効になる。
@@ -1157,11 +1165,14 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     };
     const attributes = this.settle(ctx, hostAttributes);
 
-    const disabled = options.form
-      ? () => ctx.disabled() || disables(propValue("disabled"))
-      : notDisabled;
+    const form: FormProps | undefined = options.form
+      ? {
+          name: () => propValue("name"),
+          disabled: () => ctx.disabled() || disables(propValue("disabled")),
+        }
+      : undefined;
     const shadow = this.runsElements
-      ? this.runElement(component, elementProps, record, ctx, disabled, () => propValue("name"))
+      ? this.runElement(component, elementProps, record, ctx, form)
       : undefined;
     const chunks: Chunk[] = shadow?.chunks ?? [];
     const aria = ariaAttributes(shadow?.internals ?? {});
@@ -1223,16 +1234,15 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
   /**
    * 要素の関数 `component` を `props` で実行し、Shadow DOM の中身の出力の単位の列を返す。
    * `slots` は、Shadow DOM の `<slot>` の名前ごとに、その `<slot>` を囲む境界を表す。
-   * `internals` は、要素の関数が ctx の `internals` に代入した値である。`disabled` は、要素の関数の `form.disabled()` に渡す関数である。
-   * 要素の関数が `form.value` を呼んだときは、要素の関数を実行した後に、渡した関数とホストの名前 `name` と `disabled` を評価し、hidden input を `</template>` の後に 1 つ出力する。値が未解決なら、解決してから評価し直す。
+   * `internals` は、要素の関数が ctx の `internals` に代入した値である。`form` は、フォームの部品のホストの `name` と `disabled` を返す関数で、フォームの部品でない要素では `undefined` である。
+   * 要素の関数が `form.value` を呼んだときは、要素の関数を実行した後に、渡した関数と、`form` の `name` と `disabled` を評価し、hidden input を `</template>` の後に 1 つ出力する。値が未解決なら、解決してから評価し直す。
    */
   private runElement(
     component: ElementComponent<unknown>,
     props: object,
     record: HostRecord,
     ctx: WalkCtx,
-    disabled: () => boolean,
-    name: () => unknown,
+    form: FormProps | undefined,
   ): {
     readonly chunks: Chunk[];
     readonly slots: ReadonlyMap<string, Boundary>;
@@ -1250,7 +1260,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       host: serverHost as HTMLElement,
       onMount: () => {},
       expose: () => {},
-      form: component[elementInfo].options.form
+      form: form
         ? {
             value: (fn) => {
               valueOf = fn;
@@ -1258,7 +1268,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
             validity: () => {},
             onReset: () => {},
             onRestore: () => {},
-            disabled,
+            disabled: form.disabled,
           }
         : unsupportedFormControls(tag),
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
@@ -1292,9 +1302,10 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     };
     const read = valueOf;
     const input =
+      form &&
       read &&
       this.chunkOf(
-        this.settle(shadowCtx, () => [name(), read(), disabled()] as const),
+        this.settle(shadowCtx, () => [form.name(), read(), form.disabled()] as const),
         ([given, value, off]) => hiddenInput(tag, given, value, off),
       );
     this.walk(tree, shadowCtx, chunks);
