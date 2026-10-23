@@ -35,7 +35,7 @@ async function call(
   init: RequestInit = {},
   { query = "", options = {} }: { query?: string; options?: AppOptions } = {},
 ): Promise<Response> {
-  const app = createApp([], options);
+  const app = createApp({ routes: [] }, options);
   return app.fetch(new Request(`http://localhost${rpcPath(id)}${query}`, init));
 }
 
@@ -194,7 +194,7 @@ describe("サーバー関数のエンドポイント", () => {
   it("GET のサーバー関数は HEAD でも呼び出せ、パーセントエンコーディングが不正な ID は 404 にする", async () => {
     const id = register(defineServerFn({ method: "GET" })(() => 1));
     expect((await call(id, { method: "HEAD" })).status).toBe(200);
-    const app = createApp([]);
+    const app = createApp({ routes: [] });
     expect((await app.fetch(new Request("http://localhost/_rinka/fn/%E0%A4%A"))).status).toBe(404);
   });
 

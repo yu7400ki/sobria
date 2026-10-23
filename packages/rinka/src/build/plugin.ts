@@ -14,12 +14,13 @@ import {
 
 import { reloadEvent } from "../shared/hmr.ts";
 import { tagFromPath } from "../shared/names.ts";
-import type { CreateApp, Route } from "../shared/routes.ts";
+import type { CreateApp, Routes } from "../shared/routes.ts";
 import { fileOfServerFnId } from "../shared/server-fn.ts";
 import type { Lang } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
 import { entries, oxc, runtimes } from "./entries.ts";
 import { transformJsx } from "./jsx.ts";
+import { scanRoutes } from "./routes.ts";
 
 /** rinka のプラグインの設定を表す。 */
 export interface RinkaOptions {
@@ -148,7 +149,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         return entry === undefined ? null : fileURLToPath(new URL(`../${entry}`, import.meta.url));
       },
       load(id) {
-        return id === ROUTES ? routesModule(resolve(root, "src/routes"), root) : null;
+        return id === ROUTES ? routesModule(root, "src/routes") : null;
       },
       configureServer(server) {
         for (const environment of Object.values(server.environments)) {
@@ -220,29 +221,21 @@ function checkTags(dir: string, tagOf: (path: string, lang: Lang) => string | un
   }
 }
 
-/**
- * `dir` を走査し、`page.tsx` を静的なパスに対応させるルートの表を export するモジュールのコードを返す。
- * 名前が `[` か `(` で始まるディレクトリは走査しない。
- */
-function routesModule(dir: string, root: string): string {
-  const routes: string[] = [];
-  const visit = (current: string, segments: readonly string[]): void => {
-    for (const entry of readdirSync(current, { withFileTypes: true })) {
-      if (entry.isDirectory()) {
-        if (!entry.name.startsWith("[") && !entry.name.startsWith("(")) {
-          visit(join(current, entry.name), [...segments, entry.name]);
-        }
-      } else if (entry.name === "page.tsx") {
-        const path = `/${segments.join("/")}`;
-        const module = `/${relative(root, join(current, entry.name)).split(sep).join("/")}`;
-        routes.push(
-          `{ path: ${JSON.stringify(path)}, page: () => import(${JSON.stringify(module)}) }`,
-        );
-      }
-    }
-  };
-  if (existsSync(dir)) visit(dir, []);
-  return `export const routes = [\n${routes.join(",\n")}\n];\n`;
+/** プロジェクトのルートからの相対パス `file` のモジュールを読み込む関数のコードを返す。 */
+const load = (file: string): string => `() => import(${JSON.stringify(`/${file}`)})`;
+
+/** `root` からの相対パス `dir` を走査し、ファイルごとにモジュールを読み込む関数を持つルートの表を export するモジュールのコードを返す。 */
+function routesModule(root: string, dir: string): string {
+  const { routes, middleware } = scanRoutes(root, dir);
+  const rows = routes.map(
+    (route) =>
+      `{ kind: ${JSON.stringify(route.kind)}, path: ${JSON.stringify(route.path)}, load: ${load(route.file)}, layouts: [${route.layouts.map(load).join(", ")}], middlewares: [${route.middlewares.map(load).join(", ")}] }`,
+  );
+  return [
+    `export const routes = [\n${rows.join(",\n")}\n];`,
+    ...(middleware === undefined ? [] : [`export const middleware = ${load(middleware)};`]),
+    "",
+  ].join("\n");
 }
 
 /**
@@ -263,7 +256,7 @@ function appMiddleware(
     }
     const { runner } = environment;
     (async () => {
-      const { routes } = await runner.import<{ readonly routes: readonly Route[] }>(entries.routes);
+      const routes = await runner.import<Routes>(entries.routes);
       const { createApp } = await runner.import<{ readonly createApp: CreateApp }>(
         entries.internal,
       );

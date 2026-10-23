@@ -23,7 +23,17 @@ const numeric: StandardSchema<string, number> = {
 
 /** `page` を `/posts` に置いたアプリに、`init` のリクエストを送り、レスポンスを返す。 */
 function requestPage(page: () => unknown, init?: RequestInit): Promise<Response> {
-  const app = createApp([{ path: "/posts", page: async () => ({ default: page }) }]);
+  const app = createApp({
+    routes: [
+      {
+        kind: "page",
+        path: "/posts",
+        load: async () => ({ default: page }),
+        layouts: [],
+        middlewares: [],
+      },
+    ],
+  });
   return Promise.resolve(app.fetch(new Request("http://localhost/posts", init)));
 }
 

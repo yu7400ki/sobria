@@ -23,7 +23,7 @@ function submit(
   body: FormData | URLSearchParams,
   headers: Record<string, string> = {},
 ) {
-  return createApp([]).fetch(
+  return createApp({ routes: [] }).fetch(
     new Request(`http://localhost${rpcPath(id)}`, { method: "POST", body, headers }),
   );
 }
@@ -116,9 +116,12 @@ describe("JS が無いときのフォームの送信", () => {
     expect(response.status).toBe(500);
     expect(await response.text()).toBe("Internal Server Error");
     error.mockRestore();
-    const app = createApp([], {
-      onError: (thrown) => new Response(String(thrown), { status: 500 }),
-    });
+    const app = createApp(
+      { routes: [] },
+      {
+        onError: (thrown) => new Response(String(thrown), { status: 500 }),
+      },
+    );
     const handled = await app.fetch(
       new Request(`http://localhost${rpcPath(id)}`, { method: "POST", body: new FormData() }),
     );
@@ -158,7 +161,7 @@ describe("JS が無いときのフォームの送信", () => {
       submit(get, new FormData()),
       submit(post, new FormData(), { "sec-fetch-site": "cross-site" }),
       submit("src/forms-missing.ts#fn", new FormData()),
-      createApp([]).fetch(
+      createApp({ routes: [] }).fetch(
         new Request("http://localhost/_rinka/fn/%E0", { method: "POST", body: new FormData() }),
       ),
     ]);
