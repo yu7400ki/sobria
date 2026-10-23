@@ -247,12 +247,18 @@ function navigationHead(values: NavigationValues): string {
 }
 
 /** `attributes` を、開始タグに出力する属性の文字列にする。 */
-const attributesText = (attributes: Attributes): string =>
+const attributesText = (attributes: ReadonlyMap<string, string>): string =>
   [...attributes]
-    .map(([name, value]) =>
-      value === null ? "" : value === "" ? ` ${name}` : ` ${name}="${escapeAttribute(value)}"`,
-    )
+    .map(([name, value]) => (value === "" ? ` ${name}` : ` ${name}="${escapeAttribute(value)}"`))
     .join("");
+
+/** 文書の順序で並んだ `<html>` か `<body>` の記録の属性を、`mergeByName` の規則で名前ごとに 1 つの値にし、値が `null` の属性を除く。 */
+const rootAttributesOf = (
+  records: readonly { readonly values: Attributes; readonly depth: number }[],
+): Map<string, string> =>
+  new Map(
+    [...mergeByName(records)].filter((entry): entry is [string, string] => entry[1] !== null),
+  );
 
 /**
  * シェルから取り出した、文書の骨組みに並べる値を表す。
@@ -260,8 +266,8 @@ const attributesText = (attributes: Attributes): string =>
  */
 interface DocumentParts {
   readonly heads: readonly HeadOutput[];
-  readonly html: Attributes;
-  readonly body: Attributes;
+  readonly html: ReadonlyMap<string, string>;
+  readonly body: ReadonlyMap<string, string>;
   readonly navigation: NavigationValues;
   /** シェルから、移動したタグと目印を取り除いた残りである。 */
   readonly rest: string;
@@ -1412,8 +1418,8 @@ class Renderer {
     type Navigation = Extract<Hoisted, { kind: "navigation" }>;
     return {
       heads: resolved,
-      html: mergeByName(others.filter((record): record is Root => record.kind === "html")),
-      body: mergeByName(others.filter((record): record is Root => record.kind === "body")),
+      html: rootAttributesOf(others.filter((record): record is Root => record.kind === "html")),
+      body: rootAttributesOf(others.filter((record): record is Root => record.kind === "body")),
       navigation: mergeByName(
         others.filter((record): record is Navigation => record.kind === "navigation"),
       ),

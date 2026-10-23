@@ -107,16 +107,14 @@ describe("applyRefresh", () => {
     run(bootstrapSource);
     applyRefresh(
       refreshJson({
-        doc: { html: { lang: "ja", "data-x": "1" }, body: { "data-a": "", hidden: null } },
+        doc: { html: { lang: "ja", "data-x": "1" }, body: { "data-a": "" } },
       }),
     );
     expect(document.documentElement.getAttribute("lang")).toBe("ja");
     expect(document.body.getAttribute("data-a")).toBe("");
     expect(document.body.hasAttribute("hidden")).toBe(false);
     document.body.classList.add("theme");
-    applyRefresh(
-      refreshJson({ doc: { html: { lang: "en", "data-x": null }, body: { class: null } } }),
-    );
+    applyRefresh(refreshJson({ doc: { html: { lang: "en" }, body: {} } }));
     expect(document.documentElement.getAttribute("lang")).toBe("en");
     expect(document.documentElement.hasAttribute("data-x")).toBe(false);
     expect(document.body.hasAttribute("data-a")).toBe(false);

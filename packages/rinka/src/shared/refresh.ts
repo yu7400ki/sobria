@@ -11,8 +11,8 @@ export interface RefreshJson {
   readonly data: Readonly<Record<string, string>>;
   readonly elements: readonly ListedElement[];
   readonly doc: {
-    readonly html: Readonly<Record<string, string | null>>;
-    readonly body: Readonly<Record<string, string | null>>;
+    readonly html: Readonly<Record<string, string>>;
+    readonly body: Readonly<Record<string, string>>;
   };
 }
 

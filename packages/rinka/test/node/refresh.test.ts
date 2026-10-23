@@ -156,6 +156,14 @@ describe("renderRefresh", () => {
     ]);
   });
 
+  it("後に記述した false で消した属性は、doc に入れない", async () => {
+    const { json } = await refreshOf([
+      jsx("html", { lang: "ja", class: "a", children: "a" }),
+      jsx("html", { class: false, children: "b" }),
+    ]);
+    expect(json.doc).toStrictEqual({ html: { lang: "ja" }, body: {} });
+  });
+
   it("描画ごとに、ホストの ID の接頭辞を変える", async () => {
     expect((await firstHostId()).split("-")[0]).not.toBe((await firstHostId()).split("-")[0]);
   });

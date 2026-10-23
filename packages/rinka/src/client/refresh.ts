@@ -105,20 +105,11 @@ function runnable(tag: Element): Element {
 const keyOf = (tag: Element): string | undefined =>
   headKey(tag.localName, (name) => tag.getAttribute(name));
 
-/**
- * `element` に `attributes` のうち値が `null` でない属性を設定し、前回の描き直しで設定して今回は設定しない属性を削除する。
- */
-function applyAttributes(
-  element: Element,
-  attributes: Readonly<Record<string, string | null>>,
-): void {
-  const set = Object.entries(attributes).filter(
-    (entry): entry is [string, string] => entry[1] !== null,
-  );
-  const names = set.map(([name]) => name);
+/** `element` に `attributes` を設定し、前回の描き直しで設定して `attributes` に無い属性を削除する。 */
+function applyAttributes(element: Element, attributes: Readonly<Record<string, string>>): void {
   for (const name of applied.get(element) ?? []) {
-    if (!names.includes(name)) element.removeAttribute(name);
+    if (!Object.hasOwn(attributes, name)) element.removeAttribute(name);
   }
-  for (const [name, value] of set) element.setAttribute(name, value);
-  applied.set(element, names);
+  for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
+  applied.set(element, Object.keys(attributes));
 }
