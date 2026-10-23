@@ -47,6 +47,7 @@ import {
   swapScript,
 } from "./bootstrap.ts";
 import { classify } from "./errors.ts";
+import { Labels } from "./labels.ts";
 import { scriptJson } from "./script.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
 import { toScript } from "./wire.ts";
@@ -57,14 +58,6 @@ import { toScript } from "./wire.ts";
  * 後送りの境界は、シェルにはフォールバックを目印で囲んで出力し、中身はシェルの後に出力して、起動スクリプトが目印の間の内容を差し替える。
  */
 type Chunk = string | Hole | Fail | Mark | ErroredRegion | Slotted | Host;
-
-/**
- * `<label for>` の補完の目印を表す。`label` は `for` を持つ `<label>` で、`host` は `<label>` で名前を補うフォームの部品のホストである。
- * `key` は、tree scope（最も内側の Shadow DOM のホストの ID か、文書を表す空の文字列）と、`for` の値かホストの `id` の組である。
- */
-type LabelMark =
-  | { readonly kind: "label"; readonly key: string; readonly id: string }
-  | { readonly kind: "host"; readonly key: string };
 
 /** 穴を表す。`hole` は、内容が決まると出力の単位の列に解決する。 */
 interface Hole {
@@ -703,8 +696,8 @@ function hasHole(chunks: readonly Chunk[]): boolean {
   });
 }
 
-/** `ctx` の位置の tree scope と `name` の組を、`LabelMark` の `key` にして返す。 */
-const scopeKey = (ctx: WalkCtx, name: string): string => `${ctx.path.at(-1)?.id ?? ""} ${name}`;
+/** `ctx` の位置の tree scope を、最も内側の Shadow DOM のホストの ID か、文書を表す空の文字列で返す。 */
+const scopeOf = (ctx: WalkCtx): string => ctx.path.at(-1)?.id ?? "";
 
 /** 起動スクリプトに伝える要素の一覧の項目にする。 */
 const listed = ({ tag, delivery }: Delivered): ListedElement => [
@@ -728,12 +721,6 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
   /** 描画の種類を、型の上で区別する。 */
   declare private readonly kind: K;
   private seq = 0;
-  /** `id` を付与した `<label>` の数である。 */
-  private labelSeq = 0;
-  /** 書き出した単位の `<label>` の `id` を、`LabelMark` の `key` ごとに表す。 */
-  private readonly labels = new Map<string, string>();
-  /** 出力した `<label for>` の補完の目印を、目印の番号ごとに表す。 */
-  private readonly labelMarks: LabelMark[] = [];
   private readonly disposers: (() => void)[] = [];
   /** シェルの後に後送りの境界を出力する処理のうち、終わっていないものを保持する。 */
   private readonly pending = new Set<Promise<void>>();
@@ -758,6 +745,8 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
   private caught = 200;
   /** 文書の骨組みに移動するものの目印に含める、描画ごとの値である。 */
   private readonly nonce = crypto.randomUUID();
+  /** `<label for>` の補完の目印である。 */
+  private readonly labels = new Labels(this.nonce, (id) => attribute("aria-labelledby", id));
   /** 文書の骨組みに移動するものを、目印の番号ごとに保持する。 */
   private readonly hoisted = new Map<number, Hoisted>();
 
@@ -888,44 +877,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     const target = this.settle(ctx, (tracked) => this.value(props.for, ctx, tracked));
     const given = this.settle(ctx, (tracked) => this.value(props.id, ctx, tracked));
     if (typeof target !== "string" || given instanceof Promise) return undefined;
-    const id =
-      typeof given === "string" || typeof given === "number"
-        ? String(given)
-        : `rinka-l${++this.labelSeq}`;
-    return { id, mark: this.labelMark({ kind: "label", key: scopeKey(ctx, target), id }) };
-  }
-
-  /** `mark` を記録し、HTML に出力する目印の文字列を返す。 */
-  private labelMark(mark: LabelMark): string {
-    return `\u0000${this.nonce}:${this.labelMarks.push(mark) - 1}\u0000`;
-  }
-
-  /**
-   * 1 つの単位の HTML `htmls` の目印を置換した HTML を返す。`<label>` の目印は削除し、ホストの目印は、同じ `key` の `<label>` を指す `aria-labelledby` にする。
-   * `<label>` は、既に書き出した単位の `<label>` と、`htmls` の文書の順で最初の `<label>` から探す。該当する `<label>` が無ければ、ホストの目印を削除する。
-   * `htmls` の `<label>` は、書き出した単位の `<label>` として記録する。
-   */
-  private resolveLabels(htmls: readonly string[]): string[] {
-    const prefix = `\u0000${this.nonce}:`;
-    if (!htmls.some((html) => html.includes(prefix))) return [...htmls];
-    const pattern = new RegExp(`${prefix}(\\d+)\u0000`, "g");
-    const unit = new Map<string, string>();
-    for (const html of htmls) {
-      for (const [, index] of html.matchAll(pattern)) {
-        const mark = this.labelMarks[Number(index)];
-        if (mark?.kind === "label" && !unit.has(mark.key)) unit.set(mark.key, mark.id);
-      }
-    }
-    const resolved = htmls.map((html) =>
-      html.replace(pattern, (_match, index: string) => {
-        const mark = this.labelMarks[Number(index)];
-        if (mark?.kind !== "host") return "";
-        const id = this.labels.get(mark.key) ?? unit.get(mark.key);
-        return id === undefined ? "" : attribute("aria-labelledby", id);
-      }),
-    );
-    for (const [key, id] of unit) if (!this.labels.has(key)) this.labels.set(key, id);
-    return resolved;
+    return this.labels.label(scopeOf(ctx), target, given);
   }
 
   /** `props` の値を返す。関数は、追跡せずに呼び出して、戻り値を返す。`tracked` なら、追跡して呼び出す。 */
@@ -1248,7 +1200,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       );
       const labelled =
         (typeof hostId === "string" || typeof hostId === "number") && !named
-          ? this.labelMark({ kind: "host", key: scopeKey(ctx, String(hostId)) })
+          ? this.labels.host(scopeOf(ctx), String(hostId))
           : "";
       const start = `<${tag}${attribute(HOST_ATTRIBUTE, id)}${attribute(loadAttributeName, load)}${text}${ariaText}${labelled}`;
       if (shadow === undefined) {
@@ -1489,7 +1441,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
           noindex =
             '<meta name="robots" content="noindex"><script>document.head.append(document.currentScript.previousSibling.cloneNode())</script>';
         }
-        const [resolvedRegion, ...patched] = this.resolveLabels([
+        const [resolvedRegion, ...patched] = this.labels.resolve([
           region,
           ...patches.map(([, html]) => html),
         ]);
@@ -1601,7 +1553,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       }),
       this.shellOut,
     );
-    return this.resolveLabels([html])[0] ?? "";
+    return this.labels.resolve([html])[0] ?? "";
   }
 
   /** `outs` に出力した要素のうち、まだ起動スクリプトに伝えていない要素を、伝えたものとして記録して返す。 */
