@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
 import { existsSync, rmSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename, extname, join, resolve } from "node:path";
@@ -13,14 +15,14 @@ import {
 } from "vite";
 
 import { reloadEvent } from "../shared/hmr.ts";
-import type { CreateApp, Routes } from "../shared/routes.ts";
+import type { CreateApp } from "../shared/routes.ts";
 import { moduleOfServerFnId } from "../shared/server-fn.ts";
 import { langs, type Lang } from "./ast.ts";
 import { embedRouteStyles, moveServerAssets } from "./build-styles.ts";
 import { transformSource } from "./compiler.ts";
 import { elementTag, scanElements } from "./elements.ts";
 import { entries, oxc, runtimes } from "./entries.ts";
-import { appModule, serverEntry } from "./entry.ts";
+import { appModule, devHooks, serverEntry, type DevHooks } from "./entry.ts";
 import { transformJsx } from "./jsx.ts";
 import { readClientAssets, type ClientAssets } from "./manifest.ts";
 import { rinkaPackage } from "./package.ts";
@@ -88,9 +90,6 @@ const dirsOf = (root: string, options: RinkaOptions) => ({
   outDir: resolve(root, options.outDir ?? "dist"),
 });
 
-/** 開発中のページの `<head>` に出力する、Vite のクライアントを読み込むスクリプトである。 */
-const VITE_CLIENT = '<script type="module" src="/@vite/client"></script>';
-
 /** 変換するプロジェクトのファイルの、モジュールのパス、ルートからの相対パス、言語を表す。 */
 interface ProjectFile {
   readonly path: string;
@@ -111,6 +110,8 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   for (const origin of trustedOrigins) checkOrigin(origin);
   /** サーバーの環境で最後に変換したときに、サーバー関数を定義していたファイルの、ルートからの相対パスごとの ID の集合である。 */
   const serverFnIds = new Map<string, ReadonlySet<string>>();
+  /** 開発中の `rinka/app` が `DevHooks` を探す、このインスタンスの ID である。 */
+  const devId = randomUUID();
   let root = "";
   let elementsDir = "";
   let outDir = "";
@@ -195,7 +196,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
                 build: {
                   outDir: join(out, "server"),
                   emitAssets: true,
-                  rolldownOptions: { input: { entry: serverEntry(dirs.root) } },
+                  rolldownOptions: { input: { entry: resolveEntry(dirs.root) } },
                 },
               },
             },
@@ -249,7 +250,12 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       load(id) {
         if (id === ROUTES) return routesModule(root, ROUTES_DIR);
         if (id === NO_ELEMENTS) return "export {};\n";
-        if (id === APP) return appModule({ serverFns: serverFnModules(root), trustedOrigins });
+        if (id === APP) {
+          const serverFns = serverFnModules(root);
+          if (isBuild) return appModule({ serverFns, trustedOrigins });
+          const files = [...serverFns.values()].map((file) => [file, file] as const);
+          return appModule({ serverFns: new Map(files), trustedOrigins, dev: devId });
+        }
         const sheet = sheetPath(id);
         if (sheet === undefined) return null;
         const path = devPath(sheet, root);
@@ -331,9 +337,25 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
             client.send({ type: "full-reload" });
           });
         }
+        const environment = server.environments.ssr;
+        if (environment && isRunnable(environment)) {
+          devHooks().set(devId, {
+            styles: async (files) => {
+              const nodes = await Promise.all(
+                files.map((file) => environment.moduleGraph.getModuleByUrl(`/${file}`)),
+              );
+              return routeStyles(nodes.filter((node) => node !== undefined));
+            },
+            onError: recordFailure,
+            loadServerFn: (id) => loadServerFn(environment, id),
+          });
+        }
         return () => {
-          server.middlewares.use(appMiddleware(server, trustedOrigins, loadServerFn));
+          server.middlewares.use(appMiddleware(server, serverEntry(root)));
         };
+      },
+      buildEnd() {
+        if (!isBuild) devHooks().delete(devId);
       },
       transform(code, id) {
         const target = projectFile(id);
@@ -355,8 +377,13 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           );
         }
         if (!isClient(this.environment)) {
+          const defined = serverFnIds.has(target.file);
           if (result.serverFns.length > 0) serverFnIds.set(target.file, new Set(result.serverFns));
           else serverFnIds.delete(target.file);
+          const graph =
+            "moduleGraph" in this.environment ? this.environment.moduleGraph : undefined;
+          const app = graph?.getModuleById(APP);
+          if (app && defined !== serverFnIds.has(target.file)) graph?.invalidateModule(app);
         }
         return { code: result.code, map: result.map };
       },
@@ -373,15 +400,29 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   ];
 }
 
+/** 開発サーバーのリクエストごとの、`rinka/app` の onError が受け取ったエラーの置き場である。 */
+const failures = new AsyncLocalStorage<{ error?: unknown }>();
+
+/** 開発中の `rinka/app` の onError で、エラーをリクエストの置き場に記録し、500 の Response を返す。 */
+const recordFailure: DevHooks["onError"] = (error) => {
+  const failure = failures.getStore();
+  if (failure) failure.error = error;
+  return new Response(null, { status: 500 });
+};
+
+/** ビルドの入口にする、アプリのルート `root` のサーバーのエントリーを返す。 */
+const resolveEntry = (root: string): string => {
+  const entry = serverEntry(root);
+  return entry === entries.app ? entry : join(root, entry);
+};
+
 /**
- * `ssr` の環境のランナーで読み込んだ `rinka/routes` からアプリを作成し、リクエストを渡すミドルウェアを返す。
- * アプリはリクエストごとに作成する。アプリの onError が受け取ったエラーは `next` に渡す。
- * サーバー関数の ID は、`loadServerFn` に `ssr` の環境とともに渡す。
+ * `ssr` の環境のランナーで読み込んだサーバーのエントリー `entry` の default export の `fetch` に、リクエストを渡すミドルウェアを返す。
+ * `rinka/app` の onError が受け取ったエラーは `next` に渡す。`ssr` の環境がランナーを持たなければ、リクエストを `next` に渡す。
  */
 function appMiddleware(
   server: ViteDevServer,
-  trustedOrigins: readonly string[],
-  loadServerFn: (environment: RunnableDevEnvironment, id: string) => Promise<boolean>,
+  entry: string,
 ): (request: IncomingMessage, response: ServerResponse, next: (error?: unknown) => void) => void {
   return (request, response, next) => {
     const environment = server.environments.ssr;
@@ -389,32 +430,15 @@ function appMiddleware(
       next();
       return;
     }
-    const { runner } = environment;
     (async () => {
-      const routes = await runner.import<Routes>(entries.routes);
-      const { createApp } = await runner.import<{ readonly createApp: CreateApp }>(
-        entries.internal,
-      );
-      let failure: { readonly error: unknown } | undefined;
-      const app = createApp(routes, {
-        head: VITE_CLIENT,
-        styles: async (files) => {
-          const nodes = await Promise.all(
-            files.map((file) => environment.moduleGraph.getModuleByUrl(`/${file}`)),
-          );
-          return routeStyles(nodes.filter((node) => node !== undefined));
-        },
-        trustedOrigins,
-        loadServerFn: (id) => loadServerFn(environment, id),
-        onError: (error) => {
-          failure = { error };
-          return new Response(null, { status: 500 });
-        },
-      });
+      const { default: app } = await environment.runner.import<{
+        readonly default: ReturnType<CreateApp>;
+      }>(entry);
       const listener = getRequestListener(
         async (incoming) => {
-          const result = await app.fetch(incoming);
-          if (failure) throw failure.error;
+          const failure: { error?: unknown } = {};
+          const result = await failures.run(failure, () => app.fetch(incoming));
+          if ("error" in failure) throw failure.error;
           return result;
         },
         {
