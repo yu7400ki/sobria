@@ -246,6 +246,31 @@ describe("サーバーの起動", () => {
       await server.close();
     }
   }, 60_000);
+
+  it("vite preview は、サーバーのエントリーの fetch が投げたエラーに、本文の無い 500 を返す", async () => {
+    const out = await mkdtemp(join(tmpdir(), "rinka-preview-error-"));
+    await cp(join(outDir, "client"), join(out, "client"), { recursive: true });
+    await cp(join(outDir, "server"), join(out, "server"), { recursive: true });
+    await writeFile(
+      join(out, "server/entry.js"),
+      'export default { fetch() { throw new Error("boom-secret"); } };\n',
+    );
+    const server = await preview({
+      root,
+      configFile: false,
+      logLevel: "silent",
+      plugins: [rinka({ prefix: "app", outDir: out })],
+      preview: { port: 0 },
+    });
+    try {
+      const response = await fetch(`${server.resolvedUrls!.local[0]!.replace(/\/$/, "")}/`);
+      expect(response.status).toBe(500);
+      expect(await response.text()).toBe("");
+    } finally {
+      await server.close();
+      await rm(out, { recursive: true, force: true, maxRetries: 5 });
+    }
+  }, 60_000);
 });
 
 describe("src/server.ts の無いアプリ", () => {

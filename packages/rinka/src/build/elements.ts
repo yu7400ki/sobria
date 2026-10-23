@@ -8,6 +8,7 @@ import { inside } from "./paths.ts";
 export interface ElementSource {
   readonly prefix: string;
   readonly elementsDir: string;
+  /** ライブラリでは、シンボリックリンクを解決した実際のパスである。 */
   readonly dir: string;
 }
 

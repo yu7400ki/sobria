@@ -82,10 +82,12 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   const devIds = new WeakMap<Environment, string>();
   /** `config` で求めたプラグインの設定である。 */
   let settings: Settings | undefined;
-  /** プラグインの設定を返す。Vite の設定を解決する前に呼び出すと、エラーを投げる。 */
+  /** プラグインの設定を返す。`config` のフックより前に呼び出すと、エラーを投げる。 */
   const current = (): Settings => {
     if (settings === undefined) {
-      throw new Error("[rinka] .rinka/ は、Vite の設定を解決した後に生成してください。");
+      throw new Error(
+        "[rinka] rinka のプラグインの設定は、Vite の設定を解決した後に参照してください。",
+      );
     }
     return settings;
   };
@@ -134,7 +136,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
             include: clientImports.map(fromApp),
             exclude: libraries.map((library) => library.name),
           },
-          build: { outDir: join(outDir, "client") },
+          build: { outDir: options.library ? outDir : join(outDir, "client") },
         };
       },
       configEnvironment(name, config) {

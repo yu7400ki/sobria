@@ -54,7 +54,7 @@ const hookCount = () =>
   (globalThis as { [key: symbol]: Map<string, unknown> | undefined })[Symbol.for("rinka.dev")]
     ?.size ?? 0;
 
-/** テスト用のアプリの開発サーバーを作成し、再起動してからページに応答することを確認して、閉じる。 */
+/** テスト用のアプリの開発サーバーを作成し、再起動してからページがサーバーコンポーネントの CSS の <link> を出力することを確認して、閉じる。 */
 async function startAndClose(): Promise<void> {
   const dev = await createDevServer(root, {
     server: { port: 0 },
@@ -62,7 +62,8 @@ async function startAndClose(): Promise<void> {
   });
   await dev.listen();
   await dev.restart();
-  expect(await (await fetch(`${originOf(dev)}/health`)).text()).toBe("ok");
+  const html = await (await fetch(`${originOf(dev)}/`)).text();
+  expect(html).toMatch(/<link rel="stylesheet" href="\/src\/styles\/app\.css[^"]*">/);
   await dev.close();
 }
 

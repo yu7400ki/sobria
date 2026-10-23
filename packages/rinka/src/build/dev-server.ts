@@ -99,12 +99,13 @@ export function serve({ settings, writeTypes, serverFnIds, devIds }: ServeContex
     configurePreviewServer(server) {
       return () => {
         const entry = pathToFileURL(join(settings().outDir, "server/entry.js")).href;
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-        server.middlewares.use(entryMiddleware(() => import(entry) as Promise<ServerModule>));
+        server.middlewares.use(
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+          entryMiddleware(() => import(entry) as Promise<ServerModule>, { forwardErrors: false }),
+        );
       };
     },
     configureServer(server) {
-      writeTypes();
       const { root, elementsDir } = settings();
       const routesDir = resolve(root, ROUTES_DIR);
       const routes = virtualId(entries.routes);
@@ -160,10 +161,13 @@ export function serve({ settings, writeTypes, serverFnIds, devIds }: ServeContex
         const file = serverEntry(root);
         const entry = file === undefined ? entries.app : `/${file}`;
         server.middlewares.use(
-          entryMiddleware(async () => {
-            const ssr = server.environments.ssr;
-            return ssr && isRunnable(ssr) ? ssr.runner.import<ServerModule>(entry) : undefined;
-          }),
+          entryMiddleware(
+            async () => {
+              const ssr = server.environments.ssr;
+              return ssr && isRunnable(ssr) ? ssr.runner.import<ServerModule>(entry) : undefined;
+            },
+            { forwardErrors: true },
+          ),
         );
       };
     },
@@ -203,11 +207,13 @@ interface ServerModule {
 
 /**
  * `load` が返すサーバーのエントリーの default export の `fetch` に、リクエストを渡すミドルウェアを返す。
- * `fetch` が投げたエラーと、開発中の `rinka/app` の onError が受け取ったエラーは、`next` に渡す。
+ * `forwardErrors` が真なら、`fetch` が投げたエラーと、開発中の `rinka/app` の onError が受け取ったエラーを `next` に渡す。
+ * 偽なら、`fetch` が投げたエラーには本文の無い 500 の Response を返す。
  * `load` が undefined を返せば、リクエストを `next` に渡す。
  */
 function entryMiddleware(
   load: () => Promise<ServerModule | undefined>,
+  { forwardErrors }: { readonly forwardErrors: boolean },
 ): (request: IncomingMessage, response: ServerResponse, next: (error?: unknown) => void) => void {
   return (request, response, next) => {
     (async () => {
@@ -224,11 +230,13 @@ function entryMiddleware(
           response.statusCode = result.status;
           return result;
         },
-        {
-          errorHandler: (error) => {
-            next(error);
-          },
-        },
+        forwardErrors
+          ? {
+              errorHandler: (error) => {
+                next(error);
+              },
+            }
+          : {},
       );
       await listener(request, response);
     })().catch(next);

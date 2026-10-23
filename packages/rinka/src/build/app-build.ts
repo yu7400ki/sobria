@@ -7,7 +7,7 @@ import { embedRouteStyles, moveServerAssets } from "./build-styles.ts";
 import { entries } from "./entries.ts";
 import { serverEntry } from "./entry.ts";
 import { readClientAssets, type ClientAssets } from "./manifest.ts";
-import { isClient, type RinkaOptions, type Settings } from "./settings.ts";
+import { isClient, sceneOf, type RinkaOptions, type Settings } from "./settings.ts";
 
 /**
  * アプリの `vite build --app` で、要素のクライアントのビルドと、サーバーのエントリーのサーバーのビルドを、この順に出力するプラグインを返す。
@@ -21,7 +21,8 @@ export function appBuild(
 ): Plugin {
   return {
     name: "rinka:build",
-    apply: (_config, { command }) => command === "build" && options.library !== true,
+    apply: (_config, { command }) => sceneOf(command, options) === "app",
+    enforce: "pre",
     sharedDuringBuild: true,
     config: () => {
       const { root, outDir, elements } = settings();

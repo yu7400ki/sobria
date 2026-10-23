@@ -1,7 +1,7 @@
 import type { Plugin } from "vite";
 
 import { inside } from "./paths.ts";
-import { DEFAULT_PREFIX, type RinkaOptions, type Settings } from "./settings.ts";
+import { DEFAULT_PREFIX, sceneOf, type RinkaOptions, type Settings } from "./settings.ts";
 
 /**
  * `library: true` の `vite build --app` で、アプリの要素を、自分自身を登録する ES モジュールとして
@@ -10,13 +10,13 @@ import { DEFAULT_PREFIX, type RinkaOptions, type Settings } from "./settings.ts"
 export function libraryBuild(options: RinkaOptions, settings: () => Settings): Plugin {
   return {
     name: "rinka:library",
-    apply: (_config, { command }) => command === "build" && options.library === true,
+    apply: (_config, { command }) => sceneOf(command, options) === "library",
+    enforce: "pre",
     config: () => {
       const { elementsDir, outDir, elements } = settings();
       const own = elements.filter(({ path }) => inside(elementsDir, path) !== undefined);
       return {
         base: "./",
-        build: { outDir },
         environments: {
           client: {
             build: {

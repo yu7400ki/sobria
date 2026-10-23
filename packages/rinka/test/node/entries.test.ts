@@ -4,15 +4,13 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { devAppModule } from "../../src/build/dev-server.ts";
-import { clientImports, entries, runtimes, serverImports } from "../../src/build/entries.ts";
-import { buildAppModule } from "../../src/build/entry.ts";
 import {
-  clientBuildSheetModule,
-  clientSheetModule,
-  serverBuildSheetModule,
-  serverSheetModule,
-} from "../../src/build/sheets.ts";
+  clientImports,
+  entries,
+  internalNames,
+  runtimes,
+  serverImports,
+} from "../../src/build/entries.ts";
 import * as client from "../../src/client/index.ts";
 import * as server from "../../src/server/index.ts";
 
@@ -79,25 +77,10 @@ describe("入口", () => {
   });
 
   it("プラグインが生成するコードが rinka/internal から import する名前は、環境ごとの内部の入口が関数として export する", async () => {
-    const generated = {
-      client: [clientSheetModule("/a.css?inline"), clientBuildSheetModule("/a.css?url")],
-      server: [
-        serverSheetModule("/a.css?inline", "/a.css?direct"),
-        serverBuildSheetModule("/a.css?url", "/a.css?inline"),
-        buildAppModule({ serverFns: new Map(), trustedOrigins: [] }),
-        devAppModule({ serverFns: new Map(), trustedOrigins: [] }, "id"),
-      ],
-    };
     const missing = await Promise.all(
       (["client", "server"] as const).map(async (environment) => {
         const internal = await lib(runtimes[environment][entries.internal]!);
-        const names = generated[environment].flatMap((code) =>
-          [...code.matchAll(/import \{([^}]+)\} from "rinka\/internal"/g)].flatMap(([, list]) =>
-            list!.split(",").map((name) => name.trim().split(/\s+as\s+/)[0]!),
-          ),
-        );
-        expect(names.length).toBeGreaterThan(0);
-        return names.filter((name) => typeof internal[name] !== "function");
+        return internalNames[environment].filter((name) => typeof internal[name] !== "function");
       }),
     );
     expect(missing).toEqual([[], []]);

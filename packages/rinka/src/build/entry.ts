@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { entries } from "./entries.ts";
+import { entries, importInternal } from "./entries.ts";
 
 /** `rinka/app` の中で、ビルドの最後にルートのファイルごとの CSS の一覧に置き換える文字列である。 */
 export const STYLES_MARKER = "__rinka_route_styles__";
@@ -41,7 +41,7 @@ export function appCode(
   preamble: readonly string[] = [],
 ): string {
   return [
-    `import { createApp, routeStyles, serverFnLoader } from "${entries.internal}";`,
+    importInternal("server", "createApp", "routeStyles", "serverFnLoader"),
     `import * as routes from "${entries.routes}";`,
     "",
     ...preamble,

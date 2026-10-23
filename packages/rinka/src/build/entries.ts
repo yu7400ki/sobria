@@ -13,6 +13,18 @@ export const entries = {
   tsconfig: "rinka/tsconfig.json",
 } as const;
 
+/** プラグインが生成するコードが、環境ごとに `rinka/internal` から import する名前である。 */
+export const internalNames = {
+  client: ["createSheet", "updateSheet", "loadSheet"],
+  server: ["serverSheet", "createApp", "routeStyles", "serverFnLoader"],
+} as const;
+
+/** `environment` の `rinka/internal` から `names` を import する文を返す。 */
+export const importInternal = <E extends keyof typeof internalNames>(
+  _environment: E,
+  ...names: readonly (typeof internalNames)[E][number][]
+): string => `import { ${names.join(", ")} } from "${entries.internal}";`;
+
 /** プラグインが作成する仮想モジュールの指定子 `specifier` を、解決した ID にする。 */
 export const virtualId = (specifier: string): string => `\0${specifier}`;
 

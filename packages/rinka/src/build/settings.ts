@@ -27,6 +27,10 @@ export const DEFAULT_PREFIX = "rinka";
 /** プラグインが動作する場面である。`serve` は開発サーバーと `vite preview`、`app` はアプリのビルド、`library` はライブラリのビルドである。 */
 export type Scene = "serve" | "app" | "library";
 
+/** Vite の `command` とプラグインの設定 `options` から、場面を返す。 */
+export const sceneOf = (command: "build" | "serve", options: RinkaOptions): Scene =>
+  command === "serve" ? "serve" : options.library ? "library" : "app";
+
 /** Vite の設定から求めた、プラグインの設定を表す。 */
 export interface Settings {
   /** アプリのルートである。`/` で区切る。 */
@@ -62,7 +66,7 @@ export function settingsOf(
     root,
     elementsDir,
     outDir: resolve(root, options.outDir ?? "dist"),
-    scene: command === "serve" ? "serve" : options.library ? "library" : "app",
+    scene: sceneOf(command, options),
     libraries,
     sources,
     elements: scanElements(sources),

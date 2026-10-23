@@ -4,7 +4,7 @@ import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { rinka } from "rinka/vite";
-import { createBuilder, createLogger } from "vite";
+import { createBuilder, createLogger, resolveConfig } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { buildFixture } from "./production.ts";
@@ -82,4 +82,20 @@ describe("library: true のビルド", () => {
     }
     expect(warnings.join("\n")).toMatch(/接頭辞/);
   }, 120_000);
+
+  it("vite preview は、出力先をそのまま配信する", async () => {
+    const config = await resolveConfig(
+      {
+        root,
+        configFile: false,
+        logLevel: "silent",
+        plugins: [rinka({ prefix: "acme", outDir, library: true })],
+      },
+      "serve",
+      "production",
+      "production",
+      true,
+    );
+    expect(config.build.outDir).toBe(outDir);
+  });
 });
