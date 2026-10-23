@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 
-import { parseSegment } from "../shared/route-segments.ts";
+import { parseSegment, type RouteSegment } from "../shared/route-segments.ts";
 import {
   mapRouteFiles,
   type Fallback,
@@ -33,65 +33,77 @@ export const routeFileNames: ReadonlySet<string> = new Set([
   "error.tsx",
 ]);
 
-/**
- * ディレクトリの名前を、Hono のパスの区切りにする。グループは `undefined` にする。
- * `[` か `(` で始まり、動的な区切り、キャッチオール、グループのどれの形でもない名前は、`file` を示すエラーにする。
- */
-function segmentOf(name: string, file: string): string | undefined {
+/** ディレクトリの名前を区切りにする。`[` か `(` で始まり、動的な区切り、キャッチオール、グループのどれの形でもない名前は、`file` を示すエラーにする。 */
+function segmentOf(name: string, file: string): RouteSegment {
   const segment = parseSegment(name);
-  switch (segment?.kind) {
-    case "static":
-      return segment.name;
-    case "param":
-      return `:${segment.name}`;
-    case "catch-all":
-      return `:${segment.name}{.+}`;
-    case "group":
-      return undefined;
-    case undefined:
-      throw new Error(
-        `${file} の名前は、動的な区切り（[id]）、キャッチオール（[...slug]）、グループ（(name)）のどれの形でもありません。パラメータの名前には、ASCII の英数字と _ を使用してください。`,
-      );
+  if (segment === undefined) {
+    throw new Error(
+      `${file} の名前は、動的な区切り（[id]）、キャッチオール（[...slug]）、グループ（(name)）のどれの形でもありません。パラメータの名前には、ASCII の英数字と _ を使用してください。`,
+    );
   }
+  return segment;
 }
 
-/** キャッチオールの区切りかどうかを返す。 */
-const isCatchAll = (segment: string): boolean => segment.endsWith("{.+}");
+/** URL の区切りになる、グループ以外の区切りを表す。 */
+type UrlSegment = Exclude<RouteSegment, { readonly kind: "group" }>;
 
-/** 区切りの優先順位を返す。静的な区切り、動的な区切り、キャッチオールの順に小さい。 */
-const rankOf = (segment: string): number =>
-  segment.startsWith(":") ? (isCatchAll(segment) ? 2 : 1) : 0;
+/** 区切りの種類ごとの優先順位である。静的な区切り、動的な区切り、キャッチオールの順に小さい。 */
+const ranks = { static: 0, param: 1, "catch-all": 2 } as const satisfies Record<
+  UrlSegment["kind"],
+  number
+>;
 
-/** パラメータの名前を除いた、パスが一致する URL の形を返す。 */
-const shapeOf = (path: string): string =>
-  path
-    .split("/")
-    .map((segment) => (segment.startsWith(":") ? (isCatchAll(segment) ? "*" : ":") : segment))
-    .join("/");
+/** 区切りの列から Hono のパスを組み立てる。`not-found.tsx` の行は、配下のすべての URL に一致するパスにする。 */
+function honoPath(segments: readonly UrlSegment[], kind: RouteKind): string {
+  const parts = segments.map((segment) => {
+    switch (segment.kind) {
+      case "static":
+        return segment.name;
+      case "param":
+        return `:${segment.name}`;
+      case "catch-all":
+        return `:${segment.name}{.+}`;
+    }
+  });
+  return `/${(kind === "not-found" ? [...parts, "*"] : parts).join("/")}`;
+}
 
-/** 行のモジュールのファイルを返す。`not-found.tsx` の行では、その `not-found.tsx` のファイルを返す。 */
-const moduleOf = (route: ScannedRoute): string =>
-  route.kind === "not-found" ? route.notFound.module : route.module;
+/** パラメータの名前を除いた、区切りの列が一致する URL の形を返す。 */
+const shapeOf = (segments: readonly UrlSegment[]): string =>
+  segments.map((segment) => (segment.kind === "static" ? segment.name : segment.kind)).join("/");
+
+/** 走査した行と、その区切りの列と、グループを含めたファイルのディレクトリの深さを表す。 */
+interface Scanned {
+  readonly route: ScannedRoute;
+  readonly segments: readonly UrlSegment[];
+  readonly depth: number;
+}
 
 /**
  * `not-found.tsx` の行を、ページと `route.ts` の行の後に、区切りの数が多い順に並べる。
  * ページと `route.ts` の行どうしと、区切りの数が同じ `not-found.tsx` の行どうしは、区切りの優先順位を前から比較し、一方が他方の前方と一致するなら短いほうを先にする。
  * 優先順位が同じなら、パスの文字列の順にし、同じパスならファイルのディレクトリが浅いほうを先にする。
  */
-function compareRoutes(a: ScannedRoute, b: ScannedRoute): number {
-  const isNotFound = a.kind === "not-found";
-  if (isNotFound !== (b.kind === "not-found")) return isNotFound ? 1 : -1;
-  const left = a.path.split("/");
-  const right = b.path.split("/");
-  if (isNotFound && left.length !== right.length) return right.length - left.length;
-  for (let index = 0; index < Math.min(left.length, right.length); index++) {
-    const difference = rankOf(left[index] ?? "") - rankOf(right[index] ?? "");
+function compareRoutes(a: Scanned, b: Scanned): number {
+  const isNotFound = a.route.kind === "not-found";
+  if (isNotFound !== (b.route.kind === "not-found")) return isNotFound ? 1 : -1;
+  if (isNotFound && a.segments.length !== b.segments.length) {
+    return b.segments.length - a.segments.length;
+  }
+  for (let index = 0; index < Math.min(a.segments.length, b.segments.length); index++) {
+    const left = a.segments[index];
+    const right = b.segments[index];
+    const difference = (left ? ranks[left.kind] : 0) - (right ? ranks[right.kind] : 0);
     if (difference !== 0) return difference;
   }
-  if (left.length !== right.length) return left.length - right.length;
-  if (a.path !== b.path) return a.path < b.path ? -1 : 1;
-  return moduleOf(a).split("/").length - moduleOf(b).split("/").length;
+  if (a.segments.length !== b.segments.length) return a.segments.length - b.segments.length;
+  if (a.route.path !== b.route.path) return a.route.path < b.route.path ? -1 : 1;
+  return a.depth - b.depth;
 }
+
+/** 行のモジュールのファイルを返す。`not-found.tsx` の行では、その `not-found.tsx` のファイルを返す。 */
+const moduleOf = (route: ScannedRoute): string =>
+  route.kind === "not-found" ? route.notFound.module : route.module;
 
 /** 種類が `kind` の行を返す。ページには `fallbacks` を、`not-found.tsx` には `fallbacks` の `error` を付ける。 */
 function rowOf({
@@ -132,13 +144,14 @@ function rowOf({
  * キャッチオールのディレクトリの配下のディレクトリにルートのファイルがあるときも、エラーを投げる。
  */
 export function scanRoutes(root: string, dir: string): Routes<PathFiles> {
-  const routes: ScannedRoute[] = [];
+  const scanned: Scanned[] = [];
   let middleware: string | undefined;
   const start = resolve(root, dir);
   const fileOf = (path: string): string => relative(root, path).split(sep).join("/");
   const visit = (
     current: string,
-    segments: readonly string[],
+    segments: readonly UrlSegment[],
+    depth: number,
     outerLayouts: readonly string[],
     outerMiddlewares: readonly string[],
     outerFallbacks: Fallbacks<PathFiles>,
@@ -167,32 +180,34 @@ export function scanRoutes(root: string, dir: string): Routes<PathFiles> {
     for (const [name, kind] of routeFiles) {
       if (!files.has(name)) continue;
       const file = fileOf(join(current, name));
-      if (segments.slice(0, -1).some(isCatchAll)) {
+      if (segments.slice(0, -1).some((segment) => segment.kind === "catch-all")) {
         throw new Error(
           `${file} は、キャッチオールのディレクトリの配下にあります。キャッチオールの配下には、ルートのファイルを置けません。`,
         );
       }
-      const path = `/${(kind === "not-found" ? [...segments, "*"] : segments).join("/")}`;
-      routes.push(rowOf({ kind, path, module: file, layouts, middlewares, fallbacks }));
+      const path = honoPath(segments, kind);
+      const route = rowOf({ kind, path, module: file, layouts, middlewares, fallbacks });
+      scanned.push({ route, segments, depth });
     }
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       const segment = segmentOf(entry.name, fileOf(join(current, entry.name)));
       visit(
         join(current, entry.name),
-        segment === undefined ? segments : [...segments, segment],
+        segment.kind === "group" ? segments : [...segments, segment],
+        depth + 1,
         layouts,
         middlewares,
         fallbacks,
       );
     }
   };
-  if (existsSync(start)) visit(start, [], [], [], {});
+  if (existsSync(start)) visit(start, [], 0, [], [], {});
 
   const handled = new Map<string, ScannedRoute>();
-  for (const route of routes) {
+  for (const { route, segments } of scanned) {
     if (route.kind === "not-found") continue;
-    const shape = shapeOf(route.path);
+    const shape = shapeOf(segments);
     const other = handled.get(shape);
     if (other) {
       throw new Error(
@@ -202,7 +217,7 @@ export function scanRoutes(root: string, dir: string): Routes<PathFiles> {
     handled.set(shape, route);
   }
   return {
-    routes: routes.toSorted(compareRoutes),
+    routes: scanned.toSorted(compareRoutes).map(({ route }) => route),
     ...(middleware !== undefined && { middleware }),
   };
 }
