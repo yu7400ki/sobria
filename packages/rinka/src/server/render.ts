@@ -663,7 +663,9 @@ const preloadLinks = (elements: readonly Delivered[]): string =>
     .join("");
 
 /** サーバーで木を描画する。 */
-class Renderer {
+class Renderer<K extends Target["kind"] = Target["kind"]> {
+  /** 描画の種類を、型の上で区別する。 */
+  declare private readonly kind: K;
   private seq = 0;
   private readonly disposers: (() => void)[] = [];
   /** シェルの後に後送りの境界を出力する処理のうち、終わっていないものを保持する。 */
@@ -698,11 +700,18 @@ class Renderer {
   private readonly blocking: boolean;
   /** 文字列を出力する。文書を出力しない描画では、エラーを投げる。 */
   private readonly write: (text: string) => void;
+  /** シェルの中の `<head>` のタグと、`<html>` と `<body>` の属性を、文書の骨組みに移動するかどうかである。 */
+  private readonly hoists: boolean;
+  /** 要素を実行して、Shadow DOM の中身を出力するかどうかである。 */
+  private readonly runsElements: boolean;
 
   /**
    * `target` が `document` か `refresh` の描画では、シェルの中かつ要素の外の `<title>`、`<meta>`、`<link>` と `<head>` の子を `<head>` に移動し、`<html>` と `<body>` の属性を文書の開始タグに移動する。
    */
-  constructor(private readonly target: Target) {
+  constructor(given: Extract<Target, { readonly kind: K }>) {
+    const target: Target = given;
+    this.hoists = target.kind !== "fragment";
+    this.runsElements = target.kind !== "refresh";
     this.hostPrefix = target.kind === "refresh" ? `r${this.nonce.slice(0, 8)}-` : "";
     this.blocking = target.kind !== "document" || target.blocking;
     this.write =
@@ -828,7 +837,7 @@ class Renderer {
     ctx: WalkCtx,
     out: Chunk[],
   ): void {
-    const role = this.target.kind === "fragment" ? undefined : documentTags.get(tag);
+    const role = this.hoists ? documentTags.get(tag) : undefined;
     const position = this.position(ctx);
     if (role === "html" || role === "body" || role === "transparent") {
       if (position !== "shell") {
@@ -872,7 +881,7 @@ class Renderer {
 
   /** 文書を出力する描画で、`<title>` を `<head>` に移動する位置の `<Navigation>` の props を、深さとともに記録する。 */
   private navigation(props: NavigationProps, ctx: WalkCtx, out: Chunk[]): void {
-    if (this.target.kind === "fragment") return;
+    if (!this.hoists) return;
     const position = this.position(ctx);
     if (position !== "shell") {
       this.warnOutside("Navigation", position, "反映しません");
@@ -1049,10 +1058,9 @@ class Renderer {
     };
     const attributes = this.settle(ctx, hostAttributes);
 
-    const shadow =
-      this.target.kind === "refresh"
-        ? undefined
-        : this.runElement(component, elementProps, record, ctx);
+    const shadow = this.runsElements
+      ? this.runElement(component, elementProps, record, ctx)
+      : undefined;
     const chunks: Chunk[] = shadow?.chunks ?? [];
     for (const name of Object.keys(descriptors)) {
       if (!slotNames.has(name)) continue;
@@ -1446,7 +1454,7 @@ class Renderer {
    * 文書の先頭と `shell` を出力し、後送りの境界をすべて出力してから、文書を閉じる。
    * `<head>` には、rinka の `<meta charset="utf-8">`、キーが同じタグを 1 つにしたタグ、`<Navigation>` の出力、`extraHead` の順に並べる。
    */
-  async finish(shell: string, extraHead: string): Promise<void> {
+  async finish(this: Renderer<"document">, shell: string, extraHead: string): Promise<void> {
     try {
       const fresh = this.interactive ? this.takeUnannounced([this.shellOut]) : [];
       const script = this.interactive
@@ -1468,7 +1476,7 @@ class Renderer {
   }
 
   /** 描き直しの `shell` から、`refreshPage()` のレスポンスの JSON の値を作成する。 */
-  async refresh(shell: string): Promise<RefreshJson> {
+  async refresh(this: Renderer<"refresh">, shell: string): Promise<RefreshJson> {
     const parts = await this.takeDocument(shell);
     return {
       head: headTags(parts),
