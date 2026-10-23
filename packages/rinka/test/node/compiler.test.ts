@@ -671,6 +671,17 @@ export const list = [defineMiddleware(async (_c, next) => next())];`;
     expect(() => module(body)).not.toThrow();
   });
 
+  it("サーバー関数の定義の式の中の defineMiddleware と、rinka/server の型だけの import は、ビルドのエラーにしない", () => {
+    const code = module(
+      `import type * as Server from "rinka/server";
+import { defineMiddleware, defineServerFn } from "rinka/server";
+export type M = Server.ServerFnMethod;
+export const fn = defineServerFn({ method: "GET" })(defineMiddleware(async (_c, next) => next()), () => 1);`,
+      true,
+    );
+    expect(code).toContain('export const fn = __rinka_serverFn("src/lib/a.ts#fn", "GET");');
+  });
+
   it("method は、1 段目のオブジェクトの文字列のリテラルから読み取る", () => {
     const code = module(
       `import { defineServerFn } from "rinka/server";

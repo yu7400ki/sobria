@@ -355,12 +355,13 @@ type Definition =
 /**
  * `rinka/server` から import した `defineServerFn` と `defineMiddleware` で初期化したトップレベルの const を、ソースの順に返す。
  * `defineServerFn` をそれ以外の位置で使用するか、サーバー関数のメソッドを静的に読み取れないか、`rinka/server` を名前を指定せずに import すると、ビルドのエラーにする。
- * クライアント向けでは、それ以外の位置の `defineMiddleware` もビルドのエラーにする。
+ * クライアント向けでは、定義の式の外にある、それ以外の位置の `defineMiddleware` もビルドのエラーにする。
  */
 function findDefinitions(program: ESTree.Program, file: string, client: boolean): Definition[] {
   for (const statement of program.body) {
     if (statement.type !== "ImportDeclaration" || statement.source.value !== entries.server)
       continue;
+    if (statement.importKind === "type") continue;
     if (statement.specifiers.some((specifier) => specifier.type !== "ImportSpecifier")) {
       throw new CompileError(
         `${file}: ${entries.server} は、import { defineServerFn } from "${entries.server}" のように、名前を指定して import してください。`,
@@ -405,7 +406,10 @@ function findDefinitions(program: ESTree.Program, file: string, client: boolean)
     (node) => {
       if (allowed.has(node)) return;
       if (defineNames.has(node.name)) throw misplaced("defineServerFn", "defineServerFn(…)");
-      if (client && middlewareNames.has(node.name)) {
+      const replaced = definitions.some(
+        ({ init }) => init.start <= node.start && node.end <= init.end,
+      );
+      if (client && !replaced && middlewareNames.has(node.name)) {
         throw misplaced("defineMiddleware", "defineMiddleware(…)");
       }
     },
