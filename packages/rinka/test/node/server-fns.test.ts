@@ -31,7 +31,7 @@ describe("サーバー関数を定義できるファイル", () => {
     expect(isServerFnSource("src/..\\..\\a.ts")).toBe(false);
   });
 
-  it("走査は、src/ の中でサーバー関数を定義したファイルを、ID のモジュールの部分ごとに返す", () => {
+  it("走査は、src/ の中でサーバー関数を定義したファイルを、パスの順に返す", () => {
     const root = mkdtempSync(join(tmpdir(), "rinka-fns-"));
     roots.push(root);
     const files: Record<string, string> = {
@@ -47,11 +47,6 @@ describe("サーバー関数を定義できるファイル", () => {
       mkdirSync(dirname(join(root, file)), { recursive: true });
       writeFileSync(join(root, file), code);
     }
-    expect(serverFnModules(root)).toEqual(
-      new Map([
-        [hashedFnModule("src/.server/b.ts"), "src/.server/b.ts"],
-        [hashedFnModule("src/lib/a.ts"), "src/lib/a.ts"],
-      ]),
-    );
+    expect(serverFnModules(root)).toEqual(["src/.server/b.ts", "src/lib/a.ts"]);
   });
 });

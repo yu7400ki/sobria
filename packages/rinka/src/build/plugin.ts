@@ -141,6 +141,8 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   const serverFnIds = new Map<string, ReadonlySet<string>>();
   /** 開発サーバーの ssr の環境ごとの、`DevHooks` の ID である。 */
   const devIds = new WeakMap<Environment, string>();
+  /** ルートからの相対パス `file` の、サーバー関数の ID のモジュールの部分を返す。ビルドではパスのハッシュに、開発ではパスにする。 */
+  const fnModuleOf = (file: string): string => (isBuild ? hashedFnModule(file) : file);
   let root = "";
   let elementsDir = "";
   let outDir = "";
@@ -282,11 +284,10 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         if (id === ROUTES) return routesModule(root, ROUTES_DIR);
         if (id === NO_ELEMENTS) return "export {};\n";
         if (id === APP) {
-          const serverFns = serverFnModules(root);
+          const serverFns = new Map(serverFnModules(root).map((file) => [fnModuleOf(file), file]));
           if (isBuild) return appModule({ serverFns, trustedOrigins });
-          const files = [...serverFns.values()].map((file) => [file, file] as const);
           return appModule({
-            serverFns: new Map(files),
+            serverFns,
             trustedOrigins,
             dev: devIds.get(this.environment) ?? "",
           });
@@ -401,7 +402,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           ...(tag !== undefined && {
             element: { tag, ...elementAssets(target, isClient(this.environment)) },
           }),
-          ...(isBuild && { fnModule: hashedFnModule(target.file) }),
+          fnModule: fnModuleOf(target.file),
         });
         if (result.serverFns.length > 0 && !isServerFnSource(target.file)) {
           throw new Error(

@@ -20,9 +20,9 @@ export const isServerFnSource = (file: string): boolean =>
   extname(file) in langs &&
   !file.endsWith(".d.ts");
 
-/** アプリのルート `root` で、サーバー関数を定義したファイルを走査し、ID のモジュールの部分からルートからの相対パスへの対応を返す。 */
-export function serverFnModules(root: string): Map<string, string> {
-  const modules = new Map<string, string>();
+/** アプリのルート `root` で、サーバー関数を定義したファイルを走査し、ルートからの相対パスを文字列の順に返す。 */
+export function serverFnModules(root: string): string[] {
+  const modules: string[] = [];
   const visit = (dir: string): void => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
@@ -34,19 +34,12 @@ export function serverFnModules(root: string): Map<string, string> {
       if (!isServerFnSource(file)) continue;
       const code = readFileSync(path, "utf8");
       if (!code.includes("defineServerFn")) continue;
-      const fnModule = hashedFnModule(file);
       const lang = langs[extname(file)]!;
-      const { serverFns } = transformSource(code, {
-        id: path,
-        file,
-        lang,
-        client: false,
-        fnModule,
-      });
-      if (serverFns.length > 0) modules.set(fnModule, file);
+      const { serverFns } = transformSource(code, { id: path, file, lang, client: false });
+      if (serverFns.length > 0) modules.push(file);
     }
   };
   const start = join(root, SERVER_FN_DIR);
   if (existsSync(start)) visit(start);
-  return new Map([...modules].toSorted(([, a], [, b]) => (a < b ? -1 : 1)));
+  return modules.toSorted();
 }
