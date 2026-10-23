@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import { defineElement } from "../../src/server/element.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
-import { renderToString } from "../../src/server/render.ts";
+import { renderToResponse, renderToString } from "../../src/server/render.ts";
 import type { Ctx } from "../../src/shared/element.ts";
 import { sheetInfo } from "../../src/shared/styles.ts";
 
-/** サーバーで `css` に渡す、`href` の CSS を表すシートを返す。 */
-const sheet = (href: string) =>
-  ({ [sheetInfo]: { href, properties: "" } }) as unknown as CSSStyleSheet;
+/** サーバーで `css` に渡す、`href` の CSS を表すシートを返す。`properties` は CSS に含まれる `@property` の規則である。 */
+const sheet = (href: string, properties = "") =>
+  ({ [sheetInfo]: { href, properties } }) as unknown as CSSStyleSheet;
+
+/** `node` を描画した文書の HTML を返す。 */
+const document = async (node: unknown) => (await renderToResponse(node)).text();
 
 /** 連続する空白を 1 つの空白にする。 */
 const squash = (html: string) => html.replaceAll(/\s+/g, " ");
@@ -66,5 +69,30 @@ describe("SSR の ctx の css", () => {
       { props: [] },
     );
     await expect(renderToString(jsx(Card, {}))).rejects.toThrow("with { type: 'css' }");
+  });
+});
+
+describe("@property の規則", () => {
+  it("シェルで使用したシートの @property の規則を、シートごとに 1 回だけ <head> の <style data-rinka-properties> に出力する", async () => {
+    const rule = '@property --gap { syntax: "<length>"; inherits: false; initial-value: 7px; }';
+    const gap = sheet("/src/gap.css?direct", rule);
+    const plain = sheet("/src/plain.css?direct");
+    const Gap = defineElement(
+      "x-styled-gap",
+      (_props: object, { css }: Ctx) => {
+        css(gap);
+        css(plain);
+        return null;
+      },
+      { props: [] },
+    );
+    const html = await document(jsx("main", { children: [jsx(Gap, {}), jsx(Gap, {})] }));
+    const head = html.slice(0, html.indexOf("</head>"));
+    expect(head).toContain(`<style data-rinka-properties>${rule}</style>`);
+    expect(html.split(rule)).toHaveLength(2);
+  });
+
+  it("@property の規則を持つシートを使用しなければ、<style data-rinka-properties> を出力しない", async () => {
+    expect(await document(jsx("main", {}))).not.toContain("data-rinka-properties");
   });
 });

@@ -1,3 +1,10 @@
+@property --card-gap {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 7px;
+}
+
 .card {
   color: rgb(255, 0, 0);
+  margin-top: var(--card-gap);
 }

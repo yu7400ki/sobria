@@ -18,3 +18,7 @@ export const cssText = (
   strings: TemplateStringsArray,
   values: readonly (string | number)[],
 ): string => strings.reduce((text, part, index) => text + String(values[index - 1]) + part);
+
+/** CSS `css` に含まれる `@property` の規則を、改行で区切って返す。 */
+export const propertiesOf = (css: string): string =>
+  (css.match(/@property\s[^{]*\{[^}]*\}/g) ?? []).join("\n");

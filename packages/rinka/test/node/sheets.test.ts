@@ -48,13 +48,13 @@ describe("シートのモジュール", () => {
 
   it("サーバーのモジュールは、?direct を付与した URL を、シートの情報として default export する", () => {
     expect(sheetModule("/root/src/styles/app.css", "/root", false)).toContain(
-      '"href":"/src/styles/app.css?direct"',
+      'href: "/src/styles/app.css?direct"',
     );
   });
 
   it("<link> の URL だけ、使用できない文字をパーセントエンコードし、?inline の指定子はエンコードしない", () => {
     expect(sheetModule("/root/src/a b#c.css", "/root", false)).toContain(
-      '"href":"/src/a%20b%23c.css?direct"',
+      'href: "/src/a%20b%23c.css?direct"',
     );
     expect(sheetModule("/root/src/a b.css", "/root", true)).toContain(
       'import css from "/src/a b.css?inline";',
@@ -63,7 +63,21 @@ describe("シートのモジュール", () => {
 
   it("ルートの外の CSS は、/@fs/ の URL にする", () => {
     expect(sheetModule("/lib/app.css", "/root", false)).toContain(
-      '"href":"/@fs/lib/app.css?direct"',
+      'href: "/@fs/lib/app.css?direct"',
+    );
+  });
+});
+
+describe("シートのモジュールの @property の規則", () => {
+  it("サーバーのモジュールは、?inline の CSS から抽出した @property の規則を、シートの情報に持つ", () => {
+    const code = sheetModule("/root/src/styles/app.css", "/root", false);
+    expect(code).toContain('import css from "/src/styles/app.css?inline";');
+    expect(code).toContain("properties: propertiesOf(css)");
+  });
+
+  it("クライアントのモジュールは、シートを作成したときに @property の規則をドキュメントに登録する", () => {
+    expect(sheetModule("/root/src/styles/app.css", "/root", true)).toContain(
+      "registerProperties(css);",
     );
   });
 });

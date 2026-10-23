@@ -1,4 +1,4 @@
-import { cssText, type ElementCss } from "../shared/styles.ts";
+import { cssText, propertiesOf, type ElementCss } from "../shared/styles.ts";
 
 /** 埋め込む値の無いタグ付きテンプレートから作成したシートを、テンプレートごとに保持する。 */
 const templateSheets = new WeakMap<TemplateStringsArray, CSSStyleSheet>();
@@ -21,4 +21,17 @@ function templateSheet(
   sheet.replaceSync(cssText(strings, values));
   if (values.length === 0) templateSheets.set(strings, sheet);
   return sheet;
+}
+
+/** ドキュメントに登録した `@property` の規則の組である。 */
+const registered = new Set<string>();
+
+/** CSS `css` に含まれる `@property` の規則を、ドキュメントのシートとして登録する。同じ CSS から抽出した規則の組は、1 回だけ登録する。 */
+export function registerProperties(css: string): void {
+  const properties = propertiesOf(css);
+  if (properties === "" || registered.has(properties)) return;
+  registered.add(properties);
+  const sheet = new CSSStyleSheet();
+  sheet.replaceSync(properties);
+  document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
 }

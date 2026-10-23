@@ -2,6 +2,7 @@ import type { MagicString } from "magic-string";
 import type { ESTree } from "vite";
 
 import { walk } from "./ast.ts";
+import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 import { inside } from "./paths.ts";
 
@@ -60,22 +61,30 @@ const isCssType = ({ key, value }: ESTree.ImportAttribute): boolean =>
 
 /**
  * CSS のファイル `path` のシートのモジュールのコードを返す。`root` はアプリのルートである。
- * クライアントのモジュールは、Vite が処理した CSS から作成した `CSSStyleSheet` を default export し、CSS が更新されたら同じシートの中身を差し替える。
- * サーバーのモジュールは、DSD の `<link>` に出力する URL を、シートの情報として default export する。
+ * クライアントのモジュールは、Vite が処理した CSS から作成した `CSSStyleSheet` を default export し、CSS が更新されたら同じシートの中身を差し替える。CSS の `@property` の規則は、ドキュメントに登録する。
+ * サーバーのモジュールは、DSD の `<link>` に出力する URL と、CSS の `@property` の規則を、シートの情報として default export する。
  */
 export function sheetModule(path: string, root: string, client: boolean): string {
   const url = urlOf(path, root);
-  if (!client) {
-    const info = JSON.stringify({ href: `${encodeUrl(url)}?direct`, properties: "" });
-    return `export default { [Symbol.for("rinka.sheet")]: ${info} };\n`;
-  }
   const inline = JSON.stringify(`${url}?inline`);
-  return `import css from ${inline};
+  if (!client) {
+    return `import { propertiesOf } from "${entries.internal}";
+import css from ${inline};
+export default {
+  [Symbol.for("rinka.sheet")]: { href: ${JSON.stringify(`${encodeUrl(url)}?direct`)}, properties: propertiesOf(css) },
+};
+`;
+  }
+  return `import { registerProperties } from "${entries.internal}";
+import css from ${inline};
+registerProperties(css);
 const sheet = new CSSStyleSheet();
 sheet.replaceSync(css);
 if (import.meta.hot) {
   import.meta.hot.accept(${inline}, (module) => {
-    if (module) sheet.replaceSync(module.default);
+    if (!module) return;
+    registerProperties(module.default);
+    sheet.replaceSync(module.default);
   });
 }
 export default sheet;

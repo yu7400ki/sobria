@@ -501,17 +501,9 @@ interface Legend {
 /** `disabled` の属性の値 `value` が、無効であることを表すかどうかを返す。 */
 const disables = (value: unknown): boolean => attributeValue("disabled", value) !== null;
 
-/**
- * ctx の `css` に渡した値を、DSD の先頭に出力する HTML にする。タグ付きテンプレートは `<style>` にし、中の `</style` を、大文字と小文字を保ったまま `<\/style` に置換する。
- * シートは、その URL の `<link rel="stylesheet">` にする。
- */
-function styleHtml(
-  input: TemplateStringsArray | CSSStyleSheet,
-  values: readonly (string | number)[],
-): string {
-  if (!isTemplate(input)) return `<link rel="stylesheet"${attribute("href", sheetOf(input).href)}>`;
-  return `<style>${cssText(input, values).replaceAll(/<\/(style)/gi, "<\\/$1")}</style>`;
-}
+/** CSS `css` の `<style>` を返す。中の `</style` は、大文字と小文字を保ったまま `<\/style` に置換する。 */
+const styleTag = (css: string, attributes = ""): string =>
+  `<style${attributes}>${css.replaceAll(/<\/(style)/gi, "<\\/$1")}</style>`;
 
 /** `value` がタグ付きテンプレートの文字列の配列かどうかを返す。 */
 const isTemplate = (value: unknown): value is TemplateStringsArray => Array.isArray(value);
@@ -758,6 +750,8 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
   private caught = 200;
   /** 文書の骨組みに移動するものの目印に含める、描画ごとの値である。 */
   private readonly nonce = crypto.randomUUID();
+  /** 描画した要素が `css` に渡したシートの `@property` の規則を、シートの URL ごとに表す。 */
+  private readonly properties = new Map<string, string>();
   /** `<label for>` の補完の目印を作成し、置換する。 */
   private readonly labels = new Labels(this.nonce);
   /** 文書の骨組みに移動するものを、目印の番号ごとに保持する。 */
@@ -1269,7 +1263,13 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       input: TemplateStringsArray | CSSStyleSheet,
       ...values: readonly (string | number)[]
     ) => {
-      styles.push(styleHtml(input, values));
+      if (isTemplate(input)) {
+        styles.push(styleTag(cssText(input, values)));
+        return;
+      }
+      const { href, properties } = sheetOf(input);
+      if (properties !== "") this.properties.set(href, properties);
+      styles.push(`<link rel="stylesheet"${attribute("href", href)}>`);
     };
     const elementCtx: Ctx = {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
@@ -1642,7 +1642,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /**
    * 文書の先頭と `shell` を出力し、後送りの境界をすべて出力してから、文書を閉じる。
-   * `<head>` には、rinka の `<meta charset="utf-8">`、キーが同じタグを 1 つにしたタグ、`<Navigation>` の出力、`extraHead` の順に並べる。
+   * `<head>` には、rinka の `<meta charset="utf-8">`、キーが同じタグを 1 つにしたタグ、`<Navigation>` の出力、`extraHead`、シェルまでに使用したシートの `@property` の規則の `<style data-rinka-properties>` の順に並べる。
    */
   async finish(this: Renderer<"document">, shell: string, extraHead: string): Promise<void> {
     try {
@@ -1651,10 +1651,11 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
         ? bootstrap + preloadLinks(fresh) + announceScript(fresh)
         : "";
       const parts = await this.takeDocument(shell);
+      const properties = [...this.properties.values()].join("\n");
       const head = `<meta charset="utf-8">${headTags(parts)}`;
       this.reveal(
         this.shellOut.flush,
-        `<!doctype html><html${attributesText(parts.html)}><head>${head}${script}${extraHead}</head><body${attributesText(parts.body)}>${parts.rest}${this.shellOut.scriptText}`,
+        `<!doctype html><html${attributesText(parts.html)}><head>${head}${script}${extraHead}${properties === "" ? "" : styleTag(properties, " data-rinka-properties")}</head><body${attributesText(parts.body)}>${parts.rest}${this.shellOut.scriptText}`,
       );
       await this.drain();
       for (const host of this.hosts) host.hide();
