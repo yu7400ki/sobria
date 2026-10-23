@@ -473,6 +473,8 @@ interface WalkCtx {
   readonly disabled: () => boolean;
   /** `<fieldset>` の子なら、その `<fieldset>` の子の `<legend>` を表す。 */
   readonly legend?: Legend;
+  /** `<Loading>` のフォールバックの中で、フォールバックと同じ tree にあれば `true` である。 */
+  readonly fallback: boolean;
 }
 
 /**
@@ -822,6 +824,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
             this.chunks(node.fallback, {
               ...ctx,
               head: ctx.head === "none" || ctx.head === "element" ? ctx.head : "fallback",
+              fallback: true,
             }),
         });
         return;
@@ -1013,7 +1016,8 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     ctx: WalkCtx,
     out: Chunk[],
   ): void {
-    const label = tag === "label" && this.runsElements ? this.labelOf(props, ctx) : undefined;
+    const label =
+      tag === "label" && this.runsElements && !ctx.fallback ? this.labelOf(props, ctx) : undefined;
     const attributesOf =
       tag === "form" ? formProps(props) : label ? { ...props, id: label.id } : props;
     const openTag = (tracked: boolean): string => {
@@ -1180,6 +1184,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
         ...(ctx.slots && { slots: ctx.slots }),
         disabled: ctx.disabled,
         ...(slot !== "" && { slot }),
+        fallback: ctx.fallback,
       };
       if (boundary === ctx.boundary) {
         this.walk(content, light, chunks);
@@ -1285,6 +1290,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       depth: ctx.depth,
       head: "element",
       disabled: notDisabled,
+      fallback: false,
     };
     const read = component[elementInfo].options.form ? valueOf : undefined;
     const input =
@@ -1550,6 +1556,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
         depth: 0,
         head: "auto",
         disabled: notDisabled,
+        fallback: false,
       }),
       this.shellOut,
     );

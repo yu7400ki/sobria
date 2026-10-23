@@ -299,6 +299,52 @@ describe("<label for> の補完", () => {
     expect(failed).toContain('aria-labelledby="kept"');
   });
 
+  it("<Loading> のフォールバックの中の <label> は指さない", async () => {
+    const { promise, resolve } = Promise.withResolvers<void>();
+    const Slow = async () => {
+      await promise;
+      return label({ id: "content" });
+    };
+    const Wrap = defineElement("x-wrap-loading", () => jsx("slot", {}), { props: [] });
+    const loading = () =>
+      jsx(Loading, {
+        fallback: jsx("div", {
+          children: [label({ id: "fallback" }), jsx(Wrap, { children: label({ id: "slotted" }) })],
+        }),
+        children: jsx(Slow, {}),
+      });
+    const Card = defineElement("x-card-loading", () => [jsx(Field, { id: "f" }), loading()], {
+      props: [],
+    });
+    const stream = renderToStream(
+      jsx("main", { children: [jsx(Field, { id: "f" }), loading(), jsx(Card, {})] }),
+    );
+    const reading = read(stream);
+    await new Promise((done) => setTimeout(done, 0));
+    resolve();
+    const html = (await reading).join("");
+    expect(html).toContain('<label for="f" id="fallback">');
+    expect(html).not.toContain("aria-labelledby");
+  });
+
+  it("<Loading> のフォールバックの中にある要素の Shadow DOM では、同じ Shadow DOM の <label> を指す", async () => {
+    const { promise, resolve } = Promise.withResolvers<void>();
+    const Slow = async () => {
+      await promise;
+      return null;
+    };
+    const Card = defineElement("x-card-fallback", () => [label({}), jsx(Field, { id: "f" })], {
+      props: [],
+    });
+    const stream = renderToStream(
+      jsx("main", { children: jsx(Loading, { fallback: jsx(Card, {}), children: jsx(Slow, {}) }) }),
+    );
+    const reading = read(stream);
+    await new Promise((done) => setTimeout(done, 0));
+    resolve();
+    expect((await reading).join("")).toContain('id="f" aria-labelledby="rinka-l1">');
+  });
+
   it("<label> とホストが同じ tree scope にあるときだけ指す", async () => {
     const Card = defineElement("x-card-label", () => [label({}), jsx(Field, { id: "f" })], {
       props: [],
