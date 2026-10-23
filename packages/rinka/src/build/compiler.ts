@@ -45,6 +45,8 @@ export interface SourceOptions extends ModuleSource {
   readonly client: boolean;
   /** 要素のファイルなら、要素のタグ名と、ブラウザが読み込むモジュールの URL を持つ。 */
   readonly element?: { readonly tag: string; readonly module: string };
+  /** サーバー関数の ID のモジュールの部分である。省略すると `file` を使用する。 */
+  readonly fnModule?: string;
 }
 
 /** 変換したコードと、元のコードへのソースマップを表す。 */
@@ -82,7 +84,7 @@ const SERVER_FN = "__rinka_serverFn";
 export function transformSource(code: string, options: SourceOptions): SourceResult {
   const program = parseModule(code, options);
   const output = new MagicString(code);
-  const definitions = findDefinitions(program, options.file);
+  const definitions = findDefinitions(program, options.file, options.fnModule ?? options.file);
   const replaced = new Set<Node>(
     options.client ? definitions.map((definition) => definition.init) : [],
   );
@@ -356,7 +358,7 @@ type Definition =
  * `rinka/server` から import した `defineServerFn` と `defineMiddleware` で初期化したトップレベルの const を、ソースの順に返す。
  * `defineServerFn` をそれ以外の位置で使用するか、サーバー関数のメソッドを静的に読み取れないか、`rinka/server` を名前を指定せずに import すると、ビルドのエラーにする。
  */
-function findDefinitions(program: ESTree.Program, file: string): Definition[] {
+function findDefinitions(program: ESTree.Program, file: string, fnModule: string): Definition[] {
   for (const statement of program.body) {
     if (statement.type !== "ImportDeclaration" || statement.source.value !== entries.server)
       continue;
@@ -390,7 +392,7 @@ function findDefinitions(program: ESTree.Program, file: string): Definition[] {
       definitions.push({
         kind: "serverFn",
         name: id.name,
-        id: serverFnId(file, id.name),
+        id: serverFnId(fnModule, id.name),
         init,
         method: methodOf(options, file, id.name),
       });

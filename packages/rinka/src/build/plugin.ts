@@ -14,7 +14,7 @@ import {
 
 import { reloadEvent } from "../shared/hmr.ts";
 import type { CreateApp, Routes } from "../shared/routes.ts";
-import { fileOfServerFnId } from "../shared/server-fn.ts";
+import { moduleOfServerFnId } from "../shared/server-fn.ts";
 import type { Lang } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
 import { elementTag } from "./elements.ts";
@@ -116,7 +116,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
    * ID のファイルの部分がプロジェクトのファイルなら、`environment` で変換して最新の定義を確認する。`#` を含まない ID には偽を返す。
    */
   const loadServerFn = async (environment: RunnableDevEnvironment, id: string) => {
-    const file = fileOfServerFnId(id);
+    const file = moduleOfServerFnId(id);
     if (file === undefined) return false;
     if (projectFile(`${root}/${file}`)?.file !== file || !existsSync(resolve(root, file))) {
       return false;

@@ -683,6 +683,20 @@ export const config = { db: 1, limit };
     expect(code).toContain("const auth = defineMiddleware(");
   });
 
+  it("ID のモジュールの部分を指定すると、サーバー向けの登録とクライアント向けの RPC の呼び出しは、その値を ID に使用する", () => {
+    const options = {
+      id: "src/lib/a.ts",
+      file: "src/lib/a.ts",
+      lang: "ts",
+      fnModule: "mabc",
+    } as const;
+    const server = transformSource(source, { ...options, client: false });
+    const client = transformSource(source, { ...options, client: true });
+    expect(server.code).toContain('__rinka_registerServerFn("mabc#like",');
+    expect(client.code).toContain('__rinka_serverFn("mabc#like", "POST")');
+    expect(server.serverFns).toEqual(["mabc#like", "mabc#getUser", "mabc#ping"]);
+  });
+
   it("メソッドを省略した定義の出力のメソッドは、defineServerFn の実行時のデフォルトのメソッドと一致する", () => {
     const code = module(
       'import { defineServerFn } from "rinka/server";\nexport const fn = defineServerFn(() => null);\n',

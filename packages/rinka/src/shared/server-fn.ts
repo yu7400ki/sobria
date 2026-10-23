@@ -11,11 +11,11 @@ export const defaultServerFnMethod = "POST" satisfies ServerFnMethod;
 export const isServerFnMethod = (value: unknown): value is ServerFnMethod =>
   serverFnMethods.some((method) => method === value);
 
-/** `file` の `name` のサーバー関数の ID を返す。 */
-export const serverFnId = (file: string, name: string): string => `${file}#${name}`;
+/** ID のモジュールの部分が `module` で、変数の名前が `name` のサーバー関数の ID を返す。モジュールの部分は、開発中はファイルのパス、本番のビルドではパスのハッシュである。 */
+export const serverFnId = (module: string, name: string): string => `${module}#${name}`;
 
-/** サーバー関数の ID から、定義したファイルを返す。ID の形式に合わなければ `undefined` を返す。 */
-export function fileOfServerFnId(id: string): string | undefined {
+/** サーバー関数の ID から、ID のモジュールの部分を返す。ID の形式に合わなければ `undefined` を返す。 */
+export function moduleOfServerFnId(id: string): string | undefined {
   const separator = id.lastIndexOf("#");
   return separator === -1 ? undefined : id.slice(0, separator);
 }
