@@ -1,11 +1,13 @@
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { every } from "hono/combine";
 import { HTTPException } from "hono/http-exception";
+import type { BlankEnv } from "hono/types";
 
 import {
   routeMethods,
   type AppOptions,
   type CreateApp,
+  type Fallback,
   type Load,
   type Route,
   type RouteComponent,
@@ -51,6 +53,9 @@ async function wrap(
   );
 }
 
+/** パスを、空でない区切りに分ける。 */
+const segmentsOf = (path: string): string[] => path.split("/").filter((segment) => segment !== "");
+
 /** `pattern` の区切りが `segments` の前方と一致すれば、そのパラメータを返す。 */
 function matchPrefix(
   pattern: string,
@@ -60,46 +65,42 @@ function matchPrefix(
   for (const [index, part] of segmentsOf(pattern).entries()) {
     const segment = segments[index];
     if (segment === undefined) return undefined;
-    if (part.endsWith("{.+}"))
+    if (part.endsWith("{.+}")) {
       params[part.slice(1, -"{.+}".length)] = segments.slice(index).join("/");
-    else if (part.startsWith(":")) params[part.slice(1)] = segment;
+    } else if (part.startsWith(":")) params[part.slice(1)] = segment;
     else if (part !== segment) return undefined;
   }
   return params;
 }
 
-/** パスを、空でない区切りに分ける。 */
-const segmentsOf = (path: string): string[] => path.split("/").filter((segment) => segment !== "");
+/** ページか `not-found.tsx` の行を表す。 */
+type PageRoute = Extract<Route, { readonly kind: "page" | "not-found" }>;
 
-/** エラーのページの行と、URL から取り出したパラメータを表す。 */
-interface Fallback {
-  readonly route: Exclude<Route, { readonly kind: "route" }>;
-  readonly params: Record<string, string>;
-}
-
-/** `kind` の行のうち、`url` の区切りが前方から一致し、区切りの数が最も多いものを、そのパラメータとともに返す。 */
-function nearest(
+/** `not-found.tsx` の行のうち、行の区切りが `path` の区切りに前方から一致し、区切りの数が最も多いものを、そのパラメータとともに返す。 */
+function nearestNotFound(
   routes: readonly Route[],
-  kind: "not-found" | "error",
-  url: URL,
-): Fallback | undefined {
-  const segments = segmentsOf(url.pathname);
-  let found: Fallback | undefined;
+  path: string,
+): { readonly route: PageRoute; readonly params: Record<string, string> } | undefined {
+  const segments = segmentsOf(path);
+  let found: { readonly route: PageRoute; readonly params: Record<string, string> } | undefined;
+  let depth = -1;
   for (const route of routes) {
-    if (route.kind === "route" || route.kind !== kind) continue;
+    if (route.kind !== "not-found") continue;
     const params = matchPrefix(route.path, segments);
-    if (params && (!found || segmentsOf(route.path).length > segmentsOf(found.route.path).length)) {
+    const length = segmentsOf(route.path).length;
+    if (params && length > depth) {
       found = { route, params };
+      depth = length;
     }
   }
   return found;
 }
 
-/** エラーのページを、そのレイアウトで包み、パラメータと `url` と `props` を渡して描画するノードを返す。 */
-const fallback = ({ route, params }: Fallback, url: URL, props: object): unknown =>
-  jsx(() => wrap(route.load, route.layouts, { params, url, ...props }), {});
+/** エラーのページを、そのレイアウトで包み、`props` を渡して描画するノードを返す。 */
+const fallbackNode = (page: Fallback, props: object): unknown =>
+  jsx(() => wrap(page.load, page.layouts, props), {});
 
-/** `notFound()` を投げるページである。表に無い URL に使用する。 */
+/** `notFound()` を投げるページである。 */
 const missing = (): never => {
   throw notFound();
 };
@@ -113,33 +114,54 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   const serverFns = serverFnMiddleware(options, fail);
   const rinka = middleware === undefined ? serverFns : every(lazy(middleware), serverFns);
   app.use((c, next) => runInRequest(c, () => rinka(c, next)));
-  const respond: Respond = async (c, node) => {
-    const url = new URL(c.req.url);
-    const missingPage = nearest(routes, "not-found", url);
-    const errorPage = nearest(routes, "error", url);
+  const respond: Respond = async (c, node, route, props) => {
+    const { notFound: missingPage, error: errorPage } = route ?? {};
     const response = await renderDocument(node, {
       ...(options.head !== undefined && { head: options.head }),
-      ...(missingPage && { notFound: () => fallback(missingPage, url, {}) }),
-      ...(errorPage && { error: (error: unknown) => fallback(errorPage, url, { error }) }),
+      ...(missingPage && { notFound: () => fallbackNode(missingPage, props) }),
+      ...(errorPage && {
+        error: (error: unknown) => {
+          console.error(error);
+          return fallbackNode(errorPage, { ...props, error });
+        },
+      }),
     });
     return withContextHeaders(c, response);
   };
   for (const route of routes) register(app, route, respond);
-  app.notFound((c) => respond(c, jsx(missing, {})));
+  app.notFound(async (c: Context<BlankEnv, string>) => {
+    const url = new URL(c.req.url);
+    const found = nearestNotFound(routes, c.req.path);
+    if (!found) return respond(c, jsx(missing, {}), undefined, {});
+    const { route, params } = found;
+    await every(...route.middlewares.map(lazy))(c, async () => {
+      c.res = await respond(c, jsx(missing, {}), route, { params, url });
+    });
+    return c.res;
+  });
   return app;
 }) satisfies CreateApp;
 
-/** `node` を描画した文書を、`c` のリクエストのレスポンスとして返す関数を表す。 */
-type Respond = (c: Pick<Context, "req" | "newResponse">, node: unknown) => Promise<Response>;
+/**
+ * `node` を描画した文書を、`c` のリクエストのレスポンスとして返す関数を表す。
+ * `route` の `not-found.tsx` と `error.tsx` には、`props` を渡す。
+ */
+type Respond = (
+  c: Pick<Context, "req" | "newResponse">,
+  node: unknown,
+  route: PageRoute | undefined,
+  props: object,
+) => Promise<Response>;
 
 /** `route` を、ディレクトリのミドルウェアの後に `app` に登録する。 */
 function register(app: Hono, route: Route, respond: Respond): void {
   const directory = every(...route.middlewares.map(lazy));
   switch (route.kind) {
     case "page":
-      app.get(route.path, directory, async (c) =>
-        respond(c, await wrap(route.load, route.layouts, propsOf(c))),
-      );
+      app.get(route.path, directory, async (c) => {
+        const props = propsOf(c);
+        return respond(c, await wrap(route.load, route.layouts, props), route, props);
+      });
       return;
     case "route":
       app.all(route.path, directory, async (c, next) => {
@@ -160,7 +182,6 @@ function register(app: Hono, route: Route, respond: Respond): void {
       });
       return;
     case "not-found":
-    case "error":
       return;
   }
 }

@@ -20,7 +20,7 @@ import type { Lang } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
 import { entries, oxc, runtimes } from "./entries.ts";
 import { transformJsx } from "./jsx.ts";
-import { scanRoutes } from "./routes.ts";
+import { scanRoutes, type ScannedFallback } from "./routes.ts";
 
 /** rinka のプラグインの設定を表す。 */
 export interface RinkaOptions {
@@ -227,9 +227,14 @@ const importCode = (file: string): string => `() => import(${JSON.stringify(`/${
 /** `root` からの相対パス `dir` を走査し、ファイルごとにモジュールを読み込む関数を持つルートの表を export するモジュールのコードを返す。 */
 function routesModule(root: string, dir: string): string {
   const { routes, middleware } = scanRoutes(root, dir);
+  const list = (files: readonly string[]): string => `[${files.map(importCode).join(", ")}]`;
+  const fallback = (name: string, page: ScannedFallback | undefined): string =>
+    page === undefined
+      ? ""
+      : `, ${name}: { load: ${importCode(page.file)}, layouts: ${list(page.layouts)} }`;
   const rows = routes.map(
     (route) =>
-      `{ kind: ${JSON.stringify(route.kind)}, path: ${JSON.stringify(route.path)}, load: ${importCode(route.file)}, layouts: [${route.layouts.map(importCode).join(", ")}], middlewares: [${route.middlewares.map(importCode).join(", ")}] }`,
+      `{ kind: ${JSON.stringify(route.kind)}, path: ${JSON.stringify(route.path)}, load: ${importCode(route.file)}, layouts: ${list(route.layouts)}, middlewares: ${list(route.middlewares)}${fallback("notFound", route.notFound)}${fallback("error", route.error)} }`,
   );
   return [
     `export const routes = [\n${rows.join(",\n")}\n];`,

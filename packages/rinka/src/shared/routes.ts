@@ -1,7 +1,7 @@
 import type { Handler, MiddlewareHandler } from "hono";
 
 /** ルートのファイルの種類を表す。 */
-export type RouteKind = "page" | "route" | "not-found" | "error";
+export type RouteKind = "page" | "route" | "not-found";
 
 /** `route.ts` が export できる HTTP メソッドである。 */
 export const routeMethods = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
@@ -15,6 +15,12 @@ export type Load<T> = () => Promise<{ readonly default: T }>;
 /** ページ、レイアウト、エラーのページのコンポーネントを表す。 */
 export type RouteComponent = (props: never) => unknown;
 
+/** エラーのページと、外側から順に列挙した、そのディレクトリのレイアウトを読み込む関数を表す。 */
+export interface Fallback {
+  readonly load: Load<RouteComponent>;
+  readonly layouts: readonly Load<RouteComponent>[];
+}
+
 /** ルートの表の 1 行を表す。`layouts` と `middlewares` は、外側から順に列挙する。 */
 export type Route = {
   /** Hono のパスである。 */
@@ -23,7 +29,14 @@ export type Route = {
   /** ルートのディレクトリ以外の `middleware.ts` である。 */
   readonly middlewares: readonly Load<MiddlewareHandler>[];
 } & (
-  | { readonly kind: Exclude<RouteKind, "route">; readonly load: Load<RouteComponent> }
+  | {
+      readonly kind: Exclude<RouteKind, "route">;
+      readonly load: Load<RouteComponent>;
+      /** ディレクトリの祖先で最も近い `not-found.tsx` である。 */
+      readonly notFound?: Fallback;
+      /** ディレクトリの祖先で最も近い `error.tsx` である。 */
+      readonly error?: Fallback;
+    }
   | {
       readonly kind: "route";
       readonly load: () => Promise<Partial<Readonly<Record<RouteMethod, Handler>>>>;

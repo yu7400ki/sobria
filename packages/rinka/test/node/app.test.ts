@@ -7,7 +7,13 @@ import { notFound } from "../../src/server/errors.ts";
 import { createApp, registerServerFn } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
-import type { Route, RouteComponent, RouteMethod, Routes } from "../../src/shared/routes.ts";
+import type {
+  Fallback,
+  Route,
+  RouteComponent,
+  RouteMethod,
+  Routes,
+} from "../../src/shared/routes.ts";
 import { rpcPath } from "../../src/shared/wire.ts";
 
 /** `value` を default export するモジュールを読み込む関数を返す。 */
@@ -44,6 +50,7 @@ function pageRoute(
   component: RouteComponent,
   layouts: readonly RouteComponent[] = [],
   middlewares: readonly MiddlewareHandler[] = [],
+  fallbacks: Fallbacks = {},
 ): Route {
   return {
     kind: "page",
@@ -51,17 +58,41 @@ function pageRoute(
     load: module(component),
     layouts: layouts.map(module),
     middlewares: middlewares.map(module),
+    ...fallbacks,
   };
 }
 
-/** `not-found.tsx` か `error.tsx` の行を返す。 */
-function specialRoute(
-  kind: "not-found" | "error",
-  path: string,
+/** ページと `not-found.tsx` の行の、エラーのページを表す。 */
+interface Fallbacks {
+  readonly notFound?: Fallback;
+  readonly error?: Fallback;
+}
+
+/** `component` を `layouts` で包むエラーのページを返す。 */
+const fallbackOf = (
   component: RouteComponent,
   layouts: readonly RouteComponent[] = [],
+): Fallback => ({
+  load: module(component),
+  layouts: layouts.map(module),
+});
+
+/** `notFoundPage` の `not-found.tsx` の行を返す。 */
+function notFoundRoute(
+  path: string,
+  notFoundPage: Fallback,
+  middlewares: readonly MiddlewareHandler[] = [],
+  error?: Fallback,
 ): Route {
-  return { kind, path, load: module(component), layouts: layouts.map(module), middlewares: [] };
+  return {
+    kind: "not-found",
+    path,
+    load: notFoundPage.load,
+    layouts: notFoundPage.layouts,
+    middlewares: middlewares.map(module),
+    notFound: notFoundPage,
+    ...(error && { error }),
+  };
 }
 
 /** `route.ts` の行を返す。 */
@@ -291,41 +322,64 @@ const throwing = (value: unknown) => () => {
 };
 
 describe("createApp の not-found.tsx と error.tsx", () => {
+  const rootNotFound = fallbackOf(fallback("root"));
+  const rootError = fallbackOf(fallback("root"));
+  const usersNotFound = fallbackOf(fallback("users"), [layout("main", "users")]);
+  const userError = fallbackOf(fallback("user"));
   const routes: Routes = {
     routes: [
-      pageRoute("/users/:id", throwing(notFound())),
-      pageRoute("/users/:id/edit", throwing(new Error("boom"))),
-      pageRoute("/posts/:id", throwing(new Error("broken"))),
-      specialRoute("not-found", "/", fallback("root")),
-      specialRoute("error", "/", fallback("root")),
-      specialRoute("not-found", "/users", fallback("users"), [layout("main", "users")]),
-      specialRoute("error", "/users/:id", fallback("user")),
+      pageRoute("/users/:id", throwing(notFound()), [], [], {
+        notFound: usersNotFound,
+        error: rootError,
+      }),
+      pageRoute("/users/:id/edit", throwing(new Error("boom")), [], [], {
+        notFound: usersNotFound,
+        error: userError,
+      }),
+      pageRoute("/posts/:id", throwing(new Error("broken")), [], [], {
+        notFound: rootNotFound,
+        error: rootError,
+      }),
+      notFoundRoute("/", rootNotFound, [], rootError),
+      notFoundRoute("/café", fallbackOf(fallback("cafe")), [], rootError),
+      notFoundRoute("/users", usersNotFound, [marking("x-dir")], rootError),
     ],
   };
   const render = async (path: string) => {
     const response = await request(routes, path);
-    return [response.status, await bodyOf(response)];
+    return [response.status, await bodyOf(response), response.headers.get("x-dir")];
   };
 
-  it("表に無い URL には、URL の区切りが前方から一致するもののうち、最も深い not-found.tsx を、そのレイアウトで包んで 404 で返す", async () => {
-    expect(await Promise.all([render("/users/3/x"), render("/other")])).toEqual([
-      [404, expect.stringContaining('<main id="users"><h1>users /users/3/x</h1></main>')],
-      [404, expect.stringContaining("<h1>root /other</h1>")],
+  it("表に無い URL には、行の区切りが URL の区切りに前方から一致するもののうち、最も深い not-found.tsx を、そのレイアウトとミドルウェアとともに 404 で返す", async () => {
+    expect(
+      await Promise.all([render("/users/3/x"), render("/other"), render("/caf%C3%A9/1")]),
+    ).toEqual([
+      [404, expect.stringContaining('<main id="users"><h1>users /users/3/x</h1></main>'), "1"],
+      [404, expect.stringContaining("<h1>root /other</h1>"), null],
+      [404, expect.stringContaining("<h1>cafe /caf%C3%A9/1</h1>"), null],
     ]);
   });
 
-  it("ページのシェルで投げた notFound() には、最も近い not-found.tsx を 404 で返す", async () => {
+  it("ページのシェルで投げた notFound() には、ページの行の not-found.tsx を 404 で返す", async () => {
     expect(await render("/users/3")).toEqual([
       404,
       expect.stringContaining('<main id="users"><h1>users /users/3</h1></main>'),
+      null,
     ]);
   });
 
-  it("シェルで受け止められなかったエラーには、動的な区切りを含めて最も近い error.tsx を、投げられた値とともに 500 で返す", async () => {
-    expect(await Promise.all([render("/users/3/edit"), render("/posts/1")])).toEqual([
-      [500, expect.stringContaining("<h1>user /users/3/edit boom</h1>")],
-      [500, expect.stringContaining("<h1>root /posts/1 broken</h1>")],
+  it("シェルで受け止められなかったエラーには、ページの行の error.tsx を、投げられた値とともに 500 で返し、エラーを記録する", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const rendered = await Promise.all([render("/users/3/edit"), render("/posts/1")]);
+    const logged = error.mock.calls.map(([value]) =>
+      value instanceof Error ? value.message : value,
+    );
+    error.mockRestore();
+    expect(rendered).toEqual([
+      [500, expect.stringContaining("<h1>user /users/3/edit boom</h1>"), null],
+      [500, expect.stringContaining("<h1>root /posts/1 broken</h1>"), null],
     ]);
+    expect(logged.map(String).toSorted((a, b) => a.localeCompare(b))).toEqual(["boom", "broken"]);
   });
 
   it("該当するページが無ければ、Not Found と Internal Server Error のテキストを返す", async () => {

@@ -3,6 +3,12 @@ import { join, relative, resolve, sep } from "node:path";
 
 import type { RouteKind } from "../shared/routes.ts";
 
+/** エラーのページのファイルと、外側から順に列挙した、そのディレクトリのレイアウトのファイルを表す。 */
+export interface ScannedFallback {
+  readonly file: string;
+  readonly layouts: readonly string[];
+}
+
 /** 走査したルートの 1 行を表す。ファイルは、プロジェクトのルートからの相対パスで、区切りは `/` である。 */
 export interface ScannedRoute {
   readonly kind: RouteKind;
@@ -13,6 +19,10 @@ export interface ScannedRoute {
   readonly layouts: readonly string[];
   /** 外側から順に列挙した、ルートのディレクトリ以外の `middleware.ts` である。 */
   readonly middlewares: readonly string[];
+  /** ページと `not-found.tsx` の行の、ディレクトリの祖先で最も近い `not-found.tsx` である。 */
+  readonly notFound?: ScannedFallback;
+  /** ページと `not-found.tsx` の行の、ディレクトリの祖先で最も近い `error.tsx` である。 */
+  readonly error?: ScannedFallback;
 }
 
 /** 走査したルートの表を表す。`middleware` は、ルートのディレクトリの `middleware.ts` である。 */
@@ -21,13 +31,20 @@ export interface ScannedRoutes {
   readonly middleware?: string;
 }
 
-/** ディレクトリにあればルートになるファイルの名前と、その種類である。 */
+/** ディレクトリにあれば表の行になるファイルの名前と、その種類である。 */
 const routeFiles: readonly (readonly [string, RouteKind])[] = [
   ["page.tsx", "page"],
   ["route.ts", "route"],
   ["not-found.tsx", "not-found"],
-  ["error.tsx", "error"],
 ];
+
+/** ルートの表に関わるファイルの名前である。 */
+export const routeFileNames: ReadonlySet<string> = new Set([
+  ...routeFiles.map(([name]) => name),
+  "layout.tsx",
+  "middleware.ts",
+  "error.tsx",
+]);
 
 /**
  * ディレクトリの名前を、Hono のパスの区切りにする。グループは `undefined` にする。
@@ -61,7 +78,10 @@ const shapeOf = (path: string): string =>
     .map((segment) => (segment.startsWith(":") ? (isCatchAll(segment) ? "*" : ":") : segment))
     .join("/");
 
-/** 区切りの優先順位を前から比較し、一方が他方の前方と一致するなら短いほうを先にする。 */
+/**
+ * 区切りの優先順位を前から比較し、一方が他方の前方と一致するなら短いほうを先にする。
+ * 優先順位が同じなら、パスの文字列の順にし、同じパスならファイルのディレクトリが浅いほうを先にする。
+ */
 function compareRoutes(a: ScannedRoute, b: ScannedRoute): number {
   const left = a.path.split("/");
   const right = b.path.split("/");
@@ -69,13 +89,15 @@ function compareRoutes(a: ScannedRoute, b: ScannedRoute): number {
     const difference = rankOf(left[index] ?? "") - rankOf(right[index] ?? "");
     if (difference !== 0) return difference;
   }
-  return left.length - right.length;
+  if (left.length !== right.length) return left.length - right.length;
+  if (a.path !== b.path) return a.path < b.path ? -1 : 1;
+  return a.file.split("/").length - b.file.split("/").length;
 }
 
 /**
  * プロジェクトのルート `root` からの相対パス `dir` のディレクトリを走査し、ルートの表を返す。
  * ルートは、同じ位置では静的な区切り、動的な区切り、キャッチオールの順に並ぶ。
- * 同じ種類の 2 つのファイルが同じ URL に対応するときは、エラーを投げる。`page.tsx` と `route.ts` は同じ種類とみなすので、同じディレクトリに両方を置くとエラーになる。
+ * 2 つの `page.tsx` か `route.ts` が同じ URL に対応するときは、エラーを投げる。同じディレクトリに `page.tsx` と `route.ts` を置いたときも、このエラーになる。
  * キャッチオールのディレクトリの配下のディレクトリにルートのファイルがあるときも、エラーを投げる。
  */
 export function scanRoutes(root: string, dir: string): ScannedRoutes {
@@ -88,6 +110,7 @@ export function scanRoutes(root: string, dir: string): ScannedRoutes {
     segments: readonly string[],
     outerLayouts: readonly string[],
     outerMiddlewares: readonly string[],
+    outerFallbacks: Pick<ScannedRoute, "notFound" | "error">,
   ): void => {
     const entries = readdirSync(current, { withFileTypes: true }).toSorted((a, b) =>
       a.name < b.name ? -1 : 1,
@@ -102,6 +125,14 @@ export function scanRoutes(root: string, dir: string): ScannedRoutes {
       if (current === start) middleware = file;
       else middlewares = [...outerMiddlewares, file];
     }
+    const fallbackOf = (name: string) =>
+      files.has(name) ? { file: fileOf(join(current, name)), layouts } : undefined;
+    const notFound = fallbackOf("not-found.tsx") ?? outerFallbacks.notFound;
+    const error = fallbackOf("error.tsx") ?? outerFallbacks.error;
+    const fallbacks = {
+      ...(notFound !== undefined && { notFound }),
+      ...(error !== undefined && { error }),
+    };
     const path = `/${segments.join("/")}`;
     for (const [name, kind] of routeFiles) {
       if (files.has(name)) {
@@ -110,7 +141,8 @@ export function scanRoutes(root: string, dir: string): ScannedRoutes {
             `${fileOf(join(current, name))} は、キャッチオールのディレクトリの配下にあります。キャッチオールの配下には、ルートのファイルを置けません。`,
           );
         }
-        routes.push({ kind, path, file: fileOf(join(current, name)), layouts, middlewares });
+        const file = fileOf(join(current, name));
+        routes.push({ kind, path, file, layouts, middlewares, ...(kind !== "route" && fallbacks) });
       }
     }
     for (const entry of entries) {
@@ -121,14 +153,16 @@ export function scanRoutes(root: string, dir: string): ScannedRoutes {
         segment === undefined ? segments : [...segments, segment],
         layouts,
         middlewares,
+        fallbacks,
       );
     }
   };
-  if (existsSync(start)) visit(start, [], [], []);
+  if (existsSync(start)) visit(start, [], [], [], {});
 
   const handled = new Map<string, ScannedRoute>();
   for (const route of routes) {
-    const shape = `${route.kind === "route" ? "page" : route.kind} ${shapeOf(route.path)}`;
+    if (route.kind === "not-found") continue;
+    const shape = shapeOf(route.path);
     const other = handled.get(shape);
     if (other) {
       throw new Error(

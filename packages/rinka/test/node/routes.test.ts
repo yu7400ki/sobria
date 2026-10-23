@@ -46,28 +46,41 @@ describe("scanRoutes", () => {
       "docs/[...slug]/page.tsx",
     ]);
     const root = ["src/routes/layout.tsx"];
+    const fallbacks = {
+      notFound: { file: "src/routes/not-found.tsx", layouts: root },
+      error: { file: "src/routes/error.tsx", layouts: root },
+    };
     const users = {
       layouts: [...root, "src/routes/users/layout.tsx"],
       middlewares: ["src/routes/users/middleware.ts"],
+      ...fallbacks,
     };
     expect(table).toEqual({
       middleware: "src/routes/middleware.ts",
       routes: [
-        { kind: "page", path: "/", file: "src/routes/page.tsx", layouts: root, middlewares: [] },
+        {
+          kind: "page",
+          path: "/",
+          file: "src/routes/page.tsx",
+          layouts: root,
+          middlewares: [],
+          ...fallbacks,
+        },
         {
           kind: "not-found",
           path: "/",
           file: "src/routes/not-found.tsx",
           layouts: root,
           middlewares: [],
+          ...fallbacks,
         },
-        { kind: "error", path: "/", file: "src/routes/error.tsx", layouts: root, middlewares: [] },
         {
           kind: "page",
           path: "/about",
           file: "src/routes/(marketing)/about/page.tsx",
           layouts: [...root, "src/routes/(marketing)/layout.tsx"],
           middlewares: [],
+          ...fallbacks,
         },
         { kind: "page", path: "/users", file: "src/routes/users/page.tsx", ...users },
         {
@@ -85,6 +98,7 @@ describe("scanRoutes", () => {
           file: "src/routes/docs/[...slug]/page.tsx",
           layouts: root,
           middlewares: [],
+          ...fallbacks,
         },
       ],
     });
@@ -98,8 +112,8 @@ describe("scanRoutes", () => {
     ]);
     expect(middleware).toBeUndefined();
     expect(routes.map((route) => [route.path, route.middlewares])).toEqual([
-      ["/admin", ["src/routes/(admin)/middleware.ts"]],
       ["/about", []],
+      ["/admin", ["src/routes/(admin)/middleware.ts"]],
     ]);
   });
 
@@ -138,11 +152,56 @@ describe("scanRoutes が拒否する構成", () => {
       1,
     );
   });
+});
 
-  it("同じ URL に対応する 2 つの not-found.tsx は、エラーにする", () => {
-    expect(() => scan(["(a)/not-found.tsx", "(b)/not-found.tsx"])).toThrow(
-      "src/routes/(b)/not-found.tsx",
-    );
-    expect(scan(["not-found.tsx", "error.tsx", "page.tsx"]).routes).toHaveLength(3);
+describe("scanRoutes のエラーのページ", () => {
+  it("ページと not-found.tsx には、グループを含めてディレクトリの祖先で最も近い not-found.tsx と error.tsx を、そのレイアウトとともに付ける", () => {
+    const { routes } = scan([
+      "not-found.tsx",
+      "error.tsx",
+      "(shop)/layout.tsx",
+      "(shop)/error.tsx",
+      "(shop)/cart/page.tsx",
+      "about/page.tsx",
+      "about/not-found.tsx",
+    ]);
+    const root = { file: "src/routes/error.tsx", layouts: [] };
+    const shop = { file: "src/routes/(shop)/error.tsx", layouts: ["src/routes/(shop)/layout.tsx"] };
+    expect(
+      routes.map(({ file, notFound, error }) => ({ file, notFound: notFound?.file, error })),
+    ).toEqual([
+      { file: "src/routes/not-found.tsx", notFound: "src/routes/not-found.tsx", error: root },
+      {
+        file: "src/routes/about/page.tsx",
+        notFound: "src/routes/about/not-found.tsx",
+        error: root,
+      },
+      {
+        file: "src/routes/about/not-found.tsx",
+        notFound: "src/routes/about/not-found.tsx",
+        error: root,
+      },
+      {
+        file: "src/routes/(shop)/cart/page.tsx",
+        notFound: "src/routes/not-found.tsx",
+        error: shop,
+      },
+    ]);
+  });
+
+  it("同じ URL の not-found.tsx は、グループの外のものを先に並べ、route.ts にはエラーのページを付けない", () => {
+    const { routes } = scan([
+      "(a)/not-found.tsx",
+      "(a)/x/not-found.tsx",
+      "x/not-found.tsx",
+      "error.tsx",
+      "api/route.ts",
+    ]);
+    expect(routes.map((route) => [route.file, "error" in route])).toEqual([
+      ["src/routes/(a)/not-found.tsx", true],
+      ["src/routes/api/route.ts", false],
+      ["src/routes/x/not-found.tsx", true],
+      ["src/routes/(a)/x/not-found.tsx", true],
+    ]);
   });
 });
