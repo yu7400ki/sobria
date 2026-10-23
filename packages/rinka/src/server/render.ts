@@ -1079,7 +1079,7 @@ export interface ResponseOptions extends RenderOptions {
 /**
  * `node` を描画し、シェルが揃った時点で、本文を送り続ける Response を返す。
  * シェルの中で投げた `redirect()` はリダイレクトのレスポンスにし、Response はそのまま返す。
- * `notFound()` は `notFound` のページを 404 で返し、ページが無ければ本文の無い 404 を返す。
+ * `notFound()` は `notFound` のページを 404 で返し、ページが無ければ `Not Found` のテキストを 404 で返す。
  * どの `<Errored>` も受け止めなかったエラーは、`error` のページを 500 で返し、ページが無ければ reject する。
  * `notFound` のページの描画で投げたエラーには `error` のページを使用する。`error` のページの描画で投げた値は、ページを使用せずに、`redirect()` と `notFound()` と Response を同じ規則で扱い、それ以外では reject する。
  */
@@ -1141,7 +1141,7 @@ function failure(error: unknown, options: DocumentOptions): Response | Promise<R
       const page = options.notFound;
       return page
         ? respond(page(), { ...options, notFound: undefined }, 404)
-        : new Response(null, { status: 404 });
+        : new Response("Not Found", { status: 404 });
     }
     case "error": {
       const page = options.error;
