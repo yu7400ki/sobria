@@ -4,6 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import type { AppOptions } from "../shared/routes.ts";
 import { withServerFnRef, type serverFnRef, type ServerFnRef } from "../shared/server-fn.ts";
 import { rpcPrefix, rpcQuery, wireFormat, wireHeader } from "../shared/wire.ts";
+import { withContextHeaders } from "./context.ts";
 import { NotFound, Redirect } from "./errors.ts";
 import { formDataToInput } from "./form-data.ts";
 import { definitionOf, runChain, SchemaError, type Definition } from "./server-fn.ts";
@@ -72,7 +73,7 @@ async function endpoint(
     async () => {
       const value = await handle(c, input);
       return value instanceof Response
-        ? value
+        ? withContextHeaders(c, value)
         : responder.respond(c, { kind: "value", value }, fail);
     },
     (error) => {
@@ -171,30 +172,6 @@ const responders = {
 /** 型の上で到達しない値を受け取り、エラーを投げる。 */
 function unreachable(value: never): never {
   throw new Error(`想定していない値です: ${JSON.stringify(value)}`);
-}
-
-/**
- * `response` に、Context で設定したヘッダーを加えて返す。
- * `Set-Cookie` は、Context で設定したものを順に並べ、`response` のうち Context で設定していないものを後に加える。
- */
-export function withContextHeaders(c: Pick<Context, "newResponse">, response: Response): Response {
-  const pending = c.newResponse(null).headers.getSetCookie();
-  const added = response.headers.getSetCookie().filter((cookie) => {
-    const index = pending.indexOf(cookie);
-    if (index === -1) return true;
-    pending.splice(index, 1);
-    return false;
-  });
-  const headers = new Headers(response.headers);
-  headers.delete("set-cookie");
-  const init = new Response(null, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
-  const merged = c.newResponse(response.body, init);
-  for (const cookie of added) merged.headers.append("set-cookie", cookie);
-  return merged;
 }
 
 /** フォームの送信と同じ `Content-Type` の POST かどうかを返す。 */

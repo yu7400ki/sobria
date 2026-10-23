@@ -1,6 +1,7 @@
 import type { Context, Handler, MiddlewareHandler } from "hono";
 import { setCookie } from "hono/cookie";
-import { describe, expect, it, vi } from "vitest";
+import { HTTPException } from "hono/http-exception";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { getContext } from "../../src/server/api.ts";
 import { notFound } from "../../src/server/errors.ts";
@@ -455,5 +456,86 @@ describe("getContext", () => {
     });
     expect(await bodyOf(response)).toContain("<p>ann</p>");
     expect(getContext()).toBeUndefined();
+  });
+});
+
+/** ヘッダー `x-mw` と Cookie の `mw` を `next()` の前に設定するミドルウェアである。 */
+const rootMarking: MiddlewareHandler = async (c, next) => {
+  c.header("x-mw", "1");
+  setCookie(c, "mw", "1");
+  await next();
+};
+
+/** `status` と、`cookie` の Set-Cookie を持つ Response を作成する。 */
+const raw = (status: number, cookie: string) =>
+  new Response("raw", { status, headers: { "set-cookie": cookie } });
+
+describe("Context のヘッダーを加えるレスポンスの出口", () => {
+  const returned = "src/app-exits.ts#returned";
+  const denied = "src/app-exits.ts#denied";
+  const thrown = "src/app-exits.ts#thrown";
+  registerServerFn(
+    returned,
+    defineServerFn(() => raw(200, "fn=1")),
+  );
+  registerServerFn(
+    denied,
+    defineServerFn(
+      async () => raw(401, "deny=1"),
+      () => 1,
+    ),
+  );
+  registerServerFn(
+    thrown,
+    defineServerFn(() => {
+      // oxlint-disable-next-line typescript/only-throw-error
+      throw raw(409, "thrown=1");
+    }),
+  );
+  const routes: Routes = {
+    middleware: module(rootMarking),
+    routes: [
+      pageRoute("/page", page("page")),
+      pageRoute("/shell", throwing(raw(401, "shell=1"))),
+      apiRoute("/value", { GET: () => ({ ok: true }) }),
+      apiRoute("/response", { GET: () => raw(200, "route=1") }),
+      apiRoute("/http", {
+        GET: () => {
+          throw new HTTPException(403, { message: "forbidden" });
+        },
+      }),
+      apiRoute("/error", {
+        GET: () => {
+          throw new Error("boom");
+        },
+      }),
+    ],
+  };
+  const rpc = { method: "POST", headers: { "content-type": "application/json" }, body: "null" };
+
+  it("ルートの middleware.ts が設定したヘッダーと Set-Cookie を、どの出口のレスポンスにも 1 回ずつ付ける", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    onTestFinished(() => error.mockRestore());
+    const exits: readonly (readonly [string, RequestInit | undefined, string | undefined])[] = [
+      ["/page", undefined, undefined],
+      ["/shell", undefined, "shell=1"],
+      ["/value", undefined, undefined],
+      ["/response", undefined, "route=1"],
+      ["/http", undefined, undefined],
+      ["/error", undefined, undefined],
+      [rpcPath(returned), rpc, "fn=1"],
+      [rpcPath(denied), rpc, "deny=1"],
+      [rpcPath(thrown), rpc, "thrown=1"],
+    ];
+    const results = await Promise.all(
+      exits.map(async ([path, init, own]) => {
+        const response = await request(routes, path, init);
+        const expected = ["mw=1; Path=/", ...(own === undefined ? [] : [own])];
+        return [path, response.headers.get("x-mw"), response.headers.getSetCookie(), expected];
+      }),
+    );
+    expect(results.map(([path, mark, cookies]) => [path, mark, cookies])).toEqual(
+      results.map(([path, , , expected]) => [path, "1", expected]),
+    );
   });
 });

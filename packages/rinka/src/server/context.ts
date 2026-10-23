@@ -64,3 +64,27 @@ export function currentContext(): Context {
 export function getContext(): Context | undefined {
   return storage?.getStore();
 }
+
+/**
+ * `response` に、Context で設定したヘッダーを加えて返す。
+ * `Set-Cookie` は、Context で設定したものを順に並べ、`response` のうち Context で設定していないものを後に加える。
+ */
+export function withContextHeaders(c: Pick<Context, "newResponse">, response: Response): Response {
+  const pending = c.newResponse(null).headers.getSetCookie();
+  const added = response.headers.getSetCookie().filter((cookie) => {
+    const index = pending.indexOf(cookie);
+    if (index === -1) return true;
+    pending.splice(index, 1);
+    return false;
+  });
+  const headers = new Headers(response.headers);
+  headers.delete("set-cookie");
+  const init = new Response(null, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+  const merged = c.newResponse(response.body, init);
+  for (const cookie of added) merged.headers.append("set-cookie", cookie);
+  return merged;
+}

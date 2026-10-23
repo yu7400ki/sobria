@@ -9,7 +9,7 @@ import {
   type ServerFnMethod,
   type ServerFnRef,
 } from "../shared/server-fn.ts";
-import { currentContext } from "./context.ts";
+import { currentContext, withContextHeaders } from "./context.ts";
 
 type AnyMiddleware = MiddlewareHandler<any, any, any>;
 
@@ -256,7 +256,9 @@ export async function runChain(
       value = await onError(thrown);
       failed = true;
     }
-    if (value instanceof Response && (!c.finalized || failed)) c.res = value;
+    if (value instanceof Response && (!c.finalized || failed)) {
+      c.res = onError ? withContextHeaders(c, value) : value;
+    }
   };
   await dispatch(0);
   if (onError) return c.finalized ? c.res : onError(unfinished());
