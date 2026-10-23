@@ -11,11 +11,13 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.64.0",
+    "@hono/node-server": "catalog:",
     "@rinka/config": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "catalog:",
     "@vitest/browser-playwright": "catalog:",
     "axe-core": "^4.14.0",
+    "hono": "catalog:",
     "miniflare": "^4.20260730.0",
     "playwright": "catalog:",
     "tailwindcss": "^4.3.3",

@@ -37,6 +37,10 @@
       "types": "./lib/server/api.d.ts",
       "default": "./lib/server/api.js"
     },
+    "./app": {
+      "types": "./lib/server/virtual-app.d.ts",
+      "default": "./lib/server/virtual-app.js"
+    },
     "./router": {
       "types": "./lib/shared/router.d.ts",
       "default": "./lib/shared/router.js"

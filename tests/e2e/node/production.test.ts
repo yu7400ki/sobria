@@ -23,8 +23,8 @@ beforeAll(async () => {
   outDir = await mkdtemp(join(tmpdir(), "rinka-production-"));
   await buildFixture(fixture("deploy"), join(outDir, "deploy"));
   await buildFixture(fixture("styles"), join(outDir, "styles"), {}, stylesConfig().plugins);
-  deploy = await startServer(process.execPath, join(outDir, "deploy/server/index.js"));
-  styles = await startServer(process.execPath, join(outDir, "styles/server/index.js"));
+  deploy = await startServer(process.execPath, join(outDir, "deploy/server/entry.js"));
+  styles = await startServer(process.execPath, join(outDir, "styles/server/entry.js"));
   stylesDev = await createDevServer(fixture("styles"), {
     server: { port: 0 },
     cacheDir: fileURLToPath(new URL("../node_modules/.vite/node-production", import.meta.url)),

@@ -1,8 +1,15 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createServer, type AddressInfo } from "node:net";
 
 import { rinka, type RinkaOptions } from "rinka/vite";
 import { createBuilder, type PluginOption } from "vite";
+
+/** 本番のビルドでの、ファイル `file` のサーバー関数 `name` の RPC のパスを返す。 */
+export const rpcPath = (file: string, name: string) => {
+  const module = `m${createHash("sha256").update(file).digest("base64url").slice(0, 10)}`;
+  return `/_rinka/fn/${encodeURIComponent(`${module}#${name}`)}`;
+};
 
 /** テスト用のアプリのルート `root` を、rinka のプラグイン（接頭辞は `app`）と `plugins` で `outDir` にビルドする。 */
 export async function buildFixture(
@@ -46,7 +53,7 @@ export interface RunningServer {
   readonly stop: () => void;
 }
 
-/** `command` で起動用のエントリー `index` を、使用されていないポートで起動し、応答するまで待つ。 */
+/** `command` でサーバーのエントリー `index` を、使用されていないポートで起動し、応答するまで待つ。 */
 export async function startServer(command: string, index: string): Promise<RunningServer> {
   const port = await freePort();
   const child = spawn(command, [index], {

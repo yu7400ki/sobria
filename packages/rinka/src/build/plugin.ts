@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename, extname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -20,7 +20,7 @@ import { embedRouteStyles, moveServerAssets } from "./build-styles.ts";
 import { transformSource } from "./compiler.ts";
 import { elementTag, scanElements } from "./elements.ts";
 import { entries, oxc, runtimes } from "./entries.ts";
-import { entryModule, serverIndexModule } from "./entry.ts";
+import { appModule, serverEntry } from "./entry.ts";
 import { transformJsx } from "./jsx.ts";
 import { readClientAssets, type ClientAssets } from "./manifest.ts";
 import { rinkaPackage } from "./package.ts";
@@ -51,8 +51,6 @@ export interface RinkaOptions {
   readonly globalJSX?: false;
   /** ビルドの出力先である。プロジェクトのルートからの相対パスか絶対パスで記述し、デフォルトは `dist` である。 */
   readonly outDir?: string;
-  /** ビルドしたサーバーを起動するランタイムである。デフォルトは `node` である。 */
-  readonly deploy?: "node" | "bun";
 }
 
 /** rinka のプラグインが、ほかのプラグインと CLI に公開する API を表す。 */
@@ -74,11 +72,8 @@ const NAME = "rinka";
 /** ルートの表を export する仮想モジュールの ID である。 */
 const ROUTES = `\0${entries.routes}`;
 
-/** サーバーのエントリーの仮想モジュールの ID である。 */
-const ENTRY = `\0${entries.entry}`;
-
-/** 起動用のエントリーの仮想モジュールの ID である。 */
-const SERVER_INDEX = `\0${entries.serverIndex}`;
+/** rinka のアプリの仮想モジュールの ID である。 */
+const APP = `\0${entries.app}`;
 
 /** 要素が無いアプリの、クライアントのビルドの入口にする仮想モジュールの ID である。 */
 const NO_ELEMENTS = `\0${entries.noElements}`;
@@ -88,6 +83,7 @@ const bundled = (): string[] => [entries.main, "hono", ...Object.keys(rinkaPacka
 
 /** アプリのルート `root` と設定 `options` から、要素のディレクトリとビルドの出力先の絶対パスを返す。 */
 const dirsOf = (root: string, options: RinkaOptions) => ({
+  root,
   elementsDir: resolve(root, options.elementsDir ?? "src/elements"),
   outDir: resolve(root, options.outDir ?? "dist"),
 });
@@ -199,7 +195,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
                 build: {
                   outDir: join(out, "server"),
                   emitAssets: true,
-                  rolldownOptions: { input: { entry: entries.entry, index: entries.serverIndex } },
+                  rolldownOptions: { input: { entry: serverEntry(dirs.root) } },
                 },
               },
             },
@@ -232,8 +228,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       },
       resolveId(id, importer, resolveOptions) {
         if (id === entries.routes) return ROUTES;
-        if (id === entries.entry) return ENTRY;
-        if (id === entries.serverIndex) return SERVER_INDEX;
+        if (id === entries.app) return APP;
         if (id === entries.noElements) return NO_ELEMENTS;
         if (id.endsWith(SHEET_QUERY)) {
           return this.resolve(id.slice(0, -SHEET_QUERY.length), importer, { skipSelf: true }).then(
@@ -253,11 +248,8 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       },
       load(id) {
         if (id === ROUTES) return routesModule(root, ROUTES_DIR);
-        if (id === SERVER_INDEX) return serverIndexModule(options.deploy ?? "node");
         if (id === NO_ELEMENTS) return "export {};\n";
-        if (id === ENTRY) {
-          return entryModule({ serverFns: serverFnModules(root), trustedOrigins });
-        }
+        if (id === APP) return appModule({ serverFns: serverFnModules(root), trustedOrigins });
         const sheet = sheetPath(id);
         if (sheet === undefined) return null;
         const path = devPath(sheet, root);
@@ -276,6 +268,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       writeBundle(_output, bundle) {
         if (isBuild && !isClient(this.environment)) {
           moveServerAssets(bundle, join(outDir, "server"), join(outDir, "client"));
+          rmSync(join(outDir, "client/.vite"), { recursive: true, force: true });
         }
       },
       configurePreviewServer(server) {
@@ -284,8 +277,14 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           server.middlewares.use((request, response, next) => {
             (async () => {
               // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-              const { app } = (await import(entry)) as { readonly app: ReturnType<CreateApp> };
-              await getRequestListener((incoming) => app.fetch(incoming))(request, response);
+              const { default: app } = (await import(entry)) as {
+                readonly default: ReturnType<CreateApp>;
+              };
+              await getRequestListener(async (incoming) => {
+                const result = await app.fetch(incoming);
+                response.statusCode = result.status;
+                return result;
+              })(request, response);
             })().catch(next);
           });
         };

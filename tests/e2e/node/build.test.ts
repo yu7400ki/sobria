@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { cp, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -9,19 +8,24 @@ import { rinka } from "rinka/vite";
 import { preview } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { buildFixture, startServer } from "./production.ts";
+import { buildFixture, rpcPath, startServer } from "./production.ts";
 
 /** ビルドするテスト用のアプリのルートである。 */
 const root = fileURLToPath(new URL("../fixtures/deploy", import.meta.url));
 
-/** 本番のビルドでの、ファイル `file` のサーバー関数 `name` の RPC のパスを返す。 */
-const rpcPath = (file: string, name: string) => {
-  const module = `m${createHash("sha256").update(file).digest("base64url").slice(0, 10)}`;
-  return `/_rinka/fn/${encodeURIComponent(`${module}#${name}`)}`;
-};
+/** ビルドしたサーバーのエントリーの default export を表す。 */
+type App = { fetch(request: Request): Response | Promise<Response> };
 
 let outDir: string;
-let app: { fetch(request: Request): Response | Promise<Response> };
+let app: App;
+
+/** ビルドの出力先 `out` の `dist/server/entry.js` の default export を返す。 */
+async function serverEntry(out: string): Promise<App> {
+  const module = (await import(pathToFileURL(join(out, "server/entry.js")).href)) as {
+    default: App;
+  };
+  return module.default;
+}
 
 /** `dir` の中のすべてのファイルの内容を連結して返す。 */
 async function contents(dir: string): Promise<string> {
@@ -53,9 +57,7 @@ const request = (path: string, init?: RequestInit) =>
 beforeAll(async () => {
   outDir = await mkdtemp(join(tmpdir(), "rinka-build-"));
   await buildFixture(root, outDir);
-  ({ app } = (await import(pathToFileURL(join(outDir, "server/entry.js")).href)) as {
-    app: typeof app;
-  });
+  app = await serverEntry(outDir);
 }, 120_000);
 
 afterAll(async () => {
@@ -63,7 +65,8 @@ afterAll(async () => {
 });
 
 describe("本番のビルド", () => {
-  it("dist/server/entry.js の app は、ページと API ルートに応答し、無いページには 404 を返す", async () => {
+  it("dist/server/entry.js は src/server.ts をビルドしたもので、src/server.ts のルートと、rinka のページと API ルートに応答し、無いページには 404 を返す", async () => {
+    expect(await (await request("/health")).text()).toBe("ok");
     const page = await request("/");
     expect(page.status).toBe(200);
     expect(await page.text()).toContain("<h1>deploy</h1>");
@@ -102,11 +105,12 @@ describe("本番のビルド", () => {
     expect(head).toMatch(/<link rel="stylesheet" href="\/assets\/[^"]+\.css">/);
   });
 
-  it("サーバーの出力の CSS はクライアントの出力に移動し、ソースマップと JSON は移動しない", async () => {
+  it("サーバーの出力の CSS はクライアントの出力に移動し、ソースマップと JSON と Vite の manifest はクライアントの出力に残らない", async () => {
     const server = await readdir(join(outDir, "server"), { recursive: true });
     expect(server.filter((file) => file.endsWith(".css"))).toEqual([]);
     const client = await readdir(join(outDir, "client"), { recursive: true });
-    expect(client.filter((file) => file.endsWith(".map"))).toEqual([]);
+    expect(client.filter((file) => /\.(map|json)$/.test(file))).toEqual([]);
+    expect(client.filter((file) => file.startsWith(".vite"))).toEqual([]);
   });
 
   it("どのページからも import されていないサーバー関数も、ハッシュの ID の RPC で呼び出せる", async () => {
@@ -135,34 +139,38 @@ describe("本番のビルド", () => {
 
 /** オリジン `origin` で動作するビルドしたサーバーに、ページ、アセット、配信しないパス、RPC、フォームの送信のリクエストを送り、結果を確認する。 */
 async function checkServer(origin: string): Promise<void> {
+  expect(await (await fetch(`${origin}/health`)).text()).toBe("ok");
   const html = await (await fetch(`${origin}/`)).text();
   expect(html).toContain("<h1>deploy</h1>");
+  expect((await fetch(`${origin}/missing`)).status).toBe(404);
   const module = /\$rinka\.m\(\[\["app-counter","([^"]+)"/.exec(html)![1]!;
   const asset = await fetch(`${origin}${module}`);
   expect(asset.status).toBe(200);
   expect(asset.headers.get("content-type")).toMatch(/javascript/);
-  expect(asset.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
   expect((await fetch(`${origin}/.vite/manifest.json`)).status).toBe(404);
-  expect((await fetch(`${origin}/%2e%2e/%2e%2e/package.json`)).status).toBe(404);
+  expect((await fetch(`${origin}/..%2f..%2fpackage.json`)).status).toBe(404);
   const rpc = await fetch(`${origin}${rpcPath("src/lib/orphan.ts", "orphan")}`, { method: "POST" });
   expect(await rpc.json()).toEqual({ ok: "orphan" });
-  const body = new FormData();
-  body.append("title", "a");
-  const form = await fetch(`${origin}${rpcPath("src/lib/fns.ts", "save")}`, {
-    method: "POST",
-    body,
-    headers: { referer: `${origin}/` },
-    redirect: "manual",
-  });
-  expect(form.status).toBe(303);
+  const form = (title: string) => {
+    const body = new FormData();
+    body.append("title", title);
+    return fetch(`${origin}${rpcPath("src/lib/fns.ts", "save")}`, {
+      method: "POST",
+      body,
+      headers: { referer: `${origin}/` },
+      redirect: "manual",
+    });
+  };
+  expect((await form("a")).status).toBe(303);
+  expect((await form("")).status).toBe(422);
 }
 
-/** `dist` を node_modules の無い一時ディレクトリにコピーし、`command` で `index.js` を起動して確認する。 */
-async function checkRuntime(command: string): Promise<void> {
+/** ビルドの出力先 `out` を node_modules の無い一時ディレクトリにコピーし、`command` で `entry.js` を実行して確認する。 */
+async function checkRuntime(command: string, out: string): Promise<void> {
   const copy = await mkdtemp(join(tmpdir(), "rinka-dist-"));
-  await cp(outDir, copy, { recursive: true });
+  await cp(out, copy, { recursive: true });
   try {
-    const server = await startServer(command, join(copy, "server/index.js"));
+    const server = await startServer(command, join(copy, "server/entry.js"));
     try {
       await checkServer(server.origin);
     } finally {
@@ -176,46 +184,46 @@ async function checkRuntime(command: string): Promise<void> {
 /** bun を実行できるかどうかである。 */
 const hasBun = spawnSync("bun", ["--version"]).status === 0;
 
-describe("起動用のエントリー", () => {
-  it("node で起動した index.js は、dist/client を配信し、それ以外のリクエストをアプリに渡す", async () => {
-    await checkRuntime(process.execPath);
+/** Bun で起動するときの、`serve()` を呼び出さないサーバーのエントリーである。 */
+const BUN_SERVER = `import { fileURLToPath } from "node:url";
+
+import { serveStatic } from "@hono/node-server/serve-static";
+import { Hono } from "hono";
+import app from "rinka/app";
+
+const server = new Hono();
+if (import.meta.main) {
+  server.use(serveStatic({ root: fileURLToPath(new URL("../client", import.meta.url)) }));
+}
+server.get("/health", (c) => c.text("ok"));
+server.route("/", app);
+
+export default server;
+`;
+
+describe("サーバーの起動", () => {
+  it("node で実行した dist/server/entry.js は、src/server.ts のとおりに dist/client を配信し、それ以外のリクエストをアプリに渡す", async () => {
+    await checkRuntime(process.execPath, outDir);
   }, 60_000);
 
-  it("Node の API を使用するのは index.js だけで、entry.js とそのチャンクは使用しない", async () => {
-    const files = await readdir(join(outDir, "server"), { recursive: true });
-    const used = await Promise.all(
-      files
-        .filter((file) => file.endsWith(".js") && file !== "index.js")
-        .map(async (file) =>
-          /from "node:(?!async_hooks)/.test(await readFile(join(outDir, "server", file), "utf8")),
-        ),
-    );
-    expect(used).not.toContain(true);
-    expect(await readFile(join(outDir, "server/index.js"), "utf8")).toContain("node:fs");
-  });
-
   it.skipIf(!hasBun)(
-    "deploy: 'bun' でビルドした index.js を bun で起動しても、同じように動作する",
+    "serve() を呼び出さない src/server.ts でビルドした dist/server/entry.js を bun で実行すると、Bun が default export でサーバーを起動する",
     async () => {
-      const bunOut = await mkdtemp(join(tmpdir(), "rinka-build-bun-"));
+      // rinka を解決できるように、コピーは tests/e2e の中に置く
+      const copy = await mkdtemp(fileURLToPath(new URL("../.rinka-tmp-", import.meta.url)));
       try {
-        await buildFixture(root, bunOut, { deploy: "bun" });
-        expect(await readFile(join(bunOut, "server/index.js"), "utf8")).toContain("Bun.serve");
-        const saved = outDir;
-        outDir = bunOut;
-        try {
-          await checkRuntime("bun");
-        } finally {
-          outDir = saved;
-        }
+        await cp(root, copy, { recursive: true });
+        await writeFile(join(copy, "src/server.ts"), BUN_SERVER);
+        await buildFixture(copy, join(copy, "dist"));
+        await checkRuntime("bun", join(copy, "dist"));
       } finally {
-        await rm(bunOut, { recursive: true, force: true });
+        await rm(copy, { recursive: true, force: true });
       }
     },
     120_000,
   );
 
-  it("vite preview は、dist/client を配信し、それ以外のリクエストをビルドしたアプリに渡す", async () => {
+  it("vite preview は、dist/client を配信し、それ以外のリクエストをビルドしたサーバーのエントリーに渡す", async () => {
     const server = await preview({
       root,
       configFile: false,
@@ -224,31 +232,30 @@ describe("起動用のエントリー", () => {
       preview: { port: 0 },
     });
     try {
-      const origin = server.resolvedUrls!.local[0]!.replace(/\/$/, "");
-      const html = await (await fetch(`${origin}/`)).text();
-      expect(html).toContain("<h1>deploy</h1>");
-      const module = /\$rinka\.m\(\[\["app-counter","([^"]+)"/.exec(html)![1]!;
-      expect((await fetch(`${origin}${module}`)).status).toBe(200);
-      const rpc = await fetch(`${origin}${rpcPath("src/lib/orphan.ts", "orphan")}`, {
-        method: "POST",
-      });
-      expect(await rpc.json()).toEqual({ ok: "orphan" });
+      await checkServer(server.resolvedUrls!.local[0]!.replace(/\/$/, ""));
     } finally {
       await server.close();
     }
   }, 60_000);
 });
 
-describe("要素の無いアプリ", () => {
-  it("要素が 1 つも無いアプリもビルドでき、ページに応答する", async () => {
+describe("src/server.ts の無いアプリ", () => {
+  it("rinka/app をサーバーのエントリーにし、要素が 1 つも無くてもビルドでき、出力は node:async_hooks 以外の Node の API を import しない", async () => {
     const out = await mkdtemp(join(tmpdir(), "rinka-build-empty-"));
     try {
       await buildFixture(fileURLToPath(new URL("../fixtures/no-elements", import.meta.url)), out);
-      const { app: empty } = (await import(pathToFileURL(join(out, "server/entry.js")).href)) as {
-        app: typeof app;
-      };
+      const empty = await serverEntry(out);
       const html = await (await empty.fetch(new Request("http://localhost/"))).text();
       expect(html).toContain("<h1>no elements</h1>");
+      const files = await readdir(join(out, "server"), { recursive: true });
+      const used = await Promise.all(
+        files
+          .filter((file) => file.endsWith(".js"))
+          .map(async (file) =>
+            /from "node:(?!async_hooks)/.test(await readFile(join(out, "server", file), "utf8")),
+          ),
+      );
+      expect(used).not.toContain(true);
     } finally {
       await rm(out, { recursive: true, force: true });
     }
