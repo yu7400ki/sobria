@@ -1,3 +1,4 @@
+import type { ServerChild } from "../shared/jsx-types.ts";
 import type { NavigationProps } from "../shared/navigation.ts";
 import type { ServerNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
@@ -20,15 +21,7 @@ export function Loading(props: { fallback?: unknown; children?: unknown }): Serv
  * シェルの中で受け止めたときのレスポンスのステータスは、`status` で指定する。
  */
 export function Errored(props: {
-  fallback:
-    | ServerNode
-    | string
-    | number
-    | boolean
-    | null
-    | undefined
-    | readonly unknown[]
-    | ((error: unknown) => unknown);
+  fallback: Exclude<ServerChild, Function> | ((error: unknown) => ServerChild);
   children?: unknown;
   status?: number;
 }): ServerNode {
