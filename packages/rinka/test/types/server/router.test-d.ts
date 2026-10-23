@@ -37,6 +37,9 @@ describe("rinka/router", () => {
     href("/users/[id]", {});
     // @ts-expect-error ルートに無い名前のパラメータである
     href("/users/[id]", { id: 1, extra: 2 });
+    const either = "/users/[id]" as "/" | "/users/[id]";
+    // @ts-expect-error ルートがユニオンだと、パラメータが必要かどうかが決まらない
+    href(either);
   });
 });
 

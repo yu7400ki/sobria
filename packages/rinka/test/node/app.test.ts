@@ -445,7 +445,7 @@ describe("createApp の not-found.tsx と error.tsx", () => {
 const reading = () => jsx("p", { children: getContext()?.req.header("x-user") });
 
 describe("getContext", () => {
-  it("ページとレイアウトの描画中は処理中のリクエストの Context を返し、リクエストの外では undefined を返す", async () => {
+  it("ページの描画中は処理中のリクエストの Context を返し、リクエストの外では undefined を返す", async () => {
     const response = await request({ routes: [pageRoute("/", reading)] }, "/", {
       headers: { "x-user": "ann" },
     });

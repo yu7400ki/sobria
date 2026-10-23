@@ -1,9 +1,9 @@
 import type { ServerNode } from "./nodes.ts";
 
-/** ページのファイルの形のパスから、そのルートのパラメータの名前と値への対応を引く表を表す。`declare module "rinka/router"` で拡張する。 */
+/** ページのファイルの形のパスごとに、そのルートのパラメータの名前から値への対応を表す。`declare module "rinka/router"` で拡張できる。 */
 export interface RouteParams {}
 
-/** `route` のページが受け取る props を表す。`url` はリクエストの URL である。 */
+/** `Route` のページが受け取る props を表す。`url` はリクエストの URL である。 */
 export interface PageProps<Route extends keyof RouteParams> {
   readonly params: RouteParams[Route];
   readonly url: URL;
@@ -17,17 +17,23 @@ export interface LayoutProps {
 }
 
 /** `href` が受け取るクエリを表す。 */
-export type Query = Readonly<Record<string, string | number>> | URLSearchParams;
+type Query = Readonly<Record<string, string | number>> | URLSearchParams;
 
-/** `route` のパラメータを表す。値には数も指定できる。 */
+/** `Route` のパラメータを表す。値には数も指定できる。 */
 type Params<Route extends keyof RouteParams> = {
   readonly [Name in keyof RouteParams[Route]]: string | number;
 };
 
-/** `route` にパラメータがあれば必須の、`href` の 2 つ目以降の引数を表す。 */
-type HrefArgs<Route extends keyof RouteParams> = keyof RouteParams[Route] extends never
-  ? [params?: undefined, query?: Query]
-  : [params: Params<Route>, query?: Query];
+/** `T` が 2 つ以上の型のユニオンかどうかを表す。 */
+type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;
+
+/** `Route` にパラメータがあれば必須の、`href` の 2 つ目以降の引数を表す。`Route` がユニオンなら、どの引数も受け付けない。 */
+type HrefArgs<Route extends keyof RouteParams> =
+  true extends IsUnion<Route>
+    ? never
+    : keyof RouteParams[Route] extends never
+      ? [params?: undefined, query?: Query]
+      : [params: Params<Route>, query?: Query];
 
 /**
  * ページのファイルの形のパス `route` とパラメータから、URL を返す。
