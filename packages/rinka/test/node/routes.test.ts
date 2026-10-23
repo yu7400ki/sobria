@@ -162,6 +162,16 @@ describe("scanRoutes が拒否する構成", () => {
     }
   });
 
+  it("同じ URL を扱い、ディレクトリの深さが同じ 2 つの not-found.tsx は、エラーにする", () => {
+    expect(() => scan(["users/[id]/not-found.tsx", "users/[slug]/not-found.tsx"])).toThrow(
+      "src/routes/users/[slug]/not-found.tsx",
+    );
+    expect(() => scan(["(a)/x/not-found.tsx", "(b)/x/not-found.tsx"])).toThrow(
+      "src/routes/(b)/x/not-found.tsx",
+    );
+    expect(scan(["x/not-found.tsx", "(a)/x/not-found.tsx"]).routes).toHaveLength(2);
+  });
+
   it("キャッチオールの配下のディレクトリにあるルートのファイルは、エラーにする", () => {
     expect(() => scan(["docs/[...slug]/page.tsx", "docs/[...slug]/foo/page.tsx"])).toThrow(
       "src/routes/docs/[...slug]/foo/page.tsx",

@@ -133,6 +133,7 @@ function rowOf({
  * プロジェクトのルート `root` からの相対パス `dir` のディレクトリを走査し、ルートの表を返す。
  * ルートは、同じ位置では静的な区切り、動的な区切り、キャッチオールの順に並ぶ。
  * 2 つの `page.tsx` か `route.ts` が同じ URL に対応するときは、エラーを投げる。同じディレクトリに `page.tsx` と `route.ts` を置いたときも、このエラーになる。
+ * 同じ URL に対応し、グループを含めたディレクトリの深さが同じ 2 つの `not-found.tsx` も、エラーにする。
  * キャッチオールのディレクトリの配下のディレクトリにルートのファイルがあるときも、エラーを投げる。
  */
 export function scanRoutes(root: string, dir: string): Routes<PathFiles> {
@@ -197,16 +198,17 @@ export function scanRoutes(root: string, dir: string): Routes<PathFiles> {
   if (existsSync(start)) visit(start, [], 0, [], [], {});
 
   const handled = new Map<string, string>();
-  for (const { route, segments } of scanned) {
-    if (route.kind === "not-found") continue;
-    const shape = shapeOf(segments);
-    const other = handled.get(shape);
+  for (const { route, segments, depth } of scanned) {
+    const isNotFound = route.kind === "not-found";
+    const key = isNotFound ? `not-found ${depth} ${shapeOf(segments)}` : shapeOf(segments);
+    const file = isNotFound ? route.notFound.module : route.module;
+    const other = handled.get(key);
     if (other !== undefined) {
       throw new Error(
-        `${other} と ${route.module} は、同じ URL に対応します。どちらか一方にしてください。`,
+        `${other} と ${file} は、同じ URL に対応します。どちらか一方にしてください。`,
       );
     }
-    handled.set(shape, route.module);
+    handled.set(key, file);
   }
   return {
     routes: scanned.toSorted(compareRoutes).map(({ route }) => route),
