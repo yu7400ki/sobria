@@ -612,3 +612,40 @@ describe("表に無い URL の not-found.tsx", () => {
     expect([response.status, response.headers.get("location")]).toEqual([302, "/login"]);
   });
 });
+
+describe("描き直しのレスポンス", () => {
+  const refreshRoutes: Routes = {
+    routes: [
+      pageRoute("/", () => jsx("p", { children: "page" }), [], [], {
+        notFound: fallbackOf(() => jsx("p", { children: "missing" })),
+      }),
+      notFoundRoute(
+        "/",
+        fallbackOf(() => jsx("p", { children: "missing" })),
+      ),
+    ],
+  };
+  const refreshing = { headers: { "x-rinka-refresh": "1" } };
+
+  it("x-rinka-refresh: 1 のリクエストには、ページを描き直しの JSON で返す", async () => {
+    const response = await request(refreshRoutes, "/", refreshing);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(((await response.json()) as { body: string }).body).toBe("<p>page</p>");
+  });
+
+  it("表に無い URL には、not-found.tsx を描き直しの JSON で 404 にして返す", async () => {
+    const response = await request(refreshRoutes, "/x", refreshing);
+    expect(response.status).toBe(404);
+    expect(((await response.json()) as { body: string }).body).toBe("<p>missing</p>");
+  });
+
+  it("ページのレスポンスには、描き直しかどうかにかかわらず Vary: x-rinka-refresh を付ける", async () => {
+    const plain = await request(refreshRoutes, "/");
+    const refreshed = await request(refreshRoutes, "/", refreshing);
+    expect([plain.headers.get("vary"), refreshed.headers.get("vary")]).toEqual([
+      "x-rinka-refresh",
+      "x-rinka-refresh",
+    ]);
+    expect(plain.headers.get("content-type")).toContain("text/html");
+  });
+});

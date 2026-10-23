@@ -17,7 +17,7 @@ import { runInRequest, withContextHeaders } from "./context.ts";
 import { serverFnMiddleware } from "./endpoint.ts";
 import { notFound } from "./errors.ts";
 import { jsx } from "./jsx-runtime.ts";
-import { renderDocument } from "./render.ts";
+import { renderDocument, renderRefresh } from "./render.ts";
 import { withDepth } from "./tree.ts";
 
 /** `HTTPException` はそのレスポンスにし、それ以外は記録して素のテキストの 500 にする。 */
@@ -73,8 +73,8 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   const rinka = middleware === undefined ? serverFns : every(lazy(middleware), serverFns);
   app.use((c, next) => runInRequest(c, () => rinka(c, next)));
   const respond: Respond = async (c, node, { notFound: missingPage, error: errorPage }, props) => {
-    const response = await renderDocument(node, {
-      ...(options.head !== undefined && { head: options.head }),
+    const pages = {
+      headers: { vary: "x-rinka-refresh" },
       ...(missingPage && { notFound: () => fallbackNode(missingPage, props) }),
       ...(errorPage && {
         error: (error: unknown) => {
@@ -82,7 +82,14 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
           return fallbackNode(errorPage, { ...props, error });
         },
       }),
-    });
+    };
+    const response =
+      c.req.header("x-rinka-refresh") === "1"
+        ? await renderRefresh(node, pages)
+        : await renderDocument(node, {
+            ...pages,
+            ...(options.head !== undefined && { head: options.head }),
+          });
     return withContextHeaders(c, response);
   };
   for (const route of routes) register(app, route, respond);
