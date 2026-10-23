@@ -72,6 +72,8 @@ async function looks(origin: string): Promise<string[]> {
     const main = document.querySelector("main")!;
     return [
       getComputedStyle(main).marginTop,
+      getComputedStyle(main).paddingTop,
+      getComputedStyle(document.body).marginTop,
       getComputedStyle(card).color,
       getComputedStyle(card).marginTop,
       getComputedStyle(badge).paddingTop,
@@ -85,6 +87,6 @@ async function looks(origin: string): Promise<string[]> {
 
 it("Tailwind v4 を使用するテスト用のアプリのページは、開発と本番のビルドで同じ見た目になる", async () => {
   const development = await looks(originOf(stylesDev));
-  expect(development[0]).toBe("16px");
+  expect(development.slice(0, 3)).toEqual(["16px", "5px", "3px"]);
   expect(await looks(styles.origin)).toEqual(development);
 }, 60_000);

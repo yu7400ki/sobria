@@ -105,6 +105,14 @@ describe("本番のビルド", () => {
     expect(head).toMatch(/<link rel="stylesheet" href="\/assets\/[^"]+\.css">/);
   });
 
+  it("要素のシートの DSD の <link> は、クライアントの要素のモジュールが取得する CSS と同じ URL を指す", async () => {
+    const html = await (await request("/")).text();
+    const counter = html.slice(html.indexOf("<app-counter"), html.indexOf("</app-counter>"));
+    const sheet = /<link rel="stylesheet" href="([^"]+)">/.exec(counter)?.[1];
+    expect(sheet).toMatch(/^\/assets\/.+\.css$/);
+    expect(await contents(join(outDir, "client"))).toContain(sheet);
+  });
+
   it("サーバーの出力の CSS はクライアントの出力に移動し、ソースマップと JSON と Vite の manifest はクライアントの出力に残らない", async () => {
     const server = await readdir(join(outDir, "server"), { recursive: true });
     expect(server.filter((file) => file.endsWith(".css"))).toEqual([]);
