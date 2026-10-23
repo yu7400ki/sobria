@@ -93,13 +93,16 @@ export type AcceptSlots<P> = { [K in keyof P]: SlotValue<P[K]> };
 /** コンポーネント `C` の戻り値の型を表す。async 関数のコンポーネントは、Promise が解決する値の型を表す。 */
 type Rendered<C> = C extends (...args: never[]) => infer R ? Awaited<R> : never;
 
+/** 要素が、Props の型に記述していなくても受け付ける、フォームの部品の `name` と `disabled` を表す。Props の型に同じ名前があれば、Props の型を使用する。 */
+type FormAttributes<P> = Omit<{ name?: string; disabled?: boolean }, keyof P>;
+
 /**
  * JSX の名前空間の `LibraryManagedAttributes` を表す。
  * 戻り値が `ServerNode` に代入できるコンポーネントは、Props だけを受け付ける。
- * 戻り値が `ClientNode` に代入できるコンポーネントは、Props に加えて、ホストの属性と `Host` を受け付ける。
+ * 戻り値が `ClientNode` に代入できるコンポーネントは、Props に加えて、フォームの部品の `name` と `disabled`、ホストの属性、`Host` を受け付ける。
  */
 export type ManagedAttributes<C, P, Host> = [Rendered<C>] extends [ServerNode]
   ? AcceptSlots<P>
   : [Rendered<C>] extends [ClientNode]
-    ? AcceptSlots<P> & GlobalAttributes & Host
+    ? AcceptSlots<P> & FormAttributes<P> & GlobalAttributes & Host
     : P;

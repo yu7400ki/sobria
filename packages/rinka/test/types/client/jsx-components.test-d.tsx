@@ -119,3 +119,14 @@ function Choice(props: { ref?: (el: HTMLInputElement) => void; a: 1 } | { b: 2 }
 test("Props の union のどれかのメンバーに ref がある関数は、補助コンポーネントとして、Props の ref の型を受け付ける", () => {
   void (<Choice a={1} ref={(el) => expectTypeOf(el).toEqualTypeOf<HTMLInputElement>()} />);
 });
+
+test("要素は、Props の型に記述していない name と disabled を受け付ける", () => {
+  const Field = defineElement("type-field", (_props: { label?: string }) => null, {
+    props: ["label"],
+  });
+  void (<Field name="a" disabled label="x" />);
+  // @ts-expect-error name は文字列である
+  void (<Field name={1} />);
+  // @ts-expect-error disabled は真偽値である
+  void (<Field disabled="yes" />);
+});

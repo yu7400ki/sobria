@@ -14,6 +14,8 @@ export interface ElementOptions {
   readonly slots?: readonly string[];
   /** Props の型で関数として宣言した props の名前の一覧。 */
   readonly functionProps?: readonly string[];
+  /** 要素の関数が ctx の `form` を使用し、要素がフォームの部品になるときに `true` である。 */
+  readonly form?: true;
 }
 
 /** 要素の関数が 2 番目の引数で受け取る、ホストに依存する能力を表す。 */

@@ -163,6 +163,27 @@ export function withoutTypes(node: Node): Node {
   return current;
 }
 
+/** 分割代入のパターン `pattern` が、`name` という名前の変数を宣言するかどうかを返す。 */
+export function binds(
+  pattern: ESTree.BindingPattern | ESTree.BindingRestElement,
+  name: string,
+): boolean {
+  switch (pattern.type) {
+    case "Identifier":
+      return pattern.name === name;
+    case "ObjectPattern":
+      return pattern.properties.some((property) =>
+        binds(property.type === "RestElement" ? property : property.value, name),
+      );
+    case "ArrayPattern":
+      return pattern.elements.some((element) => element !== null && binds(element, name));
+    case "AssignmentPattern":
+      return binds(pattern.left, name);
+    case "RestElement":
+      return binds(pattern.argument, name);
+  }
+}
+
 /** トップレベルの変数の宣言を表す。`exported` は、`export` を付けた宣言なら真である。 */
 export interface TopLevelVariable {
   readonly declaration: ESTree.VariableDeclaration;

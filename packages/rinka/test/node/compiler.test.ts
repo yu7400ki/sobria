@@ -319,6 +319,93 @@ export default function X(props: Props) { return <p />; }`);
   });
 });
 
+/** 要素のファイル `code` を変換し、登録の設定の `form` を返す。 */
+const form = (code: string) => element(code).element?.options.form;
+
+describe("フォームの部品の判別", () => {
+  it("ctx の form を、分割代入の引数、メンバーの参照、関数の中の分割代入で使用すると、フォームの部品にする", () => {
+    expect(form("export default function X(props: {}, { form }: Ctx) { return null; }")).toBe(true);
+    expect(
+      form("export default function X(props: {}, { form: f, host }: Ctx) { return null; }"),
+    ).toBe(true);
+    expect(
+      form(
+        'export default function X(props: {}, ctx: Ctx) { ctx.form.value(() => "a"); return null; }',
+      ),
+    ).toBe(true);
+    expect(
+      form(
+        "export default function X(props: {}, ctx: Ctx) { const { form } = ctx; return () => form.disabled(); }",
+      ),
+    ).toBe(true);
+    expect(
+      element("export default function X(props: {}, { form }: Ctx) { return null; }").code,
+    ).toContain('{"props":[],"form":true}');
+  });
+
+  it("form を使用しない要素は、フォームの部品にしない", () => {
+    expect(form("export default function X(props: {}) { return null; }")).toBeUndefined();
+    expect(
+      form("export default function X(props: {}, { host, internals }: Ctx) { return null; }"),
+    ).toBeUndefined();
+    expect(
+      form(
+        "export default function X(props: {}, ctx: Ctx) { const { host } = ctx; ctx.onMount(() => {}); return null; }",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("括弧と型の記述で包んだ ctx の参照と、デフォルト値を持つ引数も判別する", () => {
+    for (const use of [
+      "(ctx).form",
+      "(ctx as Ctx).form",
+      "(ctx satisfies Ctx).form",
+      "ctx!.form",
+    ]) {
+      expect(
+        form(`export default function X(props: {}, ctx: Ctx) { ${use}.disabled(); return null; }`),
+        use,
+      ).toBe(true);
+    }
+    expect(
+      form(
+        "export default function X(props: {}, ctx: Ctx) { const { form } = ctx as Ctx; return null; }",
+      ),
+    ).toBe(true);
+    expect(
+      form(
+        "export default function X(props: {}, ctx: Ctx = {} as Ctx) { ctx.form.disabled(); return null; }",
+      ),
+    ).toBe(true);
+  });
+
+  it("内側の関数とブロックで宣言した同じ名前の変数は、ctx として扱わない", () => {
+    const code = `export default function X(props: {}, ctx: Ctx) {
+  ctx.onMount(() => { const ctx = canvas.getContext("2d"); draw(ctx); });
+  const g = (ctx: number) => ctx + 1;
+  { let ctx = 1; use(ctx); }
+  try {} catch (ctx) { use(ctx); }
+  for (const ctx of list) use(ctx);
+  return null;
+}`;
+    expect(form(code)).toBeUndefined();
+    expect(() => element(code.replace("return null;", "use(ctx); return null;"))).toThrow(/ctx/);
+  });
+
+  it("ctx をメンバーの参照と分割代入以外で使用すると、ビルドのエラーにする", () => {
+    const wrong = [
+      "export default function X(props: {}, ctx: Ctx) { const key = 'form'; ctx[key]; return null; }",
+      "export default function X(props: {}, ctx: Ctx) { setup(ctx); return null; }",
+      "export default function X(props: {}, ctx: Ctx) { const c = ctx; return null; }",
+      "export default function X(props: {}, ctx: Ctx) { const { ...rest } = ctx; return null; }",
+      "export default function X(props: {}, { ...rest }: Ctx) { return null; }",
+      "export default function X(props: {}, { ['form']: f }: Ctx) { return null; }",
+      "export default function X(props: {}, [a]: any) { return null; }",
+    ];
+    for (const code of wrong) expect(() => element(code), code).toThrow(/ctx/);
+  });
+});
+
 /** 元のソースを変換したコード `code` に、oxc の JSX の変換と、JSX の規則を適用する。 */
 async function lower(code: string, file: string): Promise<string> {
   const lowered = await transformWithOxc(code, file, { lang: "tsx", ...oxc });

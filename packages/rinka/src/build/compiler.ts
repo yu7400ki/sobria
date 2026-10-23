@@ -11,6 +11,7 @@ import {
   type ServerFnMethod,
 } from "../shared/server-fn.ts";
 import {
+  binds,
   children,
   isFunction,
   lineColumn,
@@ -32,6 +33,7 @@ import {
 } from "./ast.ts";
 import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
+import { usesForm } from "./form-usage.ts";
 import { analyzeProps } from "./props.ts";
 
 export { CompileError } from "./errors.ts";
@@ -126,7 +128,10 @@ function registerElement(
       `${file}: 要素のファイルは、export default function 名前(props, ctx) の形で関数を default export してください。`,
     );
   }
-  const elementOptions = analyzeProps(program, fn, file);
+  const analyzed = analyzeProps(program, fn, file);
+  const elementOptions: ElementOptions = usesForm(fn, file)
+    ? { ...analyzed, form: true }
+    : analyzed;
   convertSlots(fn, elementOptions, output, file);
   output.remove(exported.start, fn.start);
   const [last, accept] = client
@@ -156,7 +161,7 @@ function defaultLoad(program: ESTree.Program, file: string): DefaultLoad {
     if (!exported) continue;
     for (const declarator of declaration.declarations) {
       if (declarator.id.type !== "Identifier") {
-        if (bindsLoad(declarator.id)) throw form();
+        if (binds(declarator.id, "load")) throw form();
         continue;
       }
       if (declarator.id.name !== "load") continue;
@@ -169,24 +174,6 @@ function defaultLoad(program: ESTree.Program, file: string): DefaultLoad {
     }
   }
   return "load";
-}
-
-/** 分割代入のパターンが、`load` という名前の変数を宣言するかどうかを返す。 */
-function bindsLoad(pattern: ESTree.BindingPattern | ESTree.BindingRestElement): boolean {
-  switch (pattern.type) {
-    case "Identifier":
-      return pattern.name === "load";
-    case "ObjectPattern":
-      return pattern.properties.some((property) =>
-        bindsLoad(property.type === "RestElement" ? property : property.value),
-      );
-    case "ArrayPattern":
-      return pattern.elements.some((element) => element !== null && bindsLoad(element));
-    case "AssignmentPattern":
-      return bindsLoad(pattern.left);
-    case "RestElement":
-      return bindsLoad(pattern.argument);
-  }
 }
 
 /** `value` が、`export const load` に記述できる起動タイミングかどうかを返す。 */
