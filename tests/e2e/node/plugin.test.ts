@@ -151,6 +151,37 @@ describe("変換の対象", () => {
     });
   });
 
+  it("client の環境で rinka/server を参照するファイルは、参照したファイルを示すエラーにする", async () => {
+    await withProject(
+      {
+        "src/lib/value.ts":
+          'import { redirect } from "rinka/server";\nexport const go = () => redirect("/");\n',
+        "src/lib/side.ts": 'import "rinka/server";\n',
+        "src/lib/dynamic.ts": 'export const load = () => import("rinka/server");\n',
+        "src/lib/fns.ts":
+          'import { defineServerFn, type ServerFn } from "rinka/server";\nexport const a: ServerFn<undefined, number> = defineServerFn(() => 1);\n',
+      },
+      async (dev) => {
+        const client = dev.environments.client;
+        const results = await Promise.all(
+          ["value", "side", "dynamic", "fns"].map((name) =>
+            client.transformRequest(`/src/lib/${name}.ts`).then(
+              () => "ok",
+              (error: unknown) => (error instanceof Error ? error.message : String(error)),
+            ),
+          ),
+        );
+        const message = ": クライアント向けのコードから rinka/server を参照しています。";
+        expect(results).toEqual([
+          expect.stringContaining(`src/lib/value.ts${message}`),
+          expect.stringContaining(`src/lib/side.ts${message}`),
+          expect.stringContaining(`src/lib/dynamic.ts${message}`),
+          "ok",
+        ]);
+      },
+    );
+  });
+
   it("consumer が client の環境は、名前に関わらずクライアント向けに変換する", async () => {
     await withProject(
       { "src/elements/card.tsx": card },

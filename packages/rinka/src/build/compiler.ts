@@ -74,7 +74,6 @@ const SERVER_FN = "__rinka_serverFn";
  * 要素のファイルでは、default export した関数を、要素を登録する呼び出しに書き換え、関数の中の JSX のスロットを `<slot>` にする。
  * `rinka/server` の `defineServerFn` で初期化したトップレベルの const は、サーバー向けでは ID で登録し、クライアント向けでは RPC の関数を作成する呼び出しに置換する。
  * クライアント向けでは、`defineMiddleware` で初期化したトップレベルの const の初期化の式を `undefined` に置換し、置換で使用されなくなった import を除去する。
- * クライアント向けの出力に `rinka/server` の値の import か再 export が残るなら、ビルドのエラーを投げる。
  */
 export function transformSource(code: string, options: SourceOptions): SourceResult {
   const program = parseModule(code, options);
@@ -93,8 +92,7 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
         `import { stopIfSeeding as ${STOP_IF_SEEDING} } from "${entries.internal}";\n`,
       );
     }
-    const kept = replaceDefinitions(program, output, code, definitions);
-    checkServerReferences(program, options.file, kept);
+    replaceDefinitions(program, output, code, definitions);
   } else {
     registerServerFns(output, definitions);
   }
@@ -487,15 +485,15 @@ function helpersOf(program: ESTree.Program): Helper[] {
 /**
  * サーバー関数の定義の式を、RPC の関数を作成する呼び出しに、ミドルウェアの定義の式を `undefined` に置換する。
  * 置換で使用されなくなった、トップレベルの関数と関数で初期化した const を除去し、使用されなくなった import の指定子を除去する。
- * 指定子が残らない import の文は、文ごと除去する。import の指定子が出力に残るかどうかを返す関数を返す。
+ * 指定子が残らない import の文は、文ごと除去する。
  */
 function replaceDefinitions(
   program: ESTree.Program,
   output: MagicString,
   code: string,
   definitions: readonly Definition[],
-): (specifier: ImportSpecifierNode) => boolean {
-  if (definitions.length === 0) return () => true;
+): void {
+  if (definitions.length === 0) return;
   const helpers = helpersOf(program);
   const declarations = new Set(helpers.map((helper) => helper.id));
   const removed = new Set<Node>(definitions.map((definition) => definition.init));
@@ -512,7 +510,7 @@ function replaceDefinitions(
   };
   const before = used(new Set());
   let after = used(removed);
-  const isKept = (specifier: ImportSpecifierNode) =>
+  const isKept = (specifier: ESTree.ImportDeclaration["specifiers"][number]) =>
     after.has(specifier.local.name) || !before.has(specifier.local.name);
   for (let changed = true; changed;) {
     changed = false;
@@ -563,55 +561,6 @@ function replaceDefinitions(
   if (serverFns) {
     output.prepend(`import { serverFn as ${SERVER_FN} } from "${entries.internal}";\n`);
   }
-  return isKept;
-}
-
-type ImportSpecifierNode = ESTree.ImportDeclaration["specifiers"][number];
-
-/**
- * クライアント向けの出力に、`kept` が真を返す `rinka/server` の値の import の指定子か、`rinka/server` の値の再 export が残るなら、
- * ビルドのエラーを投げる。
- */
-function checkServerReferences(
-  program: ESTree.Program,
-  file: string,
-  kept: (specifier: ImportSpecifierNode) => boolean,
-): void {
-  const imported: string[] = [];
-  const exported: string[] = [];
-  for (const statement of program.body) {
-    if (statement.type === "ImportDeclaration" && statement.source.value === entries.server) {
-      if (statement.importKind === "type") continue;
-      for (const specifier of statement.specifiers) {
-        if (specifier.type === "ImportSpecifier" && specifier.importKind === "type") continue;
-        if (kept(specifier)) imported.push(specifier.local.name);
-      }
-    } else if (
-      statement.type === "ExportNamedDeclaration" &&
-      statement.source?.value === entries.server &&
-      statement.exportKind !== "type"
-    ) {
-      for (const specifier of statement.specifiers) {
-        if (specifier.exportKind === "type") continue;
-        const { local } = specifier;
-        exported.push(local.type === "Identifier" ? local.name : local.value);
-      }
-    } else if (
-      statement.type === "ExportAllDeclaration" &&
-      statement.source.value === entries.server &&
-      statement.exportKind !== "type"
-    ) {
-      exported.push("*");
-    }
-  }
-  const left = [
-    ...(imported.length > 0 ? [`${entries.server} から import した ${imported.join("、")}`] : []),
-    ...(exported.length > 0 ? [`${entries.server} から export した ${exported.join("、")}`] : []),
-  ];
-  if (left.length === 0) return;
-  throw new CompileError(
-    `${file}: クライアント向けの出力に、${left.join(" と、")} が残ります。${entries.server} の値は、サーバー関数とミドルウェアの定義の式の中でだけ使用できます。型だけを使用する名前は、import type か export type で記述してください。`,
-  );
 }
 
 /** 文を、直後の改行とともに除去する。 */

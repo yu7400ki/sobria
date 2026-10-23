@@ -134,8 +134,14 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       buildStart() {
         checkTags(elementsDir, tagOf);
       },
-      resolveId(id) {
+      resolveId(id, importer) {
         if (id === entries.routes) return ROUTES;
+        if (id === entries.server && isClient(this.environment)) {
+          const from = importer === undefined ? undefined : (inside(root, importer) ?? importer);
+          throw new Error(
+            `${from ?? "(不明なファイル)"}: クライアント向けのコードから ${entries.server} を参照しています。${entries.server} の値は、サーバー関数とミドルウェアの定義の式の中でだけ使用できます。型だけを使用する名前は、import type か export type で記述してください。`,
+          );
+        }
         const entry = runtimes[isClient(this.environment) ? "client" : "server"][id];
         return entry === undefined ? null : fileURLToPath(new URL(`../${entry}`, import.meta.url));
       },
