@@ -188,6 +188,9 @@ function scopedContext(page: Context): Context {
   return c;
 }
 
+/** ミドルウェアのチェーンが、`last` を呼ばずにレスポンスも確定させずに終了したことを表すエラーを返す。 */
+const unfinished = () => new Error("ミドルウェアは、next() を呼ぶか、Response を返してください。");
+
 /** `runChain` の結果である。`last` が完了したら、その戻り値を持つ。完了せずにレスポンスが確定したら、そのレスポンスを持つ。 */
 type ChainResult =
   | { readonly completed: true; readonly value: unknown }
@@ -205,7 +208,7 @@ export function runChain(
 ): Promise<ChainResult>;
 /**
  * `middlewares` と `last` を順に実行し、確定したレスポンスを返す。投げられた値は、`onError` が返す Response にして `c.res` にし、
- * 外側のミドルウェアの `next()` を正常に終了させる。レスポンスが確定しなければ、エラーを投げる。
+ * 外側のミドルウェアの `next()` を正常に終了させる。レスポンスが確定しなければ、そのことを表すエラーを `onError` に渡す。
  */
 export function runChain(
   c: Context,
@@ -249,12 +252,9 @@ export async function runChain(
     if (value instanceof Response && (!c.finalized || failed)) c.res = value;
   };
   await dispatch(0);
-  if (onError) {
-    if (c.finalized) return c.res;
-    throw new Error("ミドルウェアは、next() を呼ぶか、Response を返してください。");
-  }
+  if (onError) return c.finalized ? c.res : onError(unfinished());
   if (completion) return { completed: true, value: completion.value };
   if (c.finalized) return { completed: false, response: c.res };
   if (failure) throw failure.error;
-  throw new Error("ミドルウェアは、next() を呼ぶか、Response を返してください。");
+  throw unfinished();
 }

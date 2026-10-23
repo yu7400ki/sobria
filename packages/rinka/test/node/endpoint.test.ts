@@ -224,6 +224,27 @@ describe("サーバー関数のエンドポイント", () => {
     expect(onError).toHaveBeenCalledWith(boom);
   });
 
+  it("handler が投げた rinka が扱わない例外はアプリの onError に 1 回だけ渡し、外側のミドルウェアの next() は正常に終了する", async () => {
+    const boom = new Error("boom");
+    const onError = vi.fn((_error: unknown) => new Response("failed", { status: 500 }));
+    const after = defineMiddleware(async (c, next) => {
+      await next();
+      c.header("x-after", "1");
+    });
+    const id = register(
+      defineServerFn(after, after, () => {
+        throw boom;
+      }),
+    );
+    const response = await call(id, post(null), { options: { onError } });
+    expect([response.status, response.headers.get("x-after"), await response.text()]).toEqual([
+      500,
+      "1",
+      "failed",
+    ]);
+    expect(onError.mock.calls).toEqual([[boom]]);
+  });
+
   it("handler から直接呼んだサーバー関数のミドルウェアが返した Response を、RPC とフォームの送信のレスポンスにする", async () => {
     const deny = defineMiddleware(async (c) => c.text("Unauthorized", 401));
     const inner = defineServerFn(deny, () => "inner");

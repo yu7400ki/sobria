@@ -23,8 +23,11 @@ export function registerServerFn<F extends { readonly [serverFnRef]: ServerFnRef
   return withServerFnRef(fn, { id, method: definition.method });
 }
 
-/** サーバー関数のエンドポイントへのリクエストを処理し、それ以外のリクエストを後続の処理に渡す Hono のミドルウェアを返す。 */
-export function serverFnMiddleware(options: AppOptions): MiddlewareHandler {
+/**
+ * サーバー関数のエンドポイントへのリクエストを処理し、それ以外のリクエストを後続の処理に渡す Hono のミドルウェアを返す。
+ * rinka が扱わない例外は、`fail` が返すレスポンスにする。
+ */
+export function serverFnMiddleware(options: AppOptions, fail: Failure): MiddlewareHandler {
   return async (c, next) => {
     const { pathname } = new URL(c.req.url);
     if (!pathname.startsWith(rpcPrefix)) {
@@ -38,7 +41,7 @@ export function serverFnMiddleware(options: AppOptions): MiddlewareHandler {
     } catch {
       return responder.reject(c, 404);
     }
-    return endpoint(c, id, responder, options);
+    return endpoint(c, id, responder, options, fail);
   };
 }
 
@@ -47,6 +50,7 @@ async function endpoint(
   id: string,
   responder: Responder,
   options: AppOptions,
+  fail: Failure,
 ): Promise<Response> {
   const definition = await find(id, options);
   if (!definition) return responder.reject(c, 404);
@@ -67,12 +71,14 @@ async function endpoint(
     middlewares,
     async () => {
       const value = await handle(c, input);
-      return value instanceof Response ? value : responder.respond(c, { kind: "value", value });
+      return value instanceof Response
+        ? value
+        : responder.respond(c, { kind: "value", value }, fail);
     },
     (error) => {
       if (error instanceof Response) return withContextHeaders(c, error);
       if (error instanceof HTTPException) return withContextHeaders(c, error.getResponse());
-      return responder.respond(c, outcomeOf(error));
+      return responder.respond(c, outcomeOf(error), fail);
     },
   );
 }
@@ -96,6 +102,9 @@ function outcomeOf(error: unknown): Outcome {
   return { kind: "error", error };
 }
 
+/** rinka が扱わない例外から、レスポンスを作成する。 */
+export type Failure = (error: unknown) => Response | Promise<Response>;
+
 /** rinka が handler を呼ばずに拒否するときのステータスである。 */
 type Rejection = 400 | 403 | 404 | 405;
 
@@ -106,7 +115,7 @@ interface Responder {
   /** handler を呼ばずに拒否するときのレスポンスを返す。 */
   readonly reject: (c: Context, status: Rejection) => Response;
   /** handler の結果のレスポンスを返す。 */
-  readonly respond: (c: Context, outcome: Outcome) => Response | Promise<Response>;
+  readonly respond: (c: Context, outcome: Outcome, fail: Failure) => Response | Promise<Response>;
 }
 
 const rejectionText = {
@@ -120,7 +129,7 @@ const responders = {
   rpc: {
     read: readInput,
     reject: (c, status) => rpc(c, null, status),
-    respond: (c, outcome) => {
+    respond: (c, outcome, fail) => {
       switch (outcome.kind) {
         case "value":
           return rpc(c, toRpcBody(outcome.value));
@@ -131,7 +140,7 @@ const responders = {
         case "schema":
           return rpc(c, { issues: outcome.issues }, 422);
         case "error":
-          throw outcome.error;
+          return fail(outcome.error);
         default:
           return unreachable(outcome);
       }
@@ -140,7 +149,7 @@ const responders = {
   form: {
     read: async (c) => formDataToInput(await c.req.formData()),
     reject: (c, status) => c.text(rejectionText[status], status),
-    respond: (c, outcome) => {
+    respond: (c, outcome, fail) => {
       switch (outcome.kind) {
         case "value":
           return c.redirect(c.req.header("referer") ?? "/", 303);
@@ -151,7 +160,7 @@ const responders = {
         case "schema":
           return c.json({ issues: outcome.issues }, 422);
         case "error":
-          throw outcome.error;
+          return fail(outcome.error);
         default:
           return unreachable(outcome);
       }

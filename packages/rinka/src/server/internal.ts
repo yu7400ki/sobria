@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 
 import {
   createElementComponent,
@@ -25,12 +26,19 @@ export function defineElement<P, M extends object = object>(
   return createElementComponent(tag, fn, options, delivery);
 }
 
+/** Hono のデフォルトのエラーの処理と同じく、`HTTPException` はそのレスポンスにし、それ以外は記録して素のテキストの 500 にする。 */
+function defaultFailure(error: unknown): Response {
+  if (error instanceof HTTPException) return error.getResponse();
+  console.error(error);
+  return new Response("Internal Server Error", { status: 500 });
+}
+
 /** ルートの表から、各ページを描画する Hono のアプリを作成する。 */
 export const createApp = ((routes: readonly Route[], options: AppOptions = {}): Hono => {
   const app = new Hono();
-  const { onError } = options;
-  if (onError) app.onError((c) => onError(c.error));
-  const serverFns = serverFnMiddleware(options);
+  const fail = options.onError ?? defaultFailure;
+  app.onError((c) => fail(c.error));
+  const serverFns = serverFnMiddleware(options, fail);
   app.use((c, next) => runInRequest(c, () => serverFns(c, next)));
   for (const route of routes) {
     app.get(route.path, async () => {
