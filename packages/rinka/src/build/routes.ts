@@ -80,6 +80,21 @@ const shapeOf = (segments: readonly UrlSegment[]): string =>
     .map((segment) => (segment.kind === "static" ? segment.name : `[${segment.kind}]`))
     .join("/");
 
+/** 区切りの列から、グループを除いたファイルの形のパス（`/users/[id]`、`/docs/[...slug]`）を組み立てる。 */
+const filePath = (segments: readonly UrlSegment[]): string =>
+  `/${segments
+    .map((segment) => {
+      switch (segment.kind) {
+        case "static":
+          return segment.name;
+        case "param":
+          return `[${segment.name}]`;
+        case "catch-all":
+          return `[...${segment.name}]`;
+      }
+    })
+    .join("/")}`;
+
 /** `left` と `right` の同じ位置の要素を、短いほうの長さまで組にする。 */
 function zip<T extends object>(left: readonly T[], right: readonly T[]): (readonly [T, T])[] {
   return left.flatMap((item, index) => {
@@ -145,13 +160,15 @@ function rowOf({
 }
 
 /**
- * プロジェクトのルート `root` からの相対パス `dir` のディレクトリを走査し、ルートの表を返す。
- * ルートは、同じ位置では静的な区切り、動的な区切り、キャッチオールの順に並ぶ。
+ * プロジェクトのルート `root` からの相対パス `dir` のディレクトリを走査し、走査した行の列と、ルートのミドルウェアを返す。
  * 2 つの `page.tsx` か `route.ts` が同じ URL に対応するときは、エラーを投げる。同じディレクトリに `page.tsx` と `route.ts` を置いたときも、このエラーになる。
  * 同じ URL に対応し、グループを含めたディレクトリの深さが同じ 2 つの `not-found.tsx` があるときも、エラーを投げる。
  * キャッチオールのディレクトリの配下のディレクトリにルートのファイルがあるときも、エラーを投げる。
  */
-export function scanRoutes(root: string, dir: string): Routes<PathFiles> {
+function scan(
+  root: string,
+  dir: string,
+): { readonly scanned: readonly Scanned[]; readonly middleware: string | undefined } {
   const scanned: Scanned[] = [];
   let middleware: string | undefined;
   const start = resolve(root, dir);
@@ -227,10 +244,32 @@ export function scanRoutes(root: string, dir: string): Routes<PathFiles> {
     }
     handled.set(key, file);
   }
+  return { scanned, middleware };
+}
+
+/**
+ * プロジェクトのルート `root` からの相対パス `dir` のディレクトリを走査し、ルートの表を返す。
+ * ルートは、同じ位置では静的な区切り、動的な区切り、キャッチオールの順に並ぶ。ルートのファイルの配置が不正なら、エラーを投げる。
+ */
+export function scanRoutes(root: string, dir: string): Routes<PathFiles> {
+  const { scanned, middleware } = scan(root, dir);
   return {
     routes: scanned.toSorted(compareRoutes).map(({ route }) => route),
     ...(middleware !== undefined && { middleware }),
   };
+}
+
+/** `root` からの相対パス `dir` のページごとに、グループを除いたファイルの形のパスと、パラメータとキャッチオールの名前を返す。ルートのファイルの配置が不正なら、エラーを投げる。 */
+export function scanPages(
+  root: string,
+  dir: string,
+): { readonly path: string; readonly params: readonly string[] }[] {
+  return scan(root, dir)
+    .scanned.filter(({ route }) => route.kind === "page")
+    .map(({ segments }) => ({
+      path: filePath(segments),
+      params: segments.flatMap((segment) => (segment.kind === "static" ? [] : [segment.name])),
+    }));
 }
 
 /** 生成するコードで、モジュールを読み込む関数に置き換える文字列の接頭辞である。 */

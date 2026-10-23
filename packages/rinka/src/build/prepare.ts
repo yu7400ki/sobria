@@ -1,10 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
-import { parseSegment } from "../shared/route-segments.ts";
 import { scanElements } from "./elements.ts";
 import { entries } from "./entries.ts";
-import { ROUTES_DIR, scanRoutes } from "./routes.ts";
+import { ROUTES_DIR, scanPages } from "./routes.ts";
 
 /** 生成したファイルを置く、アプリのルートからの相対パスのディレクトリである。 */
 export const PREPARED_DIR = ".rinka";
@@ -85,24 +84,10 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
 /** アプリのルート `root` のページから、`RouteParams` を拡張する型宣言を返す。 */
 function routesDeclaration(root: string): string {
   const lines: string[] = [];
-  for (const route of scanRoutes(root, ROUTES_DIR).routes) {
-    if (route.kind !== "page") continue;
-    const parts = route.module
-      .slice(ROUTES_DIR.length + 1)
-      .split("/")
-      .slice(0, -1);
-    const params: string[] = [];
-    const path: string[] = [];
-    for (const part of parts) {
-      const segment = parseSegment(part);
-      if (segment?.kind === "group") continue;
-      if (segment?.kind === "param" || segment?.kind === "catch-all") {
-        params.push(`${segment.name}: string`);
-      }
-      path.push(part);
-    }
-    const type = params.length === 0 ? "{}" : `{ ${params.join("; ")} }`;
-    lines.push(`    ${JSON.stringify(`/${path.join("/")}`)}: ${type};\n`);
+  for (const { path, params } of scanPages(root, ROUTES_DIR)) {
+    const type =
+      params.length === 0 ? "{}" : `{ ${params.map((name) => `${name}: string`).join("; ")} }`;
+    lines.push(`    ${JSON.stringify(path)}: ${type};\n`);
   }
   return `${HEADER}export {};\n\ndeclare module "${entries.router}" {\n  interface RouteParams {\n${lines.toSorted().join("")}  }\n}\n`;
 }
