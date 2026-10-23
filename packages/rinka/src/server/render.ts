@@ -107,17 +107,17 @@ interface Host {
 
 /**
  * 文書を出力する描画で、特別に扱うタグの扱いを表す。
- * `head` は `<head>` に移動するタグ、`root` は属性を文書の開始タグに移動して子だけを描画するタグ、`transparent` は子だけを描画するタグである。
+ * `head` は `<head>` に移動するタグ、`html` と `body` は属性を文書の同じタグの開始タグに移動して子だけを描画するタグ、`transparent` は子だけを描画するタグである。
  */
-type DocumentTag = "head" | "root" | "transparent";
+type DocumentTag = "head" | "html" | "body" | "transparent";
 
 /** 文書を出力する描画で、特別に扱うタグと、その扱いである。 */
 const documentTags: ReadonlyMap<string, DocumentTag> = new Map([
   ["title", "head"],
   ["meta", "head"],
   ["link", "head"],
-  ["html", "root"],
-  ["body", "root"],
+  ["html", "html"],
+  ["body", "body"],
   ["head", "transparent"],
 ]);
 
@@ -548,14 +548,19 @@ const escapeAttribute = (text: string): string =>
 /** HTML の属性の名前として使用できる文字列に一致する正規表現である。 */
 const attributeName = /^[^\s"'>/=\p{Cc}]+$/u;
 
+/** 名前に属性の名前として使用できない文字があれば、エラーを投げる。 */
+function checkAttributeName(name: string): void {
+  if (!attributeName.test(name)) {
+    throw new Error(`属性の名前 ${JSON.stringify(name)} には、使用できない文字が含まれています。`);
+  }
+}
+
 /**
  * 属性の出力の規則で、`value` を `name` の属性として出力する文字列を返す。`true` は値の無い属性にする。
  * 名前に属性の名前として使用できない文字があれば、エラーを投げる。
  */
 function attribute(name: string, value: unknown): string {
-  if (!attributeName.test(name)) {
-    throw new Error(`属性の名前 ${JSON.stringify(name)} には、使用できない文字が含まれています。`);
-  }
+  checkAttributeName(name);
   const text = attributeValue(name, value);
   if (text === null) return "";
   return value === true && text === "" ? ` ${name}` : ` ${name}="${escapeAttribute(text)}"`;
@@ -758,48 +763,34 @@ class Renderer {
   ): void {
     const role = this.document ? documentTags.get(tag) : undefined;
     const atShell = ctx.owner === null && ctx.boundary === this.root;
-    switch (role) {
-      case undefined:
-        break;
-      case "root":
-      case "transparent": {
-        if (!atShell) {
-          this.warnOutside(tag, ctx, `文書の <${tag}> に反映せずに、子だけを出力します`);
-          this.walk(asNode(props.children), ctx, out);
-          return;
-        }
-        if (role === "transparent") {
-          this.walk(asNode(props.children), { ...ctx, head: "all" }, out);
-          return;
-        }
-        const id = ++this.seq;
-        this.hoisted.set(id, {
-          kind: tag === "html" ? "html" : "body",
-          values: this.rootAttributes(props, ctx),
-          depth: ctx.depth,
-        });
-        out.push(this.marker(id, ""), this.marker(id, "/"));
+    if (role === "html" || role === "body" || role === "transparent") {
+      if (!atShell) {
+        this.warnOutside(tag, ctx, `文書の <${tag}> に反映せずに、子だけを出力します`);
         this.walk(asNode(props.children), ctx, out);
         return;
       }
-      case "head":
-        if (
-          ctx.head === "auto" &&
-          !atShell &&
-          (tag === "title" || attributeValue("itemprop", props.itemprop) === null) &&
-          warnsOutOfHead(tag, props)
-        ) {
-          this.warnOutside(tag, ctx, "<head> に移動せずに、記述した位置に出力します");
-        }
-        break;
+      if (role === "transparent") {
+        this.walk(asNode(props.children), { ...ctx, head: "all" }, out);
+        return;
+      }
+      const id = ++this.seq;
+      this.hoisted.set(id, {
+        kind: role,
+        values: this.rootAttributes(props, ctx),
+        depth: ctx.depth,
+      });
+      out.push(this.marker(id, ""), this.marker(id, "/"));
+      this.walk(asNode(props.children), ctx, out);
+      return;
     }
-    const hoist =
-      this.document !== undefined &&
-      atShell &&
-      (ctx.head === "all" ||
-        (ctx.head === "auto" &&
-          role === "head" &&
-          (tag === "title" || attributeValue("itemprop", props.itemprop) === null)));
+    const movable =
+      role === "head" &&
+      ctx.head !== "none" &&
+      (tag === "title" || attributeValue("itemprop", props.itemprop) === null);
+    if (movable && !atShell && warnsOutOfHead(tag, props)) {
+      this.warnOutside(tag, ctx, "<head> に移動せずに、記述した位置に出力します");
+    }
+    const hoist = atShell && (ctx.head === "all" || movable);
     if (!hoist) {
       this.nativeTag(tag, props, key, ctx, out);
       return;
@@ -853,11 +844,7 @@ class Renderer {
         if (error instanceof NotReadyError) continue;
         throw error;
       }
-      if (!attributeName.test(name)) {
-        throw new Error(
-          `属性の名前 ${JSON.stringify(name)} には、使用できない文字が含まれています。`,
-        );
-      }
+      checkAttributeName(name);
       attributes.set(name, attributeValue(name, value));
     }
     return attributes;

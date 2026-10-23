@@ -166,7 +166,7 @@ describe("文書の <head>", () => {
     vi.stubEnv("DEV", true);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { head, body } = await documentOf([
-      jsx("svg", { children: title("icon") }),
+      jsx("svg", { children: [title("icon"), jsx("g", { children: title("group") })] }),
       jsx("noscript", { children: jsx("link", { rel: "stylesheet", href: "/n.css" }) }),
       jsx("div", {
         itemscope: true,
@@ -178,7 +178,7 @@ describe("文書の <head>", () => {
     ]);
     expect(head).toBe('<meta charset="utf-8">');
     expect(body).toBe(
-      '<svg><title>icon</title></svg><noscript><link rel="stylesheet" href="/n.css"></noscript><div itemscope><meta itemprop="name" content="c"><link itemprop="url" href="/u"></div>',
+      '<svg><title>icon</title><g><title>group</title></g></svg><noscript><link rel="stylesheet" href="/n.css"></noscript><div itemscope><meta itemprop="name" content="c"><link itemprop="url" href="/u"></div>',
     );
     expect(warn).not.toHaveBeenCalled();
   });
@@ -370,6 +370,19 @@ describe("<html> と <body>", () => {
       '<meta charset="utf-8"><title>T</title><script src="/a.js"></script><style>p{}</style>',
     );
     expect(body).toBe("text");
+  });
+
+  it("シェルの <head> の中の <Loading> の内側の <title> は、移動せずに開発時に警告する", async () => {
+    vi.stubEnv("DEV", true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { head, body } = await documentOf(
+      jsx("head", {
+        children: jsx(Loading, { fallback: "wait", children: jsx(later(5, title("late")), {}) }),
+      }),
+    );
+    expect(head).not.toContain("<title>late");
+    expect(body).toContain("<title>late</title>");
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 
   it("同じファイルが同じ属性を 2 回記述したときは後の値を、深いファイルの false は属性を出力しない", async () => {
