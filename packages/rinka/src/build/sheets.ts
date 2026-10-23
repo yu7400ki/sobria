@@ -83,6 +83,14 @@ export default serverSheet(${JSON.stringify(href)}, css);
 `;
 }
 
+/** ライブラリのビルドで、`?inline` の指定子 `inline` の CSS から作成したシートを default export する、クライアントのシートのモジュールのコードを返す。 */
+export function librarySheetModule(inline: string): string {
+  return `${importInternal("client", "createSheet")}
+import css from ${JSON.stringify(inline)};
+export default createSheet(css);
+`;
+}
+
 /** 本番のビルドで、`?url` の指定子 `url` の CSS を fetch して作成したシートを default export する、クライアントのシートのモジュールのコードを返す。 */
 export function clientBuildSheetModule(url: string): string {
   return `${importInternal("client", "loadSheet")}
@@ -100,14 +108,21 @@ export default serverSheet(href, css);
 `;
 }
 
-/** 開発サーバーのパス `path` の CSS から、場面 `scene` の、`client` が真ならクライアントの、偽ならサーバーのシートのモジュールのコードを返す。 */
+/**
+ * 開発サーバーのパス `path` の CSS から、場面 `scene` の、`client` が真ならクライアントの、偽ならサーバーのシートのモジュールのコードを返す。
+ * ライブラリのビルドはクライアントの環境だけを持ち、CSS をモジュールに埋め込む。
+ */
 export function sheetModule(path: string, scene: Scene, client: boolean): string {
-  if (scene === "app") {
-    return client
-      ? clientBuildSheetModule(`${path}?url`)
-      : serverBuildSheetModule(`${path}?url`, `${path}?inline`);
+  switch (scene) {
+    case "serve":
+      return client
+        ? clientSheetModule(`${path}?inline`)
+        : serverSheetModule(`${path}?inline`, directUrl(path));
+    case "app":
+      return client
+        ? clientBuildSheetModule(`${path}?url`)
+        : serverBuildSheetModule(`${path}?url`, `${path}?inline`);
+    case "library":
+      return librarySheetModule(`${path}?inline`);
   }
-  return client
-    ? clientSheetModule(`${path}?inline`)
-    : serverSheetModule(`${path}?inline`, directUrl(path));
 }
