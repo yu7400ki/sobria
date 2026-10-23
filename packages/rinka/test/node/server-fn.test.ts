@@ -187,6 +187,23 @@ describe("サーバー側から直接呼んだサーバー関数", () => {
     expect(after).toBe("ann");
   });
 
+  it("ページから直接呼んだサーバー関数の c.req は、ページの c.req と同じオブジェクトである", async () => {
+    let received: unknown;
+    const fn = defineServerFn((c) => {
+      received = c.req;
+      return null;
+    });
+    const app = new Hono();
+    let page: unknown;
+    app.get("*", async (c) => {
+      page = c.req;
+      await runInRequest(c, () => fn());
+      return c.text("ok");
+    });
+    await app.request("/posts");
+    expect(received).toBe(page);
+  });
+
   it("リクエストの外では、/ へ GET するリクエストを表す空の Context で実行する", async () => {
     const fn = defineServerFn((c) => `${c.req.method} ${c.req.path}`);
     expect(await fn()).toBe("GET /");
