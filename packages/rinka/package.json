@@ -2,6 +2,9 @@
   "name": "rinka",
   "version": "0.0.0",
   "private": true,
+  "bin": {
+    "rinka": "./lib/build/bin.js"
+  },
   "files": [
     "lib",
     "tsconfig.app.json"

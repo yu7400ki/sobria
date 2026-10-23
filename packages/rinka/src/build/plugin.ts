@@ -7,6 +7,7 @@ import { getRequestListener } from "@hono/node-server";
 import {
   type Environment,
   type Plugin,
+  type ResolvedConfig,
   type RunnableDevEnvironment,
   type ViteDevServer,
 } from "vite";
@@ -41,6 +42,13 @@ export interface RinkaOptions {
 export interface RinkaApi {
   /** `.rinka/` を生成する。Vite の設定を解決する前に呼び出すと、エラーを投げる。 */
   readonly prepare: () => void;
+}
+
+/** 解決した Vite の設定 `config` に登録された rinka のプラグインの API を返す。登録されていなければ undefined を返す。 */
+export function rinkaApi(config: ResolvedConfig): RinkaApi | undefined {
+  const plugin = config.plugins.find((candidate) => candidate.name === NAME);
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  return plugin?.api as RinkaApi | undefined;
 }
 
 /** 拡張子ごとの、変換する言語である。 */
