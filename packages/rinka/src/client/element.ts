@@ -21,7 +21,7 @@ import {
   type Ctx,
   type ElementComponent,
   type ElementOptions,
-  formAttributes,
+  formAttributeTypes,
   unsupportedFormControls,
 } from "../shared/element.ts";
 import { checkExposeName } from "../shared/expose-names.ts";
@@ -213,7 +213,9 @@ export function registerElement<P, M extends object = object>(
   const slotNames: ReadonlySet<string> = new Set(["children", ...(options.slots ?? [])]);
   const unobserved = new Set([...functionProps, ...slotNames]);
   /** ホストの属性に反映する props の名前である。反映した属性の変化は、props に書き戻さない。 */
-  const reflects: ReadonlySet<string> = new Set(options.form ? formAttributes : []);
+  const reflects: ReadonlySet<string> = new Set(
+    options.form ? Object.keys(formAttributeTypes) : [],
+  );
   const unsupported = unsupportedFormControls(tag);
   /** 要素の関数に渡す ctx の `form` を返す。 */
   const formOf = options.form ? formControls : () => unsupported;

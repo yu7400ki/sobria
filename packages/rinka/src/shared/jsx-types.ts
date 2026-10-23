@@ -1,4 +1,4 @@
-import type { formAttributes } from "./element.ts";
+import type { AttributeType, formAttributeTypes } from "./element.ts";
 import type {
   GlobalAttributes,
   LooseAttributes,
@@ -96,9 +96,20 @@ type Rendered<C> = C extends (...args: never[]) => infer R ? Awaited<R> : never;
 
 /** 要素が、Props の型に記述していなくても受け付ける、フォームの部品の `name` と `disabled` を表す。Props の型に同じ名前があれば、Props の型を使用する。 */
 type FormAttributes<P> = Omit<
-  Pick<{ name?: string; disabled?: boolean }, (typeof formAttributes)[number]>,
+  {
+    -readonly [
+      K in keyof typeof formAttributeTypes
+    ]?: AttributeTypeValue[(typeof formAttributeTypes)[K]];
+  },
   keyof P
 >;
+
+/** `AttributeType` の名前ごとに、その値の型を表す。 */
+interface AttributeTypeValue extends Record<AttributeType, unknown> {
+  string: string;
+  number: number;
+  boolean: boolean;
+}
 
 /**
  * JSX の名前空間の `LibraryManagedAttributes` を表す。

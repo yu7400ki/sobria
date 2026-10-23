@@ -4,8 +4,11 @@ import type { ClientNode, Slot } from "./nodes.ts";
 /** 属性の値から変換する props の型を表す。 */
 export type AttributeType = "string" | "number" | "boolean";
 
-/** フォームの部品が、Props の型に記述していなくても受け付け、ホストの属性に反映する props の名前である。 */
-export const formAttributes = ["name", "disabled"] as const;
+/** フォームの部品が、Props の型に記述していなくても受け付け、ホストの属性に反映する props の名前と、その値の型である。 */
+export const formAttributeTypes = {
+  name: "string",
+  disabled: "boolean",
+} as const satisfies Record<string, AttributeType>;
 
 /** `defineElement` の 3 つ目の引数を表す。 */
 export interface ElementOptions {
