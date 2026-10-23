@@ -223,6 +223,17 @@ describe("サーバー関数のエンドポイント", () => {
     expect(onError).toHaveBeenCalledWith(boom);
   });
 
+  it("ミドルウェアが next() を呼ばずに、Response を返さずに終了すると、そのエラーをアプリの onError に渡す", async () => {
+    const onError = vi.fn((_error: unknown) => new Response(null, { status: 500 }));
+    const silent = defineMiddleware(async () => {});
+    const id = register(defineServerFn(silent, () => null));
+    const response = await call(id, post(null), { options: { onError } });
+    expect(response.status).toBe(500);
+    expect(String(onError.mock.calls[0]?.[0])).toBe(
+      "Error: ミドルウェアは、next() を呼ぶか、Response を返してください。",
+    );
+  });
+
   it("未登録の ID は、loadModule で ID のモジュールの部分を読み込んでから探し直す", async () => {
     const id = "src/later.ts#fn";
     const loadModule = vi.fn(async (path: string) => {

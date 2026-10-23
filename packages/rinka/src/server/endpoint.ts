@@ -69,7 +69,6 @@ async function endpoint(c: Context, id: string, options: AppOptions): Promise<Re
     },
     (error) => (form ? formError(c, error) : rpcError(c, error)),
   );
-  if (!c.finalized) throw new Error("ミドルウェアは、next() を呼ぶか、Response を返してください。");
   return c.res;
 }
 

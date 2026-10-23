@@ -150,28 +150,14 @@ async function callDirectly(
   input: unknown,
 ): Promise<unknown> {
   const c = scopedContext(page);
-  let done = false;
-  let result: unknown;
-  let failure: { readonly error: unknown } | undefined;
   try {
-    await runChain(c, definition.middlewares, async () => {
-      try {
-        result = await definition.handle(c, input);
-        done = true;
-      } catch (error) {
-        failure = { error };
-        throw error;
-      }
-      return undefined;
-    });
+    const result = await runChain(c, definition.middlewares, () => definition.handle(c, input));
+    // oxlint-disable-next-line typescript/only-throw-error
+    if (!result.completed) throw result.response;
+    return result.value;
   } finally {
     for (const [key, value] of Object.entries(c.var)) page.set(key, value);
   }
-  if (done) return result;
-  // oxlint-disable-next-line typescript/only-throw-error
-  if (c.finalized) throw c.res;
-  if (failure) throw failure.error;
-  throw new Error("ミドルウェアは、next() を呼ぶか、Response を返してください。");
 }
 
 /** `page` のリクエスト、環境、変数を受け継いだ、新しい Context を返す。 */
@@ -192,18 +178,36 @@ function scopedContext(page: Context): Context {
   return c;
 }
 
+/** `runChain` の結果である。`last` が完了したら、その戻り値を持つ。完了せずにレスポンスが確定したら、そのレスポンスを持つ。 */
+export type ChainResult =
+  | { readonly completed: true; readonly value: unknown }
+  | { readonly completed: false; readonly response: Response };
+
 /**
  * Hono のミドルウェアの合成と同じ規則で、`middlewares` と `last` を順に実行する。
  * ミドルウェアか `last` が返した Response は、`c.res` が確定していなければ `c.res` にする。
  * `onError` があれば、投げられた値を `onError` が返す Response にして `c.res` にし、外側のミドルウェアの `next()` を正常に終了させる。
+ * `last` が完了せず、レスポンスも確定しなければ、`last` が投げた値を投げる。`last` が呼ばれていなければ、エラーを投げる。
  */
 export async function runChain(
   c: Context,
   middlewares: readonly Step[],
   last: () => Promise<unknown>,
   onError?: (error: unknown) => Response | Promise<Response>,
-): Promise<void> {
+): Promise<ChainResult> {
   let called = -1;
+  let completion: { readonly value: unknown } | undefined;
+  let failure: { readonly error: unknown } | undefined;
+  const runLast = async (): Promise<unknown> => {
+    try {
+      const value = await last();
+      completion = { value };
+      return value;
+    } catch (error) {
+      failure = { error };
+      throw error;
+    }
+  };
   const dispatch = async (index: number): Promise<void> => {
     if (index <= called) throw new Error("ミドルウェアは、next() を 1 回だけ呼んでください。");
     called = index;
@@ -211,7 +215,7 @@ export async function runChain(
     let value: unknown;
     let failed = false;
     try {
-      value = middleware ? await middleware(c, () => dispatch(index + 1)) : await last();
+      value = middleware ? await middleware(c, () => dispatch(index + 1)) : await runLast();
     } catch (error) {
       if (!onError) throw error;
       if (error instanceof Error) c.error = error;
@@ -221,4 +225,8 @@ export async function runChain(
     if (value instanceof Response && (!c.finalized || failed)) c.res = value;
   };
   await dispatch(0);
+  if (completion) return { completed: true, value: completion.value };
+  if (c.finalized) return { completed: false, response: c.res };
+  if (failure) throw failure.error;
+  throw new Error("ミドルウェアは、next() を呼ぶか、Response を返してください。");
 }
