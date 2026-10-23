@@ -188,6 +188,10 @@ function scopedContext(page: Context): Context {
   return c;
 }
 
+/** Error 以外の値を、Hono と同じく、その値の文字列をメッセージにし、`cause` にその値を持つ Error に包む。 */
+const toError = (value: unknown): Error =>
+  value instanceof Error ? value : new Error(String(value), { cause: value });
+
 /** ミドルウェアのチェーンが、`last` を呼ばずにレスポンスも確定させずに終了したことを表すエラーを返す。 */
 const unfinished = () => new Error("ミドルウェアは、next() を呼ぶか、Response を返してください。");
 
@@ -207,7 +211,7 @@ export function runChain(
   last: () => Promise<unknown>,
 ): Promise<ChainResult>;
 /**
- * `middlewares` と `last` を順に実行し、確定したレスポンスを返す。投げられた値は、`onError` が返す Response にして `c.res` にし、
+ * `middlewares` と `last` を順に実行し、確定したレスポンスを返す。投げられた値は、Response 以外なら Error に包んで `c.error` にし、`onError` が返す Response にして `c.res` にし、
  * 外側のミドルウェアの `next()` を正常に終了させる。レスポンスが確定しなければ、そのことを表すエラーを `onError` に渡す。
  */
 export function runChain(
@@ -245,8 +249,9 @@ export async function runChain(
       value = middleware ? await middleware(c, () => dispatch(index + 1)) : await runLast();
     } catch (error) {
       if (!onError) throw error;
-      if (error instanceof Error) c.error = error;
-      value = await onError(error);
+      const thrown = error instanceof Response ? error : toError(error);
+      if (thrown instanceof Error) c.error = thrown;
+      value = await onError(thrown);
       failed = true;
     }
     if (value instanceof Response && (!c.finalized || failed)) c.res = value;

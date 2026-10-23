@@ -245,6 +245,49 @@ describe("サーバー関数のエンドポイント", () => {
     expect(onError.mock.calls).toEqual([[boom]]);
   });
 
+  it("rinka が扱わない例外の 500 にも、ミドルウェアが next() の前に設定したヘッダーを付ける", async () => {
+    const pre = defineMiddleware(async (c, next) => {
+      c.header("x-pre", "1");
+      await next();
+    });
+    const id = register(
+      defineServerFn(pre, () => {
+        throw new Error("boom");
+      }),
+    );
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const onError = vi.fn(() => new Response("failed", { status: 500 }));
+    const responses = await Promise.all([
+      call(id, post(null)),
+      call(id, post(null), { options: { onError } }),
+    ]);
+    error.mockRestore();
+    expect(responses.map((response) => [response.status, response.headers.get("x-pre")])).toEqual([
+      [500, "1"],
+      [500, "1"],
+    ]);
+  });
+
+  it("Error 以外の投げられた値は、Error に包んでアプリの onError と c.error に渡す", async () => {
+    let seen: unknown;
+    const watch = defineMiddleware(async (c, next) => {
+      await next();
+      seen = c.error;
+    });
+    const onError = vi.fn((_error: unknown) => new Response(null, { status: 500 }));
+    const id = register(
+      defineServerFn(watch, () => {
+        // oxlint-disable-next-line typescript/only-throw-error
+        throw "str";
+      }),
+    );
+    await call(id, post(null), { options: { onError } });
+    const received = onError.mock.calls[0]?.[0];
+    expect(received).toBeInstanceOf(Error);
+    expect([String(received), (received as Error).cause]).toEqual(["Error: str", "str"]);
+    expect(seen).toBe(received);
+  });
+
   it("handler から直接呼んだサーバー関数のミドルウェアが返した Response を、RPC とフォームの送信のレスポンスにする", async () => {
     const deny = defineMiddleware(async (c) => c.text("Unauthorized", 401));
     const inner = defineServerFn(deny, () => "inner");

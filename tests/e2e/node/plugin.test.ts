@@ -182,6 +182,17 @@ describe("変換の対象", () => {
     );
   });
 
+  it("依存の事前走査では、client の環境の rinka/server の解決をエラーにしない", async () => {
+    // Vite の依存の事前走査は、型に無い scan のオプションを付けて resolveId を呼ぶ
+    const scan = { isEntry: false, scan: true };
+    const scanned = await server.environments.client.pluginContainer.resolveId(
+      "rinka/server",
+      join(root, "src/lib/fns.ts"),
+      scan,
+    );
+    expect(scanned).not.toBeNull();
+  });
+
   it("consumer が client の環境は、名前に関わらずクライアント向けに変換する", async () => {
     await withProject(
       { "src/elements/card.tsx": card },

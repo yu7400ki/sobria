@@ -103,7 +103,7 @@ function outcomeOf(error: unknown): Outcome {
 }
 
 /** rinka が扱わない例外から、レスポンスを作成する。 */
-export type Failure = (error: unknown) => Response | Promise<Response>;
+export type Failure = (error: unknown, c: Context) => Response | Promise<Response>;
 
 /** rinka が handler を呼ばずに拒否するときのステータスである。 */
 type Rejection = 400 | 403 | 404 | 405;
@@ -140,7 +140,7 @@ const responders = {
         case "schema":
           return rpc(c, { issues: outcome.issues }, 422);
         case "error":
-          return fail(outcome.error);
+          return fail(outcome.error, c);
         default:
           return unreachable(outcome);
       }
@@ -160,7 +160,7 @@ const responders = {
         case "schema":
           return c.json({ issues: outcome.issues }, 422);
         case "error":
-          return fail(outcome.error);
+          return fail(outcome.error, c);
         default:
           return unreachable(outcome);
       }
@@ -174,7 +174,7 @@ function unreachable(value: never): never {
 }
 
 /** `response` に、Context で設定したヘッダーを加えて返す。 */
-function withContextHeaders(c: Context, response: Response): Response {
+export function withContextHeaders(c: Context, response: Response): Response {
   return c.newResponse(response.body, response);
 }
 

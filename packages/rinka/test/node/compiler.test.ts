@@ -675,7 +675,7 @@ export const shown = label("x");`,
     }
   });
 
-  it("サーバー関数の定義の式の中の defineMiddleware と、rinka/server の型だけの import は、ビルドのエラーにしない", () => {
+  it("クライアント向けでは、定義の式の中だけで使用した rinka/server の値の import を除去し、型だけの import を残す", () => {
     const code = module(
       `import type * as Server from "rinka/server";
 import { defineMiddleware, defineServerFn } from "rinka/server";
@@ -684,6 +684,8 @@ export const fn = defineServerFn({ method: "GET" })(defineMiddleware(async (_c, 
       true,
     );
     expect(code).toContain('export const fn = __rinka_serverFn("src/lib/a.ts#fn", "GET");');
+    expect(code).not.toContain("defineMiddleware");
+    expect(code).toContain('import type * as Server from "rinka/server";');
   });
 
   it("method は、1 段目のオブジェクトの文字列のリテラルから読み取る", () => {

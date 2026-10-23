@@ -10,7 +10,7 @@ import {
 } from "../shared/element.ts";
 import type { AppOptions, CreateApp, Route } from "../shared/routes.ts";
 import { runInRequest } from "./context.ts";
-import { serverFnMiddleware } from "./endpoint.ts";
+import { serverFnMiddleware, withContextHeaders, type Failure } from "./endpoint.ts";
 import { jsx } from "./jsx-runtime.ts";
 import { renderDocument } from "./render.ts";
 
@@ -26,7 +26,7 @@ export function defineElement<P, M extends object = object>(
   return createElementComponent(tag, fn, options, delivery);
 }
 
-/** Hono のデフォルトのエラーの処理と同じく、`HTTPException` はそのレスポンスにし、それ以外は記録して素のテキストの 500 にする。 */
+/** `HTTPException` はそのレスポンスにし、それ以外は記録して素のテキストの 500 にする。 */
 function defaultFailure(error: unknown): Response {
   if (error instanceof HTTPException) return error.getResponse();
   console.error(error);
@@ -36,8 +36,12 @@ function defaultFailure(error: unknown): Response {
 /** ルートの表から、各ページを描画する Hono のアプリを作成する。 */
 export const createApp = ((routes: readonly Route[], options: AppOptions = {}): Hono => {
   const app = new Hono();
-  const fail = options.onError ?? defaultFailure;
-  app.onError((c) => fail(c.error));
+  const handle = options.onError ?? defaultFailure;
+  const fail: Failure = (error, c) => withContextHeaders(c, handle(error));
+  app.onError((c) => {
+    const response = handle(c.error);
+    return c.newResponse(response.body, response);
+  });
   const serverFns = serverFnMiddleware(options, fail);
   app.use((c, next) => runInRequest(c, () => serverFns(c, next)));
   for (const route of routes) {
