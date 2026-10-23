@@ -2,6 +2,7 @@ import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { every } from "hono/combine";
 import { HTTPException } from "hono/http-exception";
 import type { BlankEnv } from "hono/types";
+import { tryDecodeURIComponent } from "hono/utils/url";
 
 import {
   routeMethods,
@@ -73,16 +74,22 @@ function matchPrefix(
   return params;
 }
 
-/** ページか `not-found.tsx` の行を表す。 */
-type PageRoute = Extract<Route, { readonly kind: "page" | "not-found" }>;
+/** `not-found.tsx` の行を表す。 */
+type NotFoundRoute = Extract<Route, { readonly kind: "not-found" }>;
 
-/** `not-found.tsx` の行のうち、行の区切りが `path` の区切りに前方から一致し、区切りの数が最も多いものを、そのパラメータとともに返す。 */
+/** ページの描画で使用する `not-found.tsx` と `error.tsx` を表す。 */
+interface Fallbacks {
+  readonly notFound?: Fallback;
+  readonly error?: Fallback;
+}
+
+/** `not-found.tsx` の行のうち、行の区切りが、デコードした `url` の区切りに前方から一致し、区切りの数が最も多いものを、そのパラメータとともに返す。 */
 function nearestNotFound(
   routes: readonly Route[],
-  path: string,
-): { readonly route: PageRoute; readonly params: Record<string, string> } | undefined {
-  const segments = segmentsOf(path);
-  let found: { readonly route: PageRoute; readonly params: Record<string, string> } | undefined;
+  url: URL,
+): { readonly route: NotFoundRoute; readonly params: Record<string, string> } | undefined {
+  const segments = segmentsOf(url.pathname).map(tryDecodeURIComponent);
+  let found: { readonly route: NotFoundRoute; readonly params: Record<string, string> } | undefined;
   let depth = -1;
   for (const route of routes) {
     if (route.kind !== "not-found") continue;
@@ -114,8 +121,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   const serverFns = serverFnMiddleware(options, fail);
   const rinka = middleware === undefined ? serverFns : every(lazy(middleware), serverFns);
   app.use((c, next) => runInRequest(c, () => rinka(c, next)));
-  const respond: Respond = async (c, node, route, props) => {
-    const { notFound: missingPage, error: errorPage } = route ?? {};
+  const respond: Respond = async (c, node, { notFound: missingPage, error: errorPage }, props) => {
     const response = await renderDocument(node, {
       ...(options.head !== undefined && { head: options.head }),
       ...(missingPage && { notFound: () => fallbackNode(missingPage, props) }),
@@ -131,11 +137,15 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   for (const route of routes) register(app, route, respond);
   app.notFound(async (c: Context<BlankEnv, string>) => {
     const url = new URL(c.req.url);
-    const found = nearestNotFound(routes, c.req.path);
-    if (!found) return respond(c, jsx(missing, {}), undefined, {});
+    const found = nearestNotFound(routes, url);
+    if (!found) return respond(c, jsx(missing, {}), {}, {});
     const { route, params } = found;
+    const fallbacks: Fallbacks = {
+      notFound: { load: route.load, layouts: route.layouts },
+      ...(route.error && { error: route.error }),
+    };
     await every(...route.middlewares.map(lazy))(c, async () => {
-      c.res = await respond(c, jsx(missing, {}), route, { params, url });
+      c.res = await respond(c, jsx(missing, {}), fallbacks, { params, url });
     });
     return c.res;
   });
@@ -144,12 +154,12 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
 
 /**
  * `node` を描画した文書を、`c` のリクエストのレスポンスとして返す関数を表す。
- * `route` の `not-found.tsx` と `error.tsx` には、`props` を渡す。
+ * `fallbacks` の `not-found.tsx` と `error.tsx` には、`props` を渡す。
  */
 type Respond = (
   c: Pick<Context, "req" | "newResponse">,
   node: unknown,
-  route: PageRoute | undefined,
+  fallbacks: Fallbacks,
   props: object,
 ) => Promise<Response>;
 

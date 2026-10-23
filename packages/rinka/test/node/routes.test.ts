@@ -72,7 +72,7 @@ describe("scanRoutes", () => {
           file: "src/routes/not-found.tsx",
           layouts: root,
           middlewares: [],
-          ...fallbacks,
+          error: fallbacks.error,
         },
         {
           kind: "page",
@@ -155,7 +155,7 @@ describe("scanRoutes が拒否する構成", () => {
 });
 
 describe("scanRoutes のエラーのページ", () => {
-  it("ページと not-found.tsx には、グループを含めてディレクトリの祖先で最も近い not-found.tsx と error.tsx を、そのレイアウトとともに付ける", () => {
+  it("ページには not-found.tsx と error.tsx を、not-found.tsx には error.tsx を、グループを含めてそのディレクトリか祖先のディレクトリで最も近いものから、そのレイアウトとともに付ける", () => {
     const { routes } = scan([
       "not-found.tsx",
       "error.tsx",
@@ -170,7 +170,7 @@ describe("scanRoutes のエラーのページ", () => {
     expect(
       routes.map(({ file, notFound, error }) => ({ file, notFound: notFound?.file, error })),
     ).toEqual([
-      { file: "src/routes/not-found.tsx", notFound: "src/routes/not-found.tsx", error: root },
+      { file: "src/routes/not-found.tsx", notFound: undefined, error: root },
       {
         file: "src/routes/about/page.tsx",
         notFound: "src/routes/about/not-found.tsx",
@@ -178,7 +178,7 @@ describe("scanRoutes のエラーのページ", () => {
       },
       {
         file: "src/routes/about/not-found.tsx",
-        notFound: "src/routes/about/not-found.tsx",
+        notFound: undefined,
         error: root,
       },
       {

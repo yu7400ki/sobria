@@ -90,7 +90,6 @@ function notFoundRoute(
     load: notFoundPage.load,
     layouts: notFoundPage.layouts,
     middlewares: middlewares.map(module),
-    notFound: notFoundPage,
     ...(error && { error }),
   };
 }
@@ -377,6 +376,7 @@ describe("createApp の not-found.tsx と error.tsx", () => {
       }),
       notFoundRoute("/", rootNotFound, [], rootError),
       notFoundRoute("/café", fallbackOf(fallback("cafe")), [], rootError),
+      notFoundRoute("/p/:id", fallbackOf(page("p")), [], rootError),
       notFoundRoute("/users", usersNotFound, [marking("x-dir")], rootError),
     ],
   };
@@ -393,6 +393,10 @@ describe("createApp の not-found.tsx と error.tsx", () => {
       [404, expect.stringContaining("<h1>root /other</h1>"), null],
       [404, expect.stringContaining("<h1>cafe /caf%C3%A9/1</h1>"), null],
     ]);
+  });
+
+  it("表に無い URL の not-found.tsx には、Hono と同じくデコードしたパラメータを渡す", async () => {
+    expect((await render("/p/a%2Fb/x"))[1]).toContain('<p>p {"id":"a/b"} </p>');
   });
 
   it("ページのシェルで投げた notFound() には、ページの行の not-found.tsx を 404 で返す", async () => {

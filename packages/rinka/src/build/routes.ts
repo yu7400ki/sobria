@@ -19,9 +19,9 @@ export interface ScannedRoute {
   readonly layouts: readonly string[];
   /** 外側から順に列挙した、ルートのディレクトリ以外の `middleware.ts` である。 */
   readonly middlewares: readonly string[];
-  /** ページと `not-found.tsx` の行の、ディレクトリの祖先で最も近い `not-found.tsx` である。 */
+  /** ページの行の、そのディレクトリか祖先のディレクトリで最も近い `not-found.tsx` である。 */
   readonly notFound?: ScannedFallback;
-  /** ページと `not-found.tsx` の行の、ディレクトリの祖先で最も近い `error.tsx` である。 */
+  /** ページと `not-found.tsx` の行の、そのディレクトリか祖先のディレクトリで最も近い `error.tsx` である。 */
   readonly error?: ScannedFallback;
 }
 
@@ -142,7 +142,13 @@ export function scanRoutes(root: string, dir: string): ScannedRoutes {
           );
         }
         const file = fileOf(join(current, name));
-        routes.push({ kind, path, file, layouts, middlewares, ...(kind !== "route" && fallbacks) });
+        const own =
+          kind === "page"
+            ? fallbacks
+            : kind === "not-found" && error !== undefined
+              ? { error }
+              : {};
+        routes.push({ kind, path, file, layouts, middlewares, ...own });
       }
     }
     for (const entry of entries) {

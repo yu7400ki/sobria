@@ -30,11 +30,17 @@ export type Route = {
   readonly middlewares: readonly Load<MiddlewareHandler>[];
 } & (
   | {
-      readonly kind: Exclude<RouteKind, "route">;
+      readonly kind: "page";
       readonly load: Load<RouteComponent>;
-      /** ディレクトリの祖先で最も近い `not-found.tsx` である。 */
+      /** そのディレクトリか祖先のディレクトリで最も近い `not-found.tsx` である。 */
       readonly notFound?: Fallback;
-      /** ディレクトリの祖先で最も近い `error.tsx` である。 */
+      /** そのディレクトリか祖先のディレクトリで最も近い `error.tsx` である。 */
+      readonly error?: Fallback;
+    }
+  | {
+      readonly kind: "not-found";
+      readonly load: Load<RouteComponent>;
+      /** そのディレクトリか祖先のディレクトリで最も近い `error.tsx` である。 */
       readonly error?: Fallback;
     }
   | {
