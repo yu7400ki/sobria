@@ -22,7 +22,7 @@ type ScannedRoute = Route<PathFiles>;
 export const ROUTES_DIR = "src/routes";
 
 /** ページのファイルの名前である。 */
-export const PAGE_FILE = "page.tsx";
+const PAGE_FILE = "page.tsx";
 
 /** ディレクトリにあれば表の行になるファイルの名前と、その種類である。 */
 const routeFiles: readonly (readonly [string, RouteKind])[] = [

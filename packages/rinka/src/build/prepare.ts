@@ -1,12 +1,22 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 
 import { scanElements } from "./elements.ts";
 import { entries } from "./entries.ts";
+import { inside } from "./paths.ts";
 import { ROUTES_DIR, scanPages } from "./routes.ts";
 
 /** 生成したファイルを置く、アプリのルートからの相対パスのディレクトリである。 */
 export const PREPARED_DIR = ".rinka";
+
+/** 生成する tsconfig が extends する、アプリの tsconfig のファイルの名前である。 */
+const BASE_CONFIG = "tsconfig.base.json";
+
+/** パス `path` が、アプリのルート `root` のルートのディレクトリの中か、要素のディレクトリ `elementsDir` の中か、`tsconfig.base.json` なら真を返す。 */
+export const isPrepareInput = (root: string, elementsDir: string, path: string): boolean =>
+  inside(join(root, ROUTES_DIR), path) !== undefined ||
+  inside(elementsDir, path) !== undefined ||
+  resolve(path) === join(root, BASE_CONFIG);
 
 /** `.rinka/` のファイルを生成する入力を表す。 */
 export interface PrepareOptions {
@@ -28,7 +38,7 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
   const { root, elementsDir } = options;
   const prepared = join(root, PREPARED_DIR);
   const fromPrepared = (path: string): string => relative(prepared, path).split(sep).join("/");
-  const base = existsSync(join(root, "tsconfig.base.json")) ? ["../tsconfig.base.json"] : [];
+  const base = existsSync(join(root, BASE_CONFIG)) ? [`../${BASE_CONFIG}`] : [];
   const routesDir = fromPrepared(join(root, ROUTES_DIR));
   const elements = fromPrepared(elementsDir);
   const tsconfig = (

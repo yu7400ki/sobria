@@ -27,9 +27,9 @@ import { transformJsx } from "./jsx.ts";
 import { readClientAssets, type ClientAssets } from "./manifest.ts";
 import { rinkaPackage } from "./package.ts";
 import { devPath, directUrl, inside } from "./paths.ts";
-import { preparedFiles, writePrepared } from "./prepare.ts";
+import { isPrepareInput, preparedFiles, writePrepared } from "./prepare.ts";
 import { routeStyles } from "./route-styles.ts";
-import { PAGE_FILE, ROUTES_DIR, routeFileNames, routesModule } from "./routes.ts";
+import { ROUTES_DIR, routeFileNames, routesModule } from "./routes.ts";
 import { hashedFnModule, isServerFnSource, serverFnModules } from "./server-fns.ts";
 import {
   SHEET_QUERY,
@@ -339,22 +339,15 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
             server.config.logger.error(error instanceof Error ? error.message : String(error));
           }
         };
-        const baseConfig = resolve(root, "tsconfig.base.json");
         const onFile = (path: string): void => {
           if (inside(routesDir, path) !== undefined && routeFileNames.has(basename(path))) {
             invalidateRoutes();
-            if (basename(path) === PAGE_FILE) rewriteTypes();
           }
-          if (elementTag(prefix, elementsDir, path) !== undefined || resolve(path) === baseConfig) {
-            rewriteTypes();
-          }
+          if (isPrepareInput(root, elementsDir, path)) rewriteTypes();
         };
         const onDir = (path: string): void => {
-          if (inside(routesDir, path) !== undefined) {
-            invalidateRoutes();
-            rewriteTypes();
-          }
-          if (inside(elementsDir, path) !== undefined) rewriteTypes();
+          if (inside(routesDir, path) !== undefined) invalidateRoutes();
+          if (isPrepareInput(root, elementsDir, path)) rewriteTypes();
         };
         server.watcher.on("add", onFile);
         server.watcher.on("unlink", onFile);

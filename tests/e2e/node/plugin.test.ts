@@ -298,6 +298,19 @@ describe(".rinka/ の生成", () => {
       expect(await prepared(dev, "routes.d.ts")).not.toContain("/docs");
     });
   });
+
+  it("ページを持つディレクトリの追加を通知すると routes.d.ts にルートを加え、削除を通知すると取り除く", async () => {
+    await withProject({ "src/routes/page.tsx": page }, async (dev) => {
+      const dir = join(dev.config.root, "src/routes/users/[id]");
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, "page.tsx"), page);
+      dev.watcher.emit("addDir", dir);
+      expect(await prepared(dev, "routes.d.ts")).toContain('"/users/[id]": { id: string };');
+      await rm(dir, { recursive: true });
+      dev.watcher.emit("unlinkDir", dir);
+      expect(await prepared(dev, "routes.d.ts")).not.toContain("/users");
+    });
+  });
 });
 
 /** HMR のソケットで開発サーバーに接続する。`next` は、まだ読んでいない次のメッセージの種類を返す。カスタムイベントは、イベントの名前を返す。 */
