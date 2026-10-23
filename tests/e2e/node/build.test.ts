@@ -1,14 +1,15 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cp, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
-import { createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { rinka } from "rinka/vite";
-import { createBuilder, preview } from "vite";
+import { preview } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { buildFixture, startServer } from "./production.ts";
 
 /** ビルドするテスト用のアプリのルートである。 */
 const root = fileURLToPath(new URL("../fixtures/deploy", import.meta.url));
@@ -51,13 +52,7 @@ const request = (path: string, init?: RequestInit) =>
 
 beforeAll(async () => {
   outDir = await mkdtemp(join(tmpdir(), "rinka-build-"));
-  const builder = await createBuilder({
-    root,
-    configFile: false,
-    logLevel: "error",
-    plugins: [rinka({ prefix: "app", outDir })],
-  });
-  await builder.buildApp();
+  await buildFixture(root, outDir);
   ({ app } = (await import(pathToFileURL(join(outDir, "server/entry.js")).href)) as {
     app: typeof app;
   });
@@ -138,26 +133,6 @@ describe("本番のビルド", () => {
   });
 });
 
-/** 使用されていないポートの番号を返す。 */
-async function freePort(): Promise<number> {
-  const server = createServer();
-  await new Promise<void>((resolve) => server.listen(0, resolve));
-  const { port } = server.address() as AddressInfo;
-  await new Promise((resolve) => server.close(resolve));
-  return port;
-}
-
-/** オリジン `origin` のサーバーが応答するまで、100ms ごとに最大 `attempts` 回試す。 */
-async function waitFor(origin: string, attempts = 100): Promise<void> {
-  try {
-    await fetch(origin);
-  } catch {
-    if (attempts === 0) throw new Error(`${origin} が応答しません。`);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    await waitFor(origin, attempts - 1);
-  }
-}
-
 /** オリジン `origin` で動作するビルドしたサーバーに、ページ、アセット、配信しないパス、RPC、フォームの送信のリクエストを送り、結果を確認する。 */
 async function checkServer(origin: string): Promise<void> {
   const html = await (await fetch(`${origin}/`)).text();
@@ -186,16 +161,14 @@ async function checkServer(origin: string): Promise<void> {
 async function checkRuntime(command: string): Promise<void> {
   const copy = await mkdtemp(join(tmpdir(), "rinka-dist-"));
   await cp(outDir, copy, { recursive: true });
-  const port = await freePort();
-  const child = spawn(command, [join(copy, "server/index.js")], {
-    env: { ...process.env, PORT: String(port) },
-    stdio: "ignore",
-  });
   try {
-    await waitFor(`http://localhost:${port}`);
-    await checkServer(`http://localhost:${port}`);
+    const server = await startServer(command, join(copy, "server/index.js"));
+    try {
+      await checkServer(server.origin);
+    } finally {
+      server.stop();
+    }
   } finally {
-    child.kill();
     await rm(copy, { recursive: true, force: true });
   }
 }
@@ -226,13 +199,7 @@ describe("起動用のエントリー", () => {
     async () => {
       const bunOut = await mkdtemp(join(tmpdir(), "rinka-build-bun-"));
       try {
-        const builder = await createBuilder({
-          root,
-          configFile: false,
-          logLevel: "error",
-          plugins: [rinka({ prefix: "app", outDir: bunOut, deploy: "bun" })],
-        });
-        await builder.buildApp();
+        await buildFixture(root, bunOut, { deploy: "bun" });
         expect(await readFile(join(bunOut, "server/index.js"), "utf8")).toContain("Bun.serve");
         const saved = outDir;
         outDir = bunOut;
@@ -254,7 +221,7 @@ describe("起動用のエントリー", () => {
       configFile: false,
       logLevel: "error",
       plugins: [rinka({ prefix: "app", outDir })],
-      preview: { port: await freePort() },
+      preview: { port: 0 },
     });
     try {
       const origin = server.resolvedUrls!.local[0]!.replace(/\/$/, "");
@@ -276,13 +243,7 @@ describe("要素の無いアプリ", () => {
   it("要素が 1 つも無いアプリもビルドでき、ページに応答する", async () => {
     const out = await mkdtemp(join(tmpdir(), "rinka-build-empty-"));
     try {
-      const builder = await createBuilder({
-        root: fileURLToPath(new URL("../fixtures/no-elements", import.meta.url)),
-        configFile: false,
-        logLevel: "error",
-        plugins: [rinka({ prefix: "app", outDir: out })],
-      });
-      await builder.buildApp();
+      await buildFixture(fileURLToPath(new URL("../fixtures/no-elements", import.meta.url)), out);
       const { app: empty } = (await import(pathToFileURL(join(out, "server/entry.js")).href)) as {
         app: typeof app;
       };
