@@ -8,7 +8,7 @@ import { defineElement as defineServer } from "../../src/server/element.ts";
 import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
 import { renderToStream } from "../../src/server/render.ts";
 import { isSeeding } from "../../src/shared/scope.ts";
-import { memo, signal } from "../../src/shared/signals.ts";
+import { siteMemo as memo, signal } from "../../src/shared/signals.ts";
 
 afterEach(() => {
   document.body.replaceChildren();

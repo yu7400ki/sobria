@@ -8,7 +8,7 @@ import {
   type SourceAccessor,
 } from "@solidjs/signals";
 
-import { scopedMemo, type MemoOptions } from "./scope.ts";
+import { scopedMemo, type MemoOptions, type SiteMemoOptions } from "./scope.ts";
 
 /** 読み取りの関数を表す。 */
 export type Accessor<T> = () => T;
@@ -45,18 +45,24 @@ export const signal: {
   <T>(value: Exclude<T, Function>, options?: SignalOptions<T>): Signal<T>;
 } = createSignal;
 
-/**
- * ほかの signal や memo から計算する値を作成する。関数は Promise を返してもよい。
- * 要素の描画の範囲の中では、`options` の `key` か `site` で memo を識別する。
- */
-export function memo<T>(
+/** `memo` と同じ値を作成する。要素の描画の範囲の中では、`options` の `key` か `site` で memo を識別する。 */
+export function siteMemo<T>(
   fn: (prev: T | undefined) => T | PromiseLike<T>,
-  options?: MemoOptions,
+  options?: SiteMemoOptions,
 ): Memo<T> {
   const read: Accessor<T> = scopedMemo(fn, options) ?? createMemo(fn);
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   return read as Memo<T>;
 }
+
+/**
+ * ほかの signal や memo から計算する値を作成する。関数は Promise を返してもよい。
+ * 要素の描画の範囲の中では、`options` の `key` か、Vite プラグインが付与する呼び出し箇所の ID で memo を識別する。
+ */
+export const memo: <T>(
+  fn: (prev: T | undefined) => T | PromiseLike<T>,
+  options?: MemoOptions,
+) => Memo<T> = siteMemo;
 
 /**
  * action の中で書き込むとすぐに反映され、action が終わると元の値に戻る値を作成する。

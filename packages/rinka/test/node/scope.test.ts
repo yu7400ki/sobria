@@ -2,7 +2,7 @@ import { createMemo, createRoot } from "@solidjs/signals";
 import { describe, expect, it } from "vitest";
 
 import { createScope, isSeeding, runSeeding, withScope } from "../../src/shared/scope.ts";
-import { memo } from "../../src/shared/signals.ts";
+import { siteMemo as memo } from "../../src/shared/signals.ts";
 
 /** memo を作成するたびにキーを記録する描画の範囲を作成する。 */
 function recordingScope() {

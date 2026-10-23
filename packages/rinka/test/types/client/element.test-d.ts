@@ -1,4 +1,4 @@
-import { defineElement, type Ctx, type ElementRef, type Slot } from "rinka";
+import { defineElement, memo, type Ctx, type ElementRef, type Slot } from "rinka";
 import { expectTypeOf, test } from "vitest";
 
 type Props = { label?: string; count?: number; header?: Slot; children?: Slot };
@@ -83,4 +83,10 @@ test("ctx の css は、タグ付きテンプレートと CSSStyleSheet を受�
     },
     { props: [] },
   );
+});
+
+test("memo の 2 番目の引数には、key だけを記述できる", () => {
+  memo(() => 1, { key: "user" });
+  // @ts-expect-error 呼び出し箇所の ID は Vite プラグインが付与する
+  memo(() => 1, { site: "a.tsx:1:1" });
 });

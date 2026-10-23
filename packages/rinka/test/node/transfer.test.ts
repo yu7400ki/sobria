@@ -6,7 +6,7 @@ import { registerServerFn } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToStream, renderToString } from "../../src/server/render.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
-import { memo } from "../../src/shared/signals.ts";
+import { siteMemo as memo } from "../../src/shared/signals.ts";
 import { read } from "./stream-order.ts";
 
 afterEach(() => {

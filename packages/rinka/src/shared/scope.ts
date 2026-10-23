@@ -56,7 +56,11 @@ export function outsideScope<T>(fn: () => T): T {
 export interface MemoOptions {
   /** 描画の範囲の中で、memo を識別するキーを表す。 */
   readonly key?: string;
-  /** 呼び出し箇所の ID を表す。Vite プラグインが付与する。 */
+}
+
+/** Vite プラグインが付与する呼び出し箇所の ID を加えた、`memo` の 2 番目の引数を表す。 */
+export interface SiteMemoOptions extends MemoOptions {
+  /** 呼び出し箇所の ID を表す。 */
   readonly site?: string;
 }
 
@@ -81,7 +85,7 @@ function checkKey(scope: MemoScope, key: string): void {
  */
 export function scopedMemo<T>(
   fn: (prev: T | undefined) => T | PromiseLike<T>,
-  options: MemoOptions | undefined,
+  options: SiteMemoOptions | undefined,
 ): SourceAccessor<T> | undefined {
   if (!current || !options) return undefined;
   if (options.key !== undefined) {
