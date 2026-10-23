@@ -142,7 +142,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await server?.close();
-});
+}, 60_000);
 
 describe("言語サーバー", () => {
   it("要素とページのファイルを、それぞれのプロジェクトの型で検査し、_type-tests.tsx の @ts-expect-error がすべて有効になる", async () => {
