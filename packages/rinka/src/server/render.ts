@@ -18,6 +18,7 @@ import {
   type ElementComponent,
 } from "../shared/element.ts";
 import { isEventProp, propToAttribute, reservedProp } from "../shared/names.ts";
+import type { NavigationProps } from "../shared/navigation.ts";
 import { isFunction } from "../shared/objects.ts";
 import type { SwapSpec } from "../shared/receiver.ts";
 import { createScope, withScope, type ScopedChild } from "../shared/scope.ts";
@@ -176,7 +177,7 @@ function headKey(tag: string, read: (name: string) => unknown): string | undefin
 
 /**
  * 文書の骨組みに移動するものを、目印の番号ごとに表す。`depth` は、記述したルートのファイルの深さである。
- * `head` は `<head>` に移動するタグで、`html` と `body` は、そのタグの属性である。
+ * `head` は `<head>` に移動するタグで、`html` と `body` は、そのタグの属性で、`navigation` は `<Navigation>` の props である。
  */
 type Hoisted =
   | {
@@ -186,9 +187,17 @@ type Hoisted =
     }
   | {
       readonly kind: "html" | "body";
-      readonly attributes: Attributes;
+      readonly values: Attributes;
+      readonly depth: number;
+    }
+  | {
+      readonly kind: "navigation";
+      readonly values: NavigationValues;
       readonly depth: number;
     };
+
+/** `<Navigation>` に指定した props を、名前ごとに表す。 */
+type NavigationValues = ReadonlyMap<keyof NavigationProps, NavigationProps[keyof NavigationProps]>;
 
 /** 属性の名前ごとの値を表す。`null` は、属性を出力しないことを表す。 */
 type Attributes = ReadonlyMap<string, string | null>;
@@ -215,20 +224,39 @@ function dedupeHead(tags: readonly HeadOutput[]): string {
 }
 
 /**
- * 文書の順序で並んだ `<html>` か `<body>` の属性を、属性ごとに、深さが最も大きく、同じ深さなら後の値にする。
- * 属性は、その名前が最初に現れた順に並べる。
+ * 文書の順序で並んだ記録の値を、名前ごとに、深さが最も大きく、同じ深さなら後の値にする。
+ * 値は、その名前が最初に現れた順に並べる。
  */
-function mergeAttributes(
-  records: readonly { readonly attributes: Attributes; readonly depth: number }[],
-): Attributes {
-  const chosen = new Map<string, { readonly value: string | null; readonly depth: number }>();
-  for (const { attributes, depth } of records) {
-    for (const [name, value] of attributes) {
+function mergeByName<K, V>(
+  records: readonly { readonly values: ReadonlyMap<K, V>; readonly depth: number }[],
+): Map<K, V> {
+  const chosen = new Map<K, { readonly value: V; readonly depth: number }>();
+  for (const { values, depth } of records) {
+    for (const [name, value] of values) {
       const current = chosen.get(name);
       if (!current || depth >= current.depth) chosen.set(name, { value, depth });
     }
   }
   return new Map([...chosen].map(([name, { value }]) => [name, value]));
+}
+
+/** `<Navigation>` の props を、`<head>` に出力する View Transitions の `<style>` と Speculation Rules の `<script>` にする。 */
+function navigationHead(values: NavigationValues): string {
+  const prefetch = values.get("prefetch");
+  const rules = {
+    prefetch: [
+      {
+        where: { and: [{ href_matches: "/*" }, { not: { href_matches: "/_rinka/*" } }] },
+        eagerness: prefetch,
+      },
+    ],
+  };
+  return (
+    (values.get("transitions") === true ? "<style>@view-transition{navigation:auto}</style>" : "") +
+    (typeof prefetch === "string"
+      ? `<script type="speculationrules">${JSON.stringify(rules)}</script>`
+      : "")
+  );
 }
 
 /** `attributes` を、開始タグに出力する属性の文字列にする。 */
@@ -669,6 +697,9 @@ class Renderer {
       case "depth":
         this.walk(asNode(node.children), { ...ctx, depth: node.depth }, out);
         return;
+      case "navigation":
+        this.navigation(node.props, ctx, out);
+        return;
       case "component": {
         if (isElementComponent(node.fn)) {
           this.element(node.fn, node.props, node.key, ctx, out, node.child);
@@ -744,7 +775,7 @@ class Renderer {
         const id = ++this.seq;
         this.hoisted.set(id, {
           kind: tag === "html" ? "html" : "body",
-          attributes: this.rootAttributes(props, ctx),
+          values: this.rootAttributes(props, ctx),
           depth: ctx.depth,
         });
         out.push(this.marker(id, ""), this.marker(id, "/"));
@@ -782,6 +813,21 @@ class Renderer {
     out.push(this.marker(id, ""));
     this.nativeTag(tag, props, key, unslotted, out);
     out.push(this.marker(id, "/"));
+  }
+
+  /** 文書を出力する描画で、シェルの中かつ要素の外の `<Navigation>` の props を、深さとともに記録する。 */
+  private navigation(props: NavigationProps, ctx: WalkCtx, out: Chunk[]): void {
+    if (!this.document) return;
+    if (ctx.owner !== null || ctx.boundary !== this.root) {
+      this.warnOutside("Navigation", ctx, "反映しません");
+      return;
+    }
+    const values = new Map<keyof NavigationProps, NavigationProps[keyof NavigationProps]>();
+    if (props.transitions !== undefined) values.set("transitions", props.transitions);
+    if (props.prefetch !== undefined) values.set("prefetch", props.prefetch);
+    const id = ++this.seq;
+    this.hoisted.set(id, { kind: "navigation", values, depth: ctx.depth });
+    out.push(this.marker(id, ""), this.marker(id, "/"));
   }
 
   /** 文書の骨組みに移動できない位置にある `tag` を、開発時に、位置と、`action` に記述した扱いとともに警告する。 */
@@ -1287,13 +1333,18 @@ class Renderer {
 
   /**
    * シェルの文字列 `shell` から目印で囲んだものを取り除き、文書の骨組みに並べる値を返す。
-   * `<head>` のタグは、先頭に rinka の `<meta charset="utf-8">` を加え、キーが同じタグを 1 つにする。`<meta charset>` は、常に rinka のタグを残す。
+   * `<head>` のタグは、先頭に rinka の `<meta charset="utf-8">` を加え、キーが同じタグを 1 つにして、末尾に `<Navigation>` の出力を加える。`<meta charset>` は、常に rinka のタグを残す。
    */
   private async takeDocument(shell: string): Promise<DocumentParts> {
     const heads: Promise<HeadOutput>[] = [];
-    const roots: Record<"html" | "body", Extract<Hoisted, { kind: "html" | "body" }>[]> = {
+    const records: {
+      readonly html: Extract<Hoisted, { kind: "html" | "body" }>[];
+      readonly body: Extract<Hoisted, { kind: "html" | "body" }>[];
+      readonly navigation: Extract<Hoisted, { kind: "navigation" }>[];
+    } = {
       html: [],
       body: [],
+      navigation: [],
     };
     const inner = new RegExp(`<!--${this.nonce}:\\d+/?-->`, "g");
     const rest = shell.replace(
@@ -1304,7 +1355,10 @@ class Renderer {
         switch (hoisted.kind) {
           case "html":
           case "body":
-            roots[hoisted.kind].push(hoisted);
+            records[hoisted.kind].push(hoisted);
+            break;
+          case "navigation":
+            records.navigation.push(hoisted);
             break;
           case "head":
             heads.push(
@@ -1321,9 +1375,11 @@ class Renderer {
     );
     const charset = { html: '<meta charset="utf-8">', key: "charset", depth: Infinity };
     return {
-      head: dedupeHead([charset, ...(await Promise.all(heads))]),
-      html: mergeAttributes(roots.html),
-      body: mergeAttributes(roots.body),
+      head:
+        dedupeHead([charset, ...(await Promise.all(heads))]) +
+        navigationHead(mergeByName(records.navigation)),
+      html: mergeByName(records.html),
+      body: mergeByName(records.body),
       rest,
     };
   }

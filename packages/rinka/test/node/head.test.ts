@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Errored, Loading } from "../../src/server/control.ts";
+import { Errored, Loading, Navigation } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { createApp } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
@@ -474,5 +474,59 @@ describe("<html> と <body>", () => {
       '<!doctype html><html><head><meta charset="utf-8"></head><body>abc</body></html>',
     );
     expect(warn).toHaveBeenCalledTimes(3);
+  });
+});
+
+/** 同一オリジンのリンクのうち `/_rinka/` 以外を、`eagerness` で先読みする Speculation Rules の script である。 */
+const prefetchScript = (eagerness: string) =>
+  `<script type="speculationrules">${JSON.stringify({
+    prefetch: [
+      {
+        where: { and: [{ href_matches: "/*" }, { not: { href_matches: "/_rinka/*" } }] },
+        eagerness,
+      },
+    ],
+  })}</script>`;
+
+const viewTransition = "<style>@view-transition{navigation:auto}</style>";
+
+const navigationLayout = (props: LayoutProps) => [
+  jsx(Navigation, { transitions: true, prefetch: "moderate" }),
+  props.children,
+];
+
+const noPrefetchLayout = (props: LayoutProps) => [
+  props.children,
+  jsx(Navigation, { prefetch: false }),
+];
+
+describe("<Navigation>", () => {
+  it("transitions と prefetch を指定すると、<head> に View Transitions の style と Speculation Rules の script を出力する", async () => {
+    expect(await headOfPage(() => "page", [navigationLayout])).toBe(
+      `<meta charset="utf-8">${viewTransition}${prefetchScript("moderate")}`,
+    );
+  });
+
+  it("複数のファイルが記述したときは、props ごとに深いファイルの値を使用する", async () => {
+    expect(await headOfPage(() => "page", [navigationLayout, noPrefetchLayout])).toBe(
+      `<meta charset="utf-8">${viewTransition}`,
+    );
+    expect(await headOfPage(() => jsx(Navigation, { prefetch: "eager" }), [navigationLayout])).toBe(
+      `<meta charset="utf-8">${viewTransition}${prefetchScript("eager")}`,
+    );
+  });
+
+  it("<Loading> の内側に記述したものは反映せず、開発時に警告する", async () => {
+    vi.stubEnv("DEV", true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { head } = await documentOf(
+      jsx(Loading, { fallback: "wait", children: jsx(Navigation, { transitions: true }) }),
+    );
+    expect(head).toBe('<meta charset="utf-8">');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("<Navigation>"));
+  });
+
+  it("renderToString は、何も出力しない", async () => {
+    expect(await renderToString(jsx(Navigation, { transitions: true }))).toBe("");
   });
 });

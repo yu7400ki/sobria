@@ -1,3 +1,4 @@
+import type { NavigationProps } from "../shared/navigation.ts";
 import type { ServerNode } from "../shared/nodes.ts";
 import type { ScopedChild } from "../shared/scope.ts";
 
@@ -14,7 +15,8 @@ export type Node =
   | ComponentNode
   | LoadingNode
   | ErroredNode
-  | DepthNode;
+  | DepthNode
+  | NavigationNode;
 
 /** ネイティブのタグを表す。`props` は、記述子のまま保持する。 */
 export interface TagNode {
@@ -54,6 +56,12 @@ export interface DepthNode {
   readonly kind: "depth";
   readonly depth: number;
   readonly children: unknown;
+}
+
+/** `<Navigation>` を表す。 */
+export interface NavigationNode {
+  readonly kind: "navigation";
+  readonly props: NavigationProps;
 }
 
 /** `children` を、ルートのファイルの深さ `depth` で描画するノードを返す。 */

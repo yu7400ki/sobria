@@ -1,3 +1,4 @@
+import type { NavigationProps } from "../shared/navigation.ts";
 import type { ServerNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
 import { asNode, asServerNode, type Node } from "./tree.ts";
@@ -32,4 +33,9 @@ export function Errored(props: {
     children: () => read(props.children),
     status: props.status,
   });
+}
+
+/** ページの遷移の設定を、文書の `<head>` に出力する。 */
+export function Navigation(props: NavigationProps): ServerNode {
+  return asServerNode({ kind: "navigation", props });
 }

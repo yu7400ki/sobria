@@ -1,5 +1,6 @@
 import { createErrorBoundary, createLoadingBoundary } from "@solidjs/signals";
 
+import type { NavigationProps } from "../shared/navigation.ts";
 import type { ClientNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
 import { asClientNode, type Child } from "./dom.ts";
@@ -34,4 +35,9 @@ export function Errored(props: {
       },
     ),
   );
+}
+
+/** 要素の中では、ページの遷移の設定を反映しない。 */
+export function Navigation(_props: NavigationProps): ClientNode {
+  return asClientNode(null);
 }
