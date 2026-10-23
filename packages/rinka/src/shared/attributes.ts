@@ -44,3 +44,9 @@ export const PATCH_ATTRIBUTE = "data-op";
 
 /** ネイティブのタグに記述した props の名前から、属性の名前を返す。`key` は `KEY_ATTRIBUTE` になり、ほかの名前は変わらない。 */
 export const tagAttributeName = (name: string): string => (name === "key" ? KEY_ATTRIBUTE : name);
+
+/** サーバーが、要素の `internals` から出力した ARIA の属性の名前を、空白で区切って列挙する属性の名前である。 */
+export const ARIA_ATTRIBUTE = "data-rinka-aria";
+
+/** サーバーが、フォームの部品の Light DOM に出力した hidden input に付与する属性の名前である。 */
+export const FORM_VALUE_ATTRIBUTE = "data-rinka-form";

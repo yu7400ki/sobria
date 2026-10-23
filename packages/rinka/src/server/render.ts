@@ -11,9 +11,11 @@ import {
 
 import {
   attributeValue,
+  ARIA_ATTRIBUTE,
   AWAITED_ATTRIBUTE,
   BOUNDARY_ATTRIBUTE,
   BOUNDARY_CONTENT_ATTRIBUTE,
+  FORM_VALUE_ATTRIBUTE,
   HOST_ATTRIBUTE,
   PATCH_ATTRIBUTE,
   tagAttributeName,
@@ -34,6 +36,7 @@ import type { RefreshJson, RefreshValues } from "../shared/refresh.ts";
 import { createScope, withScope, type ScopedChild } from "../shared/scope.ts";
 import { BOUNDARIES_KEY, childKey, PROPS_KEY, REFRESH_PROPS_KEY } from "../shared/transfer-keys.ts";
 import { checkSerializable, formProps } from "../shared/wire.ts";
+import { ariaAttributes } from "./aria.ts";
 import {
   bootstrap,
   dataScript,
@@ -100,6 +103,8 @@ interface Slotted {
  */
 interface HostAttributes {
   readonly text: string;
+  /** `text` に出力した属性の名前である。 */
+  readonly names: ReadonlySet<string>;
   readonly transfer: Readonly<Record<string, unknown>> | undefined;
   readonly current: Readonly<Record<string, unknown>>;
 }
@@ -463,6 +468,34 @@ interface WalkCtx {
   readonly depth: number;
   /** この位置のタグを `<head>` に移動するかどうかを表す。 */
   readonly head: HeadPlacement;
+  /** Light DOM で外側にある `<fieldset disabled>` で無効になるかどうかを表す。 */
+  readonly disabled?: Disabled;
+  /** `<fieldset>` の子なら、その `<fieldset>` の子の `<legend>` を表す。 */
+  readonly legend?: Legend;
+}
+
+/** 無効かどうかを表す。値が未解決なら、解決する Promise である。 */
+type Disabled = boolean | Promise<boolean>;
+
+/**
+ * `<fieldset>` の子の `<legend>` を表す。`taken` は、最初の `<legend>` を描画したかどうかで、
+ * `outer` は、その `<fieldset>` の外側の `<fieldset disabled>` で無効になるかどうかである。最初の `<legend>` の中は、`outer` でだけ無効になる。
+ * `taken` は、`<fieldset>` の子を walk する間に書き換えるので、穴の中の `<legend>` は、穴の外の `<legend>` より後に描画したものとして扱う。
+ */
+interface Legend {
+  taken: boolean;
+  readonly outer: Disabled | undefined;
+}
+
+/** `a` と `b` のどちらかが無効なら無効であることを表す値を返す。 */
+function eitherDisabled(a: Disabled | undefined, b: Disabled | undefined): Disabled {
+  if (a === true || b === true) return true;
+  if (a instanceof Promise || b instanceof Promise) {
+    const either = Promise.all([a, b]).then(([x, y]) => x === true || y === true);
+    either.catch(() => {});
+    return either;
+  }
+  return false;
 }
 
 /**
@@ -826,11 +859,16 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /** `compute` を追跡せずに呼び出した値を返す。未解決の値を参照したときは、追跡して呼び出した値が解決する Promise を返す。 */
   private settle<T>(ctx: WalkCtx, compute: (tracked: boolean) => T): T | Promise<T> {
+    return this.settleIn(ctx.owner, compute);
+  }
+
+  /** `owner` の下で、`settle` と同じく `compute` を呼び出した値を返す。 */
+  private settleIn<T>(owner: Owner | null, compute: (tracked: boolean) => T): T | Promise<T> {
     try {
-      return runWithOwner(ctx.owner, () => untrack(() => compute(false)));
+      return runWithOwner(owner, () => untrack(() => compute(false)));
     } catch (error) {
       if (!(error instanceof NotReadyError)) throw error;
-      const settled = runWithOwner(ctx.owner, () => resolve(() => compute(true)));
+      const settled = runWithOwner(owner, () => resolve(() => compute(true)));
       settled.catch(() => {});
       return settled;
     }
@@ -963,8 +1001,29 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     const open = this.settle(ctx, openTag);
     out.push(typeof open === "string" ? open : this.hole(open.then((text) => [text])));
     if (voidTags.has(tag)) return;
-    const { slot: _, ...inner } = ctx;
-    this.walk(asNode(props.children), { ...inner, head: childPlacement(tag, ctx.head) }, out);
+    const { slot: _, legend, disabled: outer, ...inner } = ctx;
+    let disabled = outer;
+    if (tag === "legend" && legend && !legend.taken) {
+      legend.taken = true;
+      disabled = legend.outer;
+    }
+    if (tag === "fieldset" && this.runsElements) {
+      const own = this.settle(
+        ctx,
+        (tracked) => attributeValue("disabled", this.value(props.disabled, ctx, tracked)) !== null,
+      );
+      disabled = eitherDisabled(outer, own);
+    }
+    this.walk(
+      asNode(props.children),
+      {
+        ...inner,
+        head: childPlacement(tag, ctx.head),
+        ...(disabled !== undefined && { disabled }),
+        ...(tag === "fieldset" && { legend: { taken: false, outer } }),
+      },
+      out,
+    );
     out.push(`</${tag}>`);
   }
 
@@ -1035,6 +1094,12 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     }
     const hostAttributes = (tracked: boolean): HostAttributes => {
       let text = "";
+      const names = new Set<string>();
+      const add = (name: string, value: unknown) => {
+        const output = attribute(name, value);
+        if (output !== "") names.add(name);
+        text += output;
+      };
       let transfer: Record<string, unknown> | undefined;
       const current: Record<string, unknown> = {};
       for (const name of options.props) {
@@ -1047,25 +1112,45 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
           (transfer ??= {})[name] = value;
           continue;
         }
-        text += attribute(propToAttribute(name), value);
+        add(propToAttribute(name), value);
       }
       for (const name of Object.keys(descriptors)) {
         if (options.props.includes(name) || slotNames.has(name) || name === "ref") continue;
         if (reservedProp(name) === "load:" || (name === "slot" && ctx.slot !== undefined)) continue;
         const raw = read(name);
         if (isEventProp(name) && isFunction(raw)) continue;
-        text += attribute(name, this.value(raw, ctx, tracked));
+        add(name, this.value(raw, ctx, tracked));
       }
       if (key !== undefined) text += attribute(tagAttributeName("key"), key);
       if (ctx.slot !== undefined) text += attribute("slot", ctx.slot);
-      return { text, transfer, current };
+      return { text, names, transfer, current };
     };
     const attributes = this.settle(ctx, hostAttributes);
 
+    const disabled =
+      options.form && this.runsElements
+        ? eitherDisabled(
+            ctx.disabled,
+            this.settle(ctx, () => attributeValue("disabled", propValue("disabled")) !== null),
+          )
+        : false;
     const shadow = this.runsElements
-      ? this.runElement(component, elementProps, record, ctx)
+      ? this.runElement(component, elementProps, record, ctx, disabled)
       : undefined;
     const chunks: Chunk[] = shadow?.chunks ?? [];
+    const aria = ariaAttributes(shadow?.internals ?? {});
+    if (options.form && shadow?.form) {
+      const parts = [this.settle(ctx, () => propValue("name")), shadow.form.value, disabled];
+      chunks.push(
+        parts.some((part) => part instanceof Promise)
+          ? this.hole(
+              Promise.all(parts).then(([name, value, off]) => [
+                this.hiddenInput(tag, name, value, off === true),
+              ]),
+            )
+          : this.hiddenInput(tag, parts[0], parts[1], disabled === true),
+      );
+    }
     for (const name of Object.keys(descriptors)) {
       if (!slotNames.has(name)) continue;
       const slot = name === "children" ? "" : name;
@@ -1078,6 +1163,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
         depth: ctx.depth,
         head: ctx.head === "none" ? "none" : "element",
         ...(ctx.slots && { slots: ctx.slots }),
+        ...(ctx.disabled !== undefined && { disabled: ctx.disabled }),
         ...(slot !== "" && { slot }),
       };
       if (boundary === ctx.boundary) {
@@ -1089,8 +1175,12 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       }
     }
     chunks.push(`</${tag}>`);
-    const open = ({ text, transfer, current }: HostAttributes, at: Out): string => {
-      const start = `<${tag}${attribute(HOST_ATTRIBUTE, id)}${attribute(loadAttributeName, load)}${text}`;
+    const open = ({ text, names, transfer, current }: HostAttributes, at: Out): string => {
+      const added = aria.filter(([name]) => !names.has(name));
+      const ariaText =
+        added.map(([name, value]) => attribute(name, value)).join("") +
+        (added.length > 0 ? attribute(ARIA_ATTRIBUTE, added.map(([name]) => name).join(" ")) : "");
+      const start = `<${tag}${attribute(HOST_ATTRIBUTE, id)}${attribute(loadAttributeName, load)}${text}${ariaText}`;
       if (shadow === undefined) {
         const values = {
           [REFRESH_PROPS_KEY]: current,
@@ -1102,40 +1192,70 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       if (transfer) this.send(record, PROPS_KEY, Promise.resolve(toScript(transfer, `<${tag}>`)));
       const keys = record.seal(transfer ? [PROPS_KEY] : [], at.shown);
       const om = keys.length > 0 ? attribute(AWAITED_ATTRIBUTE, keys.join(" ")) : "";
-      return `${start}${om}><template shadowrootmode="open">`;
+      return `${start}${om}><template shadowrootmode="open"${options.form ? " shadowrootdelegatesfocus" : ""}>`;
     };
     out.push({ kind: "host", host: { attributes, open, chunks, announce, delivered } });
   }
 
   /**
+   * フォームの部品 `<tag>` の Light DOM の先頭に出力する hidden input を返す。ホストの `name` が文字列で、`form.value` の値 `value` が文字列のときだけ出力する。
+   * `name` があり、`value` が文字列、`null`、`undefined` のどれでもなければ、開発時に警告する。
+   */
+  private hiddenInput(tag: string, name: unknown, value: unknown, disabled: boolean): string {
+    if (typeof name !== "string") return "";
+    if (typeof value === "string") {
+      return `<input type="hidden"${attribute("name", name)}${attribute("value", value)}${attribute(FORM_VALUE_ATTRIBUTE, true)}${attribute("disabled", disabled)}>`;
+    }
+    if (value !== null && value !== undefined && import.meta.env?.DEV) {
+      console.warn(
+        `[rinka] <${tag}> の form.value に渡した関数が文字列以外の値を返したので、JS が届く前にフォームを送信すると、この部品の値は送信されません。`,
+      );
+    }
+    return "";
+  }
+
+  /**
    * 要素の関数 `component` を `props` で実行し、Shadow DOM の中身の出力の単位の列を返す。
    * `slots` は、Shadow DOM の `<slot>` の名前ごとに、その `<slot>` を囲む境界を表す。
+   * `internals` は、要素の関数が ctx の `internals` に代入した値である。要素の関数が `form.value` を呼んだときは、要素の関数を実行した後に、渡した関数を 1 回だけ評価した値を `form` に持つ。
+   * 値が未解決なら、`form` の値は解決する Promise である。`disabled` は、要素の関数の `form.disabled()` が返す値である。
    */
   private runElement(
     component: ElementComponent<unknown>,
     props: object,
     record: HostRecord,
     ctx: WalkCtx,
-  ): { readonly chunks: Chunk[]; readonly slots: ReadonlyMap<string, Boundary> } {
+    disabled: Disabled,
+  ): {
+    readonly chunks: Chunk[];
+    readonly slots: ReadonlyMap<string, Boundary>;
+    readonly internals: object;
+    readonly form?: { readonly value: unknown };
+  } {
     const { tag } = record;
     const chunks: Chunk[] = [];
     const slots = new Map<string, Boundary>();
     let owner: Owner | null = null;
     let tree: Node = null;
+    const internals = {};
+    let valueOf: (() => unknown) | undefined;
+    let isDisabled: (() => boolean) | undefined;
     const elementCtx: Ctx = {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       host: serverHost as HTMLElement,
       onMount: () => {},
       expose: () => {},
       form: {
-        value: () => {},
+        value: (fn) => {
+          valueOf = fn;
+        },
         validity: () => {},
         onReset: () => {},
         onRestore: () => {},
-        disabled: () => false,
+        disabled: () => isDisabled?.() ?? false,
       },
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      internals: {} as ElementInternals,
+      internals: internals as ElementInternals,
     };
     const scope = createScope(
       <T>(memoKey: string, fn: (prev: T | undefined) => T | PromiseLike<T>) =>
@@ -1151,8 +1271,11 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     createRoot((dispose) => {
       this.disposers.push(dispose);
       owner = getOwner();
+      if (disabled !== false) isDisabled = createMemo(() => disabled);
       tree = asNode(untrack(() => withScope(scope, () => component(props, elementCtx))));
     });
+    const read = valueOf;
+    const form = read && { value: this.settleIn(owner, () => read()) };
     this.walk(
       tree,
       {
@@ -1166,7 +1289,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       chunks,
     );
     chunks.push("</template>");
-    return { chunks, slots };
+    return { chunks, slots, internals, ...(form && { form }) };
   }
 
   /**
