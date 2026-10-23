@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
@@ -56,6 +57,18 @@ describe("Vite プラグイン", () => {
         "counter.tsx",
       ]);
     }
+  });
+
+  it("client の環境は、rinka のランタイムが動的に import する seroval を事前バンドルの対象にし、変換で新しい依存として発見しない", async () => {
+    const client = server.environments.client;
+    const codec = fileURLToPath(
+      new URL("../node_modules/rinka/lib/client/wire-codec.js", import.meta.url),
+    );
+    await client.transformRequest(`/@fs/${realpathSync(codec).split(sep).join("/")}`);
+    const metadata = client.depsOptimizer?.metadata;
+    const deps = Object.keys({ ...metadata?.optimized, ...metadata?.discovered });
+    expect(deps).toContain("rinka > seroval");
+    expect(deps).not.toContain("seroval");
   });
 
   it("trustedOrigins に、オリジンでない値を記述するとエラーにする", () => {

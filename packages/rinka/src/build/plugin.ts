@@ -112,7 +112,9 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       config: () => ({
         appType: "custom",
         oxc,
-        optimizeDeps: { include: [`${entries.main} > @solidjs/signals`] },
+        optimizeDeps: {
+          include: [`${entries.main} > @solidjs/signals`, `${entries.main} > seroval`],
+        },
       }),
       configEnvironment(name, config) {
         const consumer = config.consumer ?? (name === "client" ? "client" : "server");
