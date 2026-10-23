@@ -1,4 +1,4 @@
-import { extname, relative, sep } from "node:path";
+import { extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { Plugin, ResolvedConfig } from "vite";
@@ -13,7 +13,7 @@ import { buildAppModule } from "./entry.ts";
 import { transformJsx } from "./jsx.ts";
 import { libraryBuild } from "./library-build.ts";
 import { fromApp } from "./package.ts";
-import { devPath, inside } from "./paths.ts";
+import { devPath, inside, relativePath } from "./paths.ts";
 import { preparedFiles, writePrepared } from "./prepare.ts";
 import { ROUTES_DIR, routesModule } from "./routes.ts";
 import { hashedFnModule, isServerFnSource, serverFnModules } from "./server-fns.ts";
@@ -106,7 +106,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       return inner !== undefined && !inner.split("/").includes("node_modules");
     });
     if (owner === -1) return undefined;
-    return { path: id, file: relative(root, id).split(sep).join("/"), lang, library: owner > 0 };
+    return { path: id, file: relativePath(root, id), lang, library: owner > 0 };
   };
 
   return [

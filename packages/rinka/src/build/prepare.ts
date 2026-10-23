@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 
 import { scanElements, type ElementSource } from "./elements.ts";
 import { entries } from "./entries.ts";
-import { inside } from "./paths.ts";
+import { inside, relativePath } from "./paths.ts";
 import { ROUTES_DIR, scanPages } from "./routes.ts";
 
 /** 生成したファイルを置く、アプリのルートからの相対パスのディレクトリである。 */
@@ -59,7 +59,7 @@ const HEADER = "// rinka prepare が生成したファイルである。\n";
 export function preparedFiles(options: PrepareOptions): Map<string, string> {
   const { root, elementsDir } = options;
   const prepared = join(root, PREPARED_DIR);
-  const fromPrepared = (path: string): string => relative(prepared, path).split(sep).join("/");
+  const fromPrepared = (path: string): string => relativePath(prepared, path);
   const base = existsSync(join(root, BASE_CONFIG)) ? [`../${BASE_CONFIG}`] : [];
   const routesDir = fromPrepared(join(root, ROUTES_DIR));
   const elements = fromPrepared(elementsDir);

@@ -72,7 +72,7 @@ async function endpoint(
   const definition = await find(id, options);
   if (!definition) return responder.reject(c, 404);
   const { method, middlewares, handle } = definition;
-  const requested = c.req.method === "HEAD" ? "GET" : c.req.method;
+  const requested = handledMethod(c);
   if (requested !== method) return responder.reject(c, 405);
   if (method !== "GET" && isCrossSite(c.req.raw, options.trustedOrigins ?? [])) {
     return responder.reject(c, 403);
@@ -121,6 +121,10 @@ type Outcome =
 
 /** handler の結果の分類の名前である。 */
 export type OutcomeKind = Outcome["kind"];
+
+/** リクエスト `c` のメソッドを、HEAD を GET として扱って返す。 */
+export const handledMethod = (c: Context): string =>
+  c.req.method === "HEAD" ? "GET" : c.req.method;
 
 /** サーバー関数のエンドポイントへのリクエストの種類である。`form` はフォームの送信で、`rpc` はそれ以外である。 */
 type RequestKind = "rpc" | "form";

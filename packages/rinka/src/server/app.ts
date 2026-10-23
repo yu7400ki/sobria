@@ -16,7 +16,7 @@ import {
 } from "../shared/routes.ts";
 import { isBot } from "./bots.ts";
 import { runInRequest, withContextHeaders } from "./context.ts";
-import { formRedirects, serverFnMiddleware, type Failure } from "./endpoint.ts";
+import { formRedirects, handledMethod, serverFnMiddleware, type Failure } from "./endpoint.ts";
 import { notFound } from "./errors.ts";
 import { stylesheetLink } from "./html.ts";
 import { jsx } from "./jsx-runtime.ts";
@@ -191,7 +191,7 @@ function register(app: Hono, route: Route, respond: Respond): void {
     case "route":
       app.all(route.path, directory, async (c, next) => {
         const handlers = await route.module();
-        const requested = c.req.method === "HEAD" ? "GET" : c.req.method;
+        const requested = handledMethod(c);
         const method = routeMethods.find((name) => name === requested);
         const handler = method === undefined ? undefined : handlers[method];
         if (handler === undefined) {

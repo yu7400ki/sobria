@@ -1,5 +1,9 @@
 import { isAbsolute, relative, sep } from "node:path";
 
+/** `from` から `to` への相対パスを、`/` で区切って返す。 */
+export const relativePath = (from: string, to: string): string =>
+  relative(from, to).split(sep).join("/");
+
 /** `path` が `dir` の中にあれば、`dir` からの相対パスを `/` で区切って返す。 */
 export function inside(dir: string, path: string): string | undefined {
   const inner = relative(dir, path);

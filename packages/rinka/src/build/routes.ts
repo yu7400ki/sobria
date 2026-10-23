@@ -1,5 +1,5 @@
 import { existsSync, readdirSync } from "node:fs";
-import { join, relative, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 
 import { parseSegment, type RouteSegment } from "../shared/route-segments.ts";
 import {
@@ -11,6 +11,7 @@ import {
   type RouteKind,
   type Routes,
 } from "../shared/routes.ts";
+import { relativePath } from "./paths.ts";
 
 /** 走査したルートの表で、各ファイルを、プロジェクトのルートからの `/` で区切った相対パスで表す型である。 */
 export type PathFiles = Files<string, string, string>;
@@ -172,7 +173,7 @@ function scan(
   const scanned: Scanned[] = [];
   let middleware: string | undefined;
   const start = resolve(root, dir);
-  const fileOf = (path: string): string => relative(root, path).split(sep).join("/");
+  const fileOf = (path: string): string => relativePath(root, path);
   const visit = (
     current: string,
     segments: readonly UrlSegment[],
