@@ -198,6 +198,54 @@ describe("文書の <head>", () => {
     expect(body).toBe("");
   });
 
+  it("移動したタグの子孫と、<svg> と <noscript> の配下の <html>、<body>、<head> は反映せず、開発時に警告する", async () => {
+    vi.stubEnv("DEV", true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const html = await (
+      await renderToResponse([
+        jsx("head", { children: jsx("div", { children: jsx("html", { lang: "en" }) }) }),
+        jsx("svg", { children: jsx("body", { class: "s" }) }),
+        jsx("noscript", { children: jsx("head", { children: title("n") }) }),
+      ])
+    ).text();
+    expect(html).toBe(
+      '<!doctype html><html><head><meta charset="utf-8"><div></div></head><body><svg></svg><noscript><title>n</title></noscript></body></html>',
+    );
+    expect(warn).toHaveBeenCalledTimes(3);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("<head> に移動しない位置"));
+  });
+
+  it("<Loading> のフォールバックの中のタグの子孫と、要素の Light DOM の子も移動しない", async () => {
+    vi.stubEnv("DEV", true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { head, body } = await documentOf(
+      jsx(Loading, {
+        fallback: [
+          jsx("div", { children: title("nested") }),
+          jsx(Side, { side: title("slotted") }),
+          jsx("svg", { children: title("icon") }),
+        ],
+        children: jsx(later(10, "done"), {}),
+      }),
+    );
+    expect(head).not.toContain("<title>");
+    expect(body).toContain("<div><title>nested</title></div>");
+    expect(body).toContain("<title>icon</title>");
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  it("<svg> の中の <Loading> のフォールバックのタグは、警告せずに記述した位置に出力する", async () => {
+    vi.stubEnv("DEV", true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { body } = await documentOf(
+      jsx("svg", {
+        children: jsx(Loading, { fallback: title("icon"), children: jsx(later(10, "done"), {}) }),
+      }),
+    );
+    expect(body).toContain("<title>icon</title>");
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it("<svg> と <noscript> の配下のタグと、itemprop を持つ <meta> は、警告せずに記述した位置に出力する", async () => {
     vi.stubEnv("DEV", true);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

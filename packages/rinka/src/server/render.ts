@@ -828,7 +828,7 @@ class Renderer {
   /** 文書を出力する描画で、`<title>` を `<head>` に移動する位置の `<Navigation>` の props を、深さとともに記録する。 */
   private navigation(props: NavigationProps, ctx: WalkCtx, out: Chunk[]): void {
     if (!this.document) return;
-    if (ctx.head === "none" || !this.atShell(ctx)) {
+    if (!this.atShell(ctx)) {
       this.warnOutside("Navigation", ctx, "反映しません");
       return;
     }
@@ -840,9 +840,13 @@ class Renderer {
     out.push(this.marker(id, ""), this.marker(id, "/"));
   }
 
-  /** `ctx` が、シェルの境界にあり、要素の外にあり、`<Loading>` のフォールバックの外にあるかを返す。 */
+  /** `ctx` が、シェルの境界にあり、要素の外にあり、`<Loading>` のフォールバックの中と `<head>` に移動しない位置の外にあるかを返す。 */
   private atShell(ctx: WalkCtx): boolean {
-    return ctx.owner === null && ctx.boundary === this.root && ctx.head !== "fallback";
+    return (
+      ctx.owner === null &&
+      ctx.boundary === this.root &&
+      (ctx.head === "auto" || ctx.head === "all")
+    );
   }
 
   /** 文書の骨組みに移動できない位置にある `tag` を、開発時に、位置と、`action` に記述した扱いとともに警告する。 */
