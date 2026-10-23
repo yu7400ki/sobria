@@ -7,7 +7,13 @@ import { embedRouteStyles, moveServerAssets } from "./build-styles.ts";
 import { entries } from "./entries.ts";
 import { serverEntry } from "./entry.ts";
 import { readClientAssets, type ClientAssets } from "./manifest.ts";
-import { isClient, sceneOf, type RinkaOptions, type Settings } from "./settings.ts";
+import {
+  SERVER_ENTRY_NAME,
+  isClient,
+  sceneOf,
+  type RinkaOptions,
+  type Settings,
+} from "./settings.ts";
 
 /**
  * アプリの `vite build --app` で、要素のクライアントのビルドと、サーバーのエントリーのサーバーのビルドを、この順に出力するプラグインを返す。
@@ -25,13 +31,13 @@ export function appBuild(
     enforce: "pre",
     sharedDuringBuild: true,
     config: () => {
-      const { root, outDir, elements } = settings();
+      const { root, clientDir, serverDir, elements } = settings();
       const file = serverEntry(root);
       return {
         environments: {
           client: {
             build: {
-              outDir: join(outDir, "client"),
+              outDir: clientDir,
               manifest: true,
               rolldownOptions: {
                 input:
@@ -43,10 +49,10 @@ export function appBuild(
           },
           ssr: {
             build: {
-              outDir: join(outDir, "server"),
+              outDir: serverDir,
               emitAssets: true,
               rolldownOptions: {
-                input: { entry: file === undefined ? entries.app : join(root, file) },
+                input: { [SERVER_ENTRY_NAME]: file === undefined ? entries.app : join(root, file) },
               },
             },
           },
@@ -61,9 +67,7 @@ export function appBuild(
     },
     buildStart() {
       onClientAssets(
-        isClient(this.environment)
-          ? undefined
-          : readClientAssets(join(settings().outDir, "client")),
+        isClient(this.environment) ? undefined : readClientAssets(settings().clientDir),
       );
     },
     generateBundle(_output, bundle) {
@@ -71,9 +75,9 @@ export function appBuild(
     },
     writeBundle(_output, bundle) {
       if (isClient(this.environment)) return;
-      const { outDir } = settings();
-      moveServerAssets(bundle, join(outDir, "server"), join(outDir, "client"));
-      rmSync(join(outDir, "client/.vite"), { recursive: true, force: true });
+      const { clientDir, serverDir } = settings();
+      moveServerAssets(bundle, serverDir, clientDir);
+      rmSync(join(clientDir, ".vite"), { recursive: true, force: true });
     },
   };
 }

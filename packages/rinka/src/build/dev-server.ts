@@ -19,7 +19,7 @@ import { isPrepareInput } from "./prepare.ts";
 import { routeStyles } from "./route-styles.ts";
 import { ROUTES_DIR, routeFileNames } from "./routes.ts";
 import { isServerFnSource } from "./server-fns.ts";
-import { isClient, type Settings } from "./settings.ts";
+import { SERVER_ENTRY_NAME, isClient, type Settings } from "./settings.ts";
 
 /** 開発サーバーが Vite のプロセスで実行し、`rinka/app` が使用する関数を表す。 */
 type DevHooks = Required<Pick<AppOptions, "styles" | "onError" | "loadServerFn">>;
@@ -98,7 +98,7 @@ export function serve({ settings, writeTypes, serverFnIds, devIds }: ServeContex
         : null,
     configurePreviewServer(server) {
       return () => {
-        const entry = pathToFileURL(join(settings().outDir, "server/entry.js")).href;
+        const entry = pathToFileURL(join(settings().serverDir, `${SERVER_ENTRY_NAME}.js`)).href;
         server.middlewares.use(
           // oxlint-disable-next-line typescript/no-unsafe-type-assertion
           entryMiddleware(() => import(entry) as Promise<ServerModule>, { forwardErrors: false }),

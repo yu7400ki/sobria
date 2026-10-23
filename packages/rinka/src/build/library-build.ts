@@ -13,14 +13,13 @@ export function libraryBuild(options: RinkaOptions, settings: () => Settings): P
     apply: (_config, { command }) => sceneOf(command, options) === "library",
     enforce: "pre",
     config: () => {
-      const { elementsDir, outDir, elements } = settings();
+      const { elementsDir, elements } = settings();
       const own = elements.filter(({ path }) => inside(elementsDir, path) !== undefined);
       return {
         base: "./",
         environments: {
           client: {
             build: {
-              outDir,
               rolldownOptions: {
                 input: Object.fromEntries(own.map((element) => [element.tag, element.path])),
                 output: { entryFileNames: "[name].js", chunkFileNames: "chunks/[name]-[hash].js" },
@@ -36,7 +35,7 @@ export function libraryBuild(options: RinkaOptions, settings: () => Settings): P
       };
     },
     configResolved(config) {
-      if ((options.prefix ?? DEFAULT_PREFIX) === DEFAULT_PREFIX) {
+      if (settings().prefix === DEFAULT_PREFIX) {
         config.logger.warn(
           "[rinka] library: true のビルドで、要素のタグ名の接頭辞がデフォルトの rinka のままです。ほかのライブラリとタグ名が重ならないように、rinka({ prefix }) に固有の接頭辞を指定してください。",
         );

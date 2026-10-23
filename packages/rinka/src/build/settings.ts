@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import { normalizePath, type Environment } from "vite";
 
@@ -27,6 +27,9 @@ export const DEFAULT_PREFIX = "rinka";
 /** プラグインが動作する場面である。`serve` は開発サーバーと `vite preview`、`app` はアプリのビルド、`library` はライブラリのビルドである。 */
 export type Scene = "serve" | "app" | "library";
 
+/** アプリのサーバーのビルドの入力の名前である。出力のファイルの名前は、この名前に `.js` を付けたものになる。 */
+export const SERVER_ENTRY_NAME = "entry";
+
 /** Vite の `command` とプラグインの設定 `options` から、場面を返す。 */
 export const sceneOf = (command: "build" | "serve", options: RinkaOptions): Scene =>
   command === "serve" ? "serve" : options.library ? "library" : "app";
@@ -35,8 +38,12 @@ export const sceneOf = (command: "build" | "serve", options: RinkaOptions): Scen
 export interface Settings {
   /** アプリのルートである。`/` で区切る。 */
   readonly root: string;
+  readonly prefix: string;
   readonly elementsDir: string;
-  readonly outDir: string;
+  /** クライアントのビルドの出力先で、`vite preview` が配信するディレクトリである。ライブラリのビルドでは、出力先そのものである。 */
+  readonly clientDir: string;
+  /** アプリのサーバーのビルドの出力先である。 */
+  readonly serverDir: string;
   readonly scene: Scene;
   /** TSX のソースの形のライブラリである。 */
   readonly libraries: readonly Library[];
@@ -58,14 +65,15 @@ export function settingsOf(
   const root = normalizePath(resolve(userRoot ?? "."));
   const elementsDir = resolve(root, options.elementsDir ?? "src/elements");
   const libraries = findLibraries(root);
-  const sources = [
-    { prefix: options.prefix ?? DEFAULT_PREFIX, elementsDir, dir: root },
-    ...libraries,
-  ];
+  const prefix = options.prefix ?? DEFAULT_PREFIX;
+  const sources = [{ prefix, elementsDir, dir: root }, ...libraries];
+  const outDir = resolve(root, options.outDir ?? "dist");
   return {
     root,
+    prefix,
     elementsDir,
-    outDir: resolve(root, options.outDir ?? "dist"),
+    clientDir: options.library ? outDir : join(outDir, "client"),
+    serverDir: join(outDir, "server"),
     scene: sceneOf(command, options),
     libraries,
     sources,

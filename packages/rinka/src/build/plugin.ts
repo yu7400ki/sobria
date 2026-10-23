@@ -1,4 +1,4 @@
-import { extname, join, relative, sep } from "node:path";
+import { extname, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { Environment, Plugin, ResolvedConfig } from "vite";
@@ -18,13 +18,7 @@ import { devPath, inside } from "./paths.ts";
 import { preparedFiles, writePrepared } from "./prepare.ts";
 import { ROUTES_DIR, routesModule } from "./routes.ts";
 import { hashedFnModule, isServerFnSource, serverFnModules } from "./server-fns.ts";
-import {
-  DEFAULT_PREFIX,
-  isClient,
-  settingsOf,
-  type RinkaOptions,
-  type Settings,
-} from "./settings.ts";
+import { isClient, settingsOf, type RinkaOptions, type Settings } from "./settings.ts";
 import { SHEET_QUERY, sheetId, sheetModule, sheetPath } from "./sheets.ts";
 
 export type { RinkaOptions } from "./settings.ts";
@@ -73,7 +67,6 @@ interface ProjectFile {
  * プロジェクトのモジュールにコンパイラの変換を適用する。
  */
 export function rinka(options: RinkaOptions = {}): Plugin[] {
-  const prefix = options.prefix ?? DEFAULT_PREFIX;
   const trustedOrigins = options.trustedOrigins ?? [];
   for (const origin of trustedOrigins) checkOrigin(origin);
   /** サーバーの環境で最後に変換したときに、サーバー関数を定義していたファイルの、ルートからの相対パスごとの ID の集合である。 */
@@ -97,7 +90,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   const fnModuleOf = (file: string): string =>
     current().scene === "serve" ? file : hashedFnModule(file);
   const writeTypes = (): void => {
-    const { root, elementsDir } = current();
+    const { root, prefix, elementsDir } = current();
     writePrepared(
       root,
       preparedFiles({ root, prefix, elementsDir, globalJSX: options.globalJSX ?? true }),
@@ -128,7 +121,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       sharedDuringBuild: true,
       config: (user, { command }) => {
         settings = settingsOf(user.root, command, options);
-        const { outDir, libraries } = settings;
+        const { clientDir, libraries } = settings;
         return {
           appType: "custom",
           oxc,
@@ -136,7 +129,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
             include: clientImports.map(fromApp),
             exclude: libraries.map((library) => library.name),
           },
-          build: { outDir: options.library ? outDir : join(outDir, "client") },
+          build: { outDir: clientDir },
         };
       },
       configEnvironment(name, config) {
