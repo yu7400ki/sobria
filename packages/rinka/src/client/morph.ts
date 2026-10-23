@@ -1,10 +1,15 @@
+import { tagAttributeName } from "../shared/attributes.ts";
+
 /** `<script>` か `<template>` であるかを返す。 */
 const isKept = (node: Node): boolean =>
   node instanceof HTMLScriptElement || node instanceof HTMLTemplateElement;
 
-/** `data-ok` のキーを返す。 */
+/** キーの属性の名前である。 */
+const keyAttribute = tagAttributeName("key");
+
+/** キーの属性の値を返す。 */
 const keyOf = (node: Node): string | null =>
-  node instanceof Element ? node.getAttribute("data-ok") : null;
+  node instanceof Element ? node.getAttribute(keyAttribute) : null;
 
 /** `from` を `to` に合わせて使用し続けられるかを返す。 */
 const sameKind = (from: Node, to: Node): boolean =>

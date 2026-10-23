@@ -21,8 +21,8 @@ import { headKey } from "../shared/head.ts";
 import { isEventProp, propToAttribute, reservedProp } from "../shared/names.ts";
 import type { NavigationProps } from "../shared/navigation.ts";
 import { isFunction } from "../shared/objects.ts";
-import type { SwapSpec } from "../shared/receiver.ts";
-import type { RefreshJson } from "../shared/refresh.ts";
+import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
+import type { RefreshJson, RefreshValues } from "../shared/refresh.ts";
 import { createScope, withScope, type ScopedChild } from "../shared/scope.ts";
 import { BOUNDARIES_KEY, childKey, PROPS_KEY, REFRESH_PROPS_KEY } from "../shared/transfer-keys.ts";
 import { checkSerializable, formProps } from "../shared/wire.ts";
@@ -640,9 +640,15 @@ function hasHole(chunks: readonly Chunk[]): boolean {
   });
 }
 
+/** 起動スクリプトに伝える要素の一覧の項目にする。 */
+const listed = ({ tag, delivery }: Delivered): ListedElement => [
+  tag,
+  delivery.module,
+  delivery.load,
+];
+
 /** `elements` を起動スクリプトに伝えるスクリプトを返す。要素が無ければ空の文字列を返す。 */
-const announceScript = (elements: readonly Delivered[]): string =>
-  listScript(elements.map(({ tag, delivery }) => [tag, delivery.module, delivery.load] as const));
+const announceScript = (elements: readonly Delivered[]): string => listScript(elements.map(listed));
 
 /** `elements` のうち、すぐ起動するインスタンスがある要素の `modulepreload` を返す。 */
 const preloadLinks = (elements: readonly Delivered[]): string =>
@@ -1167,7 +1173,7 @@ class Renderer {
               {
                 [REFRESH_PROPS_KEY]: resolved.current ?? {},
                 ...(resolved.transfer && { [PROPS_KEY]: resolved.transfer }),
-              },
+              } satisfies RefreshValues,
               `<${record.tag}>`,
             ),
           );
@@ -1459,9 +1465,7 @@ class Renderer {
       head: headTags(parts),
       body: parts.rest,
       data: this.shellOut.data,
-      elements: this.takeUnannounced([this.shellOut]).map(
-        ({ tag, delivery }) => [tag, delivery.module, delivery.load] as const,
-      ),
+      elements: this.takeUnannounced([this.shellOut]).map(listed),
       doc: { html: Object.fromEntries(parts.html), body: Object.fromEntries(parts.body) },
     };
   }

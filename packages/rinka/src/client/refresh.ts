@@ -1,6 +1,11 @@
 import { headKey } from "../shared/head.ts";
 import type { Receiver } from "../shared/receiver.ts";
-import { REFRESH_HEADER, type RefreshJson, type RefreshPage } from "../shared/refresh.ts";
+import {
+  REFRESH_HEADER,
+  type RefreshJson,
+  type RefreshPage,
+  type RefreshValues,
+} from "../shared/refresh.ts";
 import { PROPS_KEY, REFRESH_PROPS_KEY } from "../shared/transfer-keys.ts";
 import { morph } from "./morph.ts";
 
@@ -47,12 +52,6 @@ export const refreshPage: RefreshPage = async () => {
   latest = call;
   return call;
 };
-
-/** 描き直しのレスポンスの `data` の式を評価した、1 つのホストの props を表す。 */
-interface RefreshValues {
-  readonly [REFRESH_PROPS_KEY]: object;
-  readonly [PROPS_KEY]?: unknown;
-}
 
 /** 描き直しのレスポンスの `json` を、ページに反映する。起動スクリプトを読み込んでいないページでは、エラーを投げる。 */
 export function applyRefresh(json: RefreshJson): void {
