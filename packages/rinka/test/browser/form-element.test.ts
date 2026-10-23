@@ -1,10 +1,15 @@
-import { createRoot, flush } from "@solidjs/signals";
+import { createEffect, createRoot, flush } from "@solidjs/signals";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { defineElement } from "../../src/client/element.ts";
 import { jsx } from "../../src/client/jsx-runtime.ts";
+import { bootstrapSource } from "../../src/server/bootstrap.ts";
+import { defineElement as defineServer } from "../../src/server/element.ts";
+import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
+import { renderToStream } from "../../src/server/render.ts";
 import type { Ctx } from "../../src/shared/element.ts";
-import { signal } from "../../src/shared/signals.ts";
+import type { Receiver } from "../../src/shared/receiver.ts";
+import { memo, signal } from "../../src/shared/signals.ts";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -247,5 +252,137 @@ describe("フォームの部品", () => {
     expect(caught).toHaveLength(2);
     expect(String(caught[0])).toContain(tag);
     expect(document.querySelector(tag)!.shadowRoot!.delegatesFocus).toBe(false);
+  });
+});
+
+/** サーバーとクライアントで同じタグの要素を登録する。 */
+function defineBoth(tag: string, fn: (props: object, ctx: Ctx) => unknown, form = true) {
+  const options = { props: [], ...(form && { form: true as const }) };
+  return {
+    server: defineServer(tag, fn, options),
+    client: () => defineElement(tag, fn, options),
+  };
+}
+
+/** `node` をサーバーで描画し、起動スクリプトを実行して、本文を <form> の中に配置する。 */
+async function serve(node: unknown): Promise<HTMLFormElement> {
+  const decoder = new TextDecoder();
+  let text = "";
+  for await (const chunk of renderToStream(serverJsx("form", { children: node }))) {
+    text += decoder.decode(chunk);
+  }
+  // oxlint-disable-next-line typescript/no-implied-eval
+  new Function(bootstrapSource)();
+  const body = text.slice(text.indexOf("<body>") + 6, text.indexOf("</body>"));
+  const container = document.createElement("div");
+  container.setHTMLUnsafe(body.replaceAll(/<script>.*?<\/script>/gs, ""));
+  document.body.append(container);
+  return document.querySelector("form")!;
+}
+
+describe("SSR したフォームの部品の起動", () => {
+  afterEach(() => {
+    delete (globalThis as { $rinka?: unknown }).$rinka;
+  });
+
+  it("起動すると、data-rinka-aria に列挙した属性と data-rinka-aria を削除し、ページの属性は残す", async () => {
+    const tag = nextTag();
+    const { server, client } = defineBoth(
+      tag,
+      (_props, { internals }) => {
+        internals.role = "slider";
+        internals.ariaValueNow = "3";
+        return null;
+      },
+      false,
+    );
+    await serve(serverJsx(server, { "aria-label": "音量" }));
+    const host = document.querySelector(tag)!;
+    expect(host.getAttribute("data-rinka-aria")).toBe("role aria-valuenow");
+    client();
+    await tick();
+    flush();
+    expect(host.hasAttribute("role")).toBe(false);
+    expect(host.hasAttribute("aria-valuenow")).toBe(false);
+    expect(host.hasAttribute("data-rinka-aria")).toBe(false);
+    expect(host.getAttribute("aria-label")).toBe("音量");
+  });
+
+  it("起動して値を設定すると hidden input を削除し、値を 1 回だけ送信する。起動する前は hidden input の値を送信する", async () => {
+    const tag = nextTag();
+    const { server, client } = defineBoth(tag, (_props, { form }) => {
+      form.value(() => "v");
+      return null;
+    });
+    const form = await serve(serverJsx(server, { name: "n" }));
+    const host = document.querySelector(tag)!;
+    expect(new FormData(form).getAll("n")).toEqual(["v"]);
+    client();
+    await tick();
+    flush();
+    await tick();
+    expect(host.querySelector("input[data-rinka-form]")).toBeNull();
+    expect(new FormData(form).getAll("n")).toEqual(["v"]);
+  });
+
+  it("定義した後でも、起動するまでは hidden input を残す", async () => {
+    const tag = nextTag();
+    const { server, client } = defineBoth(tag, (_props, { form }) => {
+      form.value(() => "v");
+      return null;
+    });
+    const form = await serve(
+      serverJsx("div", {
+        style: "display: none",
+        children: serverJsx(server, { name: "n", "load:visible": true }),
+      }),
+    );
+    (globalThis as unknown as { $rinka: Receiver }).$rinka.m([
+      [tag, "data:text/javascript,", "visible"],
+    ]);
+    client();
+    await tick();
+    flush();
+    expect(document.querySelector(`${tag} > input[data-rinka-form]`)).not.toBeNull();
+    expect(new FormData(form).getAll("n")).toEqual(["v"]);
+  });
+
+  it("引き継いだ描画を表示するまでは、サーバーの ARIA 属性を残す", async () => {
+    const tag = nextTag();
+    const pending = Promise.withResolvers<string>();
+    const server = defineServer(
+      tag,
+      (_props: object, { internals }: Ctx) => {
+        internals.ariaValueText = "x";
+        return null;
+      },
+      { props: [] },
+    );
+    await serve(serverJsx(server, {}));
+    const host = document.querySelector(tag)!;
+    defineElement(
+      tag,
+      (_props: object, { internals }: Ctx) => {
+        const value = memo(() => pending.promise);
+        createEffect(
+          () => value(),
+          (text) => {
+            internals.ariaValueText = text;
+          },
+        );
+        return jsx("p", { children: () => value() });
+      },
+      { props: [] },
+    );
+    await tick();
+    flush();
+    expect(host.getAttribute("aria-valuetext")).toBe("x");
+    pending.resolve("y");
+    await tick();
+    flush();
+    await tick();
+    flush();
+    expect(host.hasAttribute("aria-valuetext")).toBe(false);
+    expect(host.hasAttribute("data-rinka-aria")).toBe(false);
   });
 });

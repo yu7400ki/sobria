@@ -123,6 +123,18 @@ describe("差し替えのスクリプト", () => {
   });
 });
 
+describe("フォームの部品の DSD", () => {
+  it("差し替えの前に取り付ける DSD の shadowrootdelegatesfocus を、Shadow DOM の delegatesFocus にする", async () => {
+    const doc = await load('<template data-ob="b1"></template>wait<!--/ob:b1-->');
+    const holder = doc.createElement("div");
+    holder.innerHTML =
+      '<template data-os="b1"><x-f data-oh="h2"><template shadowrootmode="open" shadowrootdelegatesfocus><button></button></template></x-f></template>';
+    doc.body.append(holder.firstElementChild!);
+    rinka(doc).r({ b: "b1", bp: [], p: [] });
+    expect(shadow(doc, "h2").delegatesFocus).toBe(true);
+  });
+});
+
 /** 10ms 後に解決する Promise を返す。 */
 const later = () => new Promise((resolve) => setTimeout(resolve, 10));
 

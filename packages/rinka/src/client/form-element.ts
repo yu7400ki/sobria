@@ -1,5 +1,6 @@
 import { createEffect, createSignal, onCleanup, runWithOwner } from "@solidjs/signals";
 
+import { FORM_VALUE_ATTRIBUTE } from "../shared/attributes.ts";
 import type { FormControls, FormInvalidity, FormState, RestoreMode } from "../shared/element.ts";
 import type { formMembers } from "../shared/host-members.ts";
 
@@ -31,15 +32,17 @@ export function createFormHost(): FormHost {
 }
 
 /**
- * `internals` を持つ `<tag>` の要素の関数に渡す `form` を返す。`form.onReset` と `form.onRestore` に渡した関数は、呼び出した root を破棄すると登録を解除する。
- * `host` が無ければ、`form.value` と `form.validity` はエラーを送出し、`form.disabled()` は `false` を返す。
+ * `<tag>` の要素の関数に渡す ctx の `form` を返す。`state` はフォームの部品のホストの状態である。
+ * `form.value` は、値を設定した後に、サーバーが Light DOM に出力した hidden input を削除する。`form.onReset` と `form.onRestore` に渡した関数は、呼び出した root を破棄すると登録を解除する。
+ * `state` が無ければ、`form.value` と `form.validity` はエラーを送出し、`form.disabled()` は `false` を返す。
  */
 export function formControls(
   tag: string,
+  host: HTMLElement,
   internals: ElementInternals,
-  host: FormHost | undefined,
+  state: FormHost | undefined,
 ): FormControls {
-  if (!host) {
+  if (!state) {
     const unsupported = (name: string) => () => {
       throw new Error(
         `[rinka] <${tag}> はフォームの部品として登録されていないので、form.${name}() を呼び出せません。defineElement の設定に form: true を指定してください。`,
@@ -55,14 +58,17 @@ export function formControls(
   }
   return {
     value: (fn) => {
-      createEffect(fn, (value) => internals.setFormValue(value ?? null));
+      createEffect(fn, (value) => {
+        internals.setFormValue(value ?? null);
+        host.querySelector(`:scope > input[${FORM_VALUE_ATTRIBUTE}]`)?.remove();
+      });
     },
     validity: (fn) => {
       createEffect(fn, (result) => setValidity(internals, result));
     },
-    onReset: (fn) => register(host.resets, fn),
-    onRestore: (fn) => register(host.restores, fn),
-    disabled: host.disabled,
+    onReset: (fn) => register(state.resets, fn),
+    onRestore: (fn) => register(state.restores, fn),
+    disabled: state.disabled,
   };
 }
 

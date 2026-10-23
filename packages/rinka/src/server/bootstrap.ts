@@ -32,7 +32,7 @@ f(id,m){const k=m+' '+id;return F[k]||(F[k]=Object.defineProperty((...a)=>this.c
 d(id,o){Object.assign(this.v[id]||(this.v[id]={}),o);(this.l[id]||[]).slice().forEach(f=>f())},
 r(s){const me=document.currentScript;me&&me.remove();
 const fix=root=>{for(const t of root.querySelectorAll('template[shadowrootmode]')){fix(t.content);const host=t.parentElement;
-if(host&&!host.shadowRoot){host.attachShadow({mode:t.getAttribute('shadowrootmode')}).append(t.content);t.remove()}}};
+if(host&&!host.shadowRoot){host.attachShadow({mode:t.getAttribute('shadowrootmode'),delegatesFocus:t.hasAttribute('shadowrootdelegatesfocus')}).append(t.content);t.remove()}}};
 const apply=(id,path,holder)=>{const src=document.querySelector(holder);let root=document;
 for(const h of path){const el=root&&root.querySelector('[${HOST_ATTRIBUTE}="'+h+'"]');root=el&&el.shadowRoot}
 const start=root&&root.querySelector('template[${BOUNDARY_ATTRIBUTE}="'+id+'"]');let end=start&&start.nextSibling;

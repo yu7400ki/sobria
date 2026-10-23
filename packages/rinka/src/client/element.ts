@@ -13,7 +13,7 @@ import {
   type Owner,
 } from "@solidjs/signals";
 
-import { HOST_ATTRIBUTE } from "../shared/attributes.ts";
+import { ARIA_ATTRIBUTE, HOST_ATTRIBUTE } from "../shared/attributes.ts";
 import {
   createElementComponent,
   elementInfo,
@@ -166,6 +166,14 @@ function peek(prop: Prop): unknown {
   }
 }
 
+/** サーバーが `internals` の値から出力した、ホスト `host` の ARIA の属性と、その名前を列挙した属性を削除する。 */
+function removeServerAria(host: HTMLElement): void {
+  const names = host.getAttribute(ARIA_ATTRIBUTE);
+  if (names === null) return;
+  for (const name of names.split(" ")) host.removeAttribute(name);
+  host.removeAttribute(ARIA_ATTRIBUTE);
+}
+
 /** 接続していて、最初の内容を表示していれば、まだ呼んでいない `onMount` の関数を呼ぶ。 */
 function runMounts(host: HTMLElement, run: Run): void {
   if (!host.isConnected || !run.settled) return;
@@ -284,7 +292,7 @@ export function registerElement<P, M extends object = object>(
         });
         const ctx: Ctx<M> = {
           host,
-          form: formControls(tag, instance.internals, instance.form),
+          form: formControls(tag, host, instance.internals, instance.form),
           internals: instance.internals,
           onMount: (mount) => run.mounts.push(mount),
           expose: (members) => {
@@ -316,6 +324,7 @@ export function registerElement<P, M extends object = object>(
           const current = definition.fn as ElementFn<P, M>;
           const content = untrack(() => withScope(scope, () => current(props, ctx)));
           onSettled(() => {
+            removeServerAria(host);
             if (target !== shadow) {
               shadow.replaceChildren(target);
               target = shadow;
