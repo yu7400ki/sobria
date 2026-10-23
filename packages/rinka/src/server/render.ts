@@ -267,11 +267,15 @@ const attributesText = (attributes: Attributes): string =>
     )
     .join("");
 
-/** 文書の骨組みに並べる値を表す。`html` と `body` は、開始タグに出力する属性である。 */
+/**
+ * シェルから取り出した、文書の骨組みに並べる値を表す。
+ * `heads` は、文書の順序で並んだ `<head>` のタグで、キーが同じタグを 1 つにする前のものである。`html` と `body` は、開始タグに出力する属性である。
+ */
 interface DocumentParts {
-  readonly head: string;
+  readonly heads: readonly HeadOutput[];
   readonly html: Attributes;
   readonly body: Attributes;
+  readonly navigation: NavigationValues;
   /** シェルから、移動したタグと目印を取り除いた残りである。 */
   readonly rest: string;
 }
@@ -1338,59 +1342,40 @@ class Renderer {
     );
   }
 
-  /**
-   * シェルの文字列 `shell` から目印で囲んだものを取り除き、文書の骨組みに並べる値を返す。
-   * `<head>` のタグは、先頭に rinka の `<meta charset="utf-8">` を加え、キーが同じタグを 1 つにして、末尾に `<Navigation>` の出力を加える。`<meta charset>` は、常に rinka のタグを残す。
-   */
+  /** シェルの文字列 `shell` から目印で囲んだものを取り除き、文書の骨組みに並べる値を返す。 */
   private async takeDocument(shell: string): Promise<DocumentParts> {
     const heads: Promise<HeadOutput>[] = [];
-    const records: {
-      readonly html: Extract<Hoisted, { kind: "html" | "body" }>[];
-      readonly body: Extract<Hoisted, { kind: "html" | "body" }>[];
-      readonly navigation: Extract<Hoisted, { kind: "navigation" }>[];
-    } = {
-      html: [],
-      body: [],
-      navigation: [],
-    };
+    const others: Exclude<Hoisted, { kind: "head" }>[] = [];
     const rest = shell.replace(
       new RegExp(`<!--${this.nonce}:(\\d+)-->([\\s\\S]*?)<!--${this.nonce}:\\1/-->`, "g"),
       (_match, id: string, html: string) => {
         const hoisted = this.hoisted.get(Number(id));
         if (hoisted === undefined) throw new Error(`目印 ${id} の記録がありません。`);
-        switch (hoisted.kind) {
-          case "html":
-          case "body":
-            records[hoisted.kind].push(hoisted);
-            break;
-          case "navigation":
-            records.navigation.push(hoisted);
-            break;
-          case "head":
-            heads.push(
-              (async () => ({
-                html,
-                key: await hoisted.key,
-                depth: hoisted.depth,
-              }))(),
-            );
-            break;
+        if (hoisted.kind === "head") {
+          heads.push((async () => ({ html, key: await hoisted.key, depth: hoisted.depth }))());
+        } else {
+          others.push(hoisted);
         }
         return "";
       },
     );
-    const charset = { html: '<meta charset="utf-8">', key: "charset", depth: Infinity };
+    type Root = Extract<Hoisted, { kind: "html" | "body" }>;
+    type Navigation = Extract<Hoisted, { kind: "navigation" }>;
     return {
-      head:
-        dedupeHead([charset, ...(await Promise.all(heads))]) +
-        navigationHead(mergeByName(records.navigation)),
-      html: mergeByName(records.html),
-      body: mergeByName(records.body),
+      heads: await Promise.all(heads),
+      html: mergeByName(others.filter((record): record is Root => record.kind === "html")),
+      body: mergeByName(others.filter((record): record is Root => record.kind === "body")),
+      navigation: mergeByName(
+        others.filter((record): record is Navigation => record.kind === "navigation"),
+      ),
       rest,
     };
   }
 
-  /** 文書の先頭と `shell` を出力し、後送りの境界をすべて出力してから、文書を閉じる。 */
+  /**
+   * 文書の先頭と `shell` を出力し、後送りの境界をすべて出力してから、文書を閉じる。
+   * `<head>` には、先頭に rinka の `<meta charset="utf-8">` を加えてキーが同じタグを 1 つにしたタグと、`<Navigation>` の出力を並べる。`<meta charset>` は、常に rinka のタグを残す。
+   */
   async finish(shell: string): Promise<void> {
     try {
       const fresh = this.interactive ? this.takeUnannounced([this.shellOut]) : [];
@@ -1398,9 +1383,11 @@ class Renderer {
         ? bootstrap + preloadLinks(fresh) + announceScript(fresh)
         : "";
       const parts = await this.takeDocument(shell);
+      const charset = { html: '<meta charset="utf-8">', key: "charset", depth: Infinity };
+      const head = dedupeHead([charset, ...parts.heads]) + navigationHead(parts.navigation);
       this.reveal(
         this.shellOut.flush,
-        `<!doctype html><html${attributesText(parts.html)}><head>${parts.head}${script}${this.document?.head ?? ""}</head><body${attributesText(parts.body)}>${parts.rest}${this.shellOut.scriptText}`,
+        `<!doctype html><html${attributesText(parts.html)}><head>${head}${script}${this.document?.head ?? ""}</head><body${attributesText(parts.body)}>${parts.rest}${this.shellOut.scriptText}`,
       );
       await this.drain();
       for (const host of this.hosts) host.hide();
