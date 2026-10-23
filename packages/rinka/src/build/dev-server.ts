@@ -66,10 +66,15 @@ export function serve({ settings, writeTypes }: ServeContext): Plugin {
     },
     resolveId: (id) => (id.startsWith(STYLES) ? id : null),
     async load(id) {
-      if (!id.startsWith(STYLES) || !("moduleGraph" in this.environment)) return null;
+      if (!id.startsWith(STYLES) || isClient(this.environment)) return null;
+      if (!("moduleGraph" in this.environment)) return null;
       const { moduleGraph } = this.environment;
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      const files = JSON.parse(decodeURIComponent(id.slice(STYLES.length))) as string[];
+      const files: unknown = JSON.parse(decodeURIComponent(id.slice(STYLES.length)));
+      if (!Array.isArray(files) || !files.every((file) => typeof file === "string")) {
+        throw new TypeError(
+          `[rinka] ${entries.styles} のクエリには、ルートのファイルの一覧を指定してください。`,
+        );
+      }
       const nodes = await Promise.all(files.map((file) => moduleGraph.getModuleByUrl(`/${file}`)));
       const links = routeStyles(nodes.filter((node) => node !== undefined));
       return `export default ${JSON.stringify(links)};\n`;

@@ -99,7 +99,7 @@ writeFileSync(${JSON.stringify(marker)}, "x");
     expect(await response.json()).toEqual({ ok: "late" });
   });
 
-  it("ファイルから削除したサーバー関数の ID は、サーバーのランナーがモジュールを評価し直さなくても、ファイルを変更した後に 404 になる", async () => {
+  it("ファイルから削除したサーバー関数の ID は、HMR が無効でも、ファイルを変更した後に 404 になる", async () => {
     const file = join(root, "src/lib/removed.ts");
     try {
       await writeFile(file, removedSource("gone"));

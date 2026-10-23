@@ -78,6 +78,7 @@ const STOP = "__rinka_stop";
 const DEFINE = "__rinka_defineElement";
 /** サーバー関数を ID で登録する関数を、変換したコードの中で呼ぶ名前である。 */
 const REGISTER = "__rinka_registerServerFn";
+/** サーバー向けのモジュールで、`rinka/internal` の `serverFnModule` を import する名前である。 */
 const SERVER_FN_MODULE = "__rinka_serverFnModule";
 /** RPC の関数を作成する関数を、変換したコードの中で呼ぶ名前である。 */
 const SERVER_FN = "__rinka_serverFn";

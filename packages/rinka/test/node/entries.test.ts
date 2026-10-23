@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { parseSync } from "vite";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -62,11 +63,23 @@ describe("入口", () => {
         for (const file of readdirSync(join(src, dir), { recursive: true, encoding: "utf8" })) {
           if (!file.endsWith(".ts") || file.endsWith(".d.ts")) continue;
           const code = readFileSync(join(src, dir, file), "utf8");
-          for (const [, kind, specifier] of code.matchAll(
-            /^(?:import|export)(\s+type)?[^;]*?from\s+"([^"]+)"/gm,
-          )) {
-            if (kind || specifier!.startsWith(".") || specifier!.startsWith("node:")) continue;
-            specifiers.add(specifier!);
+          const { program } = parseSync(file, code, { lang: "ts", sourceType: "module" });
+          for (const statement of program.body) {
+            if (
+              (statement.type !== "ImportDeclaration" &&
+                statement.type !== "ExportNamedDeclaration" &&
+                statement.type !== "ExportAllDeclaration") ||
+              !statement.source
+            ) {
+              continue;
+            }
+            const kind =
+              statement.type === "ImportDeclaration" ? statement.importKind : statement.exportKind;
+            const specifier = statement.source.value;
+            if (kind === "type" || specifier.startsWith(".") || specifier.startsWith("node:")) {
+              continue;
+            }
+            specifiers.add(specifier);
           }
         }
       }

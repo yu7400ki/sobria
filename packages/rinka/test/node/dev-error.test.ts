@@ -1,3 +1,4 @@
+import { HTTPException } from "hono/http-exception";
 import { describe, expect, it, vi } from "vitest";
 
 import { devErrorResponse } from "../../src/server/internal.ts";
@@ -28,6 +29,18 @@ describe("開発中のエラーのページ", () => {
       const html = await devErrorResponse("boom").text();
       const json = /new ErrorOverlay\((.*)\)\);/.exec(html)![1]!;
       expect(JSON.parse(json)).toEqual({ message: "boom", stack: "" });
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("HTTPException は、記録せずにそのレスポンスを返す", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = devErrorResponse(new HTTPException(401, { message: "denied" }));
+      expect(response.status).toBe(401);
+      expect(await response.text()).toBe("denied");
+      expect(log).not.toHaveBeenCalled();
     } finally {
       log.mockRestore();
     }
