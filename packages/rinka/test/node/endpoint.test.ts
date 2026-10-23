@@ -291,3 +291,55 @@ describe("CSRF の判定", () => {
     expect(response.status).toBe(200);
   });
 });
+
+describe("リクエストの種類ごとのレスポンス", () => {
+  const handlers = {
+    value: defineServerFn(() => 1),
+    redirect: defineServerFn(() => {
+      throw redirect("/done");
+    }),
+    notFound: defineServerFn(() => {
+      throw notFound();
+    }),
+    schema: defineServerFn({ input: numeric })(() => null),
+    http: defineServerFn(() => {
+      throw new HTTPException(418, { message: "teapot" });
+    }),
+  };
+  const ids = Object.fromEntries(
+    Object.entries(handlers).map(([name, fn]) => [name, register(fn)]),
+  ) as Record<keyof typeof handlers, string>;
+  const issues = JSON.stringify({ issues: [{ message: "数ではありません", path: ["n"] }] });
+  const requests = {
+    rpc: () => post(null),
+    form: (): RequestInit => ({ method: "POST", body: new FormData() }),
+  };
+  const table: [keyof typeof requests, keyof typeof handlers, number, boolean, string][] = [
+    ["rpc", "value", 200, true, '{"ok":1}'],
+    ["rpc", "redirect", 200, true, '{"redirect":"/done"}'],
+    ["rpc", "notFound", 404, true, ""],
+    ["rpc", "schema", 422, true, issues],
+    ["rpc", "http", 418, false, "teapot"],
+    ["form", "value", 303, false, ""],
+    ["form", "redirect", 303, false, ""],
+    ["form", "notFound", 404, false, "Not Found"],
+    ["form", "schema", 422, false, issues],
+    ["form", "http", 418, false, "teapot"],
+  ];
+
+  it("種類と結果のすべての組で、ステータス、x-rinka-wire の有無、本文が表と一致する", async () => {
+    const actual = await Promise.all(
+      table.map(async ([kind, result]) => {
+        const response = await call(ids[result], requests[kind]());
+        return [
+          kind,
+          result,
+          response.status,
+          response.headers.has(wireHeader),
+          await response.text(),
+        ];
+      }),
+    );
+    expect(actual).toEqual(table);
+  });
+});

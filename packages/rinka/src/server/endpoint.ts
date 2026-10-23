@@ -52,42 +52,105 @@ async function endpoint(c: Context, id: string, options: AppOptions): Promise<Re
   if (method !== "GET" && isCrossSite(c.req.raw, options.trustedOrigins ?? [])) {
     return rpc(c, null, 403);
   }
-  const form = isFormSubmission(c);
+  const responder = responders[isFormSubmission(c) ? "form" : "rpc"];
   let input: unknown;
   try {
-    input = form ? formDataToInput(await c.req.formData()) : await readInput(c);
+    input = await responder.read(c);
   } catch {
-    return form ? c.text("Bad Request", 400) : rpc(c, null, 400);
+    return responder.reject(c, 400);
   }
   await runChain(
     c,
     middlewares,
     async () => {
       const value = await handle(c, input);
-      if (value instanceof Response) return value;
-      return form ? c.redirect(c.req.header("referer") ?? "/", 303) : rpc(c, toRpcBody(value));
+      return value instanceof Response ? value : responder.respond(c, { kind: "value", value });
     },
-    (error) => (form ? formError(c, error) : rpcError(c, error)),
+    (error) =>
+      error instanceof HTTPException
+        ? httpResponse(c, error)
+        : responder.respond(c, outcomeOf(error)),
   );
   return c.res;
 }
 
-/** サーバー関数が投げた値を、RPC のレスポンスにする。rinka が扱わない値は投げ直す。 */
-function rpcError(c: Context, error: unknown): Response {
-  if (error instanceof Redirect) return rpc(c, { redirect: error.location }, 200);
-  if (error instanceof NotFound) return rpc(c, null, 404);
-  if (error instanceof SchemaError) return rpc(c, { issues: error.issues }, 422);
-  if (error instanceof HTTPException) return httpResponse(c, error);
+/** handler の戻り値と、handler が投げた値のうち、レスポンスの形をリクエストの種類で決めるものを表す。 */
+type Outcome =
+  | { readonly kind: "value"; readonly value: unknown }
+  | { readonly kind: "redirect"; readonly location: string }
+  | { readonly kind: "notFound" }
+  | { readonly kind: "schema"; readonly issues: SchemaError["issues"] };
+
+/** `error` を分類する。rinka が扱わない値は投げ直す。 */
+function outcomeOf(error: unknown): Outcome {
+  if (error instanceof Redirect) return { kind: "redirect", location: error.location };
+  if (error instanceof NotFound) return { kind: "notFound" };
+  if (error instanceof SchemaError) return { kind: "schema", issues: error.issues };
   throw error;
 }
 
-/** フォームの送信で、サーバー関数が投げた値をレスポンスにする。rinka が扱わない値は投げ直す。 */
-function formError(c: Context, error: unknown): Response {
-  if (error instanceof Redirect) return c.redirect(error.location, 303);
-  if (error instanceof NotFound) return c.text("Not Found", 404);
-  if (error instanceof SchemaError) return c.json({ issues: error.issues }, 422);
-  if (error instanceof HTTPException) return httpResponse(c, error);
-  throw error;
+/** rinka が handler を呼ばずに拒否するときのステータスである。 */
+type Rejection = 400 | 403 | 404 | 405;
+
+/** リクエストの種類ごとの、入力の読み方とレスポンスの作り方である。 */
+interface Responder {
+  /** リクエストから入力を読む。読めなければ例外を投げる。 */
+  readonly read: (c: Context) => Promise<unknown>;
+  /** handler を呼ばずに拒否するときのレスポンスを返す。 */
+  readonly reject: (c: Context, status: Rejection) => Response;
+  /** handler の結果のレスポンスを返す。 */
+  readonly respond: (c: Context, outcome: Outcome) => Response;
+}
+
+const rejectionText = {
+  400: "Bad Request",
+  403: "Forbidden",
+  404: "Not Found",
+  405: "Method Not Allowed",
+} satisfies Record<Rejection, string>;
+
+const responders = {
+  rpc: {
+    read: readInput,
+    reject: (c, status) => rpc(c, null, status),
+    respond: (c, outcome) => {
+      switch (outcome.kind) {
+        case "value":
+          return rpc(c, toRpcBody(outcome.value));
+        case "redirect":
+          return rpc(c, { redirect: outcome.location }, 200);
+        case "notFound":
+          return rpc(c, null, 404);
+        case "schema":
+          return rpc(c, { issues: outcome.issues }, 422);
+        default:
+          return unreachable(outcome);
+      }
+    },
+  },
+  form: {
+    read: async (c) => formDataToInput(await c.req.formData()),
+    reject: (c, status) => c.text(rejectionText[status], status),
+    respond: (c, outcome) => {
+      switch (outcome.kind) {
+        case "value":
+          return c.redirect(c.req.header("referer") ?? "/", 303);
+        case "redirect":
+          return c.redirect(outcome.location, 303);
+        case "notFound":
+          return c.text(rejectionText[404], 404);
+        case "schema":
+          return c.json({ issues: outcome.issues }, 422);
+        default:
+          return unreachable(outcome);
+      }
+    },
+  },
+} satisfies Record<"rpc" | "form", Responder>;
+
+/** 型の上で到達しない値を受け取り、エラーを投げる。 */
+function unreachable(value: never): never {
+  throw new Error(`想定していない値です: ${JSON.stringify(value)}`);
 }
 
 /** `HTTPException` のレスポンスに、Context で設定したヘッダーを加えて返す。 */
@@ -128,7 +191,7 @@ async function readInput(c: Context): Promise<unknown> {
 const parseJson = (text: string): unknown => JSON.parse(text);
 
 /** `body` を JSON にし、`x-rinka-wire: rpc` を付けたレスポンスを返す。`status` が無ければ、`c.status` で設定したステータスにする。 */
-function rpc(c: Context, body: unknown, status?: 200 | 400 | 403 | 404 | 405 | 422): Response {
+function rpc(c: Context, body: unknown, status?: 200 | Rejection | 422): Response {
   c.header(wireHeader, wireFormat.rpc);
   if (status !== undefined) c.status(status);
   return body === null ? c.body(null) : c.json(body);
