@@ -1,9 +1,9 @@
 import { fileURLToPath } from "node:url";
 
-import type { ViteDevServer } from "vite";
+import { mergeConfig, type InlineConfig, type ViteDevServer } from "vite";
 import type { TestProject } from "vitest/node";
 
-import { createDevServer, originOf } from "./dev-server.ts";
+import { createDevServer, originOf, stylesConfig } from "./dev-server.ts";
 
 declare module "vitest" {
   interface ProvidedContext {
@@ -30,12 +30,14 @@ async function page(origin: string, path: string): Promise<string> {
 }
 
 /** `fixtures/<name>` の開発サーバーを起動し、オリジンを返す。 */
-async function start(name: string, servers: ViteDevServer[]): Promise<string> {
+async function start(
+  name: string,
+  servers: ViteDevServer[],
+  config: InlineConfig = {},
+): Promise<string> {
   const server = await createDevServer(
     fileURLToPath(new URL(`fixtures/${name}`, import.meta.url)),
-    {
-      server: { port: 0 },
-    },
+    mergeConfig({ server: { port: 0 } }, config),
   );
   servers.push(server);
   await server.listen();
@@ -53,7 +55,7 @@ export default async function setup(project: TestProject): Promise<() => Promise
     project.provide("basicOrigin", basic);
     project.provide("basicPage", await page(basic, "/"));
     project.provide("loadPage", await page(basic, "/load"));
-    const styles = await start("styles", servers);
+    const styles = await start("styles", servers, stylesConfig());
     project.provide("stylesOrigin", styles);
     project.provide("stylesPage", await page(styles, "/"));
   } catch (error) {

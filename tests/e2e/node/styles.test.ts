@@ -3,14 +3,14 @@ import { fileURLToPath } from "node:url";
 import type { ViteDevServer } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createDevServer, originOf } from "../dev-server.ts";
+import { createDevServer, originOf, stylesConfig } from "../dev-server.ts";
 
 const root = fileURLToPath(new URL("../fixtures/styles", import.meta.url));
 let server: ViteDevServer;
 let origin: string;
 
 beforeAll(async () => {
-  server = await createDevServer(root, { server: { port: 0 } });
+  server = await createDevServer(root, { server: { port: 0 }, ...stylesConfig() });
   await server.listen();
   origin = originOf(server);
 });
@@ -51,6 +51,7 @@ describe("サーバーコンポーネントの CSS", () => {
     expect(links).toEqual([
       "/src/styles/theme.css?direct",
       "/src/styles/global.css?direct",
+      "/src/styles/app.css?direct",
       "/src/routes/page.css?direct",
     ]);
   });

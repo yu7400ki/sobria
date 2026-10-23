@@ -1,6 +1,7 @@
 import { theme } from "../lib/theme.ts";
 
 import "../styles/global.css";
+import "../styles/app.css";
 
 export const layoutTheme = theme;
 

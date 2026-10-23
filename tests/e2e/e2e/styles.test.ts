@@ -32,3 +32,17 @@ it("要素が取り込んだシートの @property の規則を、起動の前�
   view.document.querySelector("style[data-rinka-properties]")!.remove();
   expect(gap()).toBe("7px");
 });
+
+it("Tailwind v4 のユーティリティを、ページと、起動の前と後の要素の Shadow DOM に適用する", async () => {
+  const view = await open();
+  expect(view.getComputedStyle(view.document.querySelector("main")!).marginTop).toBe("16px");
+  const badge = view.document.querySelector("app-badge")!;
+  const span = () => view.getComputedStyle(badge.shadowRoot!.querySelector("span")!);
+  const look = () => [span().paddingTop, span().rotate, span().boxShadow];
+  const before = look();
+  expect(before[0]).toBe("8px");
+  expect(before[1]).not.toBe("none");
+  expect(before[2]).not.toBe("none");
+  await vi.waitUntil(() => badge.hasAttribute("data-started"), { timeout: 2000, interval: 10 });
+  expect(look()).toEqual(before);
+});

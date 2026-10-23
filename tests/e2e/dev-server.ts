@@ -1,5 +1,6 @@
 import type { AddressInfo } from "node:net";
 
+import tailwindcss from "@tailwindcss/vite";
 import { rinka } from "rinka/vite";
 import { createServer, mergeConfig, type InlineConfig, type ViteDevServer } from "vite";
 
@@ -26,3 +27,6 @@ export function originOf(server: ViteDevServer): string {
   }
   return `http://localhost:${address.port}`;
 }
+
+/** テスト用のアプリ `fixtures/styles` の開発サーバーに重ねる設定である。 */
+export const stylesConfig = (): InlineConfig => ({ plugins: [tailwindcss()] });
