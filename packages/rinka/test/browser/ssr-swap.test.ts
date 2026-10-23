@@ -173,3 +173,74 @@ describe("サーバーの出力", () => {
     expect(doc.body.textContent).toContain("無い");
   });
 });
+
+/** 文書の `<head>` に追加する要素を、追加せずに `added` に記録する。 */
+function capture(doc: Document): Element[] {
+  const added: Element[] = [];
+  doc.head.append = (...nodes) => {
+    for (const node of nodes) if (node instanceof doc.defaultView!.Element) added.push(node);
+  };
+  return added;
+}
+
+describe("後送りの内容の CSS の待機", () => {
+  it('差し替える内容の <link rel="stylesheet"> を、入れ子の template の中まで探して preload し、読み込みが完了するまで差し替えない', async () => {
+    const doc = await load(
+      '<main><template data-ob="b1"></template>wait<!--/ob:b1--></main>' +
+        '<template data-os="b1"><x-card><template shadowrootmode="open"><link rel="stylesheet" href="/card.css"><p>card</p></template></x-card></template>',
+    );
+    const added = capture(doc);
+    rinka(doc).r({ b: "b1", bp: [], p: [] });
+    expect(doc.querySelector("main")!.textContent).toBe("wait");
+    expect(added).toHaveLength(1);
+    const preload = added[0] as HTMLLinkElement;
+    expect([preload.rel, preload.getAttribute("as"), new URL(preload.href).pathname]).toEqual([
+      "preload",
+      "style",
+      "/card.css",
+    ]);
+    preload.dispatchEvent(new Event("load"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(doc.querySelector("x-card")!.shadowRoot!.querySelector("p")!.textContent).toBe("card");
+  });
+
+  it("CSS を待っている差し替えより後の差し替えは、前の差し替えを適用してから適用する。読み込みに失敗しても差し替える", async () => {
+    const doc = await load(
+      '<main><template data-ob="b1"></template>wait1<!--/ob:b1--><template data-ob="b2"></template>wait2<!--/ob:b2--></main>' +
+        '<template data-os="b1"><link rel="stylesheet" href="/a.css"><b>one</b></template>' +
+        '<template data-os="b2"><b>two</b></template>',
+    );
+    const added = capture(doc);
+    rinka(doc).r({ b: "b1", bp: [], p: [] });
+    rinka(doc).r({ b: "b2", bp: [], p: [] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(doc.querySelector("main")!.textContent).toBe("wait1wait2");
+    added[0]!.dispatchEvent(new Event("error"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(doc.querySelector("main")!.textContent).toBe("onetwo");
+  });
+
+  it("CSS の無い差し替えは、すぐに適用する", async () => {
+    const doc = await load(
+      '<main><template data-ob="b1"></template>wait<!--/ob:b1--></main><template data-os="b1"><b>done</b></template>',
+    );
+    rinka(doc).r({ b: "b1", bp: [], p: [] });
+    expect(doc.querySelector("main")!.textContent).toBe("done");
+  });
+});
+
+describe("後送りの内容の CSS の待機で失敗した差し替え", () => {
+  it("CSS を待った差し替えの適用で例外が起きても、後の差し替えを適用する", async () => {
+    const doc = await load(
+      '<main><template data-ob="b1"></template>wait1<!--/ob:b1--><template data-ob="b2"></template>wait2<!--/ob:b2--></main>' +
+        '<template data-os="b1"><link rel="stylesheet" href="/a.css"><a><template shadowrootmode="open">x</template></a></template>' +
+        '<template data-os="b2"><b>two</b></template>',
+    );
+    const added = capture(doc);
+    rinka(doc).r({ b: "b1", bp: [], p: [] });
+    rinka(doc).r({ b: "b2", bp: [], p: [] });
+    added[0]!.dispatchEvent(new Event("load"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(doc.querySelector("main")!.textContent).toContain("two");
+  });
+});

@@ -16,7 +16,7 @@ export const loadAttributeName = "data-rinka-load";
 export const mediaPrefix = "media:";
 
 /** `<script>` で囲まない起動スクリプトである。`window.$rinka` に `Receiver` の受け口を定義する。既に `$rinka` があれば、保持している値を残して受け口を追加する。 */
-export const bootstrapSource = `(R=>{const E={},Q=new WeakSet();let O;
+export const bootstrapSource = `(R=>{const E={},Q=new WeakSet(),C={};let O,P;
 const when=(el,t,f)=>{const v=el.getAttribute('${loadAttributeName}')||t;
 if(v==='idle')(window.requestIdleCallback||setTimeout)(()=>f());
 else if(v==='visible'){const o=new IntersectionObserver(es=>{if(es.some(e=>e.isIntersecting)){o.disconnect();f()}});o.observe(el)}
@@ -40,7 +40,15 @@ while(end&&!(end.nodeType===8&&end.data==='/ob:'+id))end=end.nextSibling;
 if(!src)return;if(!end){src.remove();return}
 while(start.nextSibling!==end)start.nextSibling.remove();
 fix(src.content);end.parentNode.insertBefore(src.content,end);start.remove();end.remove();src.remove()};
-apply(s.b,s.bp,'template[${BOUNDARY_CONTENT_ATTRIBUTE}="'+s.b+'"]');for(const p of s.p)apply(p[0],p[1],'template[${PATCH_ATTRIBUTE}="'+p[0]+'"]')},
+const hs=[[s.b,s.bp,'template[${BOUNDARY_CONTENT_ATTRIBUTE}="'+s.b+'"]'],...s.p.map(p=>[p[0],p[1],'template[${PATCH_ATTRIBUTE}="'+p[0]+'"]'])];
+const run=()=>{for(const h of hs)apply(...h)};const w=[];
+const find=root=>{for(const l of root.querySelectorAll('link[rel="stylesheet"]')){const u=new URL(l.getAttribute('href'),document.baseURI).href;
+if(C[u]!==1)w.push(C[u]||(C[u]=new Promise(f=>{const k=document.createElement('link');k.rel='preload';k.as='style';k.href=u;
+k.onload=k.onerror=()=>{C[u]=1;f()};document.head.append(k)})))}
+for(const t of root.querySelectorAll('*'))t.content?find(t.content):t.shadowRoot&&find(t.shadowRoot)};
+for(const h of hs){const t=document.querySelector(h[2]);t&&find(t.content)}
+if(!P&&!w.length){run();return}
+const q=(P||Promise.resolve()).then(()=>Promise.all(w)).then(run).catch(e=>{setTimeout(()=>{throw e})});P=q;q.then(()=>{if(P===q)P=undefined})},
 m(list){for(const[t,u,l]of list)E[t]||(E[t]={u,l,s:0});scan(document);
 if(!O){O=new MutationObserver(rs=>{for(const r of rs)for(const n of r.addedNodes)if(n.nodeType===1){watch(n);scan(n)}});
 O.observe(document.documentElement,{childList:true,subtree:true})}},
