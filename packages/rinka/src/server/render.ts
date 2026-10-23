@@ -18,7 +18,6 @@ import {
   FORM_VALUE_ATTRIBUTE,
   HOST_ATTRIBUTE,
   PATCH_ATTRIBUTE,
-  PROPERTIES_ATTRIBUTE,
   tagAttributeName,
 } from "../shared/attributes.ts";
 import {
@@ -36,7 +35,7 @@ import { isFunction } from "../shared/objects.ts";
 import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
 import type { RefreshJson, RefreshValues } from "../shared/refresh.ts";
 import { createScope, withScope, type ScopedChild } from "../shared/scope.ts";
-import { cssText, sheetInfo, type ElementCss, type SheetInfo } from "../shared/styles.ts";
+import type { SheetInfo } from "../shared/styles.ts";
 import { BOUNDARIES_KEY, childKey, PROPS_KEY, REFRESH_PROPS_KEY } from "../shared/transfer-keys.ts";
 import { checkSerializable, formProps } from "../shared/wire.ts";
 import { ariaAttributes } from "./aria.ts";
@@ -50,15 +49,10 @@ import {
   swapScript,
 } from "./bootstrap.ts";
 import { classify } from "./errors.ts";
-import {
-  attribute,
-  checkAttributeName,
-  escapeAttribute,
-  escapeText,
-  stylesheetLink,
-} from "./html.ts";
+import { attribute, checkAttributeName, escapeAttribute, escapeText } from "./html.ts";
 import { Labels } from "./labels.ts";
 import { scriptJson } from "./script.ts";
+import { elementCss, propertiesStyle } from "./styles.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
 import { toScript } from "./wire.ts";
 
@@ -522,25 +516,6 @@ interface Legend {
 
 /** `disabled` の属性の値 `value` が、無効であることを表すかどうかを返す。 */
 const disables = (value: unknown): boolean => attributeValue("disabled", value) !== null;
-
-/** CSS `css` の `<style>` を返す。中の `</style` は、大文字と小文字を保ったまま `<\/style` に置換する。 */
-const styleTag = (css: string, attributes = ""): string =>
-  `<style${attributes}>${css.replaceAll(/<\/(style)/gi, "<\\/$1")}</style>`;
-
-/** `value` がタグ付きテンプレートの文字列の配列かどうかを返す。 */
-const isTemplate = (value: unknown): value is TemplateStringsArray => Array.isArray(value);
-
-/** サーバーのシート `sheet` の情報を返す。Vite プラグインが生成したシートでなければ、エラーを投げる。 */
-function sheetOf(sheet: CSSStyleSheet): SheetInfo {
-  const info: unknown = Reflect.get(sheet, sheetInfo);
-  if (info === undefined) {
-    throw new Error(
-      "[rinka] サーバーで css に渡せるシートは、with { type: 'css' } で import した CSS だけです。",
-    );
-  }
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-  return info as SheetInfo;
-}
 
 /** 常に無効でないことを返す。 */
 const notDisabled = (): boolean => false;
@@ -1286,18 +1261,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     let submitted: (() => readonly [unknown, unknown, boolean]) | undefined;
     /** `css` に渡したスタイルを、DSD の先頭に出力する HTML にして、呼び出した順に保持する。 */
     const styles: string[] = [];
-    const css: ElementCss = (
-      input: TemplateStringsArray | CSSStyleSheet,
-      ...values: readonly (string | number)[]
-    ) => {
-      if (isTemplate(input)) {
-        styles.push(styleTag(cssText(input, values)));
-        return;
-      }
-      const sheet = sheetOf(input);
-      sheets.push(sheet);
-      styles.push(stylesheetLink(sheet.href));
-    };
+    const css = elementCss(styles, sheets);
     const elementCtx: Ctx = {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       host: serverHost as HTMLElement,
@@ -1707,7 +1671,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
         if (properties !== "") rules.push(properties);
       }
     }
-    return rules.length === 0 ? "" : styleTag(rules.join("\n"), ` ${PROPERTIES_ATTRIBUTE}`);
+    return rules.length === 0 ? "" : propertiesStyle(rules.join("\n"));
   }
 
   /** 描き直しの `shell` から、`refreshPage()` のレスポンスの JSON の値を作成する。 */

@@ -22,3 +22,8 @@ export const cssText = (
 /** CSS `css` に含まれる `@property` の規則を、改行で区切って返す。 */
 export const propertiesOf = (css: string): string =>
   (css.match(/@property\s[^{]*\{[^}]*\}/g) ?? []).join("\n");
+
+/** ctx の `css` に渡した値が、タグ付きテンプレートの文字列の配列かどうかを返す。 */
+export const isTemplate = (
+  value: TemplateStringsArray | CSSStyleSheet,
+): value is TemplateStringsArray => Array.isArray(value);

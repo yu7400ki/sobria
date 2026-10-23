@@ -1,4 +1,4 @@
-import { cssText, propertiesOf, type ElementCss } from "../shared/styles.ts";
+import { cssText, isTemplate, propertiesOf, type ElementCss } from "../shared/styles.ts";
 
 /** 埋め込む値の無いタグ付きテンプレートから作成したシートを、テンプレートごとに保持する。 */
 const templateSheets = new WeakMap<TemplateStringsArray, CSSStyleSheet>();
@@ -6,7 +6,7 @@ const templateSheets = new WeakMap<TemplateStringsArray, CSSStyleSheet>();
 /** 渡したシートを、呼び出した順に `sheets` に追加する ctx の `css` を返す。 */
 export function elementCss(sheets: CSSStyleSheet[]): ElementCss {
   return (input: TemplateStringsArray | CSSStyleSheet, ...values: readonly (string | number)[]) => {
-    sheets.push(input instanceof CSSStyleSheet ? input : templateSheet(input, values));
+    sheets.push(isTemplate(input) ? templateSheet(input, values) : input);
   };
 }
 
