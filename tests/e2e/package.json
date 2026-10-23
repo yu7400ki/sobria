@@ -10,15 +10,18 @@
     "rinka": "workspace:*"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.64.0",
     "@rinka/config": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "catalog:",
     "@vitest/browser-playwright": "catalog:",
     "axe-core": "^4.14.0",
+    "miniflare": "^4.20260730.0",
     "playwright": "catalog:",
     "tailwindcss": "^4.3.3",
     "typescript": "catalog:",
     "vite": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "wrangler": "^4.152.0"
   }
 }
