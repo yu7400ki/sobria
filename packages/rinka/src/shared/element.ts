@@ -4,7 +4,7 @@ import type { ClientNode, Slot } from "./nodes.ts";
 /** 属性の値から変換する props の型を表す。 */
 export type AttributeType = "string" | "number" | "boolean";
 
-/** フォームの部品が、Props の型に記述していなくても受け付け、ホストの属性に反映する props の名前と、その値の型である。 */
+/** フォームの部品が、Props の型に記述していなくても受け付け、ホストの属性に反映する props の名前と、JSX の型で受け付ける値の型である。 */
 export const formAttributeTypes = {
   name: "string",
   disabled: "boolean",

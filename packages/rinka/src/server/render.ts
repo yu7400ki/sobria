@@ -1233,8 +1233,8 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     let owner: Owner | null = null;
     let tree: Node = null;
     const internals = {};
-    /** 要素の関数が `form.value` に渡した関数と、ホストの `name` と `disabled` を返す関数である。 */
-    let submitted: { readonly form: FormProps; readonly value: () => unknown } | undefined;
+    /** ホストの `name`、要素の関数が `form.value` に渡した関数の値、ホストの `disabled` を返す関数である。 */
+    let submitted: (() => readonly [unknown, unknown, boolean]) | undefined;
     const elementCtx: Ctx = {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       host: serverHost as HTMLElement,
@@ -1243,7 +1243,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       form: form
         ? {
             value: (fn) => {
-              submitted = { form, value: fn };
+              submitted = () => [form.name(), fn(), form.disabled()];
             },
             validity: () => {},
             onReset: () => {},
@@ -1280,15 +1280,11 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       disabled: notDisabled,
       fallback: false,
     };
-    const pending = submitted;
+    const read = submitted;
     const input =
-      pending &&
-      this.chunkOf(
-        this.settle(
-          shadowCtx,
-          () => [pending.form.name(), pending.value(), pending.form.disabled()] as const,
-        ),
-        ([given, value, off]) => hiddenInput(tag, given, value, off),
+      read &&
+      this.chunkOf(this.settle(shadowCtx, read), ([given, value, off]) =>
+        hiddenInput(tag, given, value, off),
       );
     this.walk(tree, shadowCtx, chunks);
     chunks.push("</template>");
