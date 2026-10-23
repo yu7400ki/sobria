@@ -49,12 +49,15 @@ export function analyzeProps(
   const types: Record<string, AttributeType> = {};
   const slots: string[] = [];
   const functionProps: string[] = [];
+  const objectProps: string[] = [];
   for (const [name, kind] of members) {
     if (kind === "slot") {
       if (name !== "children") slots.push(name);
     } else if (kind === "function") {
       functionProps.push(name);
-    } else if (kind !== "object") {
+    } else if (kind === "object") {
+      objectProps.push(name);
+    } else {
       types[name] = kind;
     }
   }
@@ -63,6 +66,7 @@ export function analyzeProps(
     ...(Object.keys(types).length > 0 && { types }),
     ...(slots.length > 0 && { slots }),
     ...(functionProps.length > 0 && { functionProps }),
+    ...(objectProps.length > 0 && { objectProps }),
   };
 }
 

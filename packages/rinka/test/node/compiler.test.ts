@@ -180,6 +180,7 @@ export default function X(props: Props) { return <p />; }`);
       },
       slots: ["header", "footer"],
       functionProps: ["onSelect", "open"],
+      objectProps: ["data", "mixed", "handler"],
     });
   });
 
@@ -191,6 +192,7 @@ export default function X(props: Props) { return <p />; }`);
       props: ["n", "t", "g", "s", "o"],
       types: { n: "number", t: "string", g: "string" },
       slots: ["s"],
+      objectProps: ["o"],
     });
   });
 

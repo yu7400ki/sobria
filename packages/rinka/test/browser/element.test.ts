@@ -87,12 +87,13 @@ describe("props と属性", () => {
     expect(seen.at(-1)).toEqual([undefined, true, "x"]);
   });
 
-  it("observedAttributes は、関数の props とスロットを除いた props の属性名である", () => {
+  it("observedAttributes は、関数とオブジェクトの型の props とスロットを除いた props の属性名である", () => {
     const tag = nextTag();
     defineElement(tag, () => null, {
-      props: ["userId", "onSelect", "header", "render"],
+      props: ["userId", "onSelect", "header", "render", "data"],
       functionProps: ["onSelect", "render"],
       slots: ["header"],
+      objectProps: ["data"],
     });
     const ctor = customElements.get(tag) as unknown as { observedAttributes: string[] };
     expect(ctor.observedAttributes).toEqual(["user-id"]);

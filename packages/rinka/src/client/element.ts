@@ -212,7 +212,7 @@ export function registerElement<P, M extends object = object>(
   const types = options.types ?? {};
   const functionProps: ReadonlySet<string> = new Set(options.functionProps);
   const slotNames: ReadonlySet<string> = new Set(["children", ...(options.slots ?? [])]);
-  const unobserved = new Set([...functionProps, ...slotNames]);
+  const unobserved = new Set([...functionProps, ...slotNames, ...(options.objectProps ?? [])]);
   /** ホストの属性に反映する props の名前である。反映した属性の変化は、props に書き戻さない。 */
   const reflects: ReadonlySet<string> = new Set(
     options.form ? Object.keys(formAttributeTypes) : [],
