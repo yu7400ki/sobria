@@ -86,11 +86,25 @@ describe("env.d.ts", () => {
 const config = (name: string, options?: Parameters<typeof prepare>[0]): unknown =>
   JSON.parse(fileOf(`tsconfig.${name}.json`, options));
 
+/** 生成した tsconfig が、アプリの tsconfig.base.json より優先して指定する設定である。 */
+const required = {
+  module: "preserve",
+  moduleResolution: "bundler",
+  jsx: "react-jsx",
+  jsxImportSource: "rinka",
+  verbatimModuleSyntax: true,
+  allowImportingTsExtensions: true,
+  composite: true,
+  emitDeclarationOnly: true,
+  noEmit: false,
+};
+
 describe("tsconfig", () => {
   it("elements は、要素のディレクトリを rinka-client の条件で検査し、shared を参照する", () => {
     expect(config("elements")).toEqual({
       extends: ["rinka/tsconfig.json", "../tsconfig.base.json"],
       compilerOptions: {
+        ...required,
         rootDir: "..",
         outDir: "out/elements",
         customConditions: ["rinka-client"],
@@ -104,6 +118,7 @@ describe("tsconfig", () => {
     expect(config("server")).toEqual({
       extends: ["rinka/tsconfig.json", "../tsconfig.base.json"],
       compilerOptions: {
+        ...required,
         rootDir: "..",
         outDir: "out/server",
         customConditions: ["rinka-server"],
@@ -117,6 +132,7 @@ describe("tsconfig", () => {
     expect(config("shared")).toEqual({
       extends: ["rinka/tsconfig.json", "../tsconfig.base.json"],
       compilerOptions: {
+        ...required,
         rootDir: "..",
         outDir: "out/shared",
         customConditions: ["rinka-shared", "rinka-server"],

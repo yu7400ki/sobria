@@ -39,6 +39,19 @@ export interface PrepareOptions {
   readonly globalJSX: boolean;
 }
 
+/** 生成する tsconfig の `compilerOptions` に記述し、アプリの `tsconfig.base.json` より優先させる設定である。 */
+const REQUIRED_OPTIONS = {
+  module: "preserve",
+  moduleResolution: "bundler",
+  jsx: "react-jsx",
+  jsxImportSource: entries.main,
+  verbatimModuleSyntax: true,
+  allowImportingTsExtensions: true,
+  composite: true,
+  emitDeclarationOnly: true,
+  noEmit: false,
+} as const;
+
 /** 生成したファイルの先頭に付けるコメントである。 */
 const HEADER = "// rinka prepare が生成したファイルである。\n";
 
@@ -59,7 +72,12 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
     `${JSON.stringify(
       {
         extends: [entries.tsconfig, ...base],
-        compilerOptions: { rootDir: "..", outDir: `out/${project}`, customConditions },
+        compilerOptions: {
+          ...REQUIRED_OPTIONS,
+          rootDir: "..",
+          outDir: `out/${project}`,
+          customConditions,
+        },
         ...files,
         ...(references.length > 0 && {
           references: references.map((name) => ({ path: projectConfig(name) })),
