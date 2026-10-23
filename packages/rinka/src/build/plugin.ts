@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { getRequestListener } from "@hono/node-server";
@@ -20,7 +20,7 @@ import type { Lang } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
 import { entries, oxc, runtimes } from "./entries.ts";
 import { transformJsx } from "./jsx.ts";
-import { scanRoutes, type ScannedFallback } from "./routes.ts";
+import { routeFileNames, scanRoutes, type ScannedFallback } from "./routes.ts";
 
 /** rinka のプラグインの設定を表す。 */
 export interface RinkaOptions {
@@ -152,6 +152,21 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         return id === ROUTES ? routesModule(root, "src/routes") : null;
       },
       configureServer(server) {
+        const routesDir = resolve(root, "src/routes");
+        const refreshRoutes = (path: string, isDirectory: boolean): void => {
+          if (inside(routesDir, path) === undefined) return;
+          if (!isDirectory && !routeFileNames.has(basename(path))) return;
+          for (const environment of Object.values(server.environments)) {
+            const node = environment.moduleGraph.getModuleById(ROUTES);
+            if (node) environment.moduleGraph.invalidateModule(node);
+            if (!isRunnableDevEnvironment(environment)) continue;
+            const evaluated = environment.runner.evaluatedModules.getModuleById(ROUTES);
+            if (evaluated) environment.runner.evaluatedModules.invalidateModule(evaluated);
+          }
+        };
+        server.watcher.on("add", (path) => refreshRoutes(path, false));
+        server.watcher.on("unlink", (path) => refreshRoutes(path, false));
+        server.watcher.on("unlinkDir", (path) => refreshRoutes(path, true));
         for (const environment of Object.values(server.environments)) {
           if (!isClient(environment)) continue;
           environment.hot.on(reloadEvent, (_data, client) => {
