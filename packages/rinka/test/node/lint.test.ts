@@ -35,6 +35,7 @@ const rules = new Map([
   ["rinka(no-receiver-literal)", "receiver"],
   ["rinka(no-marker-attribute-literal)", "marker"],
   ["rinka(no-output-dir-literal)", "output-dir"],
+  ["rinka(no-reserved-path-literal)", "reserved-path"],
 ]);
 
 type Diagnostic = { code: string; labels: { span: { line: number } }[] };
@@ -343,6 +344,26 @@ describe("src/ のディレクトリ", () => {
         .filter((entry) => !entry.isDirectory() || !allowed.has(entry.name))
         .map((entry) => entry.name),
     ).toEqual([]);
+  });
+});
+
+describe("後送りの境界の終わりの目印と、rinka の URL の接頭辞", () => {
+  it("src/ の中の、/ob: か /_rinka/ を含む文字列のリテラルとテンプレートリテラルを報告する", () => {
+    expect(
+      reports("src/server/reserved-use.ts", [
+        "export const a = (id: string) => `<!--/ob:${id}-->`;",
+        `export const b = "/_rinka/*";`,
+        `export const c = "/rinka/ob";`,
+      ]),
+    ).toEqual([
+      [1, "reserved-path"],
+      [2, "reserved-path"],
+    ]);
+  });
+
+  it("src/shared/attributes.ts と src/shared/wire.ts の定義は報告しない", () => {
+    expect(reports("src/shared/attributes.ts", [`export const a = "/ob:";`])).toEqual([]);
+    expect(reports("src/shared/wire.ts", [`export const a = "/_rinka/";`])).toEqual([]);
   });
 });
 

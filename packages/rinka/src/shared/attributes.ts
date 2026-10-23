@@ -36,6 +36,9 @@ export const AWAITED_ATTRIBUTE = "data-om";
 /** 後送りの境界が始まる位置に置く `<template>` に、境界の ID を出力する属性の名前である。 */
 export const BOUNDARY_ATTRIBUTE = "data-ob";
 
+/** 後送りの境界の終わりに置くコメントの、境界の ID の前の文字列である。 */
+export const BOUNDARY_END = "/ob:";
+
 /** 後送りにした境界の中身を入れて送る `<template>` に、境界の ID を出力する属性の名前である。 */
 export const BOUNDARY_CONTENT_ATTRIBUTE = "data-os";
 

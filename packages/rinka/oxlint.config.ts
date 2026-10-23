@@ -91,6 +91,7 @@ export default defineConfig({
       rules: {
         "rinka/no-receiver-literal": "error",
         "rinka/no-marker-attribute-literal": "error",
+        "rinka/no-reserved-path-literal": "error",
       },
     },
     {
@@ -140,8 +141,12 @@ export default defineConfig({
     { files: ["src/server/bootstrap.ts"], rules: { "rinka/no-receiver-literal": "off" } },
     {
       files: ["src/shared/attributes.ts"],
-      rules: { "rinka/no-marker-attribute-literal": "off" },
+      rules: {
+        "rinka/no-marker-attribute-literal": "off",
+        "rinka/no-reserved-path-literal": "off",
+      },
     },
+    { files: ["src/shared/wire.ts"], rules: { "rinka/no-reserved-path-literal": "off" } },
     { files: ["test/**"], rules: testRelaxations },
   ],
 });

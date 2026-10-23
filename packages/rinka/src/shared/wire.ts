@@ -21,8 +21,11 @@ export const isRedirectJson = (value: unknown): value is RedirectJson =>
 /** GET の RPC で入力を送るクエリの名前を表す。`json` は素の JSON を、`seroval` は seroval の JSON の形式を示す。 */
 export const rpcQuery = { json: "d", seroval: "s" } as const;
 
+/** rinka が処理する URL のパスの接頭辞である。 */
+export const internalPrefix = "/_rinka/";
+
 /** サーバー関数のエンドポイントの URL のパスの接頭辞である。 */
-export const rpcPrefix = "/_rinka/fn/";
+export const rpcPrefix = `${internalPrefix}fn/`;
 
 /** ID が `id` のサーバー関数のエンドポイントの URL のパスを返す。 */
 export const rpcPath = (id: string): string => rpcPrefix + encodeURIComponent(id);

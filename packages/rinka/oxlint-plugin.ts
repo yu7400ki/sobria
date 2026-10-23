@@ -134,6 +134,21 @@ export default {
         return { Literal: check, TemplateLiteral: check };
       },
     },
+    /** 後送りの境界の終わりの目印 `/ob:` か、rinka の URL の接頭辞 `/_rinka/` を含む文字列のリテラルとテンプレートリテラルを報告する。 */
+    "no-reserved-path-literal": {
+      create(context: Context) {
+        const check = (node: StringNode) => {
+          const text = fullText(node);
+          if (text === undefined || !/\/ob:|\/_rinka\//.test(text)) return;
+          context.report({
+            node,
+            message:
+              "後送りの境界の終わりの目印は src/shared/attributes.ts の BOUNDARY_END で、rinka の URL の接頭辞は src/shared/wire.ts の internalPrefix で記述してください。",
+          });
+        };
+        return { Literal: check, TemplateLiteral: check };
+      },
+    },
     /** MagicString の、挿入する位置の左右を選ぶメソッドの呼び出しを報告する。 */
     "no-directional-insert": {
       create(context: Context) {

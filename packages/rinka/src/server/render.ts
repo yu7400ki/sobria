@@ -14,6 +14,7 @@ import {
   ARIA_ATTRIBUTE,
   AWAITED_ATTRIBUTE,
   BOUNDARY_ATTRIBUTE,
+  BOUNDARY_END,
   BOUNDARY_CONTENT_ATTRIBUTE,
   FORM_VALUE_ATTRIBUTE,
   HOST_ATTRIBUTE,
@@ -38,7 +39,7 @@ import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
 import type { RefreshJson, RefreshValues } from "../shared/refresh.ts";
 import { createScope, withScope, type ScopedChild } from "../shared/scope.ts";
 import { BOUNDARIES_KEY, childKey, PROPS_KEY, REFRESH_PROPS_KEY } from "../shared/transfer-keys.ts";
-import { checkSerializable, formProps } from "../shared/wire.ts";
+import { checkSerializable, formProps, internalPrefix } from "../shared/wire.ts";
 import { ariaAttributes } from "./aria.ts";
 import {
   bootstrap,
@@ -253,7 +254,7 @@ function navigationHead(values: NavigationValues): string {
   const rules = {
     prefetch: [
       {
-        where: { and: [{ href_matches: "/*" }, { not: { href_matches: "/_rinka/*" } }] },
+        where: { and: [{ href_matches: "/*" }, { not: { href_matches: `${internalPrefix}*` } }] },
         eagerness: prefetch,
       },
     ],
@@ -663,7 +664,7 @@ const voidTags: ReadonlySet<string> = new Set([
 
 /** 目印の開始と終了の HTML を返す。 */
 const marker = (id: string, inner = ""): string =>
-  `<template ${BOUNDARY_ATTRIBUTE}="${id}"></template>${inner}<!--/ob:${id}-->`;
+  `<template ${BOUNDARY_ATTRIBUTE}="${id}"></template>${inner}<!--${BOUNDARY_END}${id}-->`;
 
 /** サーバーの描画で、`ctx.host` の代わりに渡す値である。プロパティを参照すると、エラーを投げる。 */
 const serverHost = new Proxy(

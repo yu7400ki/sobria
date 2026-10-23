@@ -1,5 +1,6 @@
 import {
   BOUNDARY_ATTRIBUTE,
+  BOUNDARY_END,
   BOUNDARY_CONTENT_ATTRIBUTE,
   HOST_ATTRIBUTE,
   LOAD_ATTRIBUTE,
@@ -35,7 +36,7 @@ if(host&&!host.shadowRoot){host.attachShadow({mode:t.getAttribute('shadowrootmod
 const apply=(id,path,holder)=>{const src=document.querySelector(holder);let root=document;
 for(const h of path){const el=root&&root.querySelector('[${HOST_ATTRIBUTE}="'+h+'"]');root=el&&el.shadowRoot}
 const start=root&&root.querySelector('template[${BOUNDARY_ATTRIBUTE}="'+id+'"]');let end=start&&start.nextSibling;
-while(end&&!(end.nodeType===8&&end.data==='/ob:'+id))end=end.nextSibling;
+while(end&&!(end.nodeType===8&&end.data==='${BOUNDARY_END}'+id))end=end.nextSibling;
 if(!src)return;if(!end){src.remove();return}
 while(start.nextSibling!==end)start.nextSibling.remove();
 for(const y of src.content.querySelectorAll('style[${PROPERTIES_ATTRIBUTE}]'))document.head.append(y);
