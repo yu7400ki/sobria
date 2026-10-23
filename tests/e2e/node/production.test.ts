@@ -35,8 +35,7 @@ beforeAll(async () => {
 }, 180_000);
 
 afterAll(async () => {
-  deploy?.stop();
-  styles?.stop();
+  await Promise.all([deploy?.stop(), styles?.stop()]);
   await stylesDev?.close();
   await browser?.close();
   await rm(outDir, { recursive: true, force: true });

@@ -182,7 +182,7 @@ async function checkRuntime(command: string, out: string): Promise<void> {
     try {
       await checkServer(server.origin);
     } finally {
-      server.stop();
+      await server.stop();
     }
   } finally {
     await rm(copy, { recursive: true, force: true });

@@ -47,10 +47,10 @@ async function waitFor(origin: string, attempts = 100): Promise<void> {
   }
 }
 
-/** 起動したサーバーのオリジンと、サーバーを停止する関数を表す。 */
+/** 起動したサーバーのオリジンと、サーバーを停止して終了を待つ関数を表す。 */
 export interface RunningServer {
   readonly origin: string;
-  readonly stop: () => void;
+  readonly stop: () => Promise<void>;
 }
 
 /**
@@ -75,5 +75,12 @@ export async function startServer(
     child.kill();
     throw error;
   }
-  return { origin, stop: () => child.kill() };
+  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  return {
+    origin,
+    stop: async () => {
+      if (child.exitCode === null) child.kill();
+      await exited;
+    },
+  };
 }

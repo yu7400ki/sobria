@@ -1,5 +1,5 @@
 import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -14,7 +14,7 @@ beforeAll(async () => {
   root = await mkdtemp(fileURLToPath(new URL("../.rinka-tmp-types-", import.meta.url)));
   await cp(fileURLToPath(new URL("../fixtures/types", import.meta.url)), root, {
     recursive: true,
-    filter: (source) => !source.includes(".rinka"),
+    filter: (source) => basename(source) !== ".rinka",
   });
   await run(process.execPath, [rinkaBin, "prepare", root]);
 }, 60_000);

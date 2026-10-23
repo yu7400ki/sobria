@@ -38,7 +38,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await rm(copy, { recursive: true, force: true });
+  await rm(copy, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 describe("@cloudflare/vite-plugin との組み合わせ", () => {
@@ -97,7 +97,7 @@ describe("@cloudflare/vite-plugin との組み合わせ", () => {
       expect((await form("a")).status).toBe(303);
       expect((await form("")).status).toBe(422);
     } finally {
-      server.stop();
+      await server.stop();
     }
   }, 180_000);
 });

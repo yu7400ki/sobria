@@ -49,8 +49,10 @@ class LanguageServer {
   async close(): Promise<void> {
     if (this.child.exitCode === null) {
       const exited = new Promise((resolve) => this.child.once("exit", resolve));
-      const timeout = new Promise((resolve) => setTimeout(resolve, 5000));
+      let timer: NodeJS.Timeout | undefined;
+      const timeout = new Promise((resolve) => (timer = setTimeout(resolve, 5000)));
       await Promise.race([this.request("shutdown"), exited, timeout]);
+      clearTimeout(timer);
       if (this.child.exitCode === null) this.notify("exit");
     }
     this.child.kill();
