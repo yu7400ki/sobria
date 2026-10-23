@@ -39,9 +39,11 @@ describe("morph", () => {
   it("タグが異なる要素は置き換え、余った要素を取り除き、足りない要素を加える", () => {
     const root = container("<p>a</p><span>b</span><i>c</i>");
     const p = root.querySelector("p");
+    const span = root.querySelector("span");
     morph(root, "<div>a</div><span>b</span>", noHost);
     expect(root.innerHTML).toBe("<div>a</div><span>b</span>");
     expect(root.contains(p)).toBe(false);
+    expect(root.querySelector("span")).toBe(span);
     morph(root, "<div>a</div><span>b</span><em>c</em>", noHost);
     expect(root.innerHTML).toBe("<div>a</div><span>b</span><em>c</em>");
   });
@@ -57,6 +59,26 @@ describe("morph", () => {
     expect(items[0]).toBe(three);
     expect(items[1]).toBe(one);
     expect([...items].includes(two as HTMLLIElement)).toBe(false);
+  });
+
+  it("キーのある要素はキーだけで対応付け、キーの無い要素は位置で対応付ける", () => {
+    const root = container('<li data-ok="a">a</li><p>p</p><li>x</li>');
+    const [keyed, unkeyed] = root.querySelectorAll("li");
+    const p = root.querySelector("p");
+    morph(root, '<p>p</p><li data-ok="a">a</li><li data-ok="n">x</li>', noHost);
+    const items = root.querySelectorAll("li");
+    expect(root.querySelector("p")).toBe(p);
+    expect(items[0]).toBe(keyed);
+    expect(items[1]).not.toBe(unkeyed);
+    expect(root.innerHTML).toBe('<p>p</p><li data-ok="a">a</li><li data-ok="n">x</li>');
+  });
+
+  it("名前空間のある属性を、名前空間とともに設定する", () => {
+    const root = container("<svg><use></use></svg>");
+    morph(root, '<svg><use xlink:href="#a"></use></svg>', noHost);
+    expect(root.querySelector("use")?.getAttributeNS("http://www.w3.org/1999/xlink", "href")).toBe(
+      "#a",
+    );
   });
 
   it("要素のホストは属性を変更せず、Light DOM の子の差分を反映し、新しいホストの ID とともに渡す", () => {
@@ -84,10 +106,15 @@ describe("morph", () => {
     const root = container("<p>a</p><script>1</script><template>t</template><p>b</p>");
     const script = root.querySelector("script");
     const template = root.querySelector("template");
-    morph(root, "<p>a!</p><script>2</script><p>b!</p>", noHost);
+    morph(
+      root,
+      "<p>a!</p><script>2</script><template>u</template><p>b!</p><section><script>3</script><template>v</template></section>",
+      noHost,
+    );
     expect(root.querySelector("script")).toBe(script);
     expect(root.querySelector("template")).toBe(template);
     expect(root.querySelectorAll("script")).toHaveLength(1);
+    expect(root.querySelectorAll("template")).toHaveLength(1);
     expect(root.textContent).toBe("a!1b!");
   });
 

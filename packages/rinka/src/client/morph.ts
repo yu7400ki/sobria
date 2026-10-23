@@ -1,4 +1,4 @@
-/** ページにあるまま変更しない要素であるかを返す。 */
+/** `<script>` か `<template>` であるかを返す。 */
 const isKept = (node: Node): boolean =>
   node instanceof HTMLScriptElement || node instanceof HTMLTemplateElement;
 
@@ -13,7 +13,7 @@ const sameKind = (from: Node, to: Node): boolean =>
 
 /**
  * `parent` の子を、`html` を解析した子に合わせる。
- * ページにある `<script>` と `<template>` はそのまま残り、`html` の `<script>` と `<template>` は加わらない。
+ * ページにある `<script>` と `<template>` は残し、`html` からは `<script>` と `<template>` を除いてから合わせる。
  * 使用し続ける要素のホストは属性を変更せずに Light DOM の子だけを合わせ、`html` でのホストの ID とともに `onHost` に渡す。
  */
 export function morph(
@@ -23,6 +23,7 @@ export function morph(
 ): void {
   const template = document.createElement("template");
   template.innerHTML = html;
+  for (const kept of template.content.querySelectorAll("script, template")) kept.remove();
   morphChildren(parent, template.content, onHost);
 }
 
@@ -43,7 +44,6 @@ function morphChildren(
   let position = 0;
   const result: Node[] = [];
   for (const node of source.childNodes) {
-    if (isKept(node)) continue;
     const key = keyOf(node);
     let match: Node | undefined;
     if (key === null) {
@@ -61,7 +61,7 @@ function morphChildren(
     }
   }
   const used = new Set(result);
-  for (const node of candidates) if (!used.has(node)) node.parentNode?.removeChild(node);
+  for (const node of candidates) if (!used.has(node)) node.remove();
   let next = parent.firstChild;
   for (const node of result) {
     while (next !== null && isKept(next)) next = next.nextSibling;
@@ -84,10 +84,14 @@ function update(node: Node, source: Node, onHost: (host: Element, id: string) =>
 
 /** `element` の属性を、`source` の属性に合わせる。 */
 function syncAttributes(element: Element, source: Element): void {
-  for (const name of element.getAttributeNames()) {
-    if (!source.hasAttribute(name)) element.removeAttribute(name);
+  for (const { namespaceURI, localName } of Array.from(element.attributes)) {
+    if (!source.hasAttributeNS(namespaceURI, localName)) {
+      element.removeAttributeNS(namespaceURI, localName);
+    }
   }
-  for (const { name, value } of source.attributes) {
-    if (element.getAttribute(name) !== value) element.setAttribute(name, value);
+  for (const { namespaceURI, localName, name, value } of source.attributes) {
+    if (element.getAttributeNS(namespaceURI, localName) !== value) {
+      element.setAttributeNS(namespaceURI, name, value);
+    }
   }
 }
