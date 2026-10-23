@@ -613,6 +613,12 @@ describe("表に無い URL の not-found.tsx", () => {
   });
 });
 
+/** Vary に cookie を設定する middleware である。 */
+const varying: MiddlewareHandler = async (c, next) => {
+  c.header("vary", "cookie");
+  await next();
+};
+
 describe("描き直しのレスポンス", () => {
   const refreshRoutes: Routes = {
     routes: [
@@ -647,5 +653,13 @@ describe("描き直しのレスポンス", () => {
       "x-rinka-refresh",
     ]);
     expect(plain.headers.get("content-type")).toContain("text/html");
+  });
+
+  it("middleware が設定した Vary に、x-rinka-refresh を加える", async () => {
+    const response = await request(
+      { routes: [pageRoute("/", () => jsx("p", { children: "page" }), [], [varying])] },
+      "/",
+    );
+    expect(response.headers.get("vary")).toBe("cookie, x-rinka-refresh");
   });
 });

@@ -68,9 +68,11 @@ export function getContext(): Context | undefined {
 /**
  * `response` に、Context で設定したヘッダーを加えて返す。
  * `Set-Cookie` は、Context で設定したものを順に並べ、`response` のうち Context で設定していないものを後に加える。
+ * `Vary` は、Context で設定した値の後に、`response` の値を連結する。
  */
 export function withContextHeaders(c: Pick<Context, "newResponse">, response: Response): Response {
-  const pending = c.newResponse(null).headers.getSetCookie();
+  const context = c.newResponse(null).headers;
+  const pending = context.getSetCookie();
   const added = response.headers.getSetCookie().filter((cookie) => {
     const index = pending.indexOf(cookie);
     if (index === -1) return true;
@@ -79,6 +81,10 @@ export function withContextHeaders(c: Pick<Context, "newResponse">, response: Re
   });
   const headers = new Headers(response.headers);
   headers.delete("set-cookie");
+  const vary = [context.get("vary"), response.headers.get("vary")].filter(
+    (value) => value !== null,
+  );
+  if (vary.length > 0) headers.set("vary", vary.join(", "));
   const init = new Response(null, {
     status: response.status,
     statusText: response.statusText,
