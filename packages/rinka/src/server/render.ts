@@ -482,9 +482,9 @@ interface WalkCtx {
   /** この位置を囲む境界を表す。 */
   readonly boundary: Boundary;
   /** 要素の Shadow DOM の中なら、`<slot>` の名前ごとに、その `<slot>` を囲む境界を記録する。 */
-  readonly slots?: Map<string, Boundary>;
+  readonly slots: Map<string, Boundary> | undefined;
   /** 名前付きのスロットに配置する内容のうち、最上位のノードを描画しているときは、そのスロットの名前を表す。 */
-  readonly slot?: string;
+  readonly slot: string | undefined;
   /** この位置を記述したルートのファイルの深さである。ルートのファイルの外では 0 である。 */
   readonly depth: number;
   /** この位置のタグを `<head>` に移動するかどうかを表す。 */
@@ -492,7 +492,7 @@ interface WalkCtx {
   /** 同じ tree の外側にある `<fieldset disabled>` で無効になるかどうかを返す。値が未解決なら `NotReadyError` を投げる。 */
   readonly disabled: () => boolean;
   /** `<fieldset>` の子なら、その `<fieldset>` の子の `<legend>` を表す。 */
-  readonly legend?: Legend;
+  readonly legend: Legend | undefined;
   /** `<Loading>` のフォールバックの中で、フォールバックと同じ tree にあれば `true` である。 */
   readonly fallback: boolean;
 }
@@ -1049,7 +1049,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     out.push(this.chunkOf(open, (text) => text));
     if (label) out.push(label.mark);
     if (voidTags.has(tag)) return;
-    const { slot: _, legend, disabled: outer, ...inner } = ctx;
+    const { legend, disabled: outer } = ctx;
     let disabled = outer;
     if (tag === "legend" && legend && !legend.taken) {
       legend.taken = true;
@@ -1060,10 +1060,11 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     this.walk(
       asNode(props.children),
       {
-        ...inner,
+        ...ctx,
         head: childPlacement(tag, ctx.head),
+        slot: undefined,
         disabled,
-        ...(tag === "fieldset" && { legend: { taken: false, outer } }),
+        legend: tag === "fieldset" ? { taken: false, outer } : undefined,
       },
       out,
     );
@@ -1192,9 +1193,10 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
         boundary,
         depth: ctx.depth,
         head: ctx.head === "none" ? "none" : "element",
-        ...(ctx.slots && { slots: ctx.slots }),
+        slots: ctx.slots,
+        slot: slot === "" ? undefined : slot,
         disabled: ctx.disabled,
-        ...(slot !== "" && { slot }),
+        legend: undefined,
         fallback: ctx.fallback,
       };
       if (boundary === ctx.boundary) {
@@ -1309,9 +1311,11 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       path: [...ctx.path, record],
       boundary: ctx.boundary,
       slots,
+      slot: undefined,
       depth: ctx.depth,
       head: "element",
       disabled: notDisabled,
+      legend: undefined,
       fallback: false,
     };
     const read = submitted;
@@ -1578,9 +1582,12 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
         owner: null,
         path: [],
         boundary: this.root,
+        slots: undefined,
+        slot: undefined,
         depth: 0,
         head: "auto",
         disabled: notDisabled,
+        legend: undefined,
         fallback: false,
       }),
       this.shellOut,
