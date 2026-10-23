@@ -1,8 +1,17 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { entries, runtimes } from "../../src/build/entries.ts";
+import { clientImports, entries, runtimes, serverImports } from "../../src/build/entries.ts";
+import { appModule } from "../../src/build/entry.ts";
+import {
+  clientBuildSheetModule,
+  clientSheetModule,
+  serverBuildSheetModule,
+  serverSheetModule,
+} from "../../src/build/sheets.ts";
 import * as client from "../../src/client/index.ts";
 import * as server from "../../src/server/index.ts";
 
@@ -44,6 +53,53 @@ describe("入口", () => {
     expect(typeof clientInternal.defineElement).toBe("function");
     expect(typeof serverInternal.createApp).toBe("function");
     expect(typeof serverInternal.defineElement).toBe("function");
+  });
+
+  it("実行時のコードが値として import する rinka の外のモジュールは、環境ごとの一覧と一致する", () => {
+    const src = fileURLToPath(new URL("../../src", import.meta.url));
+    const imported = (dirs: readonly string[]) => {
+      const specifiers = new Set<string>();
+      for (const dir of dirs) {
+        for (const file of readdirSync(join(src, dir), { recursive: true, encoding: "utf8" })) {
+          if (!file.endsWith(".ts") || file.endsWith(".d.ts")) continue;
+          const code = readFileSync(join(src, dir, file), "utf8");
+          for (const [, kind, specifier] of code.matchAll(
+            /^(?:import|export)(\s+type)?[^;]*?from\s+"([^"]+)"/gm,
+          )) {
+            if (kind || specifier!.startsWith(".") || specifier!.startsWith("node:")) continue;
+            specifiers.add(specifier!);
+          }
+        }
+      }
+      return [...specifiers].toSorted();
+    };
+    expect(imported(["server", "shared"])).toEqual([...serverImports].toSorted());
+    expect(imported(["client", "shared"])).toEqual([...clientImports].toSorted());
+  });
+
+  it("プラグインが生成するコードが rinka/internal から import する名前は、環境ごとの内部の入口が関数として export する", async () => {
+    const generated = {
+      client: [clientSheetModule("/a.css?inline"), clientBuildSheetModule("/a.css?url")],
+      server: [
+        serverSheetModule("/a.css?inline", "/a.css?direct"),
+        serverBuildSheetModule("/a.css?url", "/a.css?inline"),
+        appModule({ serverFns: new Map(), trustedOrigins: [] }),
+        appModule({ serverFns: new Map(), trustedOrigins: [], dev: "id" }),
+      ],
+    };
+    const missing = await Promise.all(
+      (["client", "server"] as const).map(async (environment) => {
+        const internal = await lib(runtimes[environment][entries.internal]!);
+        const names = generated[environment].flatMap((code) =>
+          [...code.matchAll(/import \{([^}]+)\} from "rinka\/internal"/g)].flatMap(([, list]) =>
+            list!.split(",").map((name) => name.trim().split(/\s+as\s+/)[0]!),
+          ),
+        );
+        expect(names.length).toBeGreaterThan(0);
+        return names.filter((name) => typeof internal[name] !== "function");
+      }),
+    );
+    expect(missing).toEqual([[], []]);
   });
 
   it("サーバーの effect は、read と apply を呼ばない", () => {

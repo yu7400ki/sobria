@@ -22,7 +22,7 @@ import { langs, type Lang } from "./ast.ts";
 import { embedRouteStyles, moveServerAssets } from "./build-styles.ts";
 import { transformSource } from "./compiler.ts";
 import { scanElements, sourceTag, type ElementFile, type ElementSource } from "./elements.ts";
-import { entries, oxc, runtimes } from "./entries.ts";
+import { clientImports, entries, oxc, runtimes, serverImports } from "./entries.ts";
 import { appModule, devHooks, serverEntry, type DevHooks } from "./entry.ts";
 import { transformJsx } from "./jsx.ts";
 import { findLibraries, type Library } from "./libraries.ts";
@@ -87,17 +87,22 @@ const APP = `\0${entries.app}`;
 /** 要素が無いアプリの、クライアントのビルドの入口にする仮想モジュールの ID である。 */
 const NO_ELEMENTS = `\0${entries.noElements}`;
 
-/** 本番のサーバーのビルドに含める、rinka と、rinka の依存と、アプリと rinka が共有する hono を返す。 */
-const bundled = (): string[] => [entries.main, "hono", ...Object.keys(rinkaPackage().dependencies)];
+/** モジュールの指定子 `id` のパッケージの名前を返す。 */
+const packageOf = (id: string): string =>
+  id
+    .split("/")
+    .slice(0, id.startsWith("@") ? 2 : 1)
+    .join("/");
 
-/** Cloudflare のプラグインと組み合わせた開発中に、サーバーの環境で事前にバンドルする、rinka の実行時のコードが import するモジュールである。 */
-const WORKER_DEPS = [
-  "hono",
-  "hono/combine",
-  "hono/factory",
-  "hono/http-exception",
-  `${entries.main} > seroval`,
-  `${entries.main} > @solidjs/signals`,
+/** モジュールの指定子 `id` を、事前のバンドルでアプリのルートから解決できる形にする。rinka の依存は rinka を経由して解決する。 */
+const fromApp = (id: string): string =>
+  packageOf(id) in rinkaPackage().dependencies ? `${entries.main} > ${id}` : id;
+
+/** 本番のサーバーのビルドに含める、rinka と、rinka の実行時のコードが import するパッケージと、アプリが起動に使う @hono/node-server を返す。 */
+const bundled = (): string[] => [
+  entries.main,
+  "@hono/node-server",
+  ...new Set(serverImports.map(packageOf)),
 ];
 
 /** Vite の設定の `plugins` に、入れ子の配列の中も含めて、Cloudflare のプラグインがあるかどうかを返す。 */
@@ -222,7 +227,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           appType: "custom",
           oxc,
           optimizeDeps: {
-            include: [`${entries.main} > @solidjs/signals`, `${entries.main} > seroval`],
+            include: clientImports.map(fromApp),
             exclude: libraries.map((library) => library.name),
           },
           build: { outDir: options.library ? out : join(out, "client") },
@@ -239,7 +244,8 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         if (command === "build") return { resolve: { noExternal: [...bundled(), ...names] } };
         return {
           resolve: { noExternal: [entries.main, ...names] },
-          ...(withCloudflare && name === "ssr" && { optimizeDeps: { include: WORKER_DEPS } }),
+          ...(withCloudflare &&
+            name === "ssr" && { optimizeDeps: { include: serverImports.map(fromApp) } }),
         };
       },
       configResolved(config) {

@@ -13,6 +13,18 @@ export const entries = {
   tsconfig: "rinka/tsconfig.json",
 } as const;
 
+/** rinka のクライアントの実行時のコードが値として import する、rinka の外のモジュールである。 */
+export const clientImports = ["@solidjs/signals", "seroval"] as const;
+
+/** rinka のサーバーの実行時のコードが値として import する、rinka の外のモジュールである。 */
+export const serverImports = [
+  ...clientImports,
+  "hono",
+  "hono/combine",
+  "hono/factory",
+  "hono/http-exception",
+] as const;
+
 /** oxc の変換の設定である。`sourceType` は Vite の型に無い項目で、oxc の変換にはそのまま渡される。 */
 export const oxc = {
   jsx: { runtime: "automatic", importSource: entries.main, development: false },
