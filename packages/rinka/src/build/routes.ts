@@ -74,6 +74,14 @@ const shapeOf = (segments: readonly UrlSegment[]): string =>
     .map((segment) => (segment.kind === "static" ? segment.name : `[${segment.kind}]`))
     .join("/");
 
+/** `left` と `right` の同じ位置の要素を、短いほうの長さまで組にする。 */
+function zip<T>(left: readonly T[], right: readonly T[]): (readonly [T, T])[] {
+  return left.flatMap((item, index) => {
+    const other = right[index];
+    return other === undefined ? [] : [[item, other] as const];
+  });
+}
+
 /** 走査した行と、その区切りの列と、グループを含めたファイルのディレクトリの深さを表す。 */
 interface Scanned {
   readonly route: ScannedRoute;
@@ -84,7 +92,7 @@ interface Scanned {
 /**
  * `not-found.tsx` の行を、ページと `route.ts` の行の後に、区切りの数が多い順に並べる。
  * ページと `route.ts` の行どうしと、区切りの数が同じ `not-found.tsx` の行どうしは、区切りの優先順位を前から比較し、一方が他方の前方と一致するなら短いほうを先にする。
- * 優先順位が同じなら、パスの文字列の順にし、同じパスならファイルのディレクトリが浅いほうを先にする。
+ * 優先順位が同じなら、区切りの名前を前から比較し、名前も同じならファイルのディレクトリが浅いほうを先にする。
  */
 function compareRoutes(a: Scanned, b: Scanned): number {
   const isNotFound = a.route.kind === "not-found";
@@ -92,14 +100,15 @@ function compareRoutes(a: Scanned, b: Scanned): number {
   if (isNotFound && a.segments.length !== b.segments.length) {
     return b.segments.length - a.segments.length;
   }
-  for (let index = 0; index < Math.min(a.segments.length, b.segments.length); index++) {
-    const left = a.segments[index];
-    const right = b.segments[index];
-    const difference = (left ? ranks[left.kind] : 0) - (right ? ranks[right.kind] : 0);
+  const pairs = zip(a.segments, b.segments);
+  for (const [left, right] of pairs) {
+    const difference = ranks[left.kind] - ranks[right.kind];
     if (difference !== 0) return difference;
   }
   if (a.segments.length !== b.segments.length) return a.segments.length - b.segments.length;
-  if (a.route.path !== b.route.path) return a.route.path < b.route.path ? -1 : 1;
+  for (const [left, right] of pairs) {
+    if (left.name !== right.name) return left.name < right.name ? -1 : 1;
+  }
   return a.depth - b.depth;
 }
 
