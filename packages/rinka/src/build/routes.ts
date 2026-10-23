@@ -18,6 +18,9 @@ export type PathFiles = Files<string, string, string>;
 /** 走査したルートの表の 1 行を表す。 */
 type ScannedRoute = Route<PathFiles>;
 
+/** ルートのファイルを置く、アプリのルートからの相対パスのディレクトリである。 */
+export const ROUTES_DIR = "src/routes";
+
 /** ディレクトリにあれば表の行になるファイルの名前と、その種類である。 */
 const routeFiles: readonly (readonly [string, RouteKind])[] = [
   ["page.tsx", "page"],

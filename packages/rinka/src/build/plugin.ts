@@ -1,6 +1,6 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { basename, extname, join, resolve, sep } from "node:path";
+import { basename, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { getRequestListener } from "@hono/node-server";
@@ -12,16 +12,16 @@ import {
 } from "vite";
 
 import { reloadEvent } from "../shared/hmr.ts";
-import { tagFromPath } from "../shared/names.ts";
 import type { CreateApp, Routes } from "../shared/routes.ts";
 import { fileOfServerFnId } from "../shared/server-fn.ts";
 import type { Lang } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
+import { elementTag, scanElements } from "./elements.ts";
 import { entries, oxc, runtimes } from "./entries.ts";
 import { transformJsx } from "./jsx.ts";
 import { devPath, directUrl, inside } from "./paths.ts";
 import { routeStyles } from "./route-styles.ts";
-import { routeFileNames, routesModule } from "./routes.ts";
+import { ROUTES_DIR, routeFileNames, routesModule } from "./routes.ts";
 import { SHEET_QUERY, clientSheetModule, serverSheetModule, sheetId, sheetPath } from "./sheets.ts";
 
 /** rinka のプラグインの設定を表す。 */
@@ -100,16 +100,6 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
     return true;
   };
 
-  /** 要素のファイルなら、タグ名を返す。 */
-  const tagOf = (path: string, lang: Lang): string | undefined => {
-    if (lang !== "tsx" && lang !== "jsx") return undefined;
-    const inner = inside(elementsDir, path);
-    if (inner === undefined || inner.split("/").some((part) => part.startsWith("_"))) {
-      return undefined;
-    }
-    return tagFromPath(prefix, inner);
-  };
-
   return [
     {
       name: NAME,
@@ -135,7 +125,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         elementsDir = resolve(root, options.elementsDir ?? "src/elements");
       },
       buildStart() {
-        checkTags(elementsDir, tagOf);
+        scanElements(prefix, elementsDir);
       },
       resolveId(id, importer, resolveOptions) {
         if (id === entries.routes) return ROUTES;
@@ -156,7 +146,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         return entry === undefined ? null : fileURLToPath(new URL(`../${entry}`, import.meta.url));
       },
       load(id) {
-        if (id === ROUTES) return routesModule(root, "src/routes");
+        if (id === ROUTES) return routesModule(root, ROUTES_DIR);
         const sheet = sheetPath(id);
         if (sheet === undefined) return null;
         const path = devPath(sheet, root);
@@ -165,7 +155,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           : serverSheetModule(`${path}?inline`, directUrl(path));
       },
       configureServer(server) {
-        const routesDir = resolve(root, "src/routes");
+        const routesDir = resolve(root, ROUTES_DIR);
         const invalidateRoutes = (): void => {
           for (const environment of Object.values(server.environments)) {
             const node = environment.moduleGraph.getModuleById(ROUTES);
@@ -197,7 +187,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       transform(code, id) {
         const target = projectFile(id);
         if (!target) return null;
-        const tag = tagOf(target.path, target.lang);
+        const tag = elementTag(prefix, elementsDir, target.path);
         const result = transformSource(code, {
           id: target.path,
           file: target.file,
@@ -222,27 +212,6 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       },
     },
   ];
-}
-
-/** `dir` の中の要素のファイルを走査し、2 つのファイルが同じタグになればエラーにする。 */
-function checkTags(dir: string, tagOf: (path: string, lang: Lang) => string | undefined): void {
-  if (!existsSync(dir)) return;
-  const owners = new Map<string, string>();
-  for (const entry of readdirSync(dir, { recursive: true, encoding: "utf8" })) {
-    const path = join(dir, entry);
-    const lang = langs[extname(path)];
-    if (!lang) continue;
-    const tag = tagOf(path, lang);
-    if (tag === undefined) continue;
-    const file = entry.split(sep).join("/");
-    const other = owners.get(tag);
-    if (other !== undefined) {
-      throw new Error(
-        `要素のファイル ${other} と ${file} は、どちらもタグ名 ${tag} になります。どちらかのファイル名を変更してください。`,
-      );
-    }
-    owners.set(tag, file);
-  }
 }
 
 /**

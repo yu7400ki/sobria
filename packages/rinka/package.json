@@ -3,7 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "files": [
-    "lib"
+    "lib",
+    "tsconfig.app.json"
   ],
   "type": "module",
   "exports": {
@@ -40,7 +41,8 @@
     "./vite": {
       "types": "./lib/build/plugin.d.ts",
       "default": "./lib/build/plugin.js"
-    }
+    },
+    "./tsconfig.json": "./tsconfig.app.json"
   },
   "scripts": {
     "build": "tsc -p tsconfig.lib.json",

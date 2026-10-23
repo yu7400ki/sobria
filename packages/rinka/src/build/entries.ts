@@ -7,6 +7,8 @@ export const entries = {
   internal: "rinka/internal",
   server: "rinka/server",
   routes: "rinka/routes",
+  router: "rinka/router",
+  tsconfig: "rinka/tsconfig.json",
 } as const;
 
 /** oxc の変換の設定である。`sourceType` は Vite の型に無い項目で、oxc の変換にはそのまま渡される。 */

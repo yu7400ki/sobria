@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "module": "preserve",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "jsxImportSource": "rinka",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "composite": true,
+    "emitDeclarationOnly": true,
+    "skipLibCheck": true
+  }
+}
