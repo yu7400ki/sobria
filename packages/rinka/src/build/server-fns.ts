@@ -16,6 +16,7 @@ export const hashedFnModule = (file: string): string =>
 export const isServerFnSource = (file: string): boolean =>
   file.startsWith(`${SERVER_FN_DIR}/`) &&
   posix.normalize(file) === file &&
+  !file.includes("\\") &&
   extname(file) in langs &&
   !file.endsWith(".d.ts");
 

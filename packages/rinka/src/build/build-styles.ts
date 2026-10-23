@@ -12,7 +12,7 @@ type CssMetadata = { readonly viteMetadata?: { readonly importedCss: ReadonlySet
 
 /**
  * サーバーのビルドの `bundle` から、ルートのファイルごとに、そのチャンクと静的に import するチャンクが import した CSS の URL を、依存する側を後にして集め、
- * サーバーのエントリーの目印を、その一覧に置き換える。目印が無ければ、エラーを投げる。
+ * 目印の文字列のリテラルを、引用符の種類に関わらず、その一覧に置き換える。目印が無ければ、エラーを投げる。
  */
 export function embedRouteStyles(bundle: Rolldown.OutputBundle, root: string): void {
   const cssOf = (fileName: string, seen: Set<string>): string[] => {
@@ -34,10 +34,10 @@ export function embedRouteStyles(bundle: Rolldown.OutputBundle, root: string): v
     if (!file?.startsWith(`${ROUTES_DIR}/`)) continue;
     table[file] = [...new Set(cssOf(chunk.fileName, new Set()))];
   }
-  const marker = JSON.stringify(STYLES_MARKER);
-  const entry = chunks.find((chunk) => chunk.code.includes(marker));
+  const marker = new RegExp(`(["'\`])${STYLES_MARKER}\\1`);
+  const entry = chunks.find((chunk) => marker.test(chunk.code));
   if (!entry) throw new Error("[rinka] サーバーのエントリーに、CSS の一覧の目印がありません。");
-  entry.code = entry.code.replace(marker, JSON.stringify(table));
+  entry.code = entry.code.replace(marker, () => JSON.stringify(table));
 }
 
 /** サーバーのビルドの `bundle` のアセットを、ソースマップと JSON を除いて、サーバーの出力先 `serverDir` からクライアントの出力先 `clientDir` に移動する。 */
@@ -47,7 +47,7 @@ export function moveServerAssets(
   clientDir: string,
 ): void {
   for (const output of Object.values(bundle)) {
-    if (output.type !== "asset" || /.(map|json)$/.test(output.fileName)) continue;
+    if (output.type !== "asset" || /\.(map|json)$/.test(output.fileName)) continue;
     const target = join(clientDir, output.fileName);
     mkdirSync(dirname(target), { recursive: true });
     renameSync(join(serverDir, output.fileName), target);

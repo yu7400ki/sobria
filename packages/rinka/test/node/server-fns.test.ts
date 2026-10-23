@@ -20,7 +20,7 @@ describe("サーバー関数の ID のモジュールの部分", () => {
 });
 
 describe("サーバー関数を定義できるファイル", () => {
-  it("src/ の中の .ts、.tsx、.js、.jsx のファイルで、型宣言のファイルと、.. を含むパスを除く", () => {
+  it("src/ の中の .ts、.tsx、.js、.jsx のファイルで、型宣言のファイルと、正規化されていないパスと、\\ を含むパスを除く", () => {
     expect(isServerFnSource("src/lib/a.ts")).toBe(true);
     expect(isServerFnSource("src/.server/a.tsx")).toBe(true);
     expect(isServerFnSource("test/a.ts")).toBe(false);
@@ -28,6 +28,7 @@ describe("サーバー関数を定義できるファイル", () => {
     expect(isServerFnSource("src/a.css")).toBe(false);
     expect(isServerFnSource("src/../test/a.ts")).toBe(false);
     expect(isServerFnSource("src/./a.ts")).toBe(false);
+    expect(isServerFnSource("src/..\\..\\a.ts")).toBe(false);
   });
 
   it("走査は、src/ の中でサーバー関数を定義したファイルを、ID のモジュールの部分ごとに返す", () => {

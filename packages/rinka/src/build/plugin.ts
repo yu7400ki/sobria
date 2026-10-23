@@ -140,7 +140,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   let isBuild = false;
   /** Vite の設定に Cloudflare のプラグインがあるかどうかである。 */
   let withCloudflare = false;
-  /** サーバーのビルドで読み込んだ、クライアントのビルドの manifest である。 */
+  /** サーバーのビルドで、クライアントのビルドの manifest から要素のファイルの URL を返す関数である。 */
   let clientAssets: ClientAssets | undefined;
   /** 要素のファイル `file` を、ブラウザが読み込むときの URL と、静的に import するチャンクの URL を返す。 */
   const elementAssets = (file: string, client: boolean) => {
