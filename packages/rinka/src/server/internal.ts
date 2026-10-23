@@ -1,6 +1,3 @@
-import { Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
-
 import {
   createElementComponent,
   type Ctx,
@@ -8,12 +5,8 @@ import {
   type ElementComponent,
   type ElementOptions,
 } from "../shared/element.ts";
-import type { AppOptions, CreateApp, Routes } from "../shared/routes.ts";
-import { runInRequest } from "./context.ts";
-import { serverFnMiddleware, withContextHeaders, type Failure } from "./endpoint.ts";
-import { jsx } from "./jsx-runtime.ts";
-import { renderDocument } from "./render.ts";
 
+export { createApp } from "./app.ts";
 export { registerServerFn } from "./endpoint.ts";
 
 /** `fn` を、`tag` の名前の要素として、ブラウザが読み込むモジュールの URL とデフォルトの起動タイミングとともに登録する。 */
@@ -25,33 +18,3 @@ export function defineElement<P, M extends object = object>(
 ): ElementComponent<P, M> {
   return createElementComponent(tag, fn, options, delivery);
 }
-
-/** `HTTPException` はそのレスポンスにし、それ以外は記録して素のテキストの 500 にする。 */
-function defaultFailure(error: unknown): Response {
-  if (error instanceof HTTPException) return error.getResponse();
-  console.error(error);
-  return new Response("Internal Server Error", { status: 500 });
-}
-
-/** ルートの表から、各ページを描画する Hono のアプリを作成する。 */
-export const createApp = (({ routes }: Routes, options: AppOptions = {}): Hono => {
-  const app = new Hono();
-  const handle = options.onError ?? defaultFailure;
-  const fail: Failure = (error, c) => withContextHeaders(c, handle(error));
-  app.onError((c) => {
-    const response = handle(c.error);
-    return c.newResponse(response.body, response);
-  });
-  const serverFns = serverFnMiddleware(options, fail);
-  app.use((c, next) => runInRequest(c, () => serverFns(c, next)));
-  for (const route of routes) {
-    if (route.kind !== "page") continue;
-    app.get(route.path, async () => {
-      const { default: page } = await route.load();
-      return renderDocument(jsx(page, {}), {
-        ...(options.head !== undefined && { head: options.head }),
-      });
-    });
-  }
-  return app;
-}) satisfies CreateApp;
