@@ -85,7 +85,7 @@ const SERVER_FN_MODULE = "__rinka_serverFnModule";
 const SERVER_FN = "__rinka_serverFn";
 
 /**
- * 元のソースに、`rinka` の `memo` の呼び出し箇所の ID を付与し、`with { type: 'css' }` の import をシートのモジュールの import にする。
+ * 元のソースに、`rinka` の `memo` とコンポーネントの JSX の呼び出し箇所の ID を付与し、`with { type: 'css' }` の import をシートのモジュールの import にする。
  * クライアント向けのコードでは、シード中に開始した async 関数を、最初の `await` で停止させる。
  * 要素のファイルでは、default export した関数を、要素を登録する呼び出しに書き換え、関数の中の JSX のスロットを `<slot>` にする。
  * `rinka/server` の `defineServerFn` で初期化したトップレベルの const は、サーバー向けでは ID で登録し、クライアント向けでは RPC の関数を作成する呼び出しに置換する。
@@ -247,11 +247,22 @@ function addElementSites(
     program,
     (node) => {
       if (node.type !== "JSXElement") return;
-      const { name } = node.openingElement;
+      const { name, attributes, typeArguments } = node.openingElement;
+      for (const attribute of attributes) {
+        if (
+          attribute.type === "JSXAttribute" &&
+          attribute.name.type === "JSXIdentifier" &&
+          attribute.name.name === SITE_PROP
+        ) {
+          throw new CompileError(
+            `${file}: ${SITE_PROP} は rinka が使用する名前なので、props の名前にできません。`,
+          );
+        }
+      }
       if (name.type === "JSXNamespacedName") return;
-      if (name.type === "JSXIdentifier" && /^[a-z]/.test(name.name)) return;
+      if (name.type === "JSXIdentifier" && /^[a-z]|-/.test(name.name)) return;
       const site = JSON.stringify(`${file}:${lineColumn(starts, node.start)}`);
-      follow(output, name, ` ${SITE_PROP}={${site}}`);
+      follow(output, typeArguments ?? name, ` ${SITE_PROP}={${site}}`);
     },
     (node) => replaced.has(node),
   );

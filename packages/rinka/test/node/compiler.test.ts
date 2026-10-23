@@ -647,6 +647,30 @@ export async function view() { return <C v={await f()} />; }`;
     expect(await compile(source, { ...options, client: true })).toContain(site);
     expect(await compile(source, { ...options, client: false })).toContain(site);
   });
+
+  it("型引数を持つコンポーネントにも付与し、名前に - を含むタグには付与しない", async () => {
+    const code = await compile(`const a = <C<string> v="x" />;
+const b = <Foo-bar />;`);
+    expect(code).toContain('_jsx(C, { v: "x" }, void 0, "src/routes/page.tsx:1:11")');
+    expect(code).toContain('_jsx("Foo-bar", {})');
+  });
+
+  it("要素のファイルのスロットのデフォルトの中身の呼び出しにも、クライアント向けとサーバー向けで同じ ID を付与する", async () => {
+    const source = `import D from "./d.tsx";
+type Props = { header?: JSX.Element };
+export default function X(props: Props) { return <p>{props.header ?? <D n={2} />}</p>; }`;
+    const options = {
+      file: "src/elements/x.tsx",
+      element: { tag: "app-x", module: "/src/elements/x.tsx" },
+    };
+    const site = '"src/elements/x.tsx:3:70"';
+    expect(await compile(source, { ...options, client: true })).toContain(site);
+    expect(await compile(source, { ...options, client: false })).toContain(site);
+  });
+
+  it("JSX に __rinka_site を記述すると、ビルドのエラーにする", async () => {
+    await expect(compile(`const a = <C __rinka_site="x" />;`)).rejects.toThrow(/__rinka_site/);
+  });
 });
 
 /** `body` を本体に持つ要素の関数のファイルを変換したコードを返す。 */
