@@ -622,11 +622,18 @@ describe("スロット化の範囲", () => {
       "return <p>{() => props.children}</p>;",
       "const content = props.children; return <p>{content}</p>;",
       "const { children } = props; return <p>{children}</p>;",
-      "const p = props; return <p>{p.children}</p>;",
       'return <p>{props["children"]}</p>;',
     ]) {
       expect(() => slotted(body), body).toThrow(/スロット children は/);
     }
+  });
+
+  it("props 以外の値の children の参照は、ビルドのエラーにしない", () => {
+    expect(() =>
+      slotted(
+        "const p = props; const items = [{ children: 1 }]; return <ul>{items.map((p) => <li>{p.children}</li>)}{p.label}</ul>;",
+      ),
+    ).not.toThrow();
   });
 });
 

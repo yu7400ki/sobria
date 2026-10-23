@@ -288,14 +288,12 @@ function convertSlots(
   file: string,
 ): void {
   const [param] = fn.params;
-  const names = new Set(["children", ...(elementOptions.slots ?? [])]);
   if (param?.type !== "Identifier" || !fn.body) return;
+  const names = new Set(["children", ...(elementOptions.slots ?? [])]);
   const misplaced = (name: string) =>
     new CompileError(
       `${file}: スロット ${name} は、要素の関数が返す JSX の子に、{${param.name}.${name}} か {${param.name}.${name} ?? デフォルトの中身} の形で置いてください。それ以外の位置ではスロットの内容を参照できません。`,
     );
-  /** 引数の別名である。 */
-  const aliases = new Set<string>();
   const placed = new Set<string>();
   /** `<slot>` に変換した `props` のスロットの参照である。 */
   const converted = new Set<Node>();
@@ -356,7 +354,6 @@ function convertSlots(
       if (rebinds) return;
     }
     if (node.type === "VariableDeclarator" && node.init && isParam(node.init)) {
-      if (node.id.type === "Identifier") aliases.add(node.id.name);
       const name = node.id.type === "ObjectPattern" ? patternSlot(node.id, names) : undefined;
       if (name !== undefined) throw misplaced(name);
     }
@@ -365,16 +362,6 @@ function convertSlots(
       if (key.type === "Literal" && typeof key.value === "string" && names.has(key.value)) {
         throw misplaced(key.value);
       }
-    }
-    if (
-      node.type === "MemberExpression" &&
-      !node.computed &&
-      node.object.type === "Identifier" &&
-      aliases.has(node.object.name) &&
-      node.property.type === "Identifier" &&
-      names.has(node.property.name)
-    ) {
-      throw misplaced(node.property.name);
     }
     const slot = slotOf(node, param.name, names);
     if (slot && !slot.fallback && !converted.has(slot.member)) throw misplaced(slot.name);
