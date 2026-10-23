@@ -25,7 +25,7 @@ export function appBuild(
     sharedDuringBuild: true,
     config: () => {
       const { root, outDir, elements } = settings();
-      const entry = serverEntry(root);
+      const file = serverEntry(root);
       return {
         environments: {
           client: {
@@ -45,7 +45,7 @@ export function appBuild(
               outDir: join(outDir, "server"),
               emitAssets: true,
               rolldownOptions: {
-                input: { entry: entry === entries.app ? entry : join(root, entry) },
+                input: { entry: file === undefined ? entries.app : join(root, file) },
               },
             },
           },

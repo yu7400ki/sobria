@@ -6,10 +6,10 @@ import type { Environment, Plugin, ResolvedConfig } from "vite";
 import { appBuild } from "./app-build.ts";
 import { langs, type Lang } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
-import { serve } from "./dev-server.ts";
+import { devAppModule, serve } from "./dev-server.ts";
 import { sourceTag } from "./elements.ts";
 import { clientImports, entries, oxc, runtimes, serverImports, virtualId } from "./entries.ts";
-import { appModule } from "./entry.ts";
+import { buildAppModule } from "./entry.ts";
 import { transformJsx } from "./jsx.ts";
 import { libraryBuild } from "./library-build.ts";
 import type { ClientAssets } from "./manifest.ts";
@@ -182,12 +182,9 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         if (id === NO_ELEMENTS) return "export {};\n";
         if (id === APP) {
           const serverFns = new Map(serverFnModules(root).map((file) => [fnModuleOf(file), file]));
-          if (scene !== "serve") return appModule({ serverFns, trustedOrigins });
-          return appModule({
-            serverFns,
-            trustedOrigins,
-            dev: devIds.get(this.environment) ?? "",
-          });
+          return scene === "serve"
+            ? devAppModule({ serverFns, trustedOrigins }, devIds.get(this.environment) ?? "")
+            : buildAppModule({ serverFns, trustedOrigins });
         }
         const sheet = sheetPath(id);
         return sheet === undefined

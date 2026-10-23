@@ -4,8 +4,9 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { devAppModule } from "../../src/build/dev-server.ts";
 import { clientImports, entries, runtimes, serverImports } from "../../src/build/entries.ts";
-import { appModule } from "../../src/build/entry.ts";
+import { buildAppModule } from "../../src/build/entry.ts";
 import {
   clientBuildSheetModule,
   clientSheetModule,
@@ -83,8 +84,8 @@ describe("入口", () => {
       server: [
         serverSheetModule("/a.css?inline", "/a.css?direct"),
         serverBuildSheetModule("/a.css?url", "/a.css?inline"),
-        appModule({ serverFns: new Map(), trustedOrigins: [] }),
-        appModule({ serverFns: new Map(), trustedOrigins: [], dev: "id" }),
+        buildAppModule({ serverFns: new Map(), trustedOrigins: [] }),
+        devAppModule({ serverFns: new Map(), trustedOrigins: [] }, "id"),
       ],
     };
     const missing = await Promise.all(

@@ -9,10 +9,10 @@ import { getRequestListener } from "@hono/node-server";
 import type { Environment, Plugin, RunnableDevEnvironment } from "vite";
 
 import { reloadEvent } from "../shared/hmr.ts";
-import type { CreateApp } from "../shared/routes.ts";
+import type { AppOptions, CreateApp } from "../shared/routes.ts";
 import { moduleOfServerFnId } from "../shared/server-fn.ts";
 import { entries, serverImports, virtualId } from "./entries.ts";
-import { devHooks, serverEntry, type DevHooks } from "./entry.ts";
+import { appCode, serverEntry, serverFnLoaderCode, type AppModuleOptions } from "./entry.ts";
 import { fromApp } from "./package.ts";
 import { inside } from "./paths.ts";
 import { isPrepareInput } from "./prepare.ts";
@@ -20,6 +20,43 @@ import { routeStyles } from "./route-styles.ts";
 import { ROUTES_DIR, routeFileNames } from "./routes.ts";
 import { isServerFnSource } from "./server-fns.ts";
 import { isClient, type Settings } from "./settings.ts";
+
+/** 開発サーバーが Vite のプロセスで実行し、`rinka/app` が使用する関数を表す。 */
+type DevHooks = Required<Pick<AppOptions, "styles" | "onError" | "loadServerFn">>;
+
+/** 開発中の `rinka/app` が、プラグインのインスタンスの ID ごとの `DevHooks` を探す、グローバルの Map のキーである。 */
+const DEV_HOOKS = "rinka.dev";
+
+/** プラグインのインスタンスの ID ごとの `DevHooks` を保持する、グローバルの Map を返す。 */
+function devHooks(): Map<string, DevHooks> {
+  const global = globalThis as { [key: symbol]: Map<string, DevHooks> | undefined };
+  return (global[Symbol.for(DEV_HOOKS)] ??= new Map<string, DevHooks>());
+}
+
+/** 開発中のページの `<head>` に出力する、Vite のクライアントを読み込むスクリプトである。 */
+const VITE_CLIENT = '<script type="module" src="/@vite/client"></script>';
+
+/**
+ * 開発中の `rinka/app` のコードを返す。アプリは、Vite のクライアントを読み込み、
+ * ID が `devId` の `DevHooks` があればそれを使用する。
+ */
+export const devAppModule = (
+  { serverFns, trustedOrigins }: AppModuleOptions,
+  devId: string,
+): string =>
+  appCode(
+    [
+      `  head: ${JSON.stringify(VITE_CLIENT)},`,
+      "  styles: hooks?.styles,",
+      "  onError: hooks?.onError,",
+      `  loadServerFn: hooks?.loadServerFn ?? ${serverFnLoaderCode(serverFns)},`,
+    ],
+    trustedOrigins,
+    [
+      `const hooks = globalThis[Symbol.for(${JSON.stringify(DEV_HOOKS)})]?.get(${JSON.stringify(devId)});`,
+      "",
+    ],
+  );
 
 /** 開発サーバーのプラグインが、`rinka` のプラグインと共有する値を表す。 */
 export interface ServeContext {
@@ -120,7 +157,8 @@ export function serve({ settings, writeTypes, serverFnIds, devIds }: ServeContex
         });
       }
       return () => {
-        const entry = serverEntry(root);
+        const file = serverEntry(root);
+        const entry = file === undefined ? entries.app : `/${file}`;
         server.middlewares.use(
           entryMiddleware(async () => {
             const ssr = server.environments.ssr;
