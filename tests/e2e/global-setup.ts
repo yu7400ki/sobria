@@ -1,9 +1,11 @@
+import { mkdtemp, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import { mergeConfig, type InlineConfig, type ViteDevServer } from "vite";
 import type { TestProject } from "vitest/node";
 
 import { createDevServer, originOf, stylesConfig } from "./dev-server.ts";
+import { buildFixture } from "./node/production.ts";
 
 declare module "vitest" {
   interface ProvidedContext {
@@ -17,6 +19,8 @@ declare module "vitest" {
     stylesOrigin: string;
     /** `fixtures/styles` の開発サーバーが返した `/` の HTML である。 */
     stylesPage: string;
+    /** `tests/fixture-library` を `library: true` でビルドした出力先の、`/` で区切った絶対パスである。 */
+    libraryDir: string;
   }
 }
 
@@ -44,11 +48,16 @@ async function start(
   return originOf(server);
 }
 
-/** `fixtures/basic` と `fixtures/styles` の開発サーバーを起動し、オリジンとページの HTML をテストに渡す。 */
+/**
+ * `fixtures/basic` と `fixtures/styles` の開発サーバーを起動し、オリジンとページの HTML をテストに渡す。
+ * `tests/fixture-library` を、テストのページが `/@fs/` で読み込める `tests/e2e` の中にビルドし、出力先をテストに渡す。
+ */
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   const servers: ViteDevServer[] = [];
+  const library = await mkdtemp(fileURLToPath(new URL(".rinka-tmp-library-", import.meta.url)));
   const close = async () => {
     await Promise.all(servers.map((server) => server.close()));
+    await rm(library, { recursive: true, force: true });
   };
   try {
     const basic = await start("basic", servers);
@@ -58,6 +67,11 @@ export default async function setup(project: TestProject): Promise<() => Promise
     const styles = await start("styles", servers, stylesConfig());
     project.provide("stylesOrigin", styles);
     project.provide("stylesPage", await page(styles, "/"));
+    await buildFixture(fileURLToPath(new URL("../fixture-library", import.meta.url)), library, {
+      prefix: "acme",
+      library: true,
+    });
+    project.provide("libraryDir", library.replaceAll("\\", "/"));
   } catch (error) {
     await close();
     throw error;

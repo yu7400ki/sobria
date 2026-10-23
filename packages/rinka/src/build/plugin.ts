@@ -10,6 +10,7 @@ import {
   type Environment,
   type Plugin,
   type ResolvedConfig,
+  type UserConfig,
   type RunnableDevEnvironment,
   type ViteDevServer,
 } from "vite";
@@ -20,7 +21,7 @@ import { moduleOfServerFnId } from "../shared/server-fn.ts";
 import { langs, type Lang } from "./ast.ts";
 import { embedRouteStyles, moveServerAssets } from "./build-styles.ts";
 import { transformSource } from "./compiler.ts";
-import { elementTag, scanElements } from "./elements.ts";
+import { elementTag, scanElements, type ElementFile } from "./elements.ts";
 import { entries, oxc, runtimes } from "./entries.ts";
 import { appModule, devHooks, serverEntry, type DevHooks } from "./entry.ts";
 import { transformJsx } from "./jsx.ts";
@@ -53,6 +54,8 @@ export interface RinkaOptions {
   readonly globalJSX?: false;
   /** ビルドの出力先である。プロジェクトのルートからの相対パスか絶対パスで記述し、デフォルトは `dist` である。 */
   readonly outDir?: string;
+  /** `true` なら、`vite build --app` で、要素ごとに自分自身を登録する ES モジュールを出力する。 */
+  readonly library?: true;
 }
 
 /** rinka のプラグインが、ほかのプラグインと CLI に公開する API を表す。 */
@@ -202,36 +205,38 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           optimizeDeps: {
             include: [`${entries.main} > @solidjs/signals`, `${entries.main} > seroval`],
           },
-          build: { outDir: join(out, "client") },
-          ...(command === "build" && {
-            environments: {
-              client: {
-                build: {
-                  outDir: join(out, "client"),
-                  manifest: true,
-                  rolldownOptions: {
-                    input:
-                      elements.length > 0
-                        ? elements.map((element) => element.path)
-                        : [entries.noElements],
+          build: { outDir: options.library ? out : join(out, "client") },
+          ...(command === "build" && options.library && libraryBuild(out, elements)),
+          ...(command === "build" &&
+            !options.library && {
+              environments: {
+                client: {
+                  build: {
+                    outDir: join(out, "client"),
+                    manifest: true,
+                    rolldownOptions: {
+                      input:
+                        elements.length > 0
+                          ? elements.map((element) => element.path)
+                          : [entries.noElements],
+                    },
+                  },
+                },
+                ssr: {
+                  build: {
+                    outDir: join(out, "server"),
+                    emitAssets: true,
+                    rolldownOptions: { input: { entry: resolveEntry(dirs.root) } },
                   },
                 },
               },
-              ssr: {
-                build: {
-                  outDir: join(out, "server"),
-                  emitAssets: true,
-                  rolldownOptions: { input: { entry: resolveEntry(dirs.root) } },
+              builder: {
+                buildApp: async (builder) => {
+                  await builder.build(builder.environments.client!);
+                  await builder.build(builder.environments.ssr!);
                 },
               },
-            },
-            builder: {
-              buildApp: async (builder) => {
-                await builder.build(builder.environments.client!);
-                await builder.build(builder.environments.ssr!);
-              },
-            },
-          }),
+            }),
         };
       },
       configEnvironment(name, config, { command }) {
@@ -252,6 +257,11 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         root = config.root;
         ({ elementsDir, outDir } = dirsOf(root, options));
         isBuild = config.command === "build";
+        if (isBuild && options.library && options.prefix === undefined) {
+          config.logger.warn(
+            "[rinka] library: true のビルドで、要素のタグ名の接頭辞がデフォルトの rinka のままです。ほかのライブラリとタグ名が重ならないように、rinka({ prefix }) に固有の接頭辞を指定してください。",
+          );
+        }
       },
       buildStart() {
         writeTypes();
@@ -288,7 +298,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         const sheet = sheetPath(id);
         if (sheet === undefined) return null;
         const path = devPath(sheet, root);
-        if (isBuild) {
+        if (isBuild && !options.library) {
           return isClient(this.environment)
             ? clientBuildSheetModule(`${path}?url`)
             : serverBuildSheetModule(`${path}?url`, `${path}?inline`);
@@ -431,6 +441,26 @@ const recordFailure: DevHooks["onError"] = (error) => {
   if (failure) failure.error = error;
   return new Response(null, { status: 500 });
 };
+
+/** ビルドの出力先 `out` に、要素 `elements` を、自分自身を登録する ES モジュールとしてタグ名のファイルに出力する設定を返す。 */
+const libraryBuild = (out: string, elements: readonly ElementFile[]): UserConfig => ({
+  environments: {
+    client: {
+      build: {
+        outDir: out,
+        rolldownOptions: {
+          input: Object.fromEntries(elements.map((element) => [element.tag, element.path])),
+          output: { entryFileNames: "[name].js", chunkFileNames: "chunks/[name]-[hash].js" },
+        },
+      },
+    },
+  },
+  builder: {
+    buildApp: async (builder) => {
+      await builder.build(builder.environments.client!);
+    },
+  },
+});
 
 /** ビルドの入口にする、アプリのルート `root` のサーバーのエントリーを返す。 */
 const resolveEntry = (root: string): string => {

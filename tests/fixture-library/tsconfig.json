@@ -1,0 +1,8 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./.rinka/tsconfig.shared.json" },
+    { "path": "./.rinka/tsconfig.elements.json" },
+    { "path": "./.rinka/tsconfig.server.json" }
+  ]
+}

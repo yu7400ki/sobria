@@ -1,8 +1,22 @@
 {
   "name": "@rinka-tests/fixture-library",
   "private": true,
+  "files": [
+    "src",
+    "types"
+  ],
   "type": "module",
+  "exports": {
+    "./*": {
+      "types": "./types/*.d.ts",
+      "default": "./src/elements/*.tsx"
+    }
+  },
   "dependencies": {
     "rinka": "workspace:*"
+  },
+  "rinka": {
+    "prefix": "acme",
+    "elements": "src/elements"
   }
 }

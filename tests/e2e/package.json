@@ -20,8 +20,6 @@
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "catalog:",
-    "@types/react": "^19.3.0",
-    "@types/react-dom": "^19.3.0",
     "@vitest/browser-playwright": "catalog:",
     "axe-core": "^4.14.0",
     "hono": "catalog:",
