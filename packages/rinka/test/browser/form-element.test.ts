@@ -179,6 +179,30 @@ describe("フォームの部品", () => {
     expect(host.hasAttribute("disabled")).toBe(false);
   });
 
+  it("Props の型で数値にした name も、属性の値にして反映する", async () => {
+    const tag = nextTag();
+    let seen: { name?: number } = {};
+    defineElement(
+      tag,
+      (props: { name?: number }, { form }: Ctx) => {
+        seen = props;
+        form.value(() => "v");
+        return null;
+      },
+      { props: ["name"], types: { name: "number" }, form: true },
+    );
+    await place("<form></form>");
+    const host = document.createElement(tag) as HTMLElement & { name?: number };
+    host.name = 3;
+    document.querySelector("form")!.append(host);
+    await tick();
+    flush();
+    await tick();
+    expect(host.getAttribute("name")).toBe("3");
+    expect(new FormData(document.querySelector("form")!).get("3")).toBe("v");
+    expect(seen.name).toBe(3);
+  });
+
   it("親が JSX で渡した、Props の型に宣言した name と disabled の変化を、ホストの属性と props に反映する", async () => {
     const tag = nextTag();
     let seen: { name?: string; disabled?: boolean } = {};

@@ -13,7 +13,7 @@ import {
   type Owner,
 } from "@solidjs/signals";
 
-import { ARIA_ATTRIBUTE, HOST_ATTRIBUTE } from "../shared/attributes.ts";
+import { ARIA_ATTRIBUTE, attributeValue, HOST_ATTRIBUTE } from "../shared/attributes.ts";
 import {
   createElementComponent,
   elementInfo,
@@ -21,6 +21,7 @@ import {
   type Ctx,
   type ElementComponent,
   type ElementOptions,
+  formAttributes,
   unsupportedFormControls,
 } from "../shared/element.ts";
 import { checkExposeName } from "../shared/expose-names.ts";
@@ -31,13 +32,7 @@ import { isFunction } from "../shared/objects.ts";
 import { createScope, scopedChild, withScope } from "../shared/scope.ts";
 import { childKey } from "../shared/transfer-keys.ts";
 import { applyAttribute, asClientNode, bind, callRef, insert, setter } from "./dom.ts";
-import {
-  formControls,
-  formElementClass,
-  reflectAttribute,
-  reflectedProps,
-  reflectedValue,
-} from "./form-element.ts";
+import { formControls, formElementClass } from "./form-element.ts";
 import { handleSubmit } from "./form.ts";
 import {
   activateInSlot,
@@ -218,7 +213,7 @@ export function registerElement<P, M extends object = object>(
   const slotNames: ReadonlySet<string> = new Set(["children", ...(options.slots ?? [])]);
   const unobserved = new Set([...functionProps, ...slotNames]);
   /** ホストの属性に反映する props の名前である。反映した属性の変化は、props に書き戻さない。 */
-  const reflects: ReadonlySet<string> = new Set(options.form ? reflectedProps : []);
+  const reflects: ReadonlySet<string> = new Set(options.form ? formAttributes : []);
   const unsupported = unsupportedFormControls(tag);
   /** 要素の関数に渡す ctx の `form` を返す。 */
   const formOf = options.form ? formControls : () => unsupported;
@@ -312,7 +307,7 @@ export function registerElement<P, M extends object = object>(
               prop.track();
               return readSource(prop.source);
             },
-            (value) => reflectAttribute(host, name, value),
+            setter(host, name, false),
           );
         }
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion
@@ -377,7 +372,7 @@ export function registerElement<P, M extends object = object>(
       const name = propOfAttribute.get(attribute);
       if (name === undefined) return;
       const prop = instances.get(this)!.props.get(name)!;
-      if (reflects.has(name) && reflectedValue(peek(prop)) === value) return;
+      if (reflects.has(name) && attributeValue(attribute, peek(prop)) === value) return;
       write(prop, { value: convert(value, types[name]) });
     }
 

@@ -4,9 +4,6 @@ import { FORM_VALUE_ATTRIBUTE } from "../shared/attributes.ts";
 import type { FormControls, FormInvalidity, FormState, RestoreMode } from "../shared/element.ts";
 import type { formMembers } from "../shared/host-members.ts";
 
-/** フォームの部品で、Props の型に宣言していても、ホストの属性に反映する props の名前である。 */
-export const reflectedProps = ["name", "disabled"] as const;
-
 /** フォームの部品のホストの状態を表す。要素の寿命の間は同じ状態を保持する。 */
 interface FormHost {
   /** 要素自身の `disabled` か、外側の `<fieldset disabled>` で無効になっているかどうかを返す。 */
@@ -128,16 +125,4 @@ function setValidity(internals: ElementInternals, result: FormInvalidity | null)
   const { message, anchor, ...flags } = result;
   const constrained = Object.values(flags).some(Boolean);
   internals.setValidity(constrained ? flags : { customError: true }, message, anchor);
-}
-
-/** `value` をホストの属性に反映したときの、属性の値を返す。文字列はそのまま、`true` は空の文字列で、ほかの値は属性が無いことを表す `null` である。 */
-export const reflectedValue = (value: unknown): string | null =>
-  typeof value === "string" ? value : value === true ? "" : null;
-
-/** `value` を、ホスト `host` の属性 `name` に反映する。 */
-export function reflectAttribute(host: HTMLElement, name: string, value: unknown): void {
-  const next = reflectedValue(value);
-  if (host.getAttribute(name) === next) return;
-  if (next === null) host.removeAttribute(name);
-  else host.setAttribute(name, next);
 }
