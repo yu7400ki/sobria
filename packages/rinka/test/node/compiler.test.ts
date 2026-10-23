@@ -623,6 +623,30 @@ describe("JSX の規則の細部", () => {
   });
 });
 
+describe("要素の呼び出し箇所の ID", () => {
+  it("コンポーネントの JSX の呼び出しに、元のソースのファイルと行と列の ID を付与する", async () => {
+    const code = await compile(`const a = <C n={1} />;
+const b = <ui.Card key={k}><C /></ui.Card>;
+const c = <div><>{x}</></div>;`);
+    expect(code).toContain('_jsx(C, { n: 1 }, void 0, "src/routes/page.tsx:1:11")');
+    expect(code).toContain(
+      '_jsx(ui.Card, { get children() { return (_jsx(C, {}, void 0, "src/routes/page.tsx:2:28")); } }, k, "src/routes/page.tsx:2:11")',
+    );
+    expect(code).toContain('_jsx("div", { children: _jsx(_Fragment, { children: x }) })');
+    expect(code).not.toContain("__rinka_site");
+  });
+
+  it("クライアント向けとサーバー向けで、同じ呼び出しに同じ ID を付与する", async () => {
+    const source = `import { defineServerFn } from "rinka/server";
+export const f = defineServerFn(async () => { await g(); return 1; });
+export async function view() { return <C v={await f()} />; }`;
+    const site = '"src/lib/view.tsx:3:39"';
+    const options = { file: "src/lib/view.tsx" };
+    expect(await compile(source, { ...options, client: true })).toContain(site);
+    expect(await compile(source, { ...options, client: false })).toContain(site);
+  });
+});
+
 /** `body` を本体に持つ要素の関数のファイルを変換したコードを返す。 */
 const slotted = (body: string) =>
   element(`type Props = { children?: JSX.Element };
@@ -634,7 +658,7 @@ describe("スロット化の範囲", () => {
       "const Inner = (props: { children?: unknown }) => <b>{props.children}</b>; return <p><Inner>hi</Inner>{props.children}</p>;",
     );
     expect(code).toContain("<b>{props.children}</b>");
-    expect(code).toContain("<Inner>hi</Inner><slot /></p>");
+    expect(code).toContain(">hi</Inner><slot /></p>");
   });
 
   it("要素の関数の中の関数にスロットを置くと、ビルドのエラーにする", () => {

@@ -13,6 +13,8 @@ declare module "vitest" {
     basicOrigin: string;
     /** `fixtures/basic` の開発サーバーが返した `/` の HTML である。 */
     basicPage: string;
+    /** `fixtures/basic` の開発サーバーが返した `/nested` の HTML である。 */
+    nestedPage: string;
     /** `fixtures/basic` の開発サーバーが返した `/load` の HTML である。 */
     loadPage: string;
     /** テスト用のアプリ `fixtures/styles` の開発サーバーのオリジンである。 */
@@ -63,6 +65,7 @@ export default async function setup(project: TestProject): Promise<() => Promise
     const basic = await start("basic", servers);
     project.provide("basicOrigin", basic);
     project.provide("basicPage", await page(basic, "/"));
+    project.provide("nestedPage", await page(basic, "/nested"));
     project.provide("loadPage", await page(basic, "/load"));
     const styles = await start("styles", servers, stylesConfig());
     project.provide("stylesOrigin", styles);

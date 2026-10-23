@@ -4,6 +4,7 @@ import type { ESTree } from "vite";
 import { isEventProp, reservedProp } from "../shared/names.ts";
 import {
   children,
+  follow,
   importedNames,
   isFunction,
   parseModule,
@@ -15,6 +16,9 @@ import {
 import type { Transformed } from "./compiler.ts";
 import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
+
+/** コンポーネントの呼び出し箇所の ID を、元のソースの変換から JSX の規則の変換に渡す属性の名前である。 */
+export const SITE_PROP = "__rinka_site";
 
 /** oxc が JSX を変換した後のコードに適用する変換の設定を表す。 */
 export type JsxOptions = Omit<ModuleSource, "lang">;
@@ -33,6 +37,7 @@ interface Runtime {
  * oxc が JSX を変換した後のコードの、`rinka/jsx-runtime` の呼び出しに規則を適用する。
  * ネイティブのタグと Fragment の属性と子は、関数呼び出し、プロパティ参照、タグ付きテンプレートを含む式を関数で包む。
  * コンポーネントに渡す props と children は、リテラルと関数を除いて getter にする。
+ * props の `__rinka_site` は、呼び出しの第 4 引数に移動する。
  */
 export function transformJsx(code: string, { id, file }: JsxOptions): Transformed {
   const program = parseModule(code, { id, file, lang: "js" });
@@ -85,10 +90,14 @@ function applyRules(
     (type.type === "Literal" && typeof type.value === "string") ||
     (type.type === "Identifier" && runtime.fragments.has(type.name));
   const multiple = call.callee.type === "Identifier" && runtime.multiple.has(call.callee.name);
-  for (const property of props.properties) {
+  for (const [index, property] of props.properties.entries()) {
     if (property.type !== "Property" || property.computed || property.kind !== "init") continue;
     const name = propertyName(property.key);
     if (name === undefined) continue;
+    if (name === SITE_PROP) {
+      moveSite(call, props, index, property, output, code);
+      continue;
+    }
     const { value } = property;
     const inner = unwrap(value);
     if (native) {
@@ -109,6 +118,26 @@ function applyRules(
     if (!property.shorthand) output.remove(property.start, value.start);
     surround(output, value, `get ${key}() { return (`, "); }");
   }
+}
+
+/** props `props` の `index` 番目のプロパティ `site` を取り除き、その値を呼び出し `call` の第 4 引数にする。 */
+function moveSite(
+  call: ESTree.CallExpression,
+  props: ESTree.ObjectExpression,
+  index: number,
+  site: ESTree.ObjectProperty,
+  output: MagicString,
+  code: string,
+): void {
+  const previous = props.properties[index - 1];
+  const next = props.properties[index + 1];
+  if (next) output.remove(site.start, next.start);
+  else if (previous) output.remove(previous.end, site.end);
+  else output.remove(props.start + 1, props.end - 1);
+  const value = code.slice(site.value.start, site.value.end);
+  const key = call.arguments[2];
+  if (key) follow(output, key, `, ${value}`);
+  else follow(output, props, `, void 0, ${value}`);
 }
 
 /** プロパティのキーが表す名前を返す。 */

@@ -34,6 +34,7 @@ import {
 import { entries, importInternalAs } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 import { usesForm } from "./form-usage.ts";
+import { SITE_PROP } from "./jsx.ts";
 import { analyzeProps } from "./props.ts";
 import { rewriteSheetImports } from "./sheets.ts";
 
@@ -99,6 +100,7 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
     options.client ? definitions.map((definition) => definition.init) : [],
   );
   addMemoSites(program, output, code, options.file, replaced);
+  addElementSites(program, output, code, options.file, replaced);
   rewriteSheetImports(program, output, code, options.file);
   const element =
     options.element &&
@@ -224,6 +226,32 @@ function addMemoSites(
       } else {
         surround(output, options, "{ ...", `, ${site} }`);
       }
+    },
+    (node) => replaced.has(node),
+  );
+}
+
+/**
+ * コンポーネントの JSX のタグに、呼び出し箇所の ID `"ファイル:行:列"` を値に持つ属性 `__rinka_site` を付与する。
+ * JSX の規則を適用する変換が、この属性を `jsx` の第 4 引数に移動する。
+ */
+function addElementSites(
+  program: ESTree.Program,
+  output: MagicString,
+  code: string,
+  file: string,
+  replaced: ReadonlySet<Node>,
+): void {
+  const starts = lineStarts(code);
+  walk(
+    program,
+    (node) => {
+      if (node.type !== "JSXElement") return;
+      const { name } = node.openingElement;
+      if (name.type === "JSXNamespacedName") return;
+      if (name.type === "JSXIdentifier" && /^[a-z]/.test(name.name)) return;
+      const site = JSON.stringify(`${file}:${lineColumn(starts, node.start)}`);
+      follow(output, name, ` ${SITE_PROP}={${site}}`);
     },
     (node) => replaced.has(node),
   );

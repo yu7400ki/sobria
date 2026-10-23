@@ -24,3 +24,19 @@ it("開発サーバーで描画したページの要素が、サーバーの mem
   root.querySelector("button")!.click();
   await until(() => root.querySelector("button")!.textContent === "clicks: 3");
 });
+
+it("要素の中で作成した子要素は、親が起動して Shadow DOM を作り直した後も、サーバーの memo の値を引き継ぐ", async () => {
+  const origin = inject("basicOrigin");
+  const served = inject("nestedPage");
+  // クライアントで計算し直すと 6 になる子要素の memo の値を、サーバーから送る値だけ 7 にする
+  const page = served.replace(/(inner\.tsx:\d+:\d+#0":)6/, "$17");
+  expect(page).not.toBe(served);
+  const frame = document.createElement("iframe");
+  frame.srcdoc = page.replace("<head>", `<head><base href="${origin}/">`);
+  document.body.append(frame);
+
+  const outer = () => frame.contentDocument?.querySelector("app-outer");
+  await until(() => outer()?.hasAttribute("data-started") === true);
+  const inner = outer()!.shadowRoot!.querySelector("app-inner")!;
+  expect(inner.shadowRoot!.querySelector("p")!.textContent).toBe("7");
+});
