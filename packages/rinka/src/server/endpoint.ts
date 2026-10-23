@@ -4,7 +4,6 @@ import { HTTPException } from "hono/http-exception";
 import type { AppOptions } from "../shared/routes.ts";
 import { withServerFnRef, type serverFnRef, type ServerFnRef } from "../shared/server-fn.ts";
 import { rpcPrefix, rpcQuery, wireFormat, wireHeader } from "../shared/wire.ts";
-import { runInRequest } from "./context.ts";
 import { NotFound, Redirect } from "./errors.ts";
 import { formDataToInput } from "./form-data.ts";
 import { definitionOf, runChain, SchemaError, type Definition } from "./server-fn.ts";
@@ -24,27 +23,23 @@ export function registerServerFn<F extends { readonly [serverFnRef]: ServerFnRef
   return withServerFnRef(fn, { id, method: definition.method });
 }
 
-/**
- * リクエストの Context を設定してから後続の処理を実行する、rinka の Hono のミドルウェアを返す。
- * サーバー関数のエンドポイントへのリクエストは、このミドルウェアが処理する。
- */
-export function rinkaMiddleware(options: AppOptions): MiddlewareHandler {
-  return (c, next) =>
-    runInRequest(c, async () => {
-      const { pathname } = new URL(c.req.url);
-      if (!pathname.startsWith(rpcPrefix)) {
-        await next();
-        return undefined;
-      }
-      const responder = responders[isFormSubmission(c) ? "form" : "rpc"];
-      let id: string;
-      try {
-        id = decodeURIComponent(pathname.slice(rpcPrefix.length));
-      } catch {
-        return responder.reject(c, 404);
-      }
-      return endpoint(c, id, responder, options);
-    });
+/** サーバー関数のエンドポイントへのリクエストを処理し、それ以外のリクエストを後続の処理に渡す Hono のミドルウェアを返す。 */
+export function serverFnMiddleware(options: AppOptions): MiddlewareHandler {
+  return async (c, next) => {
+    const { pathname } = new URL(c.req.url);
+    if (!pathname.startsWith(rpcPrefix)) {
+      await next();
+      return undefined;
+    }
+    const responder = responders[isFormSubmission(c) ? "form" : "rpc"];
+    let id: string;
+    try {
+      id = decodeURIComponent(pathname.slice(rpcPrefix.length));
+    } catch {
+      return responder.reject(c, 404);
+    }
+    return endpoint(c, id, responder, options);
+  };
 }
 
 async function endpoint(

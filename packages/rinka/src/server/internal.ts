@@ -8,7 +8,8 @@ import {
   type ElementOptions,
 } from "../shared/element.ts";
 import type { AppOptions, CreateApp, Route } from "../shared/routes.ts";
-import { rinkaMiddleware } from "./endpoint.ts";
+import { runInRequest } from "./context.ts";
+import { serverFnMiddleware } from "./endpoint.ts";
 import { jsx } from "./jsx-runtime.ts";
 import { renderDocument } from "./render.ts";
 
@@ -29,7 +30,8 @@ export const createApp = ((routes: readonly Route[], options: AppOptions = {}): 
   const app = new Hono();
   const { onError } = options;
   if (onError) app.onError((c) => onError(c.error));
-  app.use(rinkaMiddleware(options));
+  const serverFns = serverFnMiddleware(options);
+  app.use((c, next) => runInRequest(c, () => serverFns(c, next)));
   for (const route of routes) {
     app.get(route.path, async () => {
       const { default: page } = await route.page();
