@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { basename, extname, resolve } from "node:path";
+import { basename, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { getRequestListener } from "@hono/node-server";
@@ -17,13 +17,16 @@ import type { CreateApp, Routes } from "../shared/routes.ts";
 import { moduleOfServerFnId } from "../shared/server-fn.ts";
 import type { Lang } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
-import { elementTag } from "./elements.ts";
+import { elementTag, scanElements } from "./elements.ts";
 import { entries, oxc, runtimes } from "./entries.ts";
+import { entryModule } from "./entry.ts";
 import { transformJsx } from "./jsx.ts";
+import { rinkaPackage } from "./package.ts";
 import { devPath, directUrl, inside } from "./paths.ts";
 import { preparedFiles, writePrepared } from "./prepare.ts";
 import { routeStyles } from "./route-styles.ts";
 import { PAGE_FILE, ROUTES_DIR, routeFileNames, routesModule } from "./routes.ts";
+import { hashedFnModule, serverFnModules } from "./server-fns.ts";
 import { SHEET_QUERY, clientSheetModule, serverSheetModule, sheetId, sheetPath } from "./sheets.ts";
 
 /** rinka のプラグインの設定を表す。 */
@@ -36,6 +39,10 @@ export interface RinkaOptions {
   readonly trustedOrigins?: readonly string[];
   /** `false` なら、`.rinka/env.d.ts` でグローバルの `JSX` を宣言しない。 */
   readonly globalJSX?: false;
+  /** ビルドの出力先である。プロジェクトのルートからの相対パスか絶対パスで記述し、デフォルトは `dist` である。 */
+  readonly outDir?: string;
+  /** ビルドしたサーバーを起動するランタイムである。デフォルトは `node` である。 */
+  readonly deploy?: "node" | "bun";
 }
 
 /** rinka のプラグインが、ほかのプラグインと CLI に公開する API を表す。 */
@@ -65,6 +72,12 @@ const NAME = "rinka";
 /** ルートの表を export する仮想モジュールの ID である。 */
 const ROUTES = `\0${entries.routes}`;
 
+/** サーバーのエントリーの仮想モジュールの ID である。 */
+const ENTRY = `\0${entries.entry}`;
+
+/** 本番のサーバーのビルドに含める、rinka と、rinka の依存と、アプリと rinka が共有する hono である。 */
+const bundled = [entries.main, "hono", ...Object.keys(rinkaPackage().dependencies)];
+
 /** 開発中のページの `<head>` に出力する、Vite のクライアントを読み込むスクリプトである。 */
 const VITE_CLIENT = '<script type="module" src="/@vite/client"></script>';
 
@@ -90,6 +103,8 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   const serverFnIds = new Map<string, ReadonlySet<string>>();
   let root = "";
   let elementsDir = "";
+  let outDir = "";
+  let isBuild = false;
   const writeTypes = (): void => {
     if (root === "") {
       throw new Error("[rinka] .rinka/ は、Vite の設定を解決した後に生成してください。");
@@ -132,16 +147,51 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       name: NAME,
       enforce: "pre",
       api,
-      config: () => ({
-        appType: "custom",
-        oxc,
-        optimizeDeps: {
-          include: [`${entries.main} > @solidjs/signals`, `${entries.main} > seroval`],
-        },
-      }),
-      configEnvironment(name, config) {
+      sharedDuringBuild: true,
+      config: (user, { command }) => {
+        const appRoot = resolve(user.root ?? ".");
+        const out = resolve(appRoot, options.outDir ?? "dist");
+        const elements = scanElements(
+          prefix,
+          resolve(appRoot, options.elementsDir ?? "src/elements"),
+        );
+        return {
+          appType: "custom",
+          oxc,
+          optimizeDeps: {
+            include: [`${entries.main} > @solidjs/signals`, `${entries.main} > seroval`],
+          },
+          build: { outDir: join(out, "client") },
+          ...(command === "build" && {
+            environments: {
+              client: {
+                build: {
+                  outDir: join(out, "client"),
+                  manifest: true,
+                  rolldownOptions: { input: elements.map((element) => element.path) },
+                },
+              },
+              ssr: {
+                build: {
+                  outDir: join(out, "server"),
+                  emitAssets: true,
+                  rolldownOptions: { input: { entry: entries.entry } },
+                },
+              },
+            },
+            builder: {
+              buildApp: async (builder) => {
+                await builder.build(builder.environments.client!);
+                await builder.build(builder.environments.ssr!);
+              },
+            },
+          }),
+        };
+      },
+      configEnvironment(name, config, { command }) {
         const consumer = config.consumer ?? (name === "client" ? "client" : "server");
-        return consumer === "server" ? { resolve: { noExternal: [entries.main] } } : null;
+        if (consumer !== "server") return null;
+        return { resolve: { noExternal: command === "build" ? bundled : [entries.main] } };
       },
       configResolved(config) {
         if (config.plugins.filter((plugin) => plugin.name === NAME).length > 1) {
@@ -151,12 +201,15 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         }
         root = config.root;
         elementsDir = resolve(root, options.elementsDir ?? "src/elements");
+        outDir = resolve(root, options.outDir ?? "dist");
+        isBuild = config.command === "build";
       },
       buildStart() {
         writeTypes();
       },
       resolveId(id, importer, resolveOptions) {
         if (id === entries.routes) return ROUTES;
+        if (id === entries.entry) return ENTRY;
         if (id.endsWith(SHEET_QUERY)) {
           return this.resolve(id.slice(0, -SHEET_QUERY.length), importer, { skipSelf: true }).then(
             (resolved) => resolved && sheetId(resolved.id),
@@ -175,6 +228,9 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       },
       load(id) {
         if (id === ROUTES) return routesModule(root, ROUTES_DIR);
+        if (id === ENTRY) {
+          return entryModule({ serverFns: serverFnModules(root, [outDir]), trustedOrigins });
+        }
         const sheet = sheetPath(id);
         if (sheet === undefined) return null;
         const path = devPath(sheet, root);
@@ -238,6 +294,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           lang: target.lang,
           client: isClient(this.environment),
           ...(tag !== undefined && { element: { tag, module: `/${target.file}` } }),
+          ...(isBuild && { fnModule: hashedFnModule(target.file) }),
         });
         if (!isClient(this.environment)) {
           if (result.serverFns.length > 0) serverFnIds.set(target.file, new Set(result.serverFns));

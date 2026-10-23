@@ -1,29 +1,18 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { resolveConfig } from "vite";
 
 import { entries } from "./entries.ts";
+import { rinkaPackage } from "./package.ts";
 import { rinkaApi } from "./plugin.ts";
-
-/** rinka の package.json の欄のうち、雛形の依存の版に使用する欄を表す。 */
-interface Manifest {
-  readonly version: string;
-  readonly peerDependencies: Readonly<Record<"hono" | "vite", string>>;
-  readonly devDependencies: Readonly<Record<"typescript", string>>;
-}
-
-/** rinka のパッケージの package.json を読み込む。 */
-const manifest = (): Manifest =>
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-  JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as Manifest;
 
 /** `value` を、整形した JSON のファイルの内容にする。 */
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 
 /** 雛形のファイルの、アプリのルートからの相対パスごとの内容を返す。`name` はアプリの名前である。 */
 function templateFiles(name: string): Record<string, string> {
-  const { version, peerDependencies, devDependencies } = manifest();
+  const { version, peerDependencies, devDependencies } = rinkaPackage();
   return {
     "package.json": json({
       name,

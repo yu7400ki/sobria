@@ -1,12 +1,13 @@
 import type { UserConfig } from "vite";
 
-/** rinka の入口の指定子である。`routes` はプラグインが作成する仮想モジュールである。 */
+/** rinka の入口の指定子である。`routes` と `entry` はプラグインが作成する仮想モジュールである。 */
 export const entries = {
   main: "rinka",
   jsxRuntime: "rinka/jsx-runtime",
   internal: "rinka/internal",
   server: "rinka/server",
   routes: "rinka/routes",
+  entry: "rinka/entry",
   router: "rinka/router",
   tsconfig: "rinka/tsconfig.json",
 } as const;

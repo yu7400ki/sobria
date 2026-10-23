@@ -3,7 +3,12 @@ import { HTTPException } from "hono/http-exception";
 
 import { REFRESH_HEADER } from "../shared/refresh.ts";
 import type { AppOptions } from "../shared/routes.ts";
-import { withServerFnRef, type serverFnRef, type ServerFnRef } from "../shared/server-fn.ts";
+import {
+  moduleOfServerFnId,
+  withServerFnRef,
+  type serverFnRef,
+  type ServerFnRef,
+} from "../shared/server-fn.ts";
 import { rpcPrefix, rpcQuery, wireFormat, wireHeader, type RedirectJson } from "../shared/wire.ts";
 import { NotFound, Redirect } from "./errors.ts";
 import { formDataToInput } from "./form-data.ts";
@@ -259,4 +264,16 @@ function isCrossSite(request: Request, trustedOrigins: readonly string[]): boole
   } catch {
     return true;
   }
+}
+
+/** ID のモジュールの部分ごとの、サーバー関数を定義したモジュールを読み込む関数から、ID のサーバー関数を読み込み、読み込んだら真を返す関数を作成する。 */
+export function serverFnLoader(
+  modules: Readonly<Record<string, () => Promise<unknown>>>,
+): (id: string) => Promise<boolean> {
+  return async (id) => {
+    const fnModule = moduleOfServerFnId(id);
+    if (fnModule === undefined || !Object.hasOwn(modules, fnModule)) return false;
+    await modules[fnModule]!();
+    return true;
+  };
 }
