@@ -206,6 +206,13 @@ importers:
       rinka:
         specifier: workspace:*
         version: link:../../packages/rinka
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vite:
+        specifier: 'catalog:'
+        version: 8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)
 
 packages:
 

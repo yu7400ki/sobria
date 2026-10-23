@@ -12,8 +12,16 @@
       "default": "./src/elements/*.tsx"
     }
   },
+  "scripts": {
+    "build": "vite build --app",
+    "types": "rinka prepare && tsc -p .rinka/tsconfig.elements.json --composite false --declaration --rootDir src/elements --outDir types"
+  },
   "dependencies": {
     "rinka": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vite": "catalog:"
   },
   "rinka": {
     "prefix": "acme",

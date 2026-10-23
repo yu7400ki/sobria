@@ -1,10 +1,13 @@
-import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
 
-import { rinkaBin, run, typecheck } from "./typescript.ts";
+import { rinkaBin, run, tscBin, typecheck } from "./typescript.ts";
+
+/** テスト用のライブラリのルートである。 */
+const library = fileURLToPath(new URL("../../fixture-library", import.meta.url));
 
 /** 型の検査に使用するテスト用のアプリのコピーのルートである。 */
 let root: string;
@@ -26,6 +29,44 @@ afterAll(async () => {
 it("rinka prepare で生成した型宣言と tsconfig で、テスト用のアプリの型の検査が通る", async () => {
   expect(await typecheck(root)).toEqual({ stdout: "", code: 0 });
 }, 60_000);
+
+it("tsc が出力したライブラリの型宣言で、ライブラリの要素の props を検査し、load:* を受け付ける", async () => {
+  await run(process.execPath, [rinkaBin, "prepare", library]);
+  await run(process.execPath, [
+    tscBin,
+    "-p",
+    join(library, ".rinka/tsconfig.elements.json"),
+    "--composite",
+    "false",
+    "--declaration",
+    "--rootDir",
+    join(library, "src/elements"),
+    "--outDir",
+    join(library, "types"),
+  ]);
+  const file = join(root, "src/routes/library/page.tsx");
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(
+    file,
+    `import Badge from "@rinka-tests/fixture-library/badge";
+
+export default function Page() {
+  return (
+    <>
+      <Badge label="new" load:visible />
+      {/* @ts-expect-error label は文字列である */}
+      <Badge label={1} />
+    </>
+  );
+}
+`,
+  );
+  try {
+    expect(await typecheck(root)).toEqual({ stdout: "", code: 0 });
+  } finally {
+    await rm(dirname(file), { recursive: true });
+  }
+}, 120_000);
 
 it("要素のファイルから src/routes/ のファイルを import すると、型の検査が失敗する", async () => {
   const file = join(root, "src/elements/_imports-route.tsx");
