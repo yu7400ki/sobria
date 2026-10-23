@@ -473,6 +473,7 @@ describe("Context のヘッダーを加えるレスポンスの出口", () => {
   const returned = "src/app-exits.ts#returned";
   const denied = "src/app-exits.ts#denied";
   const thrown = "src/app-exits.ts#thrown";
+  const unfinished = "src/app-exits.ts#unfinished";
   registerServerFn(
     returned,
     defineServerFn(() => raw(200, "fn=1")),
@@ -490,6 +491,13 @@ describe("Context のヘッダーを加えるレスポンスの出口", () => {
       // oxlint-disable-next-line typescript/only-throw-error
       throw raw(409, "thrown=1");
     }),
+  );
+  registerServerFn(
+    unfinished,
+    defineServerFn(
+      async () => {},
+      () => 1,
+    ),
   );
   const routes: Routes = {
     middleware: module(rootMarking),
@@ -525,6 +533,7 @@ describe("Context のヘッダーを加えるレスポンスの出口", () => {
       [rpcPath(returned), rpc, "fn=1"],
       [rpcPath(denied), rpc, "deny=1"],
       [rpcPath(thrown), rpc, "thrown=1"],
+      [rpcPath(unfinished), rpc, undefined],
     ];
     const results = await Promise.all(
       exits.map(async ([path, init, own]) => {

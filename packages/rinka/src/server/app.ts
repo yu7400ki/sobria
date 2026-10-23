@@ -13,7 +13,7 @@ import {
   type Routes,
 } from "../shared/routes.ts";
 import { runInRequest, withContextHeaders } from "./context.ts";
-import { serverFnMiddleware, type Failure } from "./endpoint.ts";
+import { serverFnMiddleware } from "./endpoint.ts";
 import { notFound } from "./errors.ts";
 import { jsx } from "./jsx-runtime.ts";
 import { renderDocument } from "./render.ts";
@@ -71,9 +71,8 @@ const missing = (): never => {
 export const createApp = (({ routes, middleware }: Routes, options: AppOptions = {}): Hono => {
   const app = new Hono();
   const handle = options.onError ?? defaultFailure;
-  const fail: Failure = (error, c) => withContextHeaders(c, handle(error));
   app.onError((c) => withContextHeaders(c, handle(c.error)));
-  const serverFns = serverFnMiddleware(options, fail);
+  const serverFns = serverFnMiddleware(options, handle);
   const rinka = middleware === undefined ? serverFns : every(lazy(middleware), serverFns);
   app.use((c, next) => runInRequest(c, () => rinka(c, next)));
   const respond: Respond = async (c, node, { notFound: missingPage, error: errorPage }, props) => {

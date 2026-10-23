@@ -215,6 +215,7 @@ export function runChain(
 /**
  * `middlewares` と `last` を順に実行し、確定したレスポンスを返す。投げられた値は、Response 以外なら Error に包んで `c.error` にし、`onError` が返す Response にして `c.res` にし、
  * 外側のミドルウェアの `next()` を正常に終了させる。レスポンスが確定しなければ、そのことを表すエラーを `onError` に渡す。
+ * 返すレスポンスには、Context で設定したヘッダーを加える。
  */
 export function runChain(
   c: Context,
@@ -261,7 +262,7 @@ export async function runChain(
     }
   };
   await dispatch(0);
-  if (onError) return c.finalized ? c.res : onError(unfinished());
+  if (onError) return c.finalized ? c.res : withContextHeaders(c, await onError(unfinished()));
   if (completion) return { completed: true, value: completion.value };
   if (c.finalized) return { completed: false, response: c.res };
   if (failure) throw failure.error;

@@ -4,7 +4,6 @@ import { HTTPException } from "hono/http-exception";
 import type { AppOptions } from "../shared/routes.ts";
 import { withServerFnRef, type serverFnRef, type ServerFnRef } from "../shared/server-fn.ts";
 import { rpcPrefix, rpcQuery, wireFormat, wireHeader } from "../shared/wire.ts";
-import { withContextHeaders } from "./context.ts";
 import { NotFound, Redirect } from "./errors.ts";
 import { formDataToInput } from "./form-data.ts";
 import { definitionOf, runChain, SchemaError, type Definition } from "./server-fn.ts";
@@ -73,12 +72,12 @@ async function endpoint(
     async () => {
       const value = await handle(c, input);
       return value instanceof Response
-        ? withContextHeaders(c, value)
+        ? value
         : responder.respond(c, { kind: "value", value }, fail);
     },
     (error) => {
-      if (error instanceof Response) return withContextHeaders(c, error);
-      if (error instanceof HTTPException) return withContextHeaders(c, error.getResponse());
+      if (error instanceof Response) return error;
+      if (error instanceof HTTPException) return error.getResponse();
       return responder.respond(c, outcomeOf(error), fail);
     },
   );
@@ -104,7 +103,7 @@ function outcomeOf(error: unknown): Outcome {
 }
 
 /** rinka が扱わない例外から、レスポンスを作成する。 */
-export type Failure = (error: unknown, c: Context) => Response | Promise<Response>;
+export type Failure = (error: unknown) => Response | Promise<Response>;
 
 /** rinka が handler を呼ばずに拒否するときのステータスである。 */
 type Rejection = 400 | 403 | 404 | 405;
@@ -141,7 +140,7 @@ const responders = {
         case "schema":
           return rpc(c, { issues: outcome.issues }, 422);
         case "error":
-          return fail(outcome.error, c);
+          return fail(outcome.error);
         default:
           return unreachable(outcome);
       }
@@ -161,7 +160,7 @@ const responders = {
         case "schema":
           return c.json({ issues: outcome.issues }, 422);
         case "error":
-          return fail(outcome.error, c);
+          return fail(outcome.error);
         default:
           return unreachable(outcome);
       }
