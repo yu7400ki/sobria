@@ -4,19 +4,9 @@ import { Errored, Loading, Navigation } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { notFound, redirect } from "../../src/server/errors.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
+import { refreshPage } from "../../src/server/refresh.ts";
 import { renderRefresh } from "../../src/server/render.ts";
-
-/** 描き直しのレスポンスの JSON を表す。 */
-interface RefreshJson {
-  readonly head: string;
-  readonly body: string;
-  readonly data: Record<string, string>;
-  readonly elements: readonly (readonly [string, string, string])[];
-  readonly doc: {
-    readonly html: Record<string, string | null>;
-    readonly body: Record<string, string | null>;
-  };
-}
+import type { RefreshJson } from "../../src/shared/refresh.ts";
 
 /** `node` を描き直しとして描画し、ステータスと JSON を返す。 */
 async function refreshOf(node: unknown, options = {}) {
@@ -144,5 +134,11 @@ describe("renderRefresh", () => {
       jsx(Errored, { fallback: "failed", status: 503, children: jsx(broken, {}) }),
     );
     expect([status, json.body]).toEqual([503, "failed"]);
+  });
+});
+
+describe("サーバーの refreshPage", () => {
+  it("呼び出すとエラーを投げる", () => {
+    expect(() => refreshPage()).toThrow("refreshPage()");
   });
 });

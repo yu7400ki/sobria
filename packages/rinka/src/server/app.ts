@@ -2,6 +2,7 @@ import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { every } from "hono/combine";
 import { HTTPException } from "hono/http-exception";
 
+import { REFRESH_HEADER } from "../shared/refresh.ts";
 import {
   routeMethods,
   type AppOptions,
@@ -74,7 +75,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   app.use((c, next) => runInRequest(c, () => rinka(c, next)));
   const respond: Respond = async (c, node, { notFound: missingPage, error: errorPage }, props) => {
     const pages = {
-      headers: { vary: "x-rinka-refresh" },
+      headers: { vary: REFRESH_HEADER },
       ...(missingPage && { notFound: () => fallbackNode(missingPage, props) }),
       ...(errorPage && {
         error: (error: unknown) => {
@@ -84,7 +85,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
       }),
     };
     const response =
-      c.req.header("x-rinka-refresh") === "1"
+      c.req.header(REFRESH_HEADER) === "1"
         ? await renderRefresh(node, pages)
         : await renderDocument(node, {
             ...pages,

@@ -21,7 +21,8 @@ import { headKey } from "../shared/head.ts";
 import { isEventProp, propToAttribute, reservedProp } from "../shared/names.ts";
 import type { NavigationProps } from "../shared/navigation.ts";
 import { isFunction } from "../shared/objects.ts";
-import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
+import type { SwapSpec } from "../shared/receiver.ts";
+import type { RefreshJson } from "../shared/refresh.ts";
 import { createScope, withScope, type ScopedChild } from "../shared/scope.ts";
 import { BOUNDARIES_KEY, childKey, PROPS_KEY, REFRESH_PROPS_KEY } from "../shared/transfer-keys.ts";
 import { checkSerializable, formProps } from "../shared/wire.ts";
@@ -275,19 +276,6 @@ type Target =
   | { readonly kind: "fragment" }
   | { readonly kind: "document"; readonly head: string }
   | { readonly kind: "refresh" };
-
-/** `refreshPage()` のレスポンスの JSON を表す。 */
-interface RefreshJson {
-  readonly head: string;
-  readonly body: string;
-  /** ホストの ID ごとの、`@r` と `@p` の props を持つオブジェクトの JS の式である。 */
-  readonly data: Readonly<Record<string, string>>;
-  readonly elements: readonly ListedElement[];
-  readonly doc: {
-    readonly html: Readonly<Record<string, string | null>>;
-    readonly body: Readonly<Record<string, string | null>>;
-  };
-}
 
 /** 起動スクリプトに伝える要素を表す。`immediate` は、すぐ起動するインスタンスが 1 つでもあれば真である。 */
 interface Delivered {

@@ -143,6 +143,29 @@ writeFileSync(${JSON.stringify(marker)}, "x");
     }
   }, 30_000);
 
+  it("要素から refreshPage() を呼び出すと、要素の状態を保ったまま、本文と <title> と要素の props を描き直しで更新する", async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage();
+      await page.goto(`${origin}/refresh`);
+      await page.locator("app-refresher[data-started]").waitFor({ timeout: 5000 });
+      const before = Number(await page.locator("#renders").textContent());
+      await page.locator("app-refresher #count").dispatchEvent("click");
+      await page
+        .locator("app-refresher #count", { hasText: `v${before} 1` })
+        .waitFor({ timeout: 5000 });
+      await page.locator("app-refresher #refresh").dispatchEvent("click");
+      const after = before + 1;
+      await page.locator("#renders", { hasText: String(after) }).waitFor({ timeout: 5000 });
+      await page
+        .locator("app-refresher #count", { hasText: `v${after} 1` })
+        .waitFor({ timeout: 5000 });
+      expect(await page.title()).toBe(`refresh ${after}`);
+    } finally {
+      await browser.close();
+    }
+  }, 30_000);
+
   it("Vite が処理するリクエストは、Vite が返す", async () => {
     const response = await fetch(`${origin}/src/elements/counter.tsx`);
     expect(response.status).toBe(200);
