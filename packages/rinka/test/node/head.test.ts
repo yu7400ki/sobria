@@ -307,3 +307,99 @@ describe("キーが同じ <head> のタグ", () => {
     expect(head).toBe('<meta charset="utf-8"><meta name="description" content="b">');
   });
 });
+
+/** `layouts` で包んだ `page` を `/` に置いたアプリで、`/` の文書の HTML を返す。 */
+async function documentOfPage(
+  page: RouteComponent,
+  layouts: readonly RouteComponent[],
+): Promise<string> {
+  const route: Route = {
+    kind: "page",
+    path: "/",
+    module: moduleOf(page),
+    layouts: layouts.map(moduleOf),
+    middlewares: [],
+  };
+  return (await createApp({ routes: [route] }).request("/")).text();
+}
+
+const rootLayout = (props: LayoutProps) =>
+  jsx("html", {
+    lang: "ja",
+    class: "root",
+    children: jsx("body", { class: "app", children: props.children }),
+  });
+
+const classPage = () => [jsx("html", { class: "page", children: "page" })];
+
+describe("<html> と <body>", () => {
+  it("<html> と <body> の属性を、文書の <html> と <body> の開始タグに移動し、子は記述した位置に出力する", async () => {
+    expect(await documentOfPage(() => jsx("p", { children: "page" }), [rootLayout])).toBe(
+      '<!doctype html><html lang="ja" class="root"><head><meta charset="utf-8"></head><body class="app"><p>page</p></body></html>',
+    );
+  });
+
+  it("複数のファイルが同じ属性を記述したときは、属性ごとに深いファイルの値を出力し、別の属性を残す", async () => {
+    const html = await documentOfPage(classPage, [rootLayout]);
+    expect(html).toBe(
+      '<!doctype html><html lang="ja" class="page"><head><meta charset="utf-8"></head><body class="app">page</body></html>',
+    );
+  });
+
+  it("<head> は子だけを描画し、子の <title> と <meta> を <head> に移動する", async () => {
+    const { head, body } = await documentOf([
+      jsx("head", { children: [title("T"), jsx("meta", { name: "a", content: "b" })] }),
+      "text",
+    ]);
+    expect(head).toBe('<meta charset="utf-8"><title>T</title><meta name="a" content="b">');
+    expect(body).toBe("text");
+  });
+
+  it("<Errored> が受け止めた部分の属性を除く", async () => {
+    const html = await (
+      await renderToResponse(
+        jsx(Errored, {
+          fallback: () => "failed",
+          children: [jsx("html", { lang: "en", children: "x" }), jsx(Failing, {})],
+        }),
+      )
+    ).text();
+    expect(html).toBe(
+      '<!doctype html><html><head><meta charset="utf-8"></head><body>failed</body></html>',
+    );
+  });
+
+  it("シェルの時点で未解決の値を読む属性は、出力から除く", async () => {
+    const pendingLang = memo(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return "ja";
+    });
+    const html = await (
+      await renderToResponse(jsx("html", { lang: () => pendingLang(), dir: "ltr", children: "x" }))
+    ).text();
+    expect(html).toBe(
+      '<!doctype html><html dir="ltr"><head><meta charset="utf-8"></head><body>x</body></html>',
+    );
+  });
+
+  it("<Loading> の内側の <html>、<body>、<head> は、属性を移動せずに子を描画し、開発時に警告する", async () => {
+    vi.stubEnv("DEV", true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const html = await (
+      await renderToResponse(
+        jsx(Loading, {
+          fallback: "wait",
+          children: [
+            jsx("html", { lang: "en", children: "a" }),
+            jsx("body", { class: "b", children: "b" }),
+            jsx("head", { children: "c" }),
+          ],
+        }),
+      )
+    ).text();
+    expect(html).toBe(
+      '<!doctype html><html><head><meta charset="utf-8"></head><body>abc</body></html>',
+    );
+    expect(warn).toHaveBeenCalledTimes(3);
+  });
+});

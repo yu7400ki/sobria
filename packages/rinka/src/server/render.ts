@@ -104,14 +104,20 @@ interface Host {
   };
 }
 
-/** 文書を出力する描画で、特別に扱うタグの扱いを表す。`head` は、`<head>` に移動するタグである。 */
-type DocumentTag = "head";
+/**
+ * 文書を出力する描画で、特別に扱うタグの扱いを表す。
+ * `head` は `<head>` に移動するタグ、`root` は属性を文書の開始タグに移動して子だけを描画するタグ、`transparent` は子だけを描画するタグである。
+ */
+type DocumentTag = "head" | "root" | "transparent";
 
 /** 文書を出力する描画で、特別に扱うタグと、その扱いである。 */
 const documentTags: ReadonlyMap<string, DocumentTag> = new Map([
   ["title", "head"],
   ["meta", "head"],
   ["link", "head"],
+  ["html", "root"],
+  ["body", "root"],
+  ["head", "transparent"],
 ]);
 
 /** 配下の `<title>`、`<meta>`、`<link>` を `<head>` に移動しないタグである。 */
@@ -168,11 +174,22 @@ function headKey(tag: string, read: (name: string) => unknown): string | undefin
   return undefined;
 }
 
-/** `<head>` に移動するタグを表す。`depth` は、タグを記述したルートのファイルの深さである。 */
-interface HeadTag {
-  readonly key: string | undefined | Promise<string | undefined>;
-  readonly depth: number;
-}
+/**
+ * 文書の骨組みに移動するものを、目印の番号ごとに表す。`depth` は、記述したルートのファイルの深さである。
+ * `head` は `<head>` に移動するタグで、`root` は `<html>` か `<body>` の、属性の名前ごとの出力である。
+ */
+type Hoisted =
+  | {
+      readonly kind: "head";
+      readonly key: string | undefined | Promise<string | undefined>;
+      readonly depth: number;
+    }
+  | {
+      readonly kind: "root";
+      readonly tag: string;
+      readonly attributes: ReadonlyMap<string, string>;
+      readonly depth: number;
+    };
 
 /** `<head>` に出力する候補のタグを表す。 */
 interface HeadOutput {
@@ -193,6 +210,32 @@ function dedupeHead(tags: readonly HeadOutput[]): string {
     if (!current || tag.depth >= current.depth) chosen.set(key, tag);
   }
   return [...chosen.values()].map(({ html }) => html).join("");
+}
+
+/**
+ * 文書の順序で並んだ `<html>` か `<body>` の属性を、属性ごとに、深さが最も大きく、同じ深さなら後の値にして連結する。
+ * 属性は、その名前が最初に現れた順に並べる。
+ */
+function mergeAttributes(
+  records: readonly { readonly attributes: ReadonlyMap<string, string>; readonly depth: number }[],
+): string {
+  const chosen = new Map<string, { readonly html: string; readonly depth: number }>();
+  for (const { attributes, depth } of records) {
+    for (const [name, html] of attributes) {
+      const current = chosen.get(name);
+      if (!current || depth >= current.depth) chosen.set(name, { html, depth });
+    }
+  }
+  return [...chosen.values()].map(({ html }) => html).join("");
+}
+
+/** 文書の骨組みに並べる値を表す。`html` と `body` は、開始タグに出力する属性である。 */
+interface DocumentParts {
+  readonly head: string;
+  readonly html: string;
+  readonly body: string;
+  /** シェルから、移動したタグと目印を取り除いた残りである。 */
+  readonly rest: string;
 }
 
 /** 文書を出力する描画の設定を表す。`head` は、文書の `<head>` の末尾に出力するマークアップである。 */
@@ -549,8 +592,8 @@ class Renderer {
   private caught = 200;
   /** `<head>` に移動するタグを囲む目印に含める、描画ごとの値である。 */
   private readonly nonce = crypto.randomUUID();
-  /** `<head>` に移動するタグを、目印の番号ごとに保持する。 */
-  private readonly heads = new Map<number, HeadTag>();
+  /** 文書の骨組みに移動するものを、目印の番号ごとに保持する。 */
+  private readonly hoisted = new Map<number, Hoisted>();
 
   /**
    * `write` は、出力する文字列を受け取る。`blocking` なら、すべての境界を待って、フォールバックと差し替えを出力しない。
@@ -666,19 +709,40 @@ class Renderer {
     ctx: WalkCtx,
     out: Chunk[],
   ): void {
+    const role = this.document ? documentTags.get(tag) : undefined;
+    const atShell = ctx.owner === null && ctx.boundary === this.root;
+    if (role === "root" || role === "transparent") {
+      if (atShell) {
+        if (role === "root") {
+          const id = ++this.seq;
+          this.hoisted.set(id, {
+            kind: "root",
+            tag,
+            attributes: this.rootAttributes(props, ctx),
+            depth: ctx.depth,
+          });
+          out.push(this.headMarker(id, ""), this.headMarker(id, "/"));
+        }
+      } else if (import.meta.env?.DEV) {
+        console.warn(
+          `[rinka] <${tag}> は${ctx.owner === null ? " <Loading> の内側（要素の中の <Loading> に配置される子を含む）" : "要素の中"}にあるので、文書の <${tag}> に反映せずに、子だけを出力します。`,
+        );
+      }
+      this.walk(asNode(props.children), ctx, out);
+      return;
+    }
     if (
-      this.document &&
-      documentTags.get(tag) === "head" &&
+      role === "head" &&
       !ctx.headless &&
       (tag === "title" || attributeValue("itemprop", props.itemprop) === null)
     ) {
-      if (ctx.owner === null && ctx.boundary === this.root) {
+      if (atShell) {
         const { slot: _, ...unslotted } = ctx;
         const id = ++this.seq;
         const headTagKey = this.settle(ctx, (tracked) =>
           headKey(tag, (name) => this.value(props[name], ctx, tracked)),
         );
-        this.heads.set(id, { key: headTagKey, depth: ctx.depth });
+        this.hoisted.set(id, { kind: "head", key: headTagKey, depth: ctx.depth });
         out.push(this.headMarker(id, ""));
         this.nativeTag(tag, props, key, unslotted, out);
         out.push(this.headMarker(id, "/"));
@@ -693,7 +757,25 @@ class Renderer {
     this.nativeTag(tag, props, key, ctx, out);
   }
 
-  /** `<head>` に移動するタグの前（`end` が空）と後（`end` が `/`）に置く目印である。 */
+  /** `<html>` か `<body>` の `props` を、属性の名前ごとの出力にする。未解決の値を読む属性は除く。 */
+  private rootAttributes(props: Record<string, unknown>, ctx: WalkCtx): Map<string, string> {
+    const attributes = new Map<string, string>();
+    for (const [name, raw] of Object.entries(props)) {
+      if (name === "children" || name === "ref" || name === "slot") continue;
+      if (isEventProp(name) && isFunction(raw)) continue;
+      let value: unknown;
+      try {
+        value = this.value(raw, ctx, false);
+      } catch (error) {
+        if (error instanceof NotReadyError) continue;
+        throw error;
+      }
+      attributes.set(name, attribute(name, value));
+    }
+    return attributes;
+  }
+
+  /** 文書の骨組みに移動するものの前（`end` が空）と後（`end` が `/`）に置く目印である。 */
   private headMarker(id: number, end: "" | "/"): string {
     return `<!--${this.nonce}:${id}${end}-->`;
   }
@@ -1162,29 +1244,42 @@ class Renderer {
   }
 
   /**
-   * シェルの文字列 `shell` から、目印で囲んだタグを取り除き、`<head>` に出力するタグと、残りの文字列を返す。
+   * シェルの文字列 `shell` から目印で囲んだものを取り除き、文書の骨組みに並べる値を返す。
    * `<head>` のタグは、先頭に rinka の `<meta charset="utf-8">` を加え、キーが同じタグを 1 つにする。`<meta charset>` は、常に rinka のタグを残す。
    */
-  private async takeHead(shell: string): Promise<{ readonly tags: string; readonly body: string }> {
-    const found: Promise<HeadOutput>[] = [];
+  private async takeDocument(shell: string): Promise<DocumentParts> {
+    const heads: Promise<HeadOutput>[] = [];
+    const roots: Record<"html" | "body", Extract<Hoisted, { kind: "root" }>[]> = {
+      html: [],
+      body: [],
+    };
     const inner = new RegExp(`<!--${this.nonce}:\\d+/?-->`, "g");
-    const body = shell.replace(
+    const rest = shell.replace(
       new RegExp(`<!--${this.nonce}:(\\d+)-->([\\s\\S]*?)<!--${this.nonce}:\\1/-->`, "g"),
-      (_match, id: string, tag: string) => {
-        const head = this.heads.get(Number(id));
-        if (head === undefined) throw new Error(`<head> のタグ ${id} の記録がありません。`);
-        found.push(
-          (async () => ({
-            html: tag.replace(inner, ""),
-            key: await head.key,
-            depth: head.depth,
-          }))(),
-        );
+      (_match, id: string, html: string) => {
+        const hoisted = this.hoisted.get(Number(id));
+        if (hoisted === undefined) throw new Error(`目印 ${id} の記録がありません。`);
+        if (hoisted.kind === "root") {
+          (hoisted.tag === "html" ? roots.html : roots.body).push(hoisted);
+        } else {
+          heads.push(
+            (async () => ({
+              html: html.replace(inner, ""),
+              key: await hoisted.key,
+              depth: hoisted.depth,
+            }))(),
+          );
+        }
         return "";
       },
     );
     const charset = { html: '<meta charset="utf-8">', key: "charset", depth: Infinity };
-    return { tags: dedupeHead([charset, ...(await Promise.all(found))]), body };
+    return {
+      head: dedupeHead([charset, ...(await Promise.all(heads))]),
+      html: mergeAttributes(roots.html),
+      body: mergeAttributes(roots.body),
+      rest,
+    };
   }
 
   /** 文書の先頭と `shell` を出力し、後送りの境界をすべて出力してから、文書を閉じる。 */
@@ -1194,10 +1289,10 @@ class Renderer {
       const script = this.interactive
         ? bootstrap + preloadLinks(fresh) + announceScript(fresh)
         : "";
-      const { tags, body } = await this.takeHead(shell);
+      const parts = await this.takeDocument(shell);
       this.reveal(
         this.shellOut.flush,
-        `<!doctype html><html><head>${tags}${script}${this.document?.head ?? ""}</head><body>${body}${this.shellOut.scriptText}`,
+        `<!doctype html><html${parts.html}><head>${parts.head}${script}${this.document?.head ?? ""}</head><body${parts.body}>${parts.rest}${this.shellOut.scriptText}`,
       );
       await this.drain();
       for (const host of this.hosts) host.hide();
