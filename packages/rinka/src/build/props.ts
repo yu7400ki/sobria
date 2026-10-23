@@ -6,7 +6,6 @@ import { importedNames } from "./ast.ts";
 import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 
-/** Props のメンバーの分類を表す。 */
 /** props の分類を表す。`unknown` は、型の記述だけでは属性にできるかどうかが分からない props である。 */
 type Kind = AttributeType | "function" | "slot" | "object" | "unknown";
 
@@ -16,6 +15,8 @@ interface Helpers {
   readonly props: ReadonlySet<string>;
   /** `Slot` の名前である。 */
   readonly slot: ReadonlySet<string>;
+  /** ファイルのトップレベルで宣言した type の名前ごとの型の記述である。interface の名前は `interface` に対応させる。 */
+  readonly declared: ReadonlyMap<string, ESTree.TSType | "interface">;
 }
 
 /** 解析できない理由を受け取り、ビルドのエラーを返す関数を表す。 */
@@ -111,10 +112,19 @@ function propsMembers(
   return classifyAll(interfaces.flatMap((declaration) => declaration.body.body));
 }
 
-/** `rinka` から import した `Props` と `Slot` の、ファイルの中の名前を返す。 */
+/** `rinka` から import した `Props` と `Slot` の、ファイルの中の名前と、ファイルで宣言した type と interface を返す。 */
 function rinkaTypes(program: ESTree.Program): Helpers {
   const names = importedNames(program, entries.main);
-  return { props: names.get("Props") ?? new Set(), slot: names.get("Slot") ?? new Set() };
+  return {
+    props: names.get("Props") ?? new Set(),
+    slot: names.get("Slot") ?? new Set(),
+    declared: new Map(
+      declarations(program).map((declaration) => [
+        declaration.id.name,
+        declaration.type === "TSTypeAliasDeclaration" ? declaration.typeAnnotation : "interface",
+      ]),
+    ),
+  };
 }
 
 /** ファイルのトップレベルで宣言した type と interface を返す。 */
@@ -173,30 +183,62 @@ function memberKind(
   return "function";
 }
 
-/** 型の記述から、メンバーの分類を返す。 */
-function classify(type: ESTree.TSType | undefined, helpers: Helpers): Kind {
+/** 型の記述から、メンバーの分類を返す。`seen` は、解決している途中の type の名前である。 */
+function classify(
+  type: ESTree.TSType | undefined,
+  helpers: Helpers,
+  seen: ReadonlySet<string> = new Set(),
+): Kind {
   if (type === undefined) return "unknown";
   if (type.type === "TSStringKeyword") return "string";
   if (type.type === "TSNumberKeyword") return "number";
   if (type.type === "TSBooleanKeyword") return "boolean";
   if (type.type === "TSFunctionType") return "function";
-  if (type.type === "TSParenthesizedType") return classify(type.typeAnnotation, helpers);
+  if (type.type === "TSParenthesizedType") return classify(type.typeAnnotation, helpers, seen);
+  if (type.type === "TSTypeOperator" && type.operator === "readonly") {
+    return classify(type.typeAnnotation, helpers, seen);
+  }
   if (type.type === "TSTemplateLiteralType") return type.types.length === 0 ? "string" : "unknown";
   if (type.type === "TSTypeReference") {
-    return isSlotType(type.typeName, helpers) ? "slot" : "unknown";
+    if (isSlotType(type.typeName, helpers)) return "slot";
+    return type.typeName.type === "Identifier"
+      ? referenceKind(type.typeName.name, helpers, seen)
+      : "unknown";
   }
   if (type.type === "TSLiteralType") return literalKind(type.literal);
   if (type.type === "TSUnionType") {
     const kinds = new Set(
       type.types
         .filter((member) => member.type !== "TSUndefinedKeyword" && member.type !== "TSNullKeyword")
-        .map((member) => classify(member, helpers)),
+        .map((member) => classify(member, helpers, seen)),
     );
     const [kind] = kinds;
     return kinds.size === 1 && kind !== undefined ? kind : "unknown";
   }
   return objectTypes.has(type.type) ? "object" : "unknown";
 }
+
+/** 同じファイルで宣言した type と interface と、値がオブジェクトになる組み込みの型の名前 `name` の分類を返す。 */
+function referenceKind(name: string, helpers: Helpers, seen: ReadonlySet<string>): Kind {
+  const declared = helpers.declared.get(name);
+  if (declared === "interface") return "object";
+  if (declared !== undefined) {
+    return seen.has(name) ? "unknown" : classify(declared, helpers, new Set([...seen, name]));
+  }
+  return objectReferences.has(name) ? "object" : "unknown";
+}
+
+/** 値がオブジェクトになる組み込みの型の名前である。 */
+const objectReferences: ReadonlySet<string> = new Set([
+  "Array",
+  "ReadonlyArray",
+  "Record",
+  "Map",
+  "ReadonlyMap",
+  "Set",
+  "ReadonlySet",
+  "Date",
+]);
 
 /** 値がオブジェクトになる型の記述の種類である。 */
 const objectTypes: ReadonlySet<string> = new Set([

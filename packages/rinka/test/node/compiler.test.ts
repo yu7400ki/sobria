@@ -195,22 +195,46 @@ export default function X(props: Props) { return <p />; }`);
     });
   });
 
-  it("型の記述からオブジェクトと分かる props だけを objectProps に列挙する", () => {
+  it("型の記述と、同じファイルで宣言した type と interface から、オブジェクトと分かる props を objectProps に列挙する", () => {
     const { element: info } = element(`type Variant = "a" | "b";
+type Handler = () => void;
+type Loop = Loop[] | Loop;
+interface User { name: string }
 type Props = {
   list: string[];
-  pair: [number, string];
+  pair: readonly [number, string];
   map: { [key: string]: number };
   any: object;
-  both: { a: 1 } | string[];
+  both: { a: 1 } | readonly string[];
+  user: User;
+  record: Record<string, number>;
   variant: Variant;
+  handler: Handler;
+  loop: Loop;
+  imported: Imported;
   width: \`\${number}px\`;
   mixed: string | { a: 1 };
 };
 export default function X(props: Props) { return <p />; }`);
     expect(info?.options).toEqual({
-      props: ["list", "pair", "map", "any", "both", "variant", "width", "mixed"],
-      objectProps: ["list", "pair", "map", "any", "both"],
+      props: [
+        "list",
+        "pair",
+        "map",
+        "any",
+        "both",
+        "user",
+        "record",
+        "variant",
+        "handler",
+        "loop",
+        "imported",
+        "width",
+        "mixed",
+      ],
+      types: { variant: "string" },
+      functionProps: ["handler"],
+      objectProps: ["list", "pair", "map", "any", "both", "user", "record"],
     });
   });
 
