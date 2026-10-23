@@ -194,17 +194,31 @@ type ChainResult =
   | { readonly completed: false; readonly response: Response };
 
 /**
- * Hono のミドルウェアの合成と同じ規則で、`middlewares` と `last` を順に実行する。
+ * Hono のミドルウェアの合成と同じ規則で、`middlewares` と `last` を順に実行し、結果を返す。
  * ミドルウェアか `last` が返した Response は、`c.res` が確定していなければ `c.res` にする。
- * `onError` があれば、投げられた値を `onError` が返す Response にして `c.res` にし、外側のミドルウェアの `next()` を正常に終了させる。
  * `last` が完了せず、レスポンスも確定しなければ、`last` が投げた値を投げる。`last` が呼ばれていなければ、エラーを投げる。
  */
+export function runChain(
+  c: Context,
+  middlewares: readonly Step[],
+  last: () => Promise<unknown>,
+): Promise<ChainResult>;
+/**
+ * `middlewares` と `last` を順に実行し、確定したレスポンスを返す。投げられた値は、`onError` が返す Response にして `c.res` にし、
+ * 外側のミドルウェアの `next()` を正常に終了させる。レスポンスが確定しなければ、エラーを投げる。
+ */
+export function runChain(
+  c: Context,
+  middlewares: readonly Step[],
+  last: () => Promise<unknown>,
+  onError: (error: unknown) => Response | Promise<Response>,
+): Promise<Response>;
 export async function runChain(
   c: Context,
   middlewares: readonly Step[],
   last: () => Promise<unknown>,
   onError?: (error: unknown) => Response | Promise<Response>,
-): Promise<ChainResult> {
+): Promise<ChainResult | Response> {
   let called = -1;
   let completion: { readonly value: unknown } | undefined;
   let failure: { readonly error: unknown } | undefined;
@@ -235,6 +249,10 @@ export async function runChain(
     if (value instanceof Response && (!c.finalized || failed)) c.res = value;
   };
   await dispatch(0);
+  if (onError) {
+    if (c.finalized) return c.res;
+    throw new Error("ミドルウェアは、next() を呼ぶか、Response を返してください。");
+  }
   if (completion) return { completed: true, value: completion.value };
   if (c.finalized) return { completed: false, response: c.res };
   if (failure) throw failure.error;

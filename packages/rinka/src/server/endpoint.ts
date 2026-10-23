@@ -62,7 +62,7 @@ async function endpoint(
   } catch {
     return responder.reject(c, 400);
   }
-  await runChain(
+  return runChain(
     c,
     middlewares,
     async () => {
@@ -75,7 +75,6 @@ async function endpoint(
       return responder.respond(c, outcomeOf(error));
     },
   );
-  return c.res;
 }
 
 /** handler の戻り値と、handler が投げた値のうち、レスポンスの形をリクエストの種類で決めるものを表す。 */
