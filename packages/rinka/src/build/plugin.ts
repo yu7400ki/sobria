@@ -313,7 +313,7 @@ function checkOrigin(origin: string): void {
 
 /**
  * `environment` がモジュールを実行できる開発の環境かどうかを返す。
- * アプリと rinka が別のインスタンスの vite に解決されても判定できるように、`runner` の有無で判定する。
+ * クラスで判定せずに、`runner` の有無で判定する。
  */
 const isRunnable = (environment: Environment): environment is RunnableDevEnvironment =>
   "runner" in environment;

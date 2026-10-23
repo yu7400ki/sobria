@@ -106,8 +106,6 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     props,
     files = [],
   ) => {
-    const styles = options.styles && files.length > 0 ? await options.styles(files) : [];
-    const head = `${options.head ?? ""}${styles.map((href) => `<link rel="stylesheet"${attribute("href", href)}>`).join("")}`;
     const pages = {
       headers: { vary: REFRESH_HEADER },
       ...(missingPage && { notFound: () => fallbackNode(missingPage, props) }),
@@ -118,13 +116,12 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
         },
       }),
     };
-    const response =
-      c.req.header(REFRESH_HEADER) === "1"
-        ? await renderRefresh(node, pages)
-        : await renderDocument(node, {
-            ...pages,
-            ...(head !== "" && { head }),
-          });
+    if (c.req.header(REFRESH_HEADER) === "1") {
+      return withContextHeaders(c, await renderRefresh(node, pages));
+    }
+    const styles = options.styles && files.length > 0 ? await options.styles(files) : [];
+    const head = `${options.head ?? ""}${styles.map((href) => `<link rel="stylesheet"${attribute("href", href)}>`).join("")}`;
+    const response = await renderDocument(node, { ...pages, ...(head !== "" && { head }) });
     return withContextHeaders(c, response);
   };
   const find = finder(routes);
