@@ -90,8 +90,8 @@ function syncAttributes(element: Element, source: Element): void {
     }
   }
   for (const { namespaceURI, localName, name, value } of source.attributes) {
-    if (element.getAttributeNS(namespaceURI, localName) !== value) {
-      element.setAttributeNS(namespaceURI, name, value);
-    }
+    if (element.getAttributeNS(namespaceURI, localName) === value) continue;
+    if (namespaceURI === null) element.setAttribute(name, value);
+    else element.setAttributeNS(namespaceURI, name, value);
   }
 }

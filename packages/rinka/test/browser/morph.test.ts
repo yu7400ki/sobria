@@ -73,9 +73,14 @@ describe("morph", () => {
     expect(root.innerHTML).toBe('<p>p</p><li data-ok="a">a</li><li data-ok="n">x</li>');
   });
 
-  it("名前空間のある属性を、名前空間とともに設定する", () => {
-    const root = container("<svg><use></use></svg>");
-    morph(root, '<svg><use xlink:href="#a"></use></svg>', noHost);
+  it("名前空間のある属性を名前空間とともに設定し、名前にコロンを含む HTML の属性も設定する", () => {
+    const root = container('<svg><use></use></svg><div x-on:click="a"></div>');
+    morph(
+      root,
+      '<svg><use xlink:href="#a"></use></svg><div x-on:click="b" xml:lang="ja"></div>',
+      noHost,
+    );
+    expect(root.querySelector("div")?.outerHTML).toBe('<div x-on:click="b" xml:lang="ja"></div>');
     expect(root.querySelector("use")?.getAttributeNS("http://www.w3.org/1999/xlink", "href")).toBe(
       "#a",
     );
