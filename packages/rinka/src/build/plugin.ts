@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { getRequestListener } from "@hono/node-server";
 import {
+  normalizePath,
   type Environment,
   type Plugin,
   type ResolvedConfig,
@@ -117,12 +118,40 @@ const hasCloudflare = (plugins: readonly unknown[]): boolean =>
         plugin.name.startsWith("vite-plugin-cloudflare"),
   );
 
-/** アプリのルート `root` と設定 `options` から、アプリのルートと、要素のディレクトリとビルドの出力先の絶対パスを返す。 */
-const dirsOf = (root: string, options: RinkaOptions) => ({
-  root,
-  elementsDir: resolve(root, options.elementsDir ?? "src/elements"),
-  outDir: resolve(root, options.outDir ?? "dist"),
-});
+/** プラグインが動作する場面である。`serve` は開発サーバーと `vite preview`、`app` はアプリのビルド、`library` はライブラリのビルドである。 */
+type Scene = "serve" | "app" | "library";
+
+/** Vite の設定から求めた、プラグインの設定を表す。 */
+interface Settings {
+  /** アプリのルートである。`/` で区切る。 */
+  readonly root: string;
+  readonly elementsDir: string;
+  readonly outDir: string;
+  readonly scene: Scene;
+  /** TSX のソースの形のライブラリである。 */
+  readonly libraries: readonly Library[];
+  /** アプリと、各ライブラリの、要素の組の列である。先頭はアプリの組である。 */
+  readonly sources: readonly ElementSource[];
+}
+
+/** Vite のユーザーの設定のルート `userRoot`、`command`、プラグインの設定 `options` から、プラグインの設定を求める。 */
+function settingsOf(
+  userRoot: string | undefined,
+  command: "build" | "serve",
+  options: RinkaOptions,
+): Settings {
+  const root = normalizePath(resolve(userRoot ?? "."));
+  const elementsDir = resolve(root, options.elementsDir ?? "src/elements");
+  const libraries = findLibraries(root);
+  return {
+    root,
+    elementsDir,
+    outDir: resolve(root, options.outDir ?? "dist"),
+    scene: command === "serve" ? "serve" : options.library ? "library" : "app",
+    libraries,
+    sources: [{ prefix: options.prefix ?? DEFAULT_PREFIX, elementsDir, dir: root }, ...libraries],
+  };
+}
 
 /** 変換するプロジェクトのファイルの、モジュールのパス、ルートからの相対パス、言語を表す。 */
 interface ProjectFile {
@@ -146,30 +175,29 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   const serverFnIds = new Map<string, ReadonlySet<string>>();
   /** 開発サーバーの ssr の環境ごとの、`DevHooks` の ID である。 */
   const devIds = new WeakMap<Environment, string>();
+  /** `config` で求めたプラグインの設定である。 */
+  let settings: Settings | undefined;
+  /** プラグインの設定を返す。Vite の設定を解決する前に呼び出すと、エラーを投げる。 */
+  const current = (): Settings => {
+    if (settings === undefined) {
+      throw new Error("[rinka] .rinka/ は、Vite の設定を解決した後に生成してください。");
+    }
+    return settings;
+  };
   /** ルートからの相対パス `file` の、サーバー関数の ID のモジュールの部分を返す。ビルドではパスのハッシュに、開発ではパスにする。 */
-  const fnModuleOf = (file: string): string => (isBuild ? hashedFnModule(file) : file);
-  let root = "";
-  let elementsDir = "";
-  let outDir = "";
-  let isBuild = false;
-  /** Vite の設定に Cloudflare のプラグインがあるかどうかである。 */
-  let withCloudflare = false;
+  const fnModuleOf = (file: string): string =>
+    current().scene === "serve" ? file : hashedFnModule(file);
   /** サーバーのビルドで、クライアントのビルドの manifest から要素のファイルの URL を返す関数である。 */
   let clientAssets: ClientAssets | undefined;
-  /** TSX のソースの形のライブラリである。 */
-  let libraries: readonly Library[] = [];
-  /** アプリとライブラリの、接頭辞と要素のディレクトリの組である。 */
-  const sourcesOf = (dir: string): ElementSource[] => [{ prefix, elementsDir: dir }, ...libraries];
   /** 要素のファイルを、ブラウザが読み込むときの URL と、静的に import するチャンクの URL にする。 */
   const elementAssets = ({ path, file }: ProjectFile, client: boolean) => {
-    if (!isBuild || client) return { module: devPath(path, root) };
+    const { root, outDir, scene } = current();
+    if (scene === "serve" || client) return { module: devPath(path, root) };
     clientAssets ??= readClientAssets(join(outDir, "client"));
     return clientAssets(file);
   };
   const writeTypes = (): void => {
-    if (root === "") {
-      throw new Error("[rinka] .rinka/ は、Vite の設定を解決した後に生成してください。");
-    }
+    const { root, elementsDir } = current();
     writePrepared(
       root,
       preparedFiles({ root, prefix, elementsDir, globalJSX: options.globalJSX ?? true }),
@@ -184,9 +212,8 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   const projectFile = (id: string): ProjectFile | undefined => {
     const lang = langs[extname(id)];
     if (!lang || id.includes("?") || id.startsWith("\0")) return undefined;
-    const file = inside(root, id);
-    if (file !== undefined && !id.includes("/node_modules/")) return { path: id, file, lang };
-    const owned = libraries.some(({ dir }) => {
+    const { root, sources } = current();
+    const owned = sources.some(({ dir }) => {
       const inner = inside(dir, id);
       return inner !== undefined && !inner.split("/").includes("node_modules");
     });
@@ -200,7 +227,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   const loadServerFn = async (environment: RunnableDevEnvironment, id: string) => {
     const file = moduleOfServerFnId(id);
     if (file === undefined) return false;
-    if (!isServerFnSource(file) || !existsSync(resolve(root, file))) {
+    if (!isServerFnSource(file) || !existsSync(resolve(current().root, file))) {
       return false;
     }
     await environment.transformRequest(`/${file}`);
@@ -217,12 +244,10 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       sharedDuringBuild: true,
       perEnvironmentStartEndDuringDev: true,
       config: (user, { command }) => {
-        withCloudflare = hasCloudflare(user.plugins ?? []);
-        const dirs = dirsOf(resolve(user.root ?? "."), options);
-        const out = dirs.outDir;
-        libraries = findLibraries(dirs.root);
-        const elements = scanElements(sourcesOf(dirs.elementsDir));
-        const own = elements.filter(({ path }) => inside(dirs.elementsDir, path) !== undefined);
+        settings = settingsOf(user.root, command, options);
+        const { root, elementsDir, outDir, scene, libraries, sources } = settings;
+        const elements = scanElements(sources);
+        const own = elements.filter(({ path }) => inside(elementsDir, path) !== undefined);
         return {
           appType: "custom",
           oxc,
@@ -230,23 +255,22 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
             include: clientImports.map(fromApp),
             exclude: libraries.map((library) => library.name),
           },
-          build: { outDir: options.library ? out : join(out, "client") },
-          ...(command === "build" &&
-            (options.library
-              ? libraryBuild(out, own)
-              : appBuild(out, elements, resolveEntry(dirs.root)))),
+          build: { outDir: options.library ? outDir : join(outDir, "client") },
+          ...(scene === "serve" &&
+            hasCloudflare(user.plugins ?? []) && {
+              environments: { ssr: { optimizeDeps: { include: serverImports.map(fromApp) } } },
+            }),
+          ...(scene === "app" && appBuild(outDir, elements, resolveEntry(root))),
+          ...(scene === "library" && libraryBuild(outDir, own)),
         };
       },
-      configEnvironment(name, config, { command }) {
+      configEnvironment(name, config) {
         const consumer = config.consumer ?? (name === "client" ? "client" : "server");
         if (consumer !== "server") return null;
+        const { scene, libraries } = current();
         const names = libraries.map((library) => library.name);
-        if (command === "build") return { resolve: { noExternal: [...bundled(), ...names] } };
-        return {
-          resolve: { noExternal: [entries.main, ...names] },
-          ...(withCloudflare &&
-            name === "ssr" && { optimizeDeps: { include: serverImports.map(fromApp) } }),
-        };
+        const bundles = scene === "serve" ? [entries.main] : bundled();
+        return { resolve: { noExternal: [...bundles, ...names] } };
       },
       configResolved(config) {
         if (config.plugins.filter((plugin) => plugin.name === NAME).length > 1) {
@@ -254,17 +278,14 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
             "rinka のプラグインが 2 つ以上登録されています。vite.config.ts の plugins に rinka() を 1 回だけ記述してください。",
           );
         }
-        root = config.root;
-        ({ elementsDir, outDir } = dirsOf(root, options));
-        isBuild = config.command === "build";
-        if (isBuild && options.library && prefix === DEFAULT_PREFIX) {
+        if (current().scene === "library" && prefix === DEFAULT_PREFIX) {
           config.logger.warn(
             "[rinka] library: true のビルドで、要素のタグ名の接頭辞がデフォルトの rinka のままです。ほかのライブラリとタグ名が重ならないように、rinka({ prefix }) に固有の接頭辞を指定してください。",
           );
         }
       },
       buildStart() {
-        if (isBuild) writeTypes();
+        if (current().scene !== "serve") writeTypes();
       },
       resolveId(id, importer, resolveOptions) {
         if (id === entries.routes) return ROUTES;
@@ -278,7 +299,8 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         if (id === entries.server && isClient(this.environment)) {
           if ("scan" in resolveOptions && resolveOptions.scan === true)
             return { id, external: true };
-          const from = importer === undefined ? undefined : (inside(root, importer) ?? importer);
+          const from =
+            importer === undefined ? undefined : (inside(current().root, importer) ?? importer);
           throw new Error(
             `${from ?? "(不明なファイル)"}: クライアント向けのコードから ${entries.server} を参照しています。${entries.server} の値は、サーバー関数とミドルウェアの定義の式の中でだけ使用できます。型だけを使用する名前は、import type か export type で記述してください。`,
           );
@@ -287,11 +309,12 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         return entry === undefined ? null : fileURLToPath(new URL(`../${entry}`, import.meta.url));
       },
       load(id) {
+        const { root, scene } = current();
         if (id === ROUTES) return routesModule(root, ROUTES_DIR);
         if (id === NO_ELEMENTS) return "export {};\n";
         if (id === APP) {
           const serverFns = new Map(serverFnModules(root).map((file) => [fnModuleOf(file), file]));
-          if (isBuild) return appModule({ serverFns, trustedOrigins });
+          if (scene !== "serve") return appModule({ serverFns, trustedOrigins });
           return appModule({
             serverFns,
             trustedOrigins,
@@ -301,7 +324,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         const sheet = sheetPath(id);
         if (sheet === undefined) return null;
         const path = devPath(sheet, root);
-        if (isBuild && !options.library) {
+        if (scene === "app") {
           return isClient(this.environment)
             ? clientBuildSheetModule(`${path}?url`)
             : serverBuildSheetModule(`${path}?url`, `${path}?inline`);
@@ -311,17 +334,20 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           : serverSheetModule(`${path}?inline`, directUrl(path));
       },
       generateBundle(_output, bundle) {
-        if (isBuild && !isClient(this.environment)) embedRouteStyles(bundle, root);
+        if (current().scene === "app" && !isClient(this.environment)) {
+          embedRouteStyles(bundle, current().root);
+        }
       },
       writeBundle(_output, bundle) {
-        if (isBuild && !isClient(this.environment)) {
+        const { outDir, scene } = current();
+        if (scene === "app" && !isClient(this.environment)) {
           moveServerAssets(bundle, join(outDir, "server"), join(outDir, "client"));
           rmSync(join(outDir, "client/.vite"), { recursive: true, force: true });
         }
       },
       configurePreviewServer(server) {
         return () => {
-          const entry = pathToFileURL(join(outDir, "server/entry.js")).href;
+          const entry = pathToFileURL(join(current().outDir, "server/entry.js")).href;
           server.middlewares.use((request, response, next) => {
             (async () => {
               // oxlint-disable-next-line typescript/no-unsafe-type-assertion
@@ -339,6 +365,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       },
       configureServer(server) {
         writeTypes();
+        const { root, elementsDir } = current();
         const routesDir = resolve(root, ROUTES_DIR);
         const invalidateRoutes = (): void => {
           for (const environment of Object.values(server.environments)) {
@@ -399,7 +426,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       transform(code, id) {
         const target = projectFile(id);
         if (!target) return null;
-        const tag = sourceTag(sourcesOf(elementsDir), target.path);
+        const tag = sourceTag(current().sources, target.path);
         const result = transformSource(code, {
           id: target.path,
           file: target.file,

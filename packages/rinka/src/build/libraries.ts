@@ -7,8 +7,6 @@ import type { ElementSource } from "./elements.ts";
 export interface Library extends ElementSource {
   /** パッケージの名前である。 */
   readonly name: string;
-  /** パッケージのディレクトリの実際のパスである。 */
-  readonly dir: string;
 }
 
 /** ディレクトリ `dir` から上位に向かって `name` を探し、最初に見つけたパスを返す。見つからなければ undefined を返す。 */

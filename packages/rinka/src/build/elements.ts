@@ -4,10 +4,11 @@ import { join, sep } from "node:path";
 import { tagFromPath } from "../shared/names.ts";
 import { inside } from "./paths.ts";
 
-/** 要素のタグ名の接頭辞と、要素のディレクトリの絶対パスの組を表す。 */
+/** 要素のタグ名の接頭辞と、要素のディレクトリの絶対パスと、要素を所有するパッケージのディレクトリの絶対パスの組を表す。 */
 export interface ElementSource {
   readonly prefix: string;
   readonly elementsDir: string;
+  readonly dir: string;
 }
 
 /** 要素のファイルのパスと、タグ名を表す。 */

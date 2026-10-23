@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 
-import { scanElements } from "./elements.ts";
+import { scanElements, type ElementSource } from "./elements.ts";
 import { entries } from "./entries.ts";
 import { inside } from "./paths.ts";
 import { ROUTES_DIR, scanPages } from "./routes.ts";
@@ -71,7 +71,10 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
   return new Map([
     ["routes.d.ts", routesDeclaration(root)],
     ["env.d.ts", envDeclaration(options.globalJSX)],
-    ["elements.d.ts", elementsDeclaration(options.prefix, elementsDir, fromPrepared)],
+    [
+      "elements.d.ts",
+      elementsDeclaration({ prefix: options.prefix, elementsDir, dir: root }, fromPrepared),
+    ],
     [
       projectConfig("shared"),
       tsconfig(
@@ -118,13 +121,12 @@ function envDeclaration(globalJSX: boolean): string {
   return `${HEADER}${css}${globalJSX ? jsx : ""}`;
 }
 
-/** 要素のディレクトリ `dir` の要素のタグを、`HTMLElementTagNameMap` に追加する型宣言を返す。 */
+/** `source` の要素のタグを、`HTMLElementTagNameMap` に追加する型宣言を返す。 */
 function elementsDeclaration(
-  prefix: string,
-  dir: string,
+  source: ElementSource,
   fromPrepared: (path: string) => string,
 ): string {
-  const elements = scanElements([{ prefix, elementsDir: dir }]);
+  const elements = scanElements([source]);
   const imports = elements.map(
     ({ path }, index) => `import type E${index} from ${JSON.stringify(fromPrepared(path))};\n`,
   );
