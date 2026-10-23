@@ -132,8 +132,8 @@ describe("RPC の値", () => {
       "src/wire-fns.ts#like",
       defineServerFn(() => null),
     );
-    expect(() => toRpcBody({ like, at: new Date(1) })).toThrow(
-      "サーバー関数の戻り値.like は関数なので、シリアライズできません。",
+    expect(() => toRpcBody({ like })).toThrow(
+      /^サーバー関数の戻り値.like は関数なので、シリアライズできません。$/,
     );
   });
 

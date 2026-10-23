@@ -71,9 +71,8 @@ export function checkSerializable(value: unknown, path: string, serverFns: boole
 
 function check(value: unknown, path: string, serverFns: boolean, seen: Set<object>): void {
   if (typeof value === "function" && !(serverFns && serverFnRefOf(value))) {
-    throw new Error(
-      `${path} は関数なので、シリアライズできません。サーバーから要素に渡せる関数は、サーバー関数だけです。`,
-    );
+    const hint = serverFns ? "サーバーから要素に渡せる関数は、サーバー関数だけです。" : "";
+    throw new Error(`${path} は関数なので、シリアライズできません。${hint}`);
   }
   if (typeof value === "symbol")
     throw new Error(`${path} は symbol なので、シリアライズできません。`);
