@@ -5,7 +5,7 @@ import { listenForms } from "./form.ts";
 import { installRpc } from "./server-fn.ts";
 
 export { serverFn } from "./server-fn.ts";
-export { registerProperties } from "./styles.ts";
+export { createSheet, updateSheet } from "./styles.ts";
 
 installRpc();
 if (globalThis.$rinka) listenForms();

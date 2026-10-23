@@ -19,10 +19,10 @@ import type { Lang } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
 import { entries, oxc, runtimes } from "./entries.ts";
 import { transformJsx } from "./jsx.ts";
-import { inside } from "./paths.ts";
+import { devPath, directUrl, inside } from "./paths.ts";
 import { routeStyles } from "./route-styles.ts";
 import { routeFileNames, routesModule } from "./routes.ts";
-import { SHEET_QUERY, sheetId, sheetModule, sheetPath } from "./sheets.ts";
+import { SHEET_QUERY, clientSheetModule, serverSheetModule, sheetId, sheetPath } from "./sheets.ts";
 
 /** rinka のプラグインの設定を表す。 */
 export interface RinkaOptions {
@@ -158,7 +158,11 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       load(id) {
         if (id === ROUTES) return routesModule(root, "src/routes");
         const sheet = sheetPath(id);
-        return sheet === undefined ? null : sheetModule(sheet, root, isClient(this.environment));
+        if (sheet === undefined) return null;
+        const path = devPath(sheet, root);
+        return isClient(this.environment)
+          ? clientSheetModule(`${path}?inline`)
+          : serverSheetModule(`${path}?inline`, directUrl(path));
       },
       configureServer(server) {
         const routesDir = resolve(root, "src/routes");

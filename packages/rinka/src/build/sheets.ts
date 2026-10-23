@@ -4,7 +4,6 @@ import type { ESTree } from "vite";
 import { walk } from "./ast.ts";
 import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
-import { devPath, directUrl } from "./paths.ts";
 
 /** `with { type: 'css' }` の import の指定子に付与する、シートのモジュールを表すクエリである。 */
 export const SHEET_QUERY = "?rinka-sheet";
@@ -59,34 +58,25 @@ export function rewriteSheetImports(
 const isCssType = ({ key, value }: ESTree.ImportAttribute): boolean =>
   (key.type === "Identifier" ? key.name : key.value) === "type" && value.value === "css";
 
-/**
- * CSS のファイル `path` のシートのモジュールのコードを返す。`root` はアプリのルートである。
- * クライアントのモジュールは、Vite が処理した CSS から作成した `CSSStyleSheet` を default export し、CSS が更新されたら同じシートの中身を差し替える。CSS の `@property` の規則は、ドキュメントに登録する。
- * サーバーのモジュールは、DSD の `<link>` に出力する URL と、CSS の `@property` の規則を、シートの情報として default export する。
- */
-export function sheetModule(path: string, root: string, client: boolean): string {
-  const url = devPath(path, root);
-  const inline = JSON.stringify(`${url}?inline`);
-  if (!client) {
-    return `import { propertiesOf } from "${entries.internal}";
-import css from ${inline};
-export default {
-  [Symbol.for("rinka.sheet")]: { href: ${JSON.stringify(directUrl(url))}, properties: propertiesOf(css) },
-};
-`;
-  }
-  return `import { registerProperties } from "${entries.internal}";
-import css from ${inline};
-registerProperties(css);
-const sheet = new CSSStyleSheet();
-sheet.replaceSync(css);
+/** `?inline` の指定子 `inline` の CSS から作成したシートを default export し、CSS が更新されたら同じシートを差し替える、クライアントのシートのモジュールのコードを返す。 */
+export function clientSheetModule(inline: string): string {
+  const specifier = JSON.stringify(inline);
+  return `import { createSheet, updateSheet } from "${entries.internal}";
+import css from ${specifier};
+const sheet = createSheet(css);
 if (import.meta.hot) {
-  import.meta.hot.accept(${inline}, (module) => {
-    if (!module) return;
-    registerProperties(module.default);
-    sheet.replaceSync(module.default);
+  import.meta.hot.accept(${specifier}, (module) => {
+    if (module) updateSheet(sheet, module.default);
   });
 }
 export default sheet;
+`;
+}
+
+/** `?inline` の指定子 `inline` の CSS と、`<link>` に出力する URL `href` から作成したシートの情報を default export する、サーバーのシートのモジュールのコードを返す。 */
+export function serverSheetModule(inline: string, href: string): string {
+  return `import { serverSheet } from "${entries.internal}";
+import css from ${JSON.stringify(inline)};
+export default serverSheet(${JSON.stringify(href)}, css);
 `;
 }

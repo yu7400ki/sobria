@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { CompileError, transformSource } from "../../src/build/compiler.ts";
-import { sheetModule } from "../../src/build/sheets.ts";
+import { devPath, directUrl } from "../../src/build/paths.ts";
+import { clientSheetModule, serverSheetModule } from "../../src/build/sheets.ts";
+import { serverSheet } from "../../src/server/styles.ts";
+import { sheetInfo } from "../../src/shared/styles.ts";
 
 /** `.ts` のモジュール `src/lib/a.ts` として `code` を変換したコードを返す。 */
 const transform = (code: string, client: boolean) =>
@@ -38,46 +41,41 @@ describe("with { type: 'css' } の書き換え", () => {
 });
 
 describe("シートのモジュール", () => {
-  it("クライアントのモジュールは、?inline の CSS から作成したシートを default export し、?inline の更新で同じシートの中身を差し替える", () => {
-    const code = sheetModule("/root/src/styles/app.css", "/root", true);
-    expect(code).toContain('import css from "/src/styles/app.css?inline";');
-    expect(code).toContain("sheet.replaceSync(css);");
-    expect(code).toContain('import.meta.hot.accept("/src/styles/app.css?inline",');
+  it("クライアントのモジュールは、?inline の CSS からシートを作成して default export し、?inline の更新で同じシートを差し替える", () => {
+    const code = clientSheetModule("/src/a b.css?inline");
+    expect(code).toContain('import { createSheet, updateSheet } from "rinka/internal";');
+    expect(code).toContain('import css from "/src/a b.css?inline";');
+    expect(code).toContain("const sheet = createSheet(css);");
+    expect(code).toContain('import.meta.hot.accept("/src/a b.css?inline",');
+    expect(code).toContain("updateSheet(sheet, module.default)");
     expect(code).toContain("export default sheet;");
   });
 
-  it("サーバーのモジュールは、?direct を付与した URL を、シートの情報として default export する", () => {
-    expect(sheetModule("/root/src/styles/app.css", "/root", false)).toContain(
-      'href: "/src/styles/app.css?direct"',
-    );
-  });
-
-  it("<link> の URL だけ、使用できない文字をパーセントエンコードし、?inline の指定子はエンコードしない", () => {
-    expect(sheetModule("/root/src/a b#c.css", "/root", false)).toContain(
-      'href: "/src/a%20b%23c.css?direct"',
-    );
-    expect(sheetModule("/root/src/a b.css", "/root", true)).toContain(
-      'import css from "/src/a b.css?inline";',
-    );
-  });
-
-  it("ルートの外の CSS は、/@fs/ の URL にする", () => {
-    expect(sheetModule("/lib/app.css", "/root", false)).toContain(
-      'href: "/@fs/lib/app.css?direct"',
-    );
+  it("サーバーのモジュールは、<link> の URL と ?inline の CSS からシートの情報を作成して default export する", () => {
+    const code = serverSheetModule("/src/a.css?inline", "/src/a.css?direct");
+    expect(code).toContain('import { serverSheet } from "rinka/internal";');
+    expect(code).toContain('export default serverSheet("/src/a.css?direct", css);');
+    expect(code).not.toContain("rinka.sheet");
   });
 });
 
-describe("シートのモジュールの @property の規則", () => {
-  it("サーバーのモジュールは、?inline の CSS から抽出した @property の規則を、シートの情報に持つ", () => {
-    const code = sheetModule("/root/src/styles/app.css", "/root", false);
-    expect(code).toContain('import css from "/src/styles/app.css?inline";');
-    expect(code).toContain("properties: propertiesOf(css)");
+describe("開発サーバーのパスと URL", () => {
+  it("ルートの中のファイルはルートからのパスに、ルートの外のファイルは /@fs/ のパスにする", () => {
+    expect(devPath("/root/src/app.css", "/root")).toBe("/src/app.css");
+    expect(devPath("/lib/app.css", "/root")).toBe("/@fs/lib/app.css");
   });
 
-  it("クライアントのモジュールは、シートを作成したときに @property の規則をドキュメントに登録する", () => {
-    expect(sheetModule("/root/src/styles/app.css", "/root", true)).toContain(
-      "registerProperties(css);",
-    );
+  it("?direct の URL は、URL に使用できない文字をパーセントエンコードする", () => {
+    expect(directUrl("/src/a b#c.css")).toBe("/src/a%20b%23c.css?direct");
+  });
+});
+
+describe("サーバーのシート", () => {
+  it("CSS の @property の規則を、シートの情報に持つ", () => {
+    const rule = '@property --x { syntax: "*"; inherits: false; }';
+    expect(Reflect.get(serverSheet("/a.css?direct", `.a {}\n${rule}`), sheetInfo)).toEqual({
+      href: "/a.css?direct",
+      properties: rule,
+    });
   });
 });

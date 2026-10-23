@@ -2,6 +2,7 @@ import { flush } from "@solidjs/signals";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { defineElement } from "../../src/client/element.ts";
+import { createSheet, updateSheet } from "../../src/client/styles.ts";
 import { bootstrapSource } from "../../src/server/bootstrap.ts";
 import { defineElement as defineServer } from "../../src/server/element.ts";
 import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
@@ -135,5 +136,24 @@ describe("ctx の css", () => {
     expect(host.shadowRoot!.querySelector("link")).toBeNull();
     expect(host.shadowRoot!.adoptedStyleSheets).toHaveLength(1);
     expect(getComputedStyle(host).display).toBe("block");
+  });
+});
+
+describe("クライアントのシート", () => {
+  it("createSheet と updateSheet は、CSS をシートにし、@property の規則をドキュメントに登録する", () => {
+    const sheet = createSheet(
+      '.a { color: red; }\n@property --created { syntax: "<length>"; inherits: false; initial-value: 1px; }',
+    );
+    expect([...sheet.cssRules].map((rule) => rule.cssText)).toContain(".a { color: red; }");
+    updateSheet(
+      sheet,
+      '.b { color: blue; }\n@property --updated { syntax: "<length>"; inherits: false; initial-value: 2px; }',
+    );
+    expect(sheet.cssRules[0]!.cssText).toBe(".b { color: blue; }");
+    const registered = document.adoptedStyleSheets.flatMap((adopted) =>
+      [...adopted.cssRules].map((rule) => rule.cssText),
+    );
+    expect(registered.some((text) => text.includes("--created"))).toBe(true);
+    expect(registered.some((text) => text.includes("--updated"))).toBe(true);
   });
 });

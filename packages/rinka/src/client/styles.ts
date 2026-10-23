@@ -26,8 +26,21 @@ function templateSheet(
 /** ドキュメントに登録した `@property` の規則の組である。 */
 const registered = new Set<string>();
 
+/** Vite が処理した CSS `css` からシートを作成し、CSS の `@property` の規則をドキュメントに登録する。 */
+export function createSheet(css: string): CSSStyleSheet {
+  const sheet = new CSSStyleSheet();
+  updateSheet(sheet, css);
+  return sheet;
+}
+
+/** シート `sheet` の中身を CSS `css` に差し替え、CSS の `@property` の規則をドキュメントに登録する。 */
+export function updateSheet(sheet: CSSStyleSheet, css: string): void {
+  registerProperties(css);
+  sheet.replaceSync(css);
+}
+
 /** CSS `css` に含まれる `@property` の規則を、ドキュメントのシートとして登録する。同じ CSS から抽出した規則の組は、1 回だけ登録する。 */
-export function registerProperties(css: string): void {
+function registerProperties(css: string): void {
   const properties = propertiesOf(css);
   if (properties === "" || registered.has(properties)) return;
   registered.add(properties);
