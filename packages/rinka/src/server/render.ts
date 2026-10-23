@@ -58,6 +58,14 @@ import { toScript } from "./wire.ts";
  */
 type Chunk = string | Hole | Fail | Mark | ErroredRegion | Slotted | Host;
 
+/**
+ * `<label for>` の補完の目印を表す。`label` は `for` を持つ `<label>` で、`host` は `<label>` で名前を補うフォームの部品のホストである。
+ * `key` は、tree scope（最も内側の Shadow DOM のホストの ID か、文書を表す空の文字列）と、`for` の値かホストの `id` の組である。
+ */
+type LabelMark =
+  | { readonly kind: "label"; readonly key: string; readonly id: string }
+  | { readonly kind: "host"; readonly key: string };
+
 /** 穴を表す。`hole` は、内容が決まると出力の単位の列に解決する。 */
 interface Hole {
   readonly kind: "hole";
@@ -686,6 +694,9 @@ function hasHole(chunks: readonly Chunk[]): boolean {
   });
 }
 
+/** `ctx` の位置の tree scope と `name` の組を、`LabelMark` の `key` にして返す。 */
+const scopeKey = (ctx: WalkCtx, name: string): string => `${ctx.path.at(-1)?.id ?? ""} ${name}`;
+
 /** 起動スクリプトに伝える要素の一覧の項目にする。 */
 const listed = ({ tag, delivery }: Delivered): ListedElement => [
   tag,
@@ -708,6 +719,12 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
   /** 描画の種類を、型の上で区別する。 */
   declare private readonly kind: K;
   private seq = 0;
+  /** `id` を付与した `<label>` の数である。 */
+  private labelSeq = 0;
+  /** 書き出した単位の `<label>` の `id` を、`LabelMark` の `key` ごとに表す。 */
+  private readonly labels = new Map<string, string>();
+  /** 出力した `<label for>` の補完の目印を、目印の番号ごとに表す。 */
+  private readonly labelMarks: LabelMark[] = [];
   private readonly disposers: (() => void)[] = [];
   /** シェルの後に後送りの境界を出力する処理のうち、終わっていないものを保持する。 */
   private readonly pending = new Set<Promise<void>>();
@@ -851,6 +868,57 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     return { kind: "hole", hole: promise };
   }
 
+  /**
+   * `<label>` の `props` の `for` が文字列なら、`<label>` の `id` と目印を返す。`id` が無ければ、`rinka-l` と連番の `id` を使用する。
+   * `for` か `id` の値が未解決なら、`undefined` を返す。
+   */
+  private labelOf(
+    props: Record<string, unknown>,
+    ctx: WalkCtx,
+  ): { readonly id: string; readonly mark: string } | undefined {
+    const target = this.settle(ctx, (tracked) => this.value(props.for, ctx, tracked));
+    const given = this.settle(ctx, (tracked) => this.value(props.id, ctx, tracked));
+    if (typeof target !== "string" || given instanceof Promise) return undefined;
+    const id =
+      typeof given === "string" || typeof given === "number"
+        ? String(given)
+        : `rinka-l${++this.labelSeq}`;
+    return { id, mark: this.labelMark({ kind: "label", key: scopeKey(ctx, target), id }) };
+  }
+
+  /** `mark` を記録し、HTML に出力する目印の文字列を返す。 */
+  private labelMark(mark: LabelMark): string {
+    return `\u0000${this.nonce}:${this.labelMarks.push(mark) - 1}\u0000`;
+  }
+
+  /**
+   * 1 つの単位の HTML `htmls` の目印を置換した HTML を返す。`<label>` の目印は削除し、ホストの目印は、同じ `key` の `<label>` を指す `aria-labelledby` にする。
+   * `<label>` は、既に書き出した単位の `<label>` と、`htmls` の文書の順で最初の `<label>` から探す。該当する `<label>` が無ければ、ホストの目印を削除する。
+   * `htmls` の `<label>` は、書き出した単位の `<label>` として記録する。
+   */
+  private resolveLabels(htmls: readonly string[]): string[] {
+    const prefix = `\u0000${this.nonce}:`;
+    if (!htmls.some((html) => html.includes(prefix))) return [...htmls];
+    const pattern = new RegExp(`${prefix}(\\d+)\u0000`, "g");
+    const unit = new Map<string, string>();
+    for (const html of htmls) {
+      for (const [, index] of html.matchAll(pattern)) {
+        const mark = this.labelMarks[Number(index)];
+        if (mark?.kind === "label" && !unit.has(mark.key)) unit.set(mark.key, mark.id);
+      }
+    }
+    const resolved = htmls.map((html) =>
+      html.replace(pattern, (_match, index: string) => {
+        const mark = this.labelMarks[Number(index)];
+        if (mark?.kind !== "host") return "";
+        const id = this.labels.get(mark.key) ?? unit.get(mark.key);
+        return id === undefined ? "" : attribute("aria-labelledby", id);
+      }),
+    );
+    for (const [key, id] of unit) if (!this.labels.has(key)) this.labels.set(key, id);
+    return resolved;
+  }
+
   /** `props` の値を返す。関数は、追跡せずに呼び出して、戻り値を返す。`tracked` なら、追跡して呼び出す。 */
   private value(raw: unknown, ctx: WalkCtx, tracked: boolean): unknown {
     if (!isFunction(raw)) return raw;
@@ -982,9 +1050,12 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     ctx: WalkCtx,
     out: Chunk[],
   ): void {
+    const label = tag === "label" && this.runsElements ? this.labelOf(props, ctx) : undefined;
+    const attributesOf =
+      tag === "form" ? formProps(props) : label ? { ...props, id: label.id } : props;
     const openTag = (tracked: boolean): string => {
       let attributes = "";
-      for (const [name, raw] of Object.entries(tag === "form" ? formProps(props) : props)) {
+      for (const [name, raw] of Object.entries(attributesOf)) {
         if (name === "children" || name === "ref") continue;
         if (name === "slot" && ctx.slot !== undefined) continue;
         if (isEventProp(name) && isFunction(raw)) continue;
@@ -1000,6 +1071,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     }
     const open = this.settle(ctx, openTag);
     out.push(typeof open === "string" ? open : this.hole(open.then((text) => [text])));
+    if (label) out.push(label.mark);
     if (voidTags.has(tag)) return;
     const { slot: _, legend, disabled: outer, ...inner } = ctx;
     let disabled = outer;
@@ -1139,6 +1211,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       : undefined;
     const chunks: Chunk[] = shadow?.chunks ?? [];
     const aria = ariaAttributes(shadow?.internals ?? {});
+    const hostId = options.form && shadow ? this.settle(ctx, () => propValue("id")) : undefined;
     if (options.form && shadow?.form) {
       const parts = [this.settle(ctx, () => propValue("name")), shadow.form.value, disabled];
       chunks.push(
@@ -1180,7 +1253,14 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       const ariaText =
         added.map(([name, value]) => attribute(name, value)).join("") +
         (added.length > 0 ? attribute(ARIA_ATTRIBUTE, added.map(([name]) => name).join(" ")) : "");
-      const start = `<${tag}${attribute(HOST_ATTRIBUTE, id)}${attribute(loadAttributeName, load)}${text}${ariaText}`;
+      const named = [...names, ...added.map(([name]) => name)].some(
+        (name) => name === "aria-label" || name === "aria-labelledby",
+      );
+      const labelled =
+        (typeof hostId === "string" || typeof hostId === "number") && !named
+          ? this.labelMark({ kind: "host", key: scopeKey(ctx, String(hostId)) })
+          : "";
+      const start = `<${tag}${attribute(HOST_ATTRIBUTE, id)}${attribute(loadAttributeName, load)}${text}${ariaText}${labelled}`;
       if (shadow === undefined) {
         const values = {
           [REFRESH_PROPS_KEY]: current,
@@ -1434,13 +1514,18 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
           noindex =
             '<meta name="robots" content="noindex"><script>document.head.append(document.currentScript.previousSibling.cloneNode())</script>';
         }
+        const [resolvedRegion, ...patched] = this.resolveLabels([
+          region,
+          ...patches.map(([, html]) => html),
+        ]);
         this.reveal(
           flush,
           noindex +
-            `<template ${BOUNDARY_CONTENT_ATTRIBUTE}="${boundary.id}">${region}</template>` +
+            `<template ${BOUNDARY_CONTENT_ATTRIBUTE}="${boundary.id}">${resolvedRegion}</template>` +
             patches
               .map(
-                ([patch, html]) => `<template ${PATCH_ATTRIBUTE}="${patch.id}">${html}</template>`,
+                ([patch], index) =>
+                  `<template ${PATCH_ATTRIBUTE}="${patch.id}">${patched[index]}</template>`,
               )
               .join("") +
             this.tailOf([regionOut, ...patches.map(([patch]) => patch.out)]) +
@@ -1530,10 +1615,11 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /** シェルを描画し、シェルの HTML を返す。 */
   async shell(node: Node): Promise<string> {
-    return this.serialize(
+    const html = await this.serialize(
       this.chunks(node, { owner: null, path: [], boundary: this.root, depth: 0, head: "auto" }),
       this.shellOut,
     );
+    return this.resolveLabels([html])[0] ?? "";
   }
 
   /** `outs` に出力した要素のうち、まだ起動スクリプトに伝えていない要素を、伝えたものとして記録して返す。 */

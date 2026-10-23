@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Errored } from "../../src/server/control.ts";
+import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
-import { renderToString } from "../../src/server/render.ts";
+import { renderToStream, renderToString } from "../../src/server/render.ts";
 import type { Ctx } from "../../src/shared/element.ts";
 import { memo } from "../../src/shared/signals.ts";
+import { read } from "./stream-order.ts";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -32,6 +33,10 @@ function FailingFieldset() {
   });
   return jsx("fieldset", { disabled: () => bad(), children: "x" });
 }
+
+/** `for="f"` の `<label>` を返す。 */
+const label = (props: Record<string, unknown>) =>
+  jsx("label", { for: "f", ...props, children: "評価" });
 
 describe("SSR の ARIA 属性", () => {
   const Rating = defineElement(
@@ -226,5 +231,118 @@ describe("フォームの部品の SSR", () => {
       jsx("fieldset", { disabled: true, children: jsx(Wrapper, {}) }),
     );
     expect(html).toContain("<button></button>");
+  });
+});
+
+describe("<label for> の補完", () => {
+  const Field = field("x-labelled", () => "a");
+
+  it("フォームの部品のホストの id を for に指定した <label> を、aria-labelledby で指す。id の無い <label> には rinka-l と連番の id を付与する", async () => {
+    const before = await renderToString([label({}), jsx(Field, { id: "f" })]);
+    expect(before).toContain('<label for="f" id="rinka-l1">');
+    expect(before).toContain('<x-labelled data-oh="h1" id="f" aria-labelledby="rinka-l1">');
+    const after = await renderToString([jsx(Field, { id: "f" }), label({ id: "own" })]);
+    expect(after).toContain('<x-labelled data-oh="h1" id="f" aria-labelledby="own">');
+  });
+
+  it("同じ for の値を持つ <label> が複数あれば、最初に描画したものを指す", async () => {
+    const html = await renderToString([
+      label({ id: "a" }),
+      label({ id: "b" }),
+      jsx(Field, { id: "f" }),
+    ]);
+    expect(html).toContain('aria-labelledby="a"');
+  });
+
+  it("ホストに aria-label か aria-labelledby があるときと、該当する <label> が無いときは、aria-labelledby を付与しない", async () => {
+    expect(
+      await renderToString([label({}), jsx(Field, { id: "f", "aria-label": "名前" })]),
+    ).not.toContain("aria-labelledby");
+    expect(
+      await renderToString([label({}), jsx(Field, { id: "f", "aria-labelledby": "x" })]),
+    ).toContain('<x-labelled data-oh="h1" id="f" aria-labelledby="x">');
+    expect(await renderToString(jsx(Field, { id: "f" }))).not.toContain("aria-labelledby");
+  });
+
+  it("後から書き出す後送りの部分にある <label> は指さない", async () => {
+    const { promise, resolve } = Promise.withResolvers<void>();
+    const Slow = async () => {
+      await promise;
+      return label({});
+    };
+    const stream = renderToStream(
+      jsx("main", {
+        children: [
+          jsx(Field, { id: "f" }),
+          jsx(Loading, { fallback: "wait", children: jsx(Slow, {}) }),
+        ],
+      }),
+    );
+    const reading = read(stream);
+    await new Promise((done) => setTimeout(done, 0));
+    resolve();
+    const html = (await reading).join("");
+    expect(html).toContain('<label for="f" id="rinka-l1">');
+    expect(html).not.toContain("aria-labelledby");
+  });
+
+  it("文書の順で最初の <label> を指し、失敗した <Errored> の領域の <label> は指さない", async () => {
+    const Async = async () => label({ id: "first" });
+    expect(
+      await renderToString([jsx(Async, {}), label({ id: "second" }), jsx(Field, { id: "f" })]),
+    ).toContain('aria-labelledby="first"');
+    const failed = await renderToString([
+      jsx(Errored, { fallback: "fb", children: [label({ id: "lost" }), jsx(FailingFieldset, {})] }),
+      label({ id: "kept" }),
+      jsx(Field, { id: "f" }),
+    ]);
+    expect(failed).toContain('aria-labelledby="kept"');
+  });
+
+  it("<label> とホストが同じ tree scope にあるときだけ指す", async () => {
+    const Card = defineElement("x-card-label", () => [label({}), jsx(Field, { id: "f" })], {
+      props: [],
+    });
+    const html = await renderToString([label({ id: "outer" }), jsx(Card, {}), jsx(Card, {})]);
+    expect(html).toContain('<x-labelled data-oh="h2" id="f" aria-labelledby="rinka-l1">');
+    expect(html).toContain('<x-labelled data-oh="h4" id="f" aria-labelledby="rinka-l2">');
+    expect(html).not.toContain('aria-labelledby="outer"');
+  });
+
+  it("数値の id の <label> は、その id を指す", async () => {
+    expect(await renderToString([label({ id: 5 }), jsx(Field, { id: "f" })])).toContain(
+      'aria-labelledby="5"',
+    );
+  });
+
+  it("後送りの部分にあるホストは、先に書き出した単位と同じ単位の <label> を指し、該当が無ければ目印を残さない", async () => {
+    const { promise, resolve } = Promise.withResolvers<void>();
+    const Slow = async (props: { children: unknown }) => {
+      await promise;
+      return props.children;
+    };
+    const deferred = (children: unknown) =>
+      jsx(Loading, { fallback: "wait", children: jsx(Slow, { children }) });
+    const stream = renderToStream(
+      jsx("main", {
+        children: [
+          label({ for: "a", id: "shell" }),
+          deferred([
+            jsx(Field, { id: "a" }),
+            label({ for: "b", id: "same" }),
+            jsx(Field, { id: "b" }),
+            jsx(Field, { id: "c" }),
+          ]),
+        ],
+      }),
+    );
+    const reading = read(stream);
+    await new Promise((done) => setTimeout(done, 0));
+    resolve();
+    const html = (await reading).join("");
+    expect(html).toContain('id="a" aria-labelledby="shell">');
+    expect(html).toContain('id="b" aria-labelledby="same">');
+    expect(html).toMatch(/id="c"><template/);
+    expect(html).not.toContain("\u0000");
   });
 });
