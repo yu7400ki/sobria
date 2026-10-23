@@ -139,8 +139,6 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   for (const origin of trustedOrigins) checkOrigin(origin);
   /** サーバーの環境で最後に変換したときに、サーバー関数を定義していたファイルの、ルートからの相対パスごとの ID の集合である。 */
   const serverFnIds = new Map<string, ReadonlySet<string>>();
-  /** 最後に起動した開発サーバーの `DevHooks` の ID である。開発中の `rinka/app` は、この ID の `DevHooks` を探す。 */
-  let devId = "";
   /** 開発サーバーの ssr の環境ごとの、`DevHooks` の ID である。 */
   const devIds = new WeakMap<Environment, string>();
   let root = "";
@@ -210,6 +208,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       enforce: "pre",
       api,
       sharedDuringBuild: true,
+      perEnvironmentStartEndDuringDev: true,
       config: (user, { command }) => {
         withCloudflare = hasCloudflare(user.plugins ?? []);
         const dirs = dirsOf(resolve(user.root ?? "."), options);
@@ -257,7 +256,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         }
       },
       buildStart() {
-        writeTypes();
+        if (isBuild) writeTypes();
       },
       resolveId(id, importer, resolveOptions) {
         if (id === entries.routes) return ROUTES;
@@ -286,7 +285,11 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           const serverFns = serverFnModules(root);
           if (isBuild) return appModule({ serverFns, trustedOrigins });
           const files = [...serverFns.values()].map((file) => [file, file] as const);
-          return appModule({ serverFns: new Map(files), trustedOrigins, dev: devId });
+          return appModule({
+            serverFns: new Map(files),
+            trustedOrigins,
+            dev: devIds.get(this.environment) ?? "",
+          });
         }
         const sheet = sheetPath(id);
         if (sheet === undefined) return null;
@@ -328,6 +331,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         };
       },
       configureServer(server) {
+        writeTypes();
         const routesDir = resolve(root, ROUTES_DIR);
         const invalidateRoutes = (): void => {
           for (const environment of Object.values(server.environments)) {
@@ -364,7 +368,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         }
         const environment = server.environments.ssr;
         if (environment && isRunnable(environment)) {
-          devId = randomUUID();
+          const devId = randomUUID();
           devIds.set(environment, devId);
           devHooks().set(devId, {
             styles: async (files) => {
