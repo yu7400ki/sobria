@@ -49,6 +49,19 @@ test("ElementRef は、Slot 以外の型で宣言した children も持たず、
   expectTypeOf<ElementRef<typeof Box>>().toHaveProperty("value");
 });
 
+test("Ctx は、フォームの部品の form と、ElementInternals の internals を持つ", () => {
+  expectTypeOf<Ctx["internals"]>().toEqualTypeOf<ElementInternals>();
+  expectTypeOf<Ctx["form"]["disabled"]>().toEqualTypeOf<() => boolean>();
+  expectTypeOf<Ctx["form"]["value"]>()
+    .parameter(0)
+    .returns.toEqualTypeOf<string | null | undefined>();
+  expectTypeOf<Ctx["form"]["onRestore"]>()
+    .parameter(0)
+    .parameters.toEqualTypeOf<
+      [state: string | File | FormData | null, mode: "restore" | "autocomplete"]
+    >();
+});
+
 test("公開の defineElement は、タグ名、要素の関数、登録の設定の 3 つの引数を受け取る", () => {
   // @ts-expect-error 4 つ目の引数は受け取らない
   defineElement("type-four-args", () => null, { props: [] }, { send: () => {} });

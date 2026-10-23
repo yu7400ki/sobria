@@ -1,6 +1,7 @@
 import {
   createLoadingBoundary,
   createMemo,
+  createRenderEffect,
   createRoot,
   createSignal,
   getOwner,
@@ -20,6 +21,8 @@ import {
   type Ctx,
   type ElementComponent,
   type ElementOptions,
+  type FormState,
+  type RestoreMode,
 } from "../shared/element.ts";
 import { checkExposeName } from "../shared/expose-names.ts";
 import { reloadEvent } from "../shared/hmr.ts";
@@ -29,6 +32,15 @@ import { isFunction } from "../shared/objects.ts";
 import { createScope, scopedChild, withScope } from "../shared/scope.ts";
 import { childKey } from "../shared/transfer-keys.ts";
 import { applyAttribute, asClientNode, bind, callRef, insert, setter } from "./dom.ts";
+import {
+  createFormHost,
+  defineFormMembers,
+  formControls,
+  reflectAttribute,
+  reflectedProps,
+  reflectedValue,
+  type FormHost,
+} from "./form-element.ts";
 import { handleSubmit } from "./form.ts";
 import {
   activateInSlot,
@@ -87,6 +99,10 @@ interface Instance {
   ref?: (host: HTMLElement) => unknown;
   /** 値の引き継ぎの段階。 */
   takeover: Takeover;
+  /** ホストの `ElementInternals`。 */
+  readonly internals: ElementInternals;
+  /** フォームの部品なら、その状態。 */
+  readonly form?: FormHost;
 }
 
 /**
@@ -198,6 +214,8 @@ export function registerElement<P, M extends object = object>(
   const functionProps: ReadonlySet<string> = new Set(options.functionProps);
   const slotNames: ReadonlySet<string> = new Set(["children", ...(options.slots ?? [])]);
   const unobserved = new Set([...functionProps, ...slotNames]);
+  /** ホストの属性に反映する props の名前である。反映した属性の変化は、props に書き戻さない。 */
+  const reflects: ReadonlySet<string> = new Set(options.form ? reflectedProps : []);
   const propOfAttribute = new Map(
     options.props
       .filter((name) => !unobserved.has(name))
@@ -235,7 +253,8 @@ export function registerElement<P, M extends object = object>(
    */
   function activate(host: HTMLElement, instance: Instance, owner: Owner | null): void {
     instance.run?.dispose();
-    const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
+    const shadow =
+      host.shadowRoot ?? host.attachShadow({ mode: "open", delegatesFocus: options.form === true });
     shadow.addEventListener("submit", handleSubmit);
     const id = transferId(host, instance);
     const transferred = beginTakeover(id, tag);
@@ -265,6 +284,8 @@ export function registerElement<P, M extends object = object>(
         });
         const ctx: Ctx<M> = {
           host,
+          form: formControls(tag, instance.internals, instance.form),
+          internals: instance.internals,
           onMount: (mount) => run.mounts.push(mount),
           expose: (members) => {
             const descriptors = Object.getOwnPropertyDescriptors(members);
@@ -277,6 +298,17 @@ export function registerElement<P, M extends object = object>(
             Object.defineProperties(host, descriptors);
           },
         };
+        for (const name of reflects) {
+          const prop = instance.props.get(name);
+          if (!prop) continue;
+          createRenderEffect(
+            () => {
+              prop.track();
+              return readSource(prop.source);
+            },
+            (value) => reflectAttribute(host, name, value),
+          );
+        }
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion
         const props = createProps(host, instance) as P;
         const render = () => {
@@ -303,6 +335,7 @@ export function registerElement<P, M extends object = object>(
 
   class RinkaElement extends HTMLElement {
     static observedAttributes = [...propOfAttribute.keys()];
+    static formAssociated = options.form === true;
 
     constructor() {
       super();
@@ -320,7 +353,10 @@ export function registerElement<P, M extends object = object>(
           },
         });
       }
+      const internals = this.attachInternals();
       const instance: Instance = {
+        internals,
+        ...(options.form && { form: createFormHost() }),
         props,
         functionProps,
         slotNames,
@@ -335,7 +371,9 @@ export function registerElement<P, M extends object = object>(
     attributeChangedCallback(attribute: string, _old: string | null, value: string | null): void {
       const name = propOfAttribute.get(attribute);
       if (name === undefined) return;
-      write(instances.get(this)!.props.get(name)!, { value: convert(value, types[name]) });
+      const prop = instances.get(this)!.props.get(name)!;
+      if (reflects.has(name) && reflectedValue(peek(prop)) === value) return;
+      write(prop, { value: convert(value, types[name]) });
     }
 
     connectedCallback(): void {
@@ -347,6 +385,18 @@ export function registerElement<P, M extends object = object>(
           attach(this, instance);
         });
       }
+    }
+
+    formResetCallback(): void {
+      for (const reset of instances.get(this)!.form?.resets ?? []) reset();
+    }
+
+    formStateRestoreCallback(state: FormState, mode: RestoreMode): void {
+      for (const restore of instances.get(this)!.form?.restores ?? []) restore(state, mode);
+    }
+
+    formDisabledCallback(disabled: boolean): void {
+      instances.get(this)!.form?.setDisabled(disabled);
     }
 
     disconnectedCallback(): void {
@@ -361,6 +411,9 @@ export function registerElement<P, M extends object = object>(
     }
   }
 
+  if (options.form) {
+    defineFormMembers(RinkaElement.prototype, (host) => instances.get(host)!.internals);
+  }
   customElements.define(tag, RinkaElement);
   definitions.set(tag, definition);
   return createElementComponent(tag, fn, options);

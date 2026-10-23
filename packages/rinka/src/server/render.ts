@@ -1127,6 +1127,15 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       host: serverHost as HTMLElement,
       onMount: () => {},
       expose: () => {},
+      form: {
+        value: () => {},
+        validity: () => {},
+        onReset: () => {},
+        onRestore: () => {},
+        disabled: () => false,
+      },
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+      internals: {} as ElementInternals,
     };
     const scope = createScope(
       <T>(memoKey: string, fn: (prev: T | undefined) => T | PromiseLike<T>) =>

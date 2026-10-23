@@ -18,10 +18,42 @@ export interface ElementOptions {
   readonly form?: true;
 }
 
+/** ブラウザがフォームの部品の値を復元した理由を表す。`restore` は戻ると進む、`autocomplete` はオートフィルである。 */
+export type RestoreMode = "restore" | "autocomplete";
+
+/** フォームの部品が `ElementInternals` に設定し、ブラウザが復元する状態を表す。 */
+export type FormState = string | File | FormData | null;
+
+/** `form.validity` に渡す関数が返す、無効の理由を表す。`true` にした制約が 1 つも無ければ `customError` とする。 */
+export interface FormInvalidity extends ValidityStateFlags {
+  /** 検証エラーの吹き出しに表示する文言。 */
+  readonly message: string;
+  /** 検証エラーの吹き出しを表示する位置のノード。 */
+  readonly anchor?: HTMLElement;
+}
+
+/** 要素の関数が ctx の `form` で受け取る、フォームの部品の能力を表す。 */
+export interface FormControls {
+  /** `fn` の戻り値を、フォームで送信する値にする。`null` と `undefined` は値が無い状態にする。`fn` が読み取った signal が変化するたびに、`fn` を再び実行する。 */
+  readonly value: (fn: () => string | null | undefined) => void;
+  /** `fn` が `null` を返すと有効にし、オブジェクトを返すと無効にする。`fn` が読み取った signal が変化するたびに、`fn` を再び実行する。 */
+  readonly validity: (fn: () => FormInvalidity | null) => void;
+  /** `<form>` がリセットされたときに `fn` を呼ぶ。 */
+  readonly onReset: (fn: () => void) => void;
+  /** ブラウザが値を復元したときに、復元した値と理由を渡して `fn` を呼ぶ。 */
+  readonly onRestore: (fn: (state: FormState, mode: RestoreMode) => void) => void;
+  /** 要素自身の `disabled` か、外側の `<fieldset disabled>` で無効になっていれば `true` を返す。 */
+  readonly disabled: () => boolean;
+}
+
 /** 要素の関数が 2 番目の引数で受け取る、ホストに依存する能力を表す。 */
 export interface Ctx<M extends object = object> {
   /** ホストの要素。 */
   readonly host: HTMLElement;
+  /** フォームの部品の値、検証、リセット、復元、無効の状態を扱う関数。 */
+  readonly form: FormControls;
+  /** ホストの `ElementInternals`。 */
+  readonly internals: ElementInternals;
   /** 要素が DOM に接続され、最初の内容を Shadow DOM に表示した後に呼ぶ関数を登録する。 */
   readonly onMount: (fn: () => void) => void;
   /** `members` の各プロパティを、その記述子のままホストに追加する。 */
