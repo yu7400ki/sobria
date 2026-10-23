@@ -1,0 +1,59 @@
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+
+/** 要素のタグ名の接頭辞と、要素のディレクトリの絶対パスの組を表す。 */
+export interface ElementSource {
+  readonly prefix: string;
+  readonly elementsDir: string;
+}
+
+/** TSX のソースの形で配布された、要素のライブラリを表す。 */
+export interface Library extends ElementSource {
+  /** パッケージの名前である。 */
+  readonly name: string;
+  /** パッケージのディレクトリの実際のパスである。 */
+  readonly dir: string;
+}
+
+/** ディレクトリ `dir` から上位に向かって、最初に見つけた `name` を返す。見つからなければ undefined を返す。 */
+function findUp(dir: string, name: string): string | undefined {
+  const path = join(dir, name);
+  if (existsSync(path)) return path;
+  const parent = dirname(dir);
+  return parent === dir ? undefined : findUp(parent, name);
+}
+
+/** パス `path` の JSON のファイルを読み込む。 */
+const readJson = (path: string): Record<string, unknown> =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+
+/**
+ * アプリのルート `root` から最も近い `package.json` の `dependencies` と `devDependencies` のうち、
+ * `package.json` に `rinka` のフィールドを持つパッケージを、名前の順に返す。
+ */
+export function findLibraries(root: string): Library[] {
+  const manifest = findUp(root, "package.json");
+  if (manifest === undefined) return [];
+  const json = readJson(manifest);
+  const names = [json["dependencies"], json["devDependencies"]].flatMap((deps) =>
+    typeof deps === "object" && deps !== null ? Object.keys(deps) : [],
+  );
+  return [...new Set(names)].toSorted().flatMap((name): Library[] => {
+    const found = findUp(dirname(manifest), join("node_modules", name, "package.json"));
+    if (found === undefined) return [];
+    const { rinka } = readJson(found);
+    if (rinka === undefined) return [];
+    const field = (key: string): unknown =>
+      typeof rinka === "object" && rinka !== null ? Reflect.get(rinka, key) : undefined;
+    const prefix = field("prefix");
+    const elements = field("elements");
+    if (typeof prefix !== "string" || typeof elements !== "string") {
+      throw new Error(
+        `[rinka] ${name} の package.json の rinka のフィールドには、prefix と elements を文字列で記述してください。`,
+      );
+    }
+    const dir = realpathSync(dirname(found));
+    return [{ name, dir, prefix, elementsDir: resolve(dir, elements) }];
+  });
+}

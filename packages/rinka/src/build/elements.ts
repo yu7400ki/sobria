@@ -2,6 +2,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { join, sep } from "node:path";
 
 import { tagFromPath } from "../shared/names.ts";
+import type { ElementSource } from "./libraries.ts";
 import { inside } from "./paths.ts";
 
 /** 要素のファイルのパスと、タグ名を表す。 */
@@ -23,26 +24,37 @@ export function elementTag(prefix: string, dir: string, path: string): string | 
   return tagFromPath(prefix, inner);
 }
 
-/** 要素のディレクトリ `dir` の中の要素のファイルを、パスの順に返す。2 つのファイルが同じタグになれば、エラーを投げる。 */
-export function scanElements(prefix: string, dir: string): ElementFile[] {
-  if (!existsSync(dir)) return [];
+/** パス `path` のファイルが、`sources` のどれかの要素のディレクトリの中の要素のファイルなら、そのタグ名を返す。 */
+export const sourceTag = (sources: readonly ElementSource[], path: string): string | undefined =>
+  sources
+    .map(({ prefix, elementsDir }) => elementTag(prefix, elementsDir, path))
+    .find((tag) => tag !== undefined);
+
+/**
+ * `sources` の要素のディレクトリの中の要素のファイルを、ディレクトリごとにパスの順に返す。
+ * 2 つのファイルが同じタグになれば、エラーを投げる。
+ */
+export function scanElements(sources: readonly ElementSource[]): ElementFile[] {
   const owners = new Map<string, string>();
   const elements: ElementFile[] = [];
-  const entries = readdirSync(dir, { recursive: true, encoding: "utf8" }).map((entry) =>
-    entry.split(sep).join("/"),
-  );
-  for (const entry of entries.toSorted()) {
-    const path = join(dir, entry);
-    const tag = elementTag(prefix, dir, path);
-    if (tag === undefined) continue;
-    const other = owners.get(tag);
-    if (other !== undefined) {
-      throw new Error(
-        `要素のファイル ${other} と ${entry} は、どちらもタグ名 ${tag} になります。どちらかのファイル名を変更してください。`,
-      );
+  for (const { prefix, elementsDir } of sources) {
+    if (!existsSync(elementsDir)) continue;
+    const entries = readdirSync(elementsDir, { recursive: true, encoding: "utf8" }).map((entry) =>
+      entry.split(sep).join("/"),
+    );
+    for (const entry of entries.toSorted()) {
+      const path = join(elementsDir, entry);
+      const tag = elementTag(prefix, elementsDir, path);
+      if (tag === undefined) continue;
+      const other = owners.get(tag);
+      if (other !== undefined) {
+        throw new Error(
+          `要素のファイル ${other} と ${path} は、どちらもタグ名 ${tag} になります。どちらかのファイル名か接頭辞を変更してください。`,
+        );
+      }
+      owners.set(tag, path);
+      elements.push({ path, tag });
     }
-    owners.set(tag, entry);
-    elements.push({ path, tag });
   }
   return elements;
 }

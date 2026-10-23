@@ -68,6 +68,7 @@ export async function startServer(
     env: { ...process.env, PORT: String(port) },
     stdio: "ignore",
   });
+  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
   const origin = `http://localhost:${port}`;
   try {
     await waitFor(origin);
@@ -75,7 +76,6 @@ export async function startServer(
     child.kill();
     throw error;
   }
-  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
   return {
     origin,
     stop: async () => {

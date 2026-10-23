@@ -118,6 +118,9 @@ importers:
 
   tests/e2e:
     dependencies:
+      '@rinka-tests/fixture-library':
+        specifier: workspace:*
+        version: link:../fixture-library
       rinka:
         specifier: workspace:*
         version: link:../../packages/rinka

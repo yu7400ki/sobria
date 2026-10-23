@@ -124,7 +124,7 @@ function elementsDeclaration(
   dir: string,
   fromPrepared: (path: string) => string,
 ): string {
-  const elements = scanElements(prefix, dir);
+  const elements = scanElements([{ prefix, elementsDir: dir }]);
   const imports = elements.map(
     ({ path }, index) => `import type E${index} from ${JSON.stringify(fromPrepared(path))};\n`,
   );

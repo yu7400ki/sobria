@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { existsSync, rmSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { basename, extname, join, resolve } from "node:path";
+import { basename, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { getRequestListener } from "@hono/node-server";
@@ -21,10 +21,11 @@ import { moduleOfServerFnId } from "../shared/server-fn.ts";
 import { langs, type Lang } from "./ast.ts";
 import { embedRouteStyles, moveServerAssets } from "./build-styles.ts";
 import { transformSource } from "./compiler.ts";
-import { elementTag, scanElements, type ElementFile } from "./elements.ts";
+import { scanElements, sourceTag, type ElementFile } from "./elements.ts";
 import { entries, oxc, runtimes } from "./entries.ts";
 import { appModule, devHooks, serverEntry, type DevHooks } from "./entry.ts";
 import { transformJsx } from "./jsx.ts";
+import { findLibraries, type ElementSource, type Library } from "./libraries.ts";
 import { readClientAssets, type ClientAssets } from "./manifest.ts";
 import { rinkaPackage } from "./package.ts";
 import { devPath, directUrl, inside } from "./paths.ts";
@@ -147,9 +148,13 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   let withCloudflare = false;
   /** サーバーのビルドで、クライアントのビルドの manifest から要素のファイルの URL を返す関数である。 */
   let clientAssets: ClientAssets | undefined;
-  /** 要素のファイル `file` を、ブラウザが読み込むときの URL と、静的に import するチャンクの URL を返す。 */
-  const elementAssets = (file: string, client: boolean) => {
-    if (!isBuild || client) return { module: `/${file}` };
+  /** TSX のソースの形のライブラリである。 */
+  let libraries: readonly Library[] = [];
+  /** アプリとライブラリの、接頭辞と要素のディレクトリの組である。 */
+  const sourcesOf = (dir: string): ElementSource[] => [{ prefix, elementsDir: dir }, ...libraries];
+  /** 要素のファイル `target` を、ブラウザが読み込むときの URL と、静的に import するチャンクの URL を返す。 */
+  const elementAssets = ({ path, file }: ProjectFile, client: boolean) => {
+    if (!isBuild || client) return { module: devPath(path, root) };
     clientAssets ??= readClientAssets(join(outDir, "client"));
     return clientAssets(file);
   };
@@ -164,14 +169,20 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   };
   const api: RinkaApi = { prepare: writeTypes };
 
-  /** モジュールの ID を、クエリの無いプロジェクトのファイルなら、ルートからの相対パスと言語にする。 */
+  /**
+   * モジュールの ID を、クエリの無いプロジェクトかライブラリのファイルなら、ルートからの相対パスと言語にする。
+   * ライブラリのファイルのルートからの相対パスは、`../` で始まることがある。
+   */
   const projectFile = (id: string): ProjectFile | undefined => {
     const lang = langs[extname(id)];
-    if (!lang || id.includes("?") || id.includes("/node_modules/") || id.startsWith("\0")) {
-      return undefined;
-    }
+    if (!lang || id.includes("?") || id.startsWith("\0")) return undefined;
     const file = inside(root, id);
-    return file === undefined ? undefined : { path: id, file, lang };
+    if (file !== undefined && !id.includes("/node_modules/")) return { path: id, file, lang };
+    const owned = libraries.some(({ dir }) => {
+      const inner = inside(dir, id);
+      return inner !== undefined && !inner.split("/").includes("node_modules");
+    });
+    return owned ? { path: id, file: relative(root, id).split(sep).join("/"), lang } : undefined;
   };
 
   /**
@@ -200,12 +211,14 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         withCloudflare = hasCloudflare(user.plugins ?? []);
         const dirs = dirsOf(resolve(user.root ?? "."), options);
         const out = dirs.outDir;
-        const elements = scanElements(prefix, dirs.elementsDir);
+        libraries = findLibraries(dirs.root);
+        const elements = scanElements(sourcesOf(dirs.elementsDir));
         return {
           appType: "custom",
           oxc,
           optimizeDeps: {
             include: [`${entries.main} > @solidjs/signals`, `${entries.main} > seroval`],
+            exclude: libraries.map((library) => library.name),
           },
           build: { outDir: options.library ? out : join(out, "client") },
           ...(command === "build" && options.library && libraryBuild(out, elements)),
@@ -244,9 +257,10 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       configEnvironment(name, config, { command }) {
         const consumer = config.consumer ?? (name === "client" ? "client" : "server");
         if (consumer !== "server") return null;
-        if (command === "build") return { resolve: { noExternal: bundled() } };
+        const names = libraries.map((library) => library.name);
+        if (command === "build") return { resolve: { noExternal: [...bundled(), ...names] } };
         return {
-          resolve: { noExternal: [entries.main] },
+          resolve: { noExternal: [entries.main, ...names] },
           ...(withCloudflare && name === "ssr" && { optimizeDeps: { include: WORKER_DEPS } }),
         };
       },
@@ -397,14 +411,14 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       transform(code, id) {
         const target = projectFile(id);
         if (!target) return null;
-        const tag = elementTag(prefix, elementsDir, target.path);
+        const tag = sourceTag(sourcesOf(elementsDir), target.path);
         const result = transformSource(code, {
           id: target.path,
           file: target.file,
           lang: target.lang,
           client: isClient(this.environment),
           ...(tag !== undefined && {
-            element: { tag, ...elementAssets(target.file, isClient(this.environment)) },
+            element: { tag, ...elementAssets(target, isClient(this.environment)) },
           }),
           ...(isBuild && { fnModule: hashedFnModule(target.file) }),
         });
