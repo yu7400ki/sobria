@@ -164,14 +164,14 @@ export function withoutTypes(node: Node): Node {
 }
 
 /** トップレベルの変数の宣言を表す。`exported` は、`export` を付けた宣言なら真である。 */
-export interface TopLevelVariables {
+export interface TopLevelVariable {
   readonly declaration: ESTree.VariableDeclaration;
   readonly exported: boolean;
 }
 
 /** トップレベルの変数の宣言を、`export` を付けたものも含めて、ソースの順に返す。 */
-export function topLevelVariables(program: ESTree.Program): TopLevelVariables[] {
-  return program.body.flatMap((statement): TopLevelVariables[] => {
+export function topLevelVariables(program: ESTree.Program): TopLevelVariable[] {
+  return program.body.flatMap((statement): TopLevelVariable[] => {
     if (statement.type === "VariableDeclaration")
       return [{ declaration: statement, exported: false }];
     if (
@@ -192,7 +192,10 @@ const valueTsNodes = new Set([
   "TSTypeAssertion",
   "TSInstantiationExpression",
   "TSEnumDeclaration",
+  "TSEnumBody",
   "TSEnumMember",
+  "TSImportEqualsDeclaration",
+  "TSQualifiedName",
   "TSModuleDeclaration",
   "TSModuleBlock",
   "TSExportAssignment",
@@ -225,6 +228,8 @@ function isNamePosition(parent: Node, key: string): boolean {
   if (parent.type === "MemberExpression") return key === "property" && !parent.computed;
   if (parent.type === "JSXMemberExpression") return key === "property";
   if (parent.type === "ExportSpecifier") return key === "exported";
+  if (parent.type === "TSQualifiedName") return key === "right";
+  if (parent.type === "TSImportEqualsDeclaration") return key === "id";
   return nameParents.has(parent.type);
 }
 

@@ -621,6 +621,56 @@ export class C { secret = 1; secret2() {} }`,
     expect(code).toContain('import { kept } from "./secret.ts";');
   });
 
+  it("enum の初期化子と import = の右辺の参照は、import の使用として数える", () => {
+    const code = module(
+      `import { defineServerFn } from "rinka/server";
+import { secret, ns } from "./values.ts";
+export const fn = defineServerFn(() => [secret, ns]);
+export enum E { A = secret }
+import A = ns.B;
+export { A };`,
+      true,
+    );
+    expect(code).toContain('import { secret, ns } from "./values.ts";');
+  });
+
+  it("サーバー関数の定義からだけ使用していた、トップレベルの関数と、関数で初期化した const を除去する", () => {
+    const code = module(
+      `import { defineServerFn } from "rinka/server";
+import { db } from "./db.ts";
+import { format } from "./format.ts";
+function load() { return db.find(); }
+const query = () => load();
+const label = (value: string) => format(value);
+export const fn = defineServerFn(() => query());
+export const shown = label("x");`,
+      true,
+    );
+    expect(code).not.toContain("./db.ts");
+    expect(code).not.toContain("function load");
+    expect(code).not.toContain("const query");
+    expect(code).toContain("const label = (value: string) => format(value);");
+    expect(code).toContain('import { format } from "./format.ts";');
+  });
+
+  it("rinka/server を名前を指定せずに import すると、ビルドのエラーにする", () => {
+    for (const statement of [
+      'import * as server from "rinka/server";',
+      'import server from "rinka/server";',
+    ]) {
+      expect(() =>
+        module(`${statement}\nexport const fn = server.defineServerFn(() => 1);`, true),
+      ).toThrow(CompileError);
+    }
+  });
+
+  it("クライアント向けでは、トップレベルの const の初期化の式以外の defineMiddleware をビルドのエラーにする", () => {
+    const body = `import { defineMiddleware } from "rinka/server";
+export const list = [defineMiddleware(async (_c, next) => next())];`;
+    expect(() => module(body, true)).toThrow(CompileError);
+    expect(() => module(body)).not.toThrow();
+  });
+
   it("method は、1 段目のオブジェクトの文字列のリテラルから読み取る", () => {
     const code = module(
       `import { defineServerFn } from "rinka/server";
@@ -633,7 +683,13 @@ export const b = defineServerFn({ input: (v: number) => v })(() => 1);`,
   });
 
   it("method を静的に読み取れなければ、ビルドのエラーにする", () => {
-    for (const options of ["options", "{ method }", "{ ...options }", '{ method: "PUT" }']) {
+    for (const options of [
+      "options",
+      "{ method }",
+      "{ ...options }",
+      '{ method: "PUT" }',
+      '{ ["method"]: "GET" }',
+    ]) {
       expect(() =>
         module(
           `import { defineServerFn } from "rinka/server";

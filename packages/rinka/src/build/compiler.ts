@@ -70,7 +70,7 @@ const SERVER_FN = "__rinka_serverFn";
 export function transformSource(code: string, options: SourceOptions): SourceResult {
   const program = parseModule(code, options);
   const output = new MagicString(code);
-  const definitions = findDefinitions(program, options.file);
+  const definitions = findDefinitions(program, options.file, options.client);
   const replaced = new Set<Node>(
     options.client ? definitions.map((definition) => definition.init) : [],
   );
@@ -339,18 +339,31 @@ function slotOf(
   return names.has(property.name) ? { name: property.name } : undefined;
 }
 
-/** トップレベルの const の、サーバー関数かミドルウェアの定義を表す。`method` は、サーバー関数のメソッドである。 */
-interface Definition {
-  readonly name: string;
-  readonly init: ESTree.Expression;
-  readonly method: "GET" | "POST" | undefined;
-}
+/** トップレベルの const の、サーバー関数の定義かミドルウェアの定義を表す。 */
+type Definition =
+  | {
+      readonly kind: "serverFn";
+      readonly name: string;
+      readonly init: ESTree.Expression;
+      readonly method: "GET" | "POST";
+    }
+  | { readonly kind: "middleware"; readonly name: string; readonly init: ESTree.Expression };
 
 /**
  * `rinka/server` から import した `defineServerFn` と `defineMiddleware` で初期化したトップレベルの const を、ソースの順に返す。
- * `defineServerFn` をそれ以外の位置で使用するか、サーバー関数のメソッドを静的に読み取れなければ、ビルドのエラーにする。
+ * `defineServerFn` をそれ以外の位置で使用するか、サーバー関数のメソッドを静的に読み取れないか、`rinka/server` を名前を指定せずに import すると、ビルドのエラーにする。
+ * クライアント向けでは、それ以外の位置の `defineMiddleware` もビルドのエラーにする。
  */
-function findDefinitions(program: ESTree.Program, file: string): Definition[] {
+function findDefinitions(program: ESTree.Program, file: string, client: boolean): Definition[] {
+  for (const statement of program.body) {
+    if (statement.type !== "ImportDeclaration" || statement.source.value !== entries.server)
+      continue;
+    if (statement.specifiers.some((specifier) => specifier.type !== "ImportSpecifier")) {
+      throw new CompileError(
+        `${file}: ${entries.server} は、import { defineServerFn } from "${entries.server}" のように、名前を指定して import してください。`,
+      );
+    }
+  }
   const imported = importedNames(program, entries.server);
   const defineNames = imported.get("defineServerFn") ?? new Set<string>();
   const middlewareNames = imported.get("defineMiddleware") ?? new Set<string>();
@@ -360,27 +373,38 @@ function findDefinitions(program: ESTree.Program, file: string): Definition[] {
   for (const { declaration } of topLevelVariables(program)) {
     if (declaration.kind !== "const") continue;
     for (const { id, init } of declaration.declarations) {
-      if (id.type !== "Identifier" || !init || init.type !== "CallExpression") continue;
+      if (id.type !== "Identifier" || init?.type !== "CallExpression") continue;
       const { callee } = init;
       if (callee.type === "Identifier" && middlewareNames.has(callee.name)) {
-        definitions.push({ name: id.name, init, method: undefined });
+        allowed.add(callee);
+        definitions.push({ kind: "middleware", name: id.name, init });
         continue;
       }
       const first = callee.type === "CallExpression" ? callee : init;
       if (first.callee.type !== "Identifier" || !defineNames.has(first.callee.name)) continue;
       allowed.add(first.callee);
       const options = first === init ? undefined : first.arguments[0];
-      definitions.push({ name: id.name, init, method: methodOf(options, file, id.name) });
+      definitions.push({
+        kind: "serverFn",
+        name: id.name,
+        init,
+        method: methodOf(options, file, id.name),
+      });
     }
   }
+  const misplaced = (name: string, form: string) =>
+    new CompileError(
+      `${file}: ${name} は、const 名前 = ${form} の形で、トップレベルの const の初期化の式で呼んでください。`,
+    );
   forEachReference(
     program,
     (node) => node.type === "ImportDeclaration",
     (node) => {
-      if (!defineNames.has(node.name) || allowed.has(node)) return;
-      throw new CompileError(
-        `${file}: defineServerFn は、const 名前 = defineServerFn(…) の形で、トップレベルの const の初期化の式で呼んでください。`,
-      );
+      if (allowed.has(node)) return;
+      if (defineNames.has(node.name)) throw misplaced("defineServerFn", "defineServerFn(…)");
+      if (client && middlewareNames.has(node.name)) {
+        throw misplaced("defineMiddleware", "defineMiddleware(…)");
+      }
     },
   );
   return definitions;
@@ -400,15 +424,11 @@ function methodOf(
   if (options.type !== "ObjectExpression") throw error();
   let method: "GET" | "POST" = "POST";
   for (const property of options.properties) {
-    if (property.type === "SpreadElement") throw error();
-    if (property.computed) continue;
-    const key =
-      property.key.type === "Identifier"
-        ? property.key.name
-        : property.key.type === "Literal"
-          ? property.key.value
-          : undefined;
-    if (key !== "method") continue;
+    if (property.type === "SpreadElement" || property.computed) throw error();
+    const { key } = property;
+    const keyName =
+      key.type === "Identifier" ? key.name : key.type === "Literal" ? key.value : undefined;
+    if (keyName !== "method") continue;
     const value = withoutTypes(property.value);
     if (value.type !== "Literal" || (value.value !== "GET" && value.value !== "POST"))
       throw error();
@@ -423,17 +443,44 @@ function registerServerFns(
   definitions: readonly Definition[],
   file: string,
 ): void {
-  const serverFns = definitions.filter((definition) => definition.method !== undefined);
-  if (serverFns.length === 0) return;
-  for (const { name, init } of serverFns) {
-    surround(output, init, `${REGISTER}(${JSON.stringify(`${file}#${name}`)}, `, ")");
+  let registered = false;
+  for (const definition of definitions) {
+    if (definition.kind !== "serverFn") continue;
+    registered = true;
+    const id = JSON.stringify(`${file}#${definition.name}`);
+    surround(output, definition.init, `${REGISTER}(${id}, `, ")");
   }
-  output.prepend(`import { registerServerFn as ${REGISTER} } from "${entries.internal}";\n`);
+  if (registered) {
+    output.prepend(`import { registerServerFn as ${REGISTER} } from "${entries.internal}";\n`);
+  }
+}
+
+/** トップレベルの、関数の宣言か、関数で初期化した 1 つの const の宣言を表す。 */
+interface Helper {
+  readonly statement: ESTree.Statement;
+  readonly id: Node;
+  readonly name: string;
+}
+
+/** `export` を付けていない、トップレベルの関数の宣言と、関数式かアロー関数で初期化した 1 つの const の宣言を返す。 */
+function helpersOf(program: ESTree.Program): Helper[] {
+  return program.body.flatMap((statement): Helper[] => {
+    if (statement.type === "FunctionDeclaration" && statement.id) {
+      return [{ statement, id: statement.id, name: statement.id.name }];
+    }
+    if (statement.type !== "VariableDeclaration" || statement.kind !== "const") return [];
+    const [declarator] = statement.declarations;
+    if (statement.declarations.length !== 1 || declarator?.id.type !== "Identifier") return [];
+    const init = declarator.init && withoutTypes(declarator.init);
+    if (init?.type !== "ArrowFunctionExpression" && init?.type !== "FunctionExpression") return [];
+    return [{ statement, id: declarator.id, name: declarator.id.name }];
+  });
 }
 
 /**
  * サーバー関数の定義の式を、RPC の関数を作成する呼び出しに、ミドルウェアの定義の式を `undefined` に置換する。
- * 置換で使用されなくなった import の指定子を除去し、指定子が残らない import の文は文ごと除去する。
+ * 置換で使用されなくなった、トップレベルの関数と関数で初期化した const を除去し、使用されなくなった import の指定子を除去する。
+ * 指定子が残らない import の文は、文ごと除去する。
  */
 function replaceDefinitions(
   program: ESTree.Program,
@@ -443,31 +490,47 @@ function replaceDefinitions(
   file: string,
 ): void {
   if (definitions.length === 0) return;
-  const inits = new Set<Node>(definitions.map((definition) => definition.init));
-  const used = (skip: (node: Node) => boolean): Set<string> => {
+  const helpers = helpersOf(program);
+  const declarations = new Set(helpers.map((helper) => helper.id));
+  const removed = new Set<Node>(definitions.map((definition) => definition.init));
+  const used = (skipped: ReadonlySet<Node>): Set<string> => {
     const names = new Set<string>();
     forEachReference(
       program,
-      (node) => node.type === "ImportDeclaration" || skip(node),
+      (node) => node.type === "ImportDeclaration" || declarations.has(node) || skipped.has(node),
       (node) => {
         names.add(node.name);
       },
     );
     return names;
   };
-  const before = used(() => false);
-  const after = used((node) => inits.has(node));
+  const before = used(new Set());
+  let after = used(removed);
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const helper of helpers) {
+      if (removed.has(helper.statement) || after.has(helper.name) || !before.has(helper.name)) {
+        continue;
+      }
+      removed.add(helper.statement);
+      removeStatement(output, code, helper.statement);
+      changed = true;
+    }
+    if (changed) after = used(removed);
+  }
   let serverFns = false;
-  for (const { name, init, method } of definitions) {
-    if (method === undefined) {
+  for (const definition of definitions) {
+    const { init } = definition;
+    if (definition.kind === "middleware") {
       output.overwrite(init.start, init.end, "undefined");
       continue;
     }
     serverFns = true;
+    const id = JSON.stringify(`${file}#${definition.name}`);
     output.overwrite(
       init.start,
       init.end,
-      `${SERVER_FN}(${JSON.stringify(`${file}#${name}`)}, ${JSON.stringify(method)})`,
+      `${SERVER_FN}(${id}, ${JSON.stringify(definition.method)})`,
     );
   }
   for (const statement of program.body) {
@@ -477,12 +540,11 @@ function replaceDefinitions(
       (specifier) => after.has(specifier.local.name) || !before.has(specifier.local.name),
     );
     if (kept.length === statement.specifiers.length) continue;
-    if (
-      !kept.some(
-        (specifier) => specifier.type !== "ImportSpecifier" || specifier.importKind !== "type",
-      )
-    ) {
-      output.remove(statement.start, statement.end);
+    const values = kept.filter(
+      (specifier) => specifier.type !== "ImportSpecifier" || specifier.importKind !== "type",
+    );
+    if (values.length === 0) {
+      removeStatement(output, code, statement);
       continue;
     }
     const text = (node: { start: number; end: number }) => code.slice(node.start, node.end);
@@ -496,4 +558,13 @@ function replaceDefinitions(
   if (serverFns) {
     output.prepend(`import { serverFn as ${SERVER_FN} } from "${entries.internal}";\n`);
   }
+}
+
+/** 文を、直後の改行とともに除去する。 */
+function removeStatement(
+  output: MagicString,
+  code: string,
+  statement: { start: number; end: number },
+): void {
+  output.remove(statement.start, code[statement.end] === "\n" ? statement.end + 1 : statement.end);
 }
