@@ -45,10 +45,15 @@ class LanguageServer {
     this.send({ jsonrpc: "2.0", method, params });
   }
 
-  /** 言語サーバーを終了させる。 */
+  /** 言語サーバーに終了を求め、5 秒以内に shutdown に応答しないか、すでに終了していれば、プロセスを終了させる。 */
   async close(): Promise<void> {
-    await this.request("shutdown");
-    this.notify("exit");
+    if (this.child.exitCode === null) {
+      const exited = new Promise((resolve) => this.child.once("exit", resolve));
+      const timeout = new Promise((resolve) => setTimeout(resolve, 5000));
+      await Promise.race([this.request("shutdown"), exited, timeout]);
+      if (this.child.exitCode === null) this.notify("exit");
+    }
+    this.child.kill();
   }
 
   private send(message: object): void {
@@ -142,7 +147,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await server?.close();
-}, 60_000);
+});
 
 describe("言語サーバー", () => {
   it("要素とページのファイルを、それぞれのプロジェクトの型で検査し、_type-tests.tsx の @ts-expect-error がすべて有効になる", async () => {
