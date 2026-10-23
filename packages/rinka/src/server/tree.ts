@@ -49,7 +49,7 @@ export interface ErroredNode {
   readonly status: number | undefined;
 }
 
-/** ルートのファイルの深さを、子の描画に伝えるノードを表す。深さは、ルートのレイアウト、内側のレイアウト、ページの順に大きい。 */
+/** ルートのファイルの深さを、子の描画に伝えるノードを表す。 */
 export interface DepthNode {
   readonly kind: "depth";
   readonly depth: number;

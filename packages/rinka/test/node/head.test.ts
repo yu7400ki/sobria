@@ -6,6 +6,7 @@ import { createApp } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToResponse, renderToString } from "../../src/server/render.ts";
 import type { Route, RouteComponent } from "../../src/shared/routes.ts";
+import { memo } from "../../src/shared/signals.ts";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -212,9 +213,21 @@ describe("キーが同じ <head> のタグ", () => {
     );
   });
 
-  it("ページの <meta charset> は、rinka の <meta charset> の代わりに先頭に出力する", async () => {
+  it("<meta charset> は、ページが記述しても、rinka の <meta charset> だけを出力する", async () => {
     expect(await headOfPage(() => meta({ charset: "shift_jis" }), [])).toBe(
-      '<meta charset="shift_jis">',
+      '<meta charset="utf-8">',
     );
+  });
+
+  it("キーになる属性の値が未解決でも、値が揃ってからキーを求める", async () => {
+    const name = memo(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return "description";
+    });
+    const { head } = await documentOf([
+      jsx("meta", { name: () => name(), content: "a" }),
+      jsx("meta", { name: () => name(), content: "b" }),
+    ]);
+    expect(head).toBe('<meta charset="utf-8"><meta name="description" content="b">');
   });
 });

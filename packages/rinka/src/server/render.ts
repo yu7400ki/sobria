@@ -114,11 +114,11 @@ const documentTags: ReadonlyMap<string, DocumentTag> = new Map([
   ["link", "head"],
 ]);
 
-/** `<meta>` のキーになる属性のうち、`charset` 以外のものである。 */
+/** `<meta>` のキーになる属性のうち、`charset` 以外のものである。キーになる属性を複数持つ `<meta>` は、この順で最初の属性をキーにする。 */
 const metaKeyNames = ["name", "property", "http-equiv", "itemprop"] as const;
 
 /**
- * `<head>` に移動するタグのキーを返す。キーが同じタグは、1 つだけを出力する。`read` は、属性の名前から値を返す。
+ * `<head>` に移動するタグのキーを返す。`read` は、属性の名前から値を返す。
  * `<title>`、`charset` を持つ `<meta>`、`rel` が `canonical` の `<link>` は、タグの種類がキーになる。ほかの `<meta>` は、キーになる属性の名前と値の組がキーになる。
  */
 function headKey(tag: string, read: (name: string) => unknown): string | undefined {
@@ -146,34 +146,25 @@ interface HeadTag {
   readonly depth: number;
 }
 
+/** `<head>` に出力する候補のタグを表す。 */
+interface HeadOutput {
+  readonly html: string;
+  readonly key: string | undefined;
+  readonly depth: number;
+}
+
 /**
  * 文書の順序で並んだ `<head>` のタグから、キーごとに、深さが最も大きく、同じ深さなら後のタグだけを残す。
  * 残したタグは、そのキーのタグが最初に現れた位置に出力する。
  */
-function dedupeHead(
-  tags: readonly {
-    readonly html: string;
-    readonly key: string | undefined;
-    readonly depth: number;
-  }[],
-): string {
-  const chosen = new Map<string, { readonly html: string; readonly depth: number }>();
-  for (const tag of tags) {
-    if (tag.key === undefined) continue;
-    const current = chosen.get(tag.key);
-    if (!current || tag.depth >= current.depth) chosen.set(tag.key, tag);
+function dedupeHead(tags: readonly HeadOutput[]): string {
+  const chosen = new Map<string | number, HeadOutput>();
+  for (const [index, tag] of tags.entries()) {
+    const key = tag.key ?? index;
+    const current = chosen.get(key);
+    if (!current || tag.depth >= current.depth) chosen.set(key, tag);
   }
-  const written = new Set<string>();
-  let html = "";
-  for (const tag of tags) {
-    if (tag.key === undefined) {
-      html += tag.html;
-    } else if (!written.has(tag.key)) {
-      written.add(tag.key);
-      html += chosen.get(tag.key)?.html ?? "";
-    }
-  }
-  return html;
+  return [...chosen.values()].map(({ html }) => html).join("");
 }
 
 /** 文書を表す。`head` は、文書の `<head>` の末尾に出力するマークアップである。 */
@@ -1125,29 +1116,28 @@ class Renderer {
 
   /**
    * シェルの文字列 `shell` から、目印で囲んだタグを取り除き、`<head>` に出力するタグと、残りの文字列を返す。
-   * `<head>` のタグは、rinka の `<meta charset="utf-8">` を最も浅いタグとして先頭に加え、キーが同じタグを 1 つにする。
+   * `<head>` のタグは、先頭に rinka の `<meta charset="utf-8">` を加え、キーが同じタグを 1 つにする。`<meta charset>` は、常に rinka のタグを残す。
    */
   private async takeHead(shell: string): Promise<{ readonly tags: string; readonly body: string }> {
-    const found: { readonly html: string; readonly head: HeadTag | undefined }[] = [];
+    const found: Promise<HeadOutput>[] = [];
     const inner = new RegExp(`<!--${this.nonce}:\\d+/?-->`, "g");
     const body = shell.replace(
       new RegExp(`<!--${this.nonce}:(\\d+)-->([\\s\\S]*?)<!--${this.nonce}:\\1/-->`, "g"),
       (_match, id: string, tag: string) => {
-        found.push({ html: tag.replace(inner, ""), head: this.heads.get(Number(id)) });
+        const head = this.heads.get(Number(id));
+        if (head === undefined) throw new Error(`<head> のタグ ${id} の記録がありません。`);
+        found.push(
+          (async () => ({
+            html: tag.replace(inner, ""),
+            key: await head.key,
+            depth: head.depth,
+          }))(),
+        );
         return "";
       },
     );
-    const tags = await Promise.all(
-      found.map(async ({ html, head }) => ({
-        html,
-        key: await head?.key,
-        depth: head?.depth ?? 0,
-      })),
-    );
-    return {
-      tags: dedupeHead([{ html: '<meta charset="utf-8">', key: "charset", depth: -1 }, ...tags]),
-      body,
-    };
+    const charset = { html: '<meta charset="utf-8">', key: "charset", depth: Infinity };
+    return { tags: dedupeHead([charset, ...(await Promise.all(found))]), body };
   }
 
   /** 文書の先頭と `shell` を出力し、後送りの境界をすべて出力してから、文書を閉じる。 */
