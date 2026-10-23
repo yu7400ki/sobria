@@ -8,16 +8,22 @@ import { langs, type Lang } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
 import { serve } from "./dev-server.ts";
 import { sourceTag } from "./elements.ts";
-import { clientImports, entries, oxc, runtimes, serverImports, virtualId } from "./entries.ts";
+import { clientImports, entries, oxc, runtimes, virtualId } from "./entries.ts";
 import { buildAppModule } from "./entry.ts";
 import { transformJsx } from "./jsx.ts";
 import { libraryBuild } from "./library-build.ts";
-import { fromApp, packageOf } from "./package.ts";
+import { fromApp } from "./package.ts";
 import { devPath, inside } from "./paths.ts";
 import { preparedFiles, writePrepared } from "./prepare.ts";
 import { ROUTES_DIR, routesModule } from "./routes.ts";
 import { hashedFnModule, isServerFnSource, serverFnModules } from "./server-fns.ts";
-import { isClient, settingsOf, type RinkaOptions, type Settings } from "./settings.ts";
+import {
+  isClient,
+  isServerEnvironment,
+  settingsOf,
+  type RinkaOptions,
+  type Settings,
+} from "./settings.ts";
 import { SHEET_QUERY, sheetId, sheetModule, sheetPath } from "./sheets.ts";
 
 export type { RinkaOptions } from "./settings.ts";
@@ -46,13 +52,6 @@ const APP = virtualId(entries.app);
 
 /** 要素が無いアプリの、クライアントのビルドの入口にする仮想モジュールの ID である。 */
 const NO_ELEMENTS = virtualId(entries.noElements);
-
-/** 本番のサーバーのビルドに含める、rinka と、rinka の実行時のコードが import するパッケージと、アプリが起動に使う @hono/node-server を返す。 */
-const bundled = (): string[] => [
-  entries.main,
-  "@hono/node-server",
-  ...new Set(serverImports.map(packageOf)),
-];
 
 /** 変換するプロジェクトのファイルの、モジュールのパス、ルートからの相対パス、言語を表す。 */
 interface ProjectFile {
@@ -130,12 +129,9 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         };
       },
       configEnvironment(name, config) {
-        const consumer = config.consumer ?? (name === "client" ? "client" : "server");
-        if (consumer !== "server") return null;
-        const { scene, libraries } = current();
-        const names = libraries.map((library) => library.name);
-        const bundles = scene === "serve" ? [entries.main] : bundled();
-        return { resolve: { noExternal: [...bundles, ...names] } };
+        if (!isServerEnvironment(name, config)) return null;
+        const names = current().libraries.map((library) => library.name);
+        return { resolve: { noExternal: [entries.main, ...names] } };
       },
       configResolved(config) {
         if (config.plugins.filter((plugin) => plugin.name === NAME).length > 1) {
@@ -223,6 +219,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
     },
     {
       name: `${NAME}:jsx`,
+      sharedDuringBuild: true,
       transform(code, id) {
         const target = projectFile(id);
         if (target?.lang !== "tsx" && target?.lang !== "jsx") return null;

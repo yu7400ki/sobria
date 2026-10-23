@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
 
-import { normalizePath, type Environment } from "vite";
+import { normalizePath, type EnvironmentOptions, type Plugin } from "vite";
 
 import { scanElements, type ElementFile, type ElementSource } from "./elements.ts";
 import { findLibraries, type Library } from "./libraries.ts";
@@ -89,5 +89,10 @@ export interface SceneContext {
 }
 
 /** 環境がブラウザで実行する環境かどうかを返す。 */
-export const isClient = (environment: Environment): boolean =>
-  environment.config.consumer === "client";
+export const isClient = (
+  environment: Parameters<NonNullable<Plugin["applyToEnvironment"]>>[0],
+): boolean => environment.config.consumer === "client";
+
+/** 名前が `name` で、設定が `config` の環境が、サーバーで実行する環境かどうかを返す。 */
+export const isServerEnvironment = (name: string, config: EnvironmentOptions): boolean =>
+  (config.consumer ?? (name === "client" ? "client" : "server")) === "server";

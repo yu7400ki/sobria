@@ -4,10 +4,17 @@ import { join } from "node:path";
 import type { Plugin } from "vite";
 
 import { embedRouteStyles, moveServerAssets } from "./build-styles.ts";
-import { entries } from "./entries.ts";
+import { entries, serverImports } from "./entries.ts";
 import { serverEntry } from "./entry.ts";
 import { readClientAssets, type ClientAssets } from "./manifest.ts";
-import { SERVER_ENTRY_NAME, isClient, sceneOf, type SceneContext } from "./settings.ts";
+import { packageOf } from "./package.ts";
+import {
+  SERVER_ENTRY_NAME,
+  isClient,
+  isServerEnvironment,
+  sceneOf,
+  type SceneContext,
+} from "./settings.ts";
 
 /**
  * アプリの `vite build --app` で、要素のクライアントのビルドと、サーバーのエントリーのサーバーのビルドを、この順に出力するプラグインと、
@@ -33,6 +40,7 @@ export function appBuild({ options, settings }: SceneContext): {
     apply: (_config, { command }) => sceneOf(command, options) === "app",
     enforce: "pre",
     sharedDuringBuild: true,
+    applyToEnvironment: (environment) => !isClient(environment),
     config: () => {
       const { root, clientDir, serverDir, elements } = settings();
       const file = serverEntry(root);
@@ -68,14 +76,21 @@ export function appBuild({ options, settings }: SceneContext): {
         },
       };
     },
+    configEnvironment: (name, config) =>
+      isServerEnvironment(name, config)
+        ? {
+            resolve: {
+              noExternal: ["@hono/node-server", ...new Set(serverImports.map(packageOf))],
+            },
+          }
+        : null,
     buildStart() {
-      if (!isClient(this.environment)) clientAssets = readClientAssets(settings().clientDir);
+      clientAssets = readClientAssets(settings().clientDir);
     },
     generateBundle(_output, bundle) {
-      if (!isClient(this.environment)) embedRouteStyles(bundle, settings().root);
+      embedRouteStyles(bundle, settings().root);
     },
     writeBundle(_output, bundle) {
-      if (isClient(this.environment)) return;
       const { clientDir, serverDir } = settings();
       moveServerAssets(bundle, serverDir, clientDir);
       rmSync(join(clientDir, ".vite"), { recursive: true, force: true });

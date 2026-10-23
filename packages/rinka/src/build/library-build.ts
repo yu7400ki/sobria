@@ -12,6 +12,7 @@ export function libraryBuild({ options, settings }: SceneContext): Plugin {
     name: "rinka:library",
     apply: (_config, { command }) => sceneOf(command, options) === "library",
     enforce: "pre",
+    sharedDuringBuild: true,
     config: () => {
       const { elementsDir, elements } = settings();
       const own = elements.filter(({ path }) => inside(elementsDir, path) !== undefined);
