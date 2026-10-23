@@ -1,11 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { Errored, Loading, Navigation } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { notFound, redirect } from "../../src/server/errors.ts";
+import { registerServerFn } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { refreshPage } from "../../src/server/refresh.ts";
 import { renderRefresh } from "../../src/server/render.ts";
+import { defineServerFn } from "../../src/server/server-fn.ts";
 import type { RefreshJson } from "../../src/shared/refresh.ts";
 
 /** `node` を描き直しとして描画し、ステータスと JSON を返す。 */
@@ -58,6 +60,9 @@ const moved = () => {
   throw redirect("/login");
 };
 
+const pick = defineServerFn(() => "picked");
+registerServerFn("src/refresh-test.ts#pick", pick);
+
 describe("renderRefresh", () => {
   it("<head> のタグ、本文、<html> と <body> の属性を JSON で返し、<Loading> の内側も待つ", async () => {
     const { status, type, json } = await refreshOf(
@@ -107,6 +112,35 @@ describe("renderRefresh", () => {
       "@r": { label: "hi", data: { a: 1 } },
       "@p": { data: { a: 1 } },
     });
+  });
+
+  it("関数の props も、ページにある要素に設定する props に入れる", async () => {
+    vi.stubGlobal("$rinka", { f: (id: string, method: string) => `${method} ${id}` });
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    const { json } = await refreshOf(jsx(Card, { onPick: pick }));
+    expect(evaluate(Object.values(json.data)[0] ?? "")).toStrictEqual({
+      "@r": { label: undefined, data: undefined, onPick: "POST src/refresh-test.ts#pick" },
+      "@p": { onPick: "POST src/refresh-test.ts#pick" },
+    });
+  });
+
+  it("<Errored> がフォールバックに切り替えた中身のホストの props は、data に入れない", async () => {
+    const { json } = await refreshOf(
+      jsx("div", {
+        children: [
+          jsx(Errored, {
+            fallback: "failed",
+            children: [jsx(Card, { label: "in" }), jsx(later(5, jsx(broken, {})), {})],
+          }),
+          jsx(Card, { label: "out" }),
+        ],
+      }),
+    );
+    const id = /data-oh="([^"]+)"/.exec(json.body)?.[1] ?? "";
+    expect(json.body).toContain("failed");
+    expect(Object.keys(json.data)).toEqual([id]);
   });
 
   it("描画ごとに、ホストの ID の接頭辞を変える", async () => {

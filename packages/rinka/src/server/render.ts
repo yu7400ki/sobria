@@ -358,6 +358,8 @@ class Out {
   private readonly scripts: string[] = [];
   /** この位置に出力した、起動スクリプトに伝える要素を、タグ名ごとに表す。 */
   private readonly elements = new Map<string, Delivered>();
+  /** 描き直しで、この位置に出力したホストの ID ごとに、`data` に入れる JS の式を表す。 */
+  private readonly refreshData = new Map<string, string>();
 
   /** 出力の後に書き込むスクリプトを加える。 */
   addScript(script: string): void {
@@ -369,10 +371,21 @@ class Out {
     mergeDelivered(this.elements, [delivered]);
   }
 
-  /** `other` の位置のスクリプトと要素を、この位置に加える。 */
+  /** 描き直しの `data` に入れる、ホストの ID が `id` の props の JS の式を加える。 */
+  addRefreshData(id: string, expression: string): void {
+    this.refreshData.set(id, expression);
+  }
+
+  /** `other` の位置のスクリプト、要素、描き直しの `data` を、この位置に加える。 */
   absorb(other: Out): void {
     this.scripts.push(...other.scripts);
     mergeDelivered(this.elements, other.elements.values());
+    for (const [id, expression] of other.refreshData) this.refreshData.set(id, expression);
+  }
+
+  /** 描き直しの `data` に入れる、ホストの ID ごとの JS の式である。 */
+  get data(): Readonly<Record<string, string>> {
+    return Object.fromEntries(this.refreshData);
   }
 
   /** 出力の後に書き込むスクリプトを連結した文字列である。 */
@@ -661,8 +674,6 @@ class Renderer {
   private readonly nonce = crypto.randomUUID();
   /** 文書の骨組みに移動するものを、目印の番号ごとに保持する。 */
   private readonly hoisted = new Map<number, Hoisted>();
-  /** 描き直しで、ホストの ID ごとに、`data` に入れる JS の式を保持する。 */
-  private readonly refreshData = new Map<string, string>();
 
   /**
    * `write` は、出力する文字列を受け取る。`blocking` なら、すべての境界を待って、フォールバックと差し替えを出力しない。
@@ -927,7 +938,7 @@ class Renderer {
   }
 
   /**
-   * 要素のホストを出力し、Shadow DOM の中身を DSD として出力してから、Light DOM の子を出力する。
+   * 要素のホストを出力し、Shadow DOM の中身を DSD として出力してから、Light DOM の子を出力する。描き直しでは、Shadow DOM の中身を出力しない。
    * `child` があれば、要素を作成した描画の範囲のホストに、`@c:キー` でこの要素のホストの ID を送る。
    */
   private element(
@@ -989,7 +1000,7 @@ class Renderer {
       for (const name of options.props) {
         if (slotNames.has(name)) continue;
         const value = propValue(name);
-        if (refresh && !functionProps.has(name)) (current ??= {})[name] = value;
+        if (refresh) (current ??= {})[name] = value;
         if ((typeof value === "object" && value !== null) || typeof value === "function") {
           if (ctx.owner !== null) continue;
           checkSerializable(value, `<${tag}> ${name}`, true);
@@ -1144,7 +1155,7 @@ class Renderer {
         const inner = await this.serialize(chunks, out);
         const resolved = await attributes;
         if (this.target.kind === "refresh") {
-          this.refreshData.set(
+          out.addRefreshData(
             record.id,
             toScript(
               {
@@ -1441,7 +1452,7 @@ class Renderer {
     return {
       head: headTags(parts),
       body: parts.rest,
-      data: Object.fromEntries(this.refreshData),
+      data: this.shellOut.data,
       elements: this.takeUnannounced([this.shellOut]).map(
         ({ tag, delivery }) => [tag, delivery.module, delivery.load] as const,
       ),
