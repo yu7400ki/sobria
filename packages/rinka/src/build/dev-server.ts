@@ -20,7 +20,7 @@ import { isServerFnSource } from "./server-fns.ts";
 import { SERVER_ENTRY_NAME, isClient, type SceneContext } from "./settings.ts";
 
 /** 開発サーバーが Vite のプロセスで実行し、`rinka/app` が使用する関数を表す。 */
-type DevHooks = Required<Pick<AppOptions, "styles" | "onError">>;
+type DevHooks = Required<Pick<AppOptions, "onError">>;
 
 /** 開発中の `rinka/app` が、プラグインのインスタンスの ID ごとの `DevHooks` を探す、グローバルの Map のキーである。 */
 const DEV_HOOKS = "rinka.dev";
@@ -30,6 +30,12 @@ function devHooks(): Map<string, DevHooks> {
   const global = globalThis as { [key: symbol]: Map<string, DevHooks> | undefined };
   return (global[Symbol.for(DEV_HOOKS)] ??= new Map<string, DevHooks>());
 }
+
+/** `rinka/styles` の仮想モジュールの ID の、ルートのファイルの一覧を表すクエリの前までである。 */
+const STYLES = `${virtualId(entries.styles)}?files=`;
+
+/** ランナーが動的に import して、`rinka/styles` の仮想モジュールを読み込む指定子の、クエリの前までである。 */
+const STYLES_URL = `/@id/__x00__${entries.styles}?files=`;
 
 /** 開発中のページの `<head>` に出力する、Vite のクライアントを読み込むスクリプトである。 */
 const VITE_CLIENT = '<script type="module" src="/@vite/client"></script>';
@@ -42,7 +48,7 @@ const devAppModule = ({ serverFns, trustedOrigins }: AppModuleOptions, devId: st
   appCode(
     [
       `  head: ${JSON.stringify(VITE_CLIENT)},`,
-      "  styles: hooks?.styles,",
+      `  styles: async (files) => (await import(${JSON.stringify(STYLES_URL)} + encodeURIComponent(JSON.stringify(files)))).default,`,
       "  onError: hooks?.onError,",
       `  loadServerFn: ${serverFnLoaderCode(serverFns)},`,
     ],
@@ -86,6 +92,16 @@ export function serve({ settings, writeTypes }: ServeContext): {
         );
       };
     },
+    resolveId: (id) => (id.startsWith(STYLES) ? id : null),
+    async load(id) {
+      if (!id.startsWith(STYLES) || !("moduleGraph" in this.environment)) return null;
+      const { moduleGraph } = this.environment;
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+      const files = JSON.parse(decodeURIComponent(id.slice(STYLES.length))) as string[];
+      const nodes = await Promise.all(files.map((file) => moduleGraph.getModuleByUrl(`/${file}`)));
+      return `export default ${JSON.stringify(routeStyles(nodes.filter((node) => node !== undefined)))};
+`;
+    },
     configureServer(server) {
       const { root, elementsDir } = settings();
       const routesDir = resolve(root, ROUTES_DIR);
@@ -97,7 +113,16 @@ export function serve({ settings, writeTypes }: ServeContext): {
         }
       };
       /** サーバー関数を定義できるファイル `path` が変わったら、`rinka/app` を無効にする。 */
+      /**
+       * ファイル `path` が追加、変更、削除されたら、すべての環境の `rinka/styles` を無効にし、
+       * サーバー関数を定義できるファイルなら `rinka/app` も無効にする。
+       */
       const onSource = (path: string): void => {
+        for (const environment of Object.values(server.environments)) {
+          for (const [id, node] of environment.moduleGraph.idToModuleMap) {
+            if (id.startsWith(STYLES)) environment.moduleGraph.invalidateModule(node);
+          }
+        }
         const file = inside(root, path);
         if (file !== undefined && isServerFnSource(file)) invalidate(entries.app);
       };
@@ -134,15 +159,7 @@ export function serve({ settings, writeTypes }: ServeContext): {
       if (environment && isRunnable(environment)) {
         const devId = randomUUID();
         devIds.set(environment, devId);
-        devHooks().set(devId, {
-          styles: async (files) => {
-            const nodes = await Promise.all(
-              files.map((file) => environment.moduleGraph.getModuleByUrl(`/${file}`)),
-            );
-            return routeStyles(nodes.filter((node) => node !== undefined));
-          },
-          onError: recordFailure,
-        });
+        devHooks().set(devId, { onError: recordFailure });
       }
       return () => {
         const file = serverEntry(root);
