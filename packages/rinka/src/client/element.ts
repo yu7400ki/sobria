@@ -21,8 +21,6 @@ import {
   type Ctx,
   type ElementComponent,
   type ElementOptions,
-  type FormState,
-  type RestoreMode,
 } from "../shared/element.ts";
 import { checkExposeName } from "../shared/expose-names.ts";
 import { reloadEvent } from "../shared/hmr.ts";
@@ -33,13 +31,12 @@ import { createScope, scopedChild, withScope } from "../shared/scope.ts";
 import { childKey } from "../shared/transfer-keys.ts";
 import { applyAttribute, asClientNode, bind, callRef, insert, setter } from "./dom.ts";
 import {
-  createFormHost,
-  defineFormMembers,
   formControls,
+  formElementClass,
   reflectAttribute,
   reflectedProps,
   reflectedValue,
-  type FormHost,
+  unsupportedFormControls,
 } from "./form-element.ts";
 import { handleSubmit } from "./form.ts";
 import {
@@ -101,8 +98,6 @@ interface Instance {
   takeover: Takeover;
   /** ホストの `ElementInternals`。 */
   readonly internals: ElementInternals;
-  /** フォームの部品なら、その状態。 */
-  readonly form?: FormHost;
 }
 
 /**
@@ -224,6 +219,9 @@ export function registerElement<P, M extends object = object>(
   const unobserved = new Set([...functionProps, ...slotNames]);
   /** ホストの属性に反映する props の名前である。反映した属性の変化は、props に書き戻さない。 */
   const reflects: ReadonlySet<string> = new Set(options.form ? reflectedProps : []);
+  const unsupported = unsupportedFormControls(tag);
+  /** 要素の関数に渡す ctx の `form` を返す。 */
+  const formOf = options.form ? formControls : () => unsupported;
   const propOfAttribute = new Map(
     options.props
       .filter((name) => !unobserved.has(name))
@@ -292,7 +290,7 @@ export function registerElement<P, M extends object = object>(
         });
         const ctx: Ctx<M> = {
           host,
-          form: formControls(tag, host, instance.internals, instance.form),
+          form: formOf(host, instance.internals),
           internals: instance.internals,
           onMount: (mount) => run.mounts.push(mount),
           expose: (members) => {
@@ -344,7 +342,6 @@ export function registerElement<P, M extends object = object>(
 
   class RinkaElement extends HTMLElement {
     static observedAttributes = [...propOfAttribute.keys()];
-    static formAssociated = options.form === true;
 
     constructor() {
       super();
@@ -365,7 +362,6 @@ export function registerElement<P, M extends object = object>(
       const internals = this.attachInternals();
       const instance: Instance = {
         internals,
-        ...(options.form && { form: createFormHost() }),
         props,
         functionProps,
         slotNames,
@@ -396,18 +392,6 @@ export function registerElement<P, M extends object = object>(
       }
     }
 
-    formResetCallback(): void {
-      for (const reset of instances.get(this)!.form?.resets ?? []) reset();
-    }
-
-    formStateRestoreCallback(state: FormState, mode: RestoreMode): void {
-      for (const restore of instances.get(this)!.form?.restores ?? []) restore(state, mode);
-    }
-
-    formDisabledCallback(disabled: boolean): void {
-      instances.get(this)!.form?.setDisabled(disabled);
-    }
-
     disconnectedCallback(): void {
       const instance = instances.get(this)!;
       if (instance.owned) return;
@@ -420,10 +404,12 @@ export function registerElement<P, M extends object = object>(
     }
   }
 
-  if (options.form) {
-    defineFormMembers(RinkaElement.prototype, (host) => instances.get(host)!.internals);
-  }
-  customElements.define(tag, RinkaElement);
+  customElements.define(
+    tag,
+    options.form
+      ? formElementClass(RinkaElement, (host) => instances.get(host)!.internals)
+      : RinkaElement,
+  );
   definitions.set(tag, definition);
   return createElementComponent(tag, fn, options);
 }

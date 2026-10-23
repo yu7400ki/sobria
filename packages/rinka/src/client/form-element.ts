@@ -8,7 +8,7 @@ import type { formMembers } from "../shared/host-members.ts";
 export const reflectedProps = ["name", "disabled"] as const;
 
 /** フォームの部品のホストの状態を表す。要素の寿命の間は同じ状態を保持する。 */
-export interface FormHost {
+interface FormHost {
   /** 要素自身の `disabled` か、外側の `<fieldset disabled>` で無効になっているかどうかを返す。 */
   readonly disabled: () => boolean;
   readonly setDisabled: (disabled: boolean) => void;
@@ -18,44 +18,101 @@ export interface FormHost {
   readonly restores: Set<(state: FormState, mode: RestoreMode) => void>;
 }
 
-/** フォームの部品のホストの状態を作成する。 */
-export function createFormHost(): FormHost {
-  const [disabled, setDisabled] = runWithOwner(null, () =>
-    createSignal(false, { ownedWrite: true }),
-  );
+const formHosts = new WeakMap<HTMLElement, FormHost>();
+
+/** フォームの部品のホスト `host` の状態を返す。 */
+function formHostOf(host: HTMLElement): FormHost {
+  let state = formHosts.get(host);
+  if (!state) {
+    const [disabled, setDisabled] = runWithOwner(null, () =>
+      createSignal(false, { ownedWrite: true }),
+    );
+    state = {
+      disabled,
+      setDisabled: (value) => setDisabled(value),
+      resets: new Set(),
+      restores: new Set(),
+    };
+    formHosts.set(host, state);
+  }
+  return state;
+}
+
+/**
+ * `Base` を継承した、フォームの部品として登録するクラスを返す。
+ * クラスのプロパティとメソッドのうち、フォームの部品のものは、`internalsOf` が返す `ElementInternals` の同名のものを返す。
+ */
+export function formElementClass(
+  Base: new () => HTMLElement,
+  internalsOf: (host: HTMLElement) => ElementInternals,
+): CustomElementConstructor {
+  return class extends Base implements Pick<ElementInternals, (typeof formMembers)[number]> {
+    static formAssociated = true;
+
+    get form() {
+      return internalsOf(this).form;
+    }
+
+    get labels() {
+      return internalsOf(this).labels;
+    }
+
+    get validity() {
+      return internalsOf(this).validity;
+    }
+
+    get validationMessage() {
+      return internalsOf(this).validationMessage;
+    }
+
+    get willValidate() {
+      return internalsOf(this).willValidate;
+    }
+
+    checkValidity() {
+      return internalsOf(this).checkValidity();
+    }
+
+    reportValidity() {
+      return internalsOf(this).reportValidity();
+    }
+
+    formResetCallback(): void {
+      for (const reset of formHostOf(this).resets) reset();
+    }
+
+    formStateRestoreCallback(state: FormState, mode: RestoreMode): void {
+      for (const restore of formHostOf(this).restores) restore(state, mode);
+    }
+
+    formDisabledCallback(disabled: boolean): void {
+      formHostOf(this).setDisabled(disabled);
+    }
+  };
+}
+
+/** フォームの部品でない `<tag>` の要素の関数に渡す ctx の `form` を返す。`form.value` と `form.validity` はエラーを送出し、`form.disabled()` は `false` を返す。 */
+export function unsupportedFormControls(tag: string): FormControls {
+  const unsupported = (name: string) => () => {
+    throw new Error(
+      `[rinka] <${tag}> はフォームの部品として登録されていないので、form.${name}() を呼び出せません。defineElement の設定に form: true を指定してください。`,
+    );
+  };
   return {
-    disabled,
-    setDisabled: (value) => setDisabled(value),
-    resets: new Set(),
-    restores: new Set(),
+    value: unsupported("value"),
+    validity: unsupported("validity"),
+    onReset: () => {},
+    onRestore: () => {},
+    disabled: () => false,
   };
 }
 
 /**
- * `<tag>` の要素の関数に渡す ctx の `form` を返す。`state` はフォームの部品のホストの状態である。
+ * フォームの部品のホスト `host` の要素の関数に渡す ctx の `form` を返す。
  * `form.value` は、値を設定した後に、サーバーが Light DOM に出力した hidden input を削除する。`form.onReset` と `form.onRestore` に渡した関数は、呼び出した root を破棄すると登録を解除する。
- * `state` が無ければ、`form.value` と `form.validity` はエラーを送出し、`form.disabled()` は `false` を返す。
  */
-export function formControls(
-  tag: string,
-  host: HTMLElement,
-  internals: ElementInternals,
-  state: FormHost | undefined,
-): FormControls {
-  if (!state) {
-    const unsupported = (name: string) => () => {
-      throw new Error(
-        `[rinka] <${tag}> はフォームの部品として登録されていないので、form.${name}() を呼び出せません。defineElement の設定に form: true を指定してください。`,
-      );
-    };
-    return {
-      value: unsupported("value"),
-      validity: unsupported("validity"),
-      onReset: () => {},
-      onRestore: () => {},
-      disabled: () => false,
-    };
-  }
+export function formControls(host: HTMLElement, internals: ElementInternals): FormControls {
+  const state = formHostOf(host);
   return {
     value: (fn) => {
       createEffect(fn, (value) => {
@@ -99,57 +156,4 @@ export function reflectAttribute(host: HTMLElement, name: string, value: unknown
   if (host.getAttribute(name) === next) return;
   if (next === null) host.removeAttribute(name);
   else host.setAttribute(name, next);
-}
-
-/** `prototype` に、`internalsOf` が返す `ElementInternals` の同名のものを返す、フォームの部品のプロパティとメソッドを追加する。 */
-export function defineFormMembers(
-  prototype: HTMLElement,
-  internalsOf: (host: HTMLElement) => ElementInternals,
-): void {
-  Object.defineProperties(prototype, {
-    form: {
-      configurable: true,
-      get(this: HTMLElement) {
-        return internalsOf(this).form;
-      },
-    },
-    labels: {
-      configurable: true,
-      get(this: HTMLElement) {
-        return internalsOf(this).labels;
-      },
-    },
-    validity: {
-      configurable: true,
-      get(this: HTMLElement) {
-        return internalsOf(this).validity;
-      },
-    },
-    validationMessage: {
-      configurable: true,
-      get(this: HTMLElement) {
-        return internalsOf(this).validationMessage;
-      },
-    },
-    willValidate: {
-      configurable: true,
-      get(this: HTMLElement) {
-        return internalsOf(this).willValidate;
-      },
-    },
-    checkValidity: {
-      configurable: true,
-      writable: true,
-      value(this: HTMLElement) {
-        return internalsOf(this).checkValidity();
-      },
-    },
-    reportValidity: {
-      configurable: true,
-      writable: true,
-      value(this: HTMLElement) {
-        return internalsOf(this).reportValidity();
-      },
-    },
-  } satisfies Record<(typeof formMembers)[number], PropertyDescriptor>);
 }
