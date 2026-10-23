@@ -9,8 +9,8 @@ export const routeMethods = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 /** `route.ts` が export できる HTTP メソッドを表す。 */
 export type RouteMethod = (typeof routeMethods)[number];
 
-/** モジュールを読み込み、その default export を返す関数を表す。 */
-export type Load<T> = () => Promise<{ readonly default: T }>;
+/** モジュールを読み込み、その default export を返す関数を表す。`file` は、Vite プラグインが作成したルートの表で、モジュールのファイルのプロジェクトのルートからのパスである。 */
+export type Load<T> = (() => Promise<{ readonly default: T }>) & { readonly file?: string };
 
 /** ページ、レイアウト、エラーのページのコンポーネントを表す。 */
 export type RouteComponent = (props: never) => unknown;
@@ -124,6 +124,8 @@ export function mapRouteFiles<C, M, H, C2, M2, H2>(
 export interface AppOptions {
   /** ページの `<head>` の末尾に出力するマークアップである。 */
   readonly head?: string;
+  /** ページのレイアウトとページのファイルを外側から順に受け取り、ページの `<head>` の末尾に `<link rel="stylesheet">` として出力する CSS の URL を、出力する順に返す。 */
+  readonly styles?: (files: readonly string[]) => Promise<readonly string[]>;
   /** ページとサーバー関数のエンドポイントが投げた、rinka が扱わないエラーを受け取り、アプリが返す Response を返す。 */
   readonly onError?: (error: unknown) => Response;
   /** GET 以外のサーバー関数のリクエストで、別のサイトからでも受け付ける `Origin` を列挙する。 */

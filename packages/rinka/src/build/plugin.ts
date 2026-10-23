@@ -21,6 +21,7 @@ import { transformSource } from "./compiler.ts";
 import { entries, oxc, runtimes } from "./entries.ts";
 import { transformJsx } from "./jsx.ts";
 import { inside } from "./paths.ts";
+import { routeStyles } from "./route-styles.ts";
 import { routeFileNames, routesModule } from "./routes.ts";
 import { SHEET_QUERY, sheetId, sheetModule, sheetPath } from "./sheets.ts";
 
@@ -266,6 +267,12 @@ function appMiddleware(
       let failure: { readonly error: unknown } | undefined;
       const app = createApp(routes, {
         head: VITE_CLIENT,
+        styles: async (files) => {
+          const nodes = await Promise.all(
+            files.map((file) => environment.moduleGraph.getModuleByUrl(`/${file}`)),
+          );
+          return routeStyles(nodes.filter((node) => node !== undefined));
+        },
         trustedOrigins,
         loadServerFn: (id) => loadServerFn(environment, id),
         onError: (error) => {

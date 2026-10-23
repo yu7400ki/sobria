@@ -12,6 +12,10 @@ export const base = defineConfig({
   },
   rules: {
     "import/no-cycle": "error",
+    "import/no-unassigned-import": [
+      "error",
+      { allow: ["**/*.{css,scss,sass,less,styl,stylus,pcss,postcss}"] },
+    ],
     "no-unused-expressions": ["error", { allowTaggedTemplates: true }],
     "typescript/consistent-return": "off",
     "typescript/no-unsafe-unary-minus": "off",

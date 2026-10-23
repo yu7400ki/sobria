@@ -233,12 +233,15 @@ const importMarker = "\0import:";
 /** `importMarker` を付けた文字列の JSON を、モジュールを読み込む関数のコードに置き換える正規表現である。 */
 const importPattern = /"\\u0000import:((?:[^"\\]|\\.)*)"/g;
 
-/** `value` を JavaScript の式にする。`importMarker` を付けた文字列は、モジュールを読み込む関数にする。 */
+/** `value` を JavaScript の式にする。`importMarker` を付けた文字列は、モジュールを読み込み、`file` にファイルのパスを持つ関数にする。 */
 const toCode = (value: unknown): string =>
-  JSON.stringify(value).replaceAll(importPattern, '() => import("$1")');
+  JSON.stringify(value).replaceAll(
+    importPattern,
+    'Object.assign(() => import("/$1"), { file: "$1" })',
+  );
 
 /** ファイル `file` を、モジュールを読み込む関数に置き換える目印の文字列にする。 */
-const toImport = (file: string): string => `${importMarker}/${file}`;
+const toImport = (file: string): string => `${importMarker}${file}`;
 
 /** `root` からの相対パス `dir` を走査し、ファイルごとにモジュールを読み込む関数を持つルートの表を export するモジュールのコードを返す。 */
 export function routesModule(root: string, dir: string): string {

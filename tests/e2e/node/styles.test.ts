@@ -40,3 +40,18 @@ describe("要素のシート", () => {
     expect(importers.every((node) => [...node.acceptedHmrDeps].includes(inline!))).toBe(true);
   });
 });
+
+describe("サーバーコンポーネントの CSS", () => {
+  it("レイアウトとページが import した CSS を、依存先を先に、同じ CSS を 1 回だけ、<head> の <link> に出力する", async () => {
+    const html = await (await fetch(`${origin}/`)).text();
+    const head = html.slice(0, html.indexOf("</head>"));
+    const links = [...head.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map(
+      (match) => match[1],
+    );
+    expect(links).toEqual([
+      "/src/styles/theme.css?direct",
+      "/src/styles/global.css?direct",
+      "/src/routes/page.css?direct",
+    ]);
+  });
+});

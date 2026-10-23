@@ -17,6 +17,7 @@ import {
 import { runInRequest, withContextHeaders } from "./context.ts";
 import { formRedirects, serverFnMiddleware, type Failure } from "./endpoint.ts";
 import { notFound } from "./errors.ts";
+import { attribute } from "./html.ts";
 import { jsx } from "./jsx-runtime.ts";
 import { renderDocument, renderRefresh } from "./render.ts";
 import { withDepth } from "./tree.ts";
@@ -98,7 +99,15 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   const app = new Hono();
   const handle = options.onError ?? defaultFailure;
   app.onError((c) => withContextHeaders(c, handle(c.error)));
-  const respond: Respond = async (c, node, { notFound: missingPage, error: errorPage }, props) => {
+  const respond: Respond = async (
+    c,
+    node,
+    { notFound: missingPage, error: errorPage },
+    props,
+    files = [],
+  ) => {
+    const styles = options.styles && files.length > 0 ? await options.styles(files) : [];
+    const head = `${options.head ?? ""}${styles.map((href) => `<link rel="stylesheet"${attribute("href", href)}>`).join("")}`;
     const pages = {
       headers: { vary: REFRESH_HEADER },
       ...(missingPage && { notFound: () => fallbackNode(missingPage, props) }),
@@ -114,7 +123,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
         ? await renderRefresh(node, pages)
         : await renderDocument(node, {
             ...pages,
-            ...(options.head !== undefined && { head: options.head }),
+            ...(head !== "" && { head }),
           });
     return withContextHeaders(c, response);
   };
@@ -156,6 +165,7 @@ type Respond = (
   node: unknown,
   fallbacks: Fallbacks,
   props: object,
+  files?: readonly string[],
 ) => Promise<Response>;
 
 /** `route` を、ディレクトリのミドルウェアの後に `app` に登録する。 */
@@ -165,7 +175,15 @@ function register(app: Hono, route: Route, respond: Respond): void {
     case "page":
       app.get(route.path, directory, async (c) => {
         const props = propsOf(c);
-        return respond(c, await wrap(route.module, route.layouts, props), route, props);
+        return respond(
+          c,
+          await wrap(route.module, route.layouts, props),
+          route,
+          props,
+          [...route.layouts, route.module].flatMap((load) =>
+            load.file === undefined ? [] : [load.file],
+          ),
+        );
       });
       return;
     case "route":
