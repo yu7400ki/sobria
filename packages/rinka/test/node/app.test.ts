@@ -17,10 +17,7 @@ import type {
   Routes,
 } from "../../src/shared/routes.ts";
 import { rpcPath } from "../../src/shared/wire.ts";
-
-/** `value` を default export するモジュールを読み込む関数を返す。 */
-const module = <T>(value: T) =>
-  Object.assign(async () => ({ default: value }), { file: "src/routes/test.tsx" });
+import { loadOf } from "./load.ts";
 
 /** `tag` の要素で子を包み、`id` 属性を付与するレイアウトを返す。 */
 const layout =
@@ -56,9 +53,9 @@ function pageRoute(
   return {
     kind: "page",
     path,
-    module: module(component),
-    layouts: layouts.map(module),
-    middlewares: middlewares.map(module),
+    module: loadOf(component),
+    layouts: layouts.map((value) => loadOf(value)),
+    middlewares: middlewares.map((value) => loadOf(value)),
     ...fallbacks,
   };
 }
@@ -68,8 +65,8 @@ const fallbackOf = (
   component: RouteComponent,
   layouts: readonly RouteComponent[] = [],
 ): Fallback => ({
-  module: module(component),
-  layouts: layouts.map(module),
+  module: loadOf(component),
+  layouts: layouts.map((value) => loadOf(value)),
 });
 
 /** ディレクトリのパス `path` にある `notFoundPage` の、`not-found.tsx` の行を返す。 */
@@ -82,7 +79,7 @@ function notFoundRoute(
   return {
     kind: "not-found",
     path: path === "/" ? "/*" : `${path}/*`,
-    middlewares: middlewares.map(module),
+    middlewares: middlewares.map((value) => loadOf(value)),
     notFound: notFoundPage,
     ...(error && { error }),
   };
@@ -98,7 +95,7 @@ function apiRoute(
     kind: "route",
     path,
     module: async () => handlers,
-    middlewares: middlewares.map(module),
+    middlewares: middlewares.map((value) => loadOf(value)),
   };
 }
 
@@ -178,7 +175,7 @@ describe("createApp のミドルウェア", () => {
   const id = "src/app-test.ts#ping";
   registerServerFn(id, ping);
   const routes: Routes = {
-    middleware: module(marking("x-root")),
+    middleware: loadOf(marking("x-root")),
     routes: [
       pageRoute("/users", page("users"), [], [marking("x-dir")]),
       pageRoute("/about", page("about")),
@@ -339,7 +336,7 @@ describe("x-rinka-refresh: 1 のフォームの送信のリダイレクト", () 
     }),
   );
   const routes: Routes = {
-    middleware: module(loginGate),
+    middleware: loadOf(loginGate),
     routes: [
       pageRoute("/", () => jsx("p", { children: "page" })),
       notFoundRoute("/", fallbackOf(fallback("missing"))),
@@ -421,7 +418,7 @@ describe("createApp のミドルウェアが返した Response", () => {
 
   it("ルートの middleware.ts が返した Response を、ページの代わりに返す", async () => {
     const response = await request(
-      { middleware: module(deny), routes: [pageRoute("/", page("top"))] },
+      { middleware: loadOf(deny), routes: [pageRoute("/", page("top"))] },
       "/",
     );
     expect([response.status, await response.text()]).toEqual([401, "denied"]);
@@ -692,7 +689,7 @@ describe("Context のヘッダーを加えるレスポンスの出口", () => {
     ),
   );
   const routes: Routes = {
-    middleware: module(rootMarking),
+    middleware: loadOf(rootMarking),
     routes: [
       pageRoute("/page", page("page")),
       pageRoute("/shell", throwing(raw(401, "shell=1"))),
@@ -753,7 +750,7 @@ const returningOwn: MiddlewareHandler = async (c) => {
 
 describe("ルートの middleware.ts が返した Response", () => {
   it("Response を返す前に設定したヘッダーと Set-Cookie を加える", async () => {
-    const response = await request({ middleware: module(returningOwn), routes: [] }, "/");
+    const response = await request({ middleware: loadOf(returningOwn), routes: [] }, "/");
     expect([
       response.status,
       response.headers.get("x-mw"),

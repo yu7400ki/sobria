@@ -7,6 +7,7 @@ import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToResponse, renderToString } from "../../src/server/render.ts";
 import type { Route, RouteComponent } from "../../src/shared/routes.ts";
 import { memo } from "../../src/shared/signals.ts";
+import { loadOf } from "./load.ts";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -338,10 +339,6 @@ describe("文書の <head>", () => {
   });
 });
 
-/** `component` を default export するモジュールを読み込む関数を返す。 */
-const moduleOf = (component: RouteComponent) =>
-  Object.assign(async () => ({ default: component }), { file: "src/routes/test.tsx" });
-
 /** `layouts` で包んだ `page` を `/` に置いたアプリで、`/` の文書の `<head>` の中身を返す。 */
 async function headOfPage(
   page: RouteComponent,
@@ -350,8 +347,8 @@ async function headOfPage(
   const route: Route = {
     kind: "page",
     path: "/",
-    module: moduleOf(page),
-    layouts: layouts.map(moduleOf),
+    module: loadOf<RouteComponent>(page),
+    layouts: layouts.map((component) => loadOf(component)),
     middlewares: [],
   };
   const html = await (await createApp({ routes: [route] }).request("/")).text();
@@ -451,8 +448,8 @@ async function documentOfPage(
   const route: Route = {
     kind: "page",
     path: "/",
-    module: moduleOf(page),
-    layouts: layouts.map(moduleOf),
+    module: loadOf<RouteComponent>(page),
+    layouts: layouts.map((component) => loadOf(component)),
     middlewares: [],
   };
   return (await createApp({ routes: [route] }).request("/")).text();

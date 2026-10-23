@@ -10,6 +10,7 @@ import { createApp } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
 import { fileOfServerFnId, serverFnId } from "../../src/shared/server-fn.ts";
+import { loadOf } from "./load.ts";
 
 /** `value` が数の文字列なら数を返し、そうでなければ issues を返す Standard Schema である。 */
 const numeric: StandardSchema<string, number> = {
@@ -28,7 +29,7 @@ function requestPage(page: () => unknown, init?: RequestInit): Promise<Response>
       {
         kind: "page",
         path: "/posts",
-        module: Object.assign(async () => ({ default: page }), { file: "src/routes/page.tsx" }),
+        module: loadOf(page, "src/routes/page.tsx"),
         layouts: [],
         middlewares: [],
       },
