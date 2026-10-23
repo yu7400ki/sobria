@@ -539,3 +539,52 @@ describe("Context のヘッダーを加えるレスポンスの出口", () => {
     );
   });
 });
+
+/** `/login` へリダイレクトするミドルウェアである。 */
+const toLogin: MiddlewareHandler = async (c) => c.redirect("/login");
+
+describe("表に無い URL の not-found.tsx", () => {
+  const routes: Routes = {
+    routes: [
+      pageRoute("/users/:id", page("user")),
+      notFoundRoute("/docs/:slug{.+}", fallbackOf(page("doc"))),
+      notFoundRoute("/users/new", fallbackOf(fallback("new"))),
+      notFoundRoute("/users/:id", fallbackOf(fallback("user"))),
+      notFoundRoute("/users", fallbackOf(fallback("users"))),
+      notFoundRoute("/shop", fallbackOf(fallback("shop a"))),
+      notFoundRoute("/shop", fallbackOf(fallback("shop b"))),
+      notFoundRoute("/admin", fallbackOf(fallback("admin")), [toLogin]),
+      notFoundRoute("/", fallbackOf(fallback("root"))),
+    ],
+  };
+  const render = async (path: string, init?: RequestInit) => {
+    const response = await request(routes, path, init);
+    const body = await bodyOf(response);
+    return [response.status, /<(?:h1|p)>(.*?)<\/(?:h1|p)>/.exec(body)?.[1] ?? body];
+  };
+
+  it("末尾が / の URL には、そのディレクトリの not-found.tsx を返す", async () => {
+    expect(await render("/users/")).toEqual([404, "users /users/"]);
+  });
+
+  it("ページがある URL への GET 以外のメソッドと、HEAD にも、最も深い not-found.tsx を 404 で返す", async () => {
+    expect(await render("/users/3", { method: "POST" })).toEqual([404, "user /users/3"]);
+    expect((await request(routes, "/nothing", { method: "HEAD" })).status).toBe(404);
+  });
+
+  it("同じ深さでは静的な区切りを、同じパスでは表で先の行を使用する", async () => {
+    expect(await Promise.all([render("/users/new/x"), render("/shop/x")])).toEqual([
+      [404, "new /users/new/x"],
+      [404, "shop a /shop/x"],
+    ]);
+  });
+
+  it("キャッチオールのディレクトリの not-found.tsx に、残りの区切りをパラメータにして渡す", async () => {
+    expect(await render("/docs/a/b/c", { method: "POST" })).toEqual([404, 'doc {"slug":"a/b/c"} ']);
+  });
+
+  it("not-found.tsx のディレクトリのミドルウェアが返した Response を、not-found.tsx の代わりに返す", async () => {
+    const response = await request(routes, "/admin/x");
+    expect([response.status, response.headers.get("location")]).toEqual([302, "/login"]);
+  });
+});
