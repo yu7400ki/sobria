@@ -274,8 +274,14 @@ function convertSlots(
   file: string,
 ): void {
   const [param] = fn.params;
-  if (param?.type !== "Identifier" || !fn.body) return;
   const names = new Set(["children", ...(elementOptions.slots ?? [])]);
+  if (param?.type !== "Identifier" || !fn.body) return;
+  const misplaced = (name: string) =>
+    new CompileError(
+      `${file}: スロット ${name} は、要素の関数が返す JSX の子に、{${param.name}.${name}} か {${param.name}.${name} ?? デフォルトの中身} の形で置いてください。それ以外の位置ではスロットの内容を参照できません。`,
+    );
+  /** 引数の別名である。 */
+  const aliases = new Set<string>();
   const placed = new Set<string>();
   /** `<slot>` に変換した `props` のスロットの参照である。 */
   const converted = new Set<Node>();
@@ -324,6 +330,10 @@ function convertSlots(
     }
   };
   visit(fn.body, false);
+  const isParam = (node: Node): boolean => {
+    const expression = unwrap(node);
+    return expression.type === "Identifier" && expression.name === param.name;
+  };
   const check = (node: Node): void => {
     if (isFunction(node)) {
       const rebinds = node.params.some(
@@ -331,15 +341,47 @@ function convertSlots(
       );
       if (rebinds) return;
     }
-    const slot = slotOf(node, param.name, names);
-    if (slot && !slot.fallback && !converted.has(slot.member)) {
-      throw new CompileError(
-        `${file}: スロット ${slot.name} は、要素の関数が返す JSX の子に、{${param.name}.${slot.name}} か {${param.name}.${slot.name} ?? デフォルトの中身} の形で置いてください。それ以外の位置ではスロットの内容を参照できません。`,
-      );
+    if (node.type === "VariableDeclarator" && node.init && isParam(node.init)) {
+      if (node.id.type === "Identifier") aliases.add(node.id.name);
+      const name = node.id.type === "ObjectPattern" ? patternSlot(node.id, names) : undefined;
+      if (name !== undefined) throw misplaced(name);
     }
+    if (node.type === "MemberExpression" && isParam(node.object) && node.computed) {
+      const key = unwrap(node.property);
+      if (key.type === "Literal" && typeof key.value === "string" && names.has(key.value)) {
+        throw misplaced(key.value);
+      }
+    }
+    if (
+      node.type === "MemberExpression" &&
+      !node.computed &&
+      node.object.type === "Identifier" &&
+      aliases.has(node.object.name) &&
+      node.property.type === "Identifier" &&
+      names.has(node.property.name)
+    ) {
+      throw misplaced(node.property.name);
+    }
+    const slot = slotOf(node, param.name, names);
+    if (slot && !slot.fallback && !converted.has(slot.member)) throw misplaced(slot.name);
     for (const child of children(node)) check(child);
   };
   check(fn.body);
+}
+
+/** 分割代入のパターンが取り出すスロットの名前を返す。スロットを取り出さなければ undefined を返す。 */
+function patternSlot(
+  pattern: ESTree.ObjectPattern,
+  names: ReadonlySet<string>,
+): string | undefined {
+  for (const property of pattern.properties) {
+    if (property.type !== "Property" || property.computed) continue;
+    const { key } = property;
+    const name =
+      key.type === "Identifier" ? key.name : key.type === "Literal" ? String(key.value) : undefined;
+    if (name !== undefined && names.has(name)) return name;
+  }
+  return undefined;
 }
 
 /** 式が `props` のスロットの参照なら、スロットの名前、`props` のメンバーの式、デフォルトの中身を返す。式を囲む括弧は外して判定する。 */
