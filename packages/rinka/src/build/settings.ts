@@ -81,6 +81,13 @@ export function settingsOf(
   };
 }
 
+/** 場面ごとのプラグインを作成する関数が受け取る値を表す。 */
+export interface SceneContext {
+  readonly options: RinkaOptions;
+  /** `rinka` のプラグインの `config` で求めた設定を返す。 */
+  readonly settings: () => Settings;
+}
+
 /** 環境がブラウザで実行する環境かどうかを返す。 */
 export const isClient = (environment: Environment): boolean =>
   environment.config.consumer === "client";

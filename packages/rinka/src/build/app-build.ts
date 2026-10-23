@@ -7,25 +7,28 @@ import { embedRouteStyles, moveServerAssets } from "./build-styles.ts";
 import { entries } from "./entries.ts";
 import { serverEntry } from "./entry.ts";
 import { readClientAssets, type ClientAssets } from "./manifest.ts";
-import {
-  SERVER_ENTRY_NAME,
-  isClient,
-  sceneOf,
-  type RinkaOptions,
-  type Settings,
-} from "./settings.ts";
+import { SERVER_ENTRY_NAME, isClient, sceneOf, type SceneContext } from "./settings.ts";
 
 /**
- * アプリの `vite build --app` で、要素のクライアントのビルドと、サーバーのエントリーのサーバーのビルドを、この順に出力するプラグインを返す。
- * `settings` は、`rinka` のプラグインの `config` で求めた設定を返す。
- * サーバーのビルドを開始するときに、クライアントのビルドの manifest から作成した関数を `onClientAssets` に渡す。
+ * アプリの `vite build --app` で、要素のクライアントのビルドと、サーバーのエントリーのサーバーのビルドを、この順に出力するプラグインと、
+ * サーバーのビルドで、クライアントのビルドの manifest から要素のファイルの URL を返す関数を返す。
+ * サーバーのビルドを開始する前に URL を求めると、その関数はエラーを投げる。
  */
-export function appBuild(
-  options: RinkaOptions,
-  settings: () => Settings,
-  onClientAssets: (assets: ClientAssets | undefined) => void,
-): Plugin {
-  return {
+export function appBuild({ options, settings }: SceneContext): {
+  readonly plugin: Plugin;
+  readonly elementAssets: ClientAssets;
+} {
+  /** クライアントのビルドの manifest から作成した関数である。 */
+  let clientAssets: ClientAssets | undefined;
+  const elementAssets: ClientAssets = (file) => {
+    if (clientAssets === undefined) {
+      throw new Error(
+        `[rinka] 要素のファイル ${file} の URL を、クライアントのビルドの manifest を読み込む前に求めました。`,
+      );
+    }
+    return clientAssets(file);
+  };
+  const plugin: Plugin = {
     name: "rinka:build",
     apply: (_config, { command }) => sceneOf(command, options) === "app",
     enforce: "pre",
@@ -66,9 +69,7 @@ export function appBuild(
       };
     },
     buildStart() {
-      onClientAssets(
-        isClient(this.environment) ? undefined : readClientAssets(settings().clientDir),
-      );
+      if (!isClient(this.environment)) clientAssets = readClientAssets(settings().clientDir);
     },
     generateBundle(_output, bundle) {
       if (!isClient(this.environment)) embedRouteStyles(bundle, settings().root);
@@ -80,4 +81,5 @@ export function appBuild(
       rmSync(join(clientDir, ".vite"), { recursive: true, force: true });
     },
   };
+  return { plugin, elementAssets };
 }

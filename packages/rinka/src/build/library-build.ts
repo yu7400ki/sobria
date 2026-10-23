@@ -1,13 +1,13 @@
 import type { Plugin } from "vite";
 
 import { inside } from "./paths.ts";
-import { DEFAULT_PREFIX, sceneOf, type RinkaOptions, type Settings } from "./settings.ts";
+import { DEFAULT_PREFIX, sceneOf, type SceneContext } from "./settings.ts";
 
 /**
  * `library: true` の `vite build --app` で、アプリの要素を、自分自身を登録する ES モジュールとして
- * 出力先のタグ名のファイルに出力するプラグインを返す。`settings` は、`rinka` のプラグインの `config` で求めた設定を返す。
+ * 出力先のタグ名のファイルに出力するプラグインを返す。
  */
-export function libraryBuild(options: RinkaOptions, settings: () => Settings): Plugin {
+export function libraryBuild({ options, settings }: SceneContext): Plugin {
   return {
     name: "rinka:library",
     apply: (_config, { command }) => sceneOf(command, options) === "library",

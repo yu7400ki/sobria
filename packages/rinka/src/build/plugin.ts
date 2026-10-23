@@ -1,18 +1,17 @@
 import { extname, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { Environment, Plugin, ResolvedConfig } from "vite";
+import type { Plugin, ResolvedConfig } from "vite";
 
 import { appBuild } from "./app-build.ts";
 import { langs, type Lang } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
-import { devAppModule, serve } from "./dev-server.ts";
+import { serve } from "./dev-server.ts";
 import { sourceTag } from "./elements.ts";
 import { clientImports, entries, oxc, runtimes, serverImports, virtualId } from "./entries.ts";
 import { buildAppModule } from "./entry.ts";
 import { transformJsx } from "./jsx.ts";
 import { libraryBuild } from "./library-build.ts";
-import type { ClientAssets } from "./manifest.ts";
 import { fromApp, packageOf } from "./package.ts";
 import { devPath, inside } from "./paths.ts";
 import { preparedFiles, writePrepared } from "./prepare.ts";
@@ -71,8 +70,6 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   for (const origin of trustedOrigins) checkOrigin(origin);
   /** サーバーの環境で最後に変換したときに、サーバー関数を定義していたファイルの、ルートからの相対パスごとの ID の集合である。 */
   const serverFnIds = new Map<string, ReadonlySet<string>>();
-  /** 開発サーバーの ssr の環境ごとの、`DevHooks` の ID である。 */
-  const devIds = new WeakMap<Environment, string>();
   /** `config` で求めたプラグインの設定である。 */
   let settings: Settings | undefined;
   /** プラグインの設定を返す。`config` のフックより前に呼び出すと、エラーを投げる。 */
@@ -84,8 +81,6 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
     }
     return settings;
   };
-  /** アプリのサーバーのビルドで、クライアントのビルドの manifest から要素のファイルの URL を返す関数である。 */
-  let clientAssets: ClientAssets | undefined;
   /** ルートからの相対パス `file` の、サーバー関数の ID のモジュールの部分を返す。ビルドではパスのハッシュに、開発ではパスにする。 */
   const fnModuleOf = (file: string): string =>
     current().scene === "serve" ? file : hashedFnModule(file);
@@ -97,6 +92,8 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
     );
   };
   const api: RinkaApi = { prepare: writeTypes };
+  const dev = serve({ options, settings: current, writeTypes, serverFnIds });
+  const build = appBuild({ options, settings: current });
 
   /**
    * モジュールの ID を、クエリの無いプロジェクトかライブラリのファイルなら、ルートからの相対パスと言語にする。
@@ -178,7 +175,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         if (id === APP) {
           const serverFns = new Map(serverFnModules(root).map((file) => [fnModuleOf(file), file]));
           return scene === "serve"
-            ? devAppModule({ serverFns, trustedOrigins }, devIds.get(this.environment) ?? "")
+            ? dev.appModule(this.environment, { serverFns, trustedOrigins })
             : buildAppModule({ serverFns, trustedOrigins });
         }
         const sheet = sheetPath(id);
@@ -190,7 +187,8 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         const target = projectFile(id);
         if (!target) return null;
         const client = isClient(this.environment);
-        const tag = sourceTag(current().sources, target.path);
+        const { root, scene, sources } = current();
+        const tag = sourceTag(sources, target.path);
         const result = transformSource(code, {
           id: target.path,
           file: target.file,
@@ -199,9 +197,9 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           ...(tag !== undefined && {
             element: {
               tag,
-              ...(!client && clientAssets
-                ? clientAssets(target.file)
-                : { module: devPath(target.path, current().root) }),
+              ...(scene === "app" && !client
+                ? build.elementAssets(target.file)
+                : { module: devPath(target.path, root) }),
             },
           }),
           fnModule: fnModuleOf(target.file),
@@ -232,11 +230,9 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         return { code: result.code, map: result.map };
       },
     },
-    serve({ settings: current, writeTypes, serverFnIds, devIds }),
-    appBuild(options, current, (assets) => {
-      clientAssets = assets;
-    }),
-    libraryBuild(options, current),
+    dev.plugin,
+    build.plugin,
+    libraryBuild({ options, settings: current }),
   ];
 }
 

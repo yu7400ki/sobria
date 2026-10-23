@@ -19,7 +19,7 @@ import { isPrepareInput } from "./prepare.ts";
 import { routeStyles } from "./route-styles.ts";
 import { ROUTES_DIR, routeFileNames } from "./routes.ts";
 import { isServerFnSource } from "./server-fns.ts";
-import { SERVER_ENTRY_NAME, isClient, type Settings } from "./settings.ts";
+import { SERVER_ENTRY_NAME, isClient, type SceneContext } from "./settings.ts";
 
 /** 開発サーバーが Vite のプロセスで実行し、`rinka/app` が使用する関数を表す。 */
 type DevHooks = Required<Pick<AppOptions, "styles" | "onError" | "loadServerFn">>;
@@ -40,10 +40,7 @@ const VITE_CLIENT = '<script type="module" src="/@vite/client"></script>';
  * 開発中の `rinka/app` のコードを返す。アプリは、Vite のクライアントを読み込み、
  * ID が `devId` の `DevHooks` があればそれを使用する。
  */
-export const devAppModule = (
-  { serverFns, trustedOrigins }: AppModuleOptions,
-  devId: string,
-): string =>
+const devAppModule = ({ serverFns, trustedOrigins }: AppModuleOptions, devId: string): string =>
   appCode(
     [
       `  head: ${JSON.stringify(VITE_CLIENT)},`,
@@ -58,20 +55,24 @@ export const devAppModule = (
     ],
   );
 
-/** 開発サーバーのプラグインが、`rinka` のプラグインと共有する値を表す。 */
-export interface ServeContext {
-  /** `rinka` のプラグインの `config` で求めた設定を返す。 */
-  readonly settings: () => Settings;
+/** 開発サーバーのプラグインを作成する関数が受け取る値を表す。 */
+export interface ServeContext extends SceneContext {
   /** `.rinka/` を生成する。 */
   readonly writeTypes: () => void;
   /** サーバーの環境で最後に変換したときに、サーバー関数を定義していたファイルの、ルートからの相対パスごとの ID の集合である。 */
   readonly serverFnIds: ReadonlyMap<string, ReadonlySet<string>>;
-  /** 開発サーバーの ssr の環境ごとの、`DevHooks` の ID である。 */
-  readonly devIds: WeakMap<Environment, string>;
 }
 
-/** 開発サーバーと `vite preview` で、サーバーのエントリーにリクエストを渡すプラグインを返す。 */
-export function serve({ settings, writeTypes, serverFnIds, devIds }: ServeContext): Plugin {
+/**
+ * 開発サーバーと `vite preview` で、サーバーのエントリーにリクエストを渡すプラグインと、
+ * 開発サーバーの環境 `environment` で読み込む `rinka/app` のコードを返す関数を返す。
+ */
+export function serve({ settings, writeTypes, serverFnIds }: ServeContext): {
+  readonly plugin: Plugin;
+  readonly appModule: (environment: Environment, options: AppModuleOptions) => string;
+} {
+  /** 開発サーバーの ssr の環境ごとの、`DevHooks` の ID である。 */
+  const devIds = new WeakMap<Environment, string>();
   /**
    * ID のサーバー関数を今のソースで定義していれば、`environment` のランナーでそのファイルを読み込んで真を返す。
    * ID のファイルの部分がプロジェクトのファイルなら、`environment` で変換して最新の定義を確認する。`#` を含まない ID には偽を返す。
@@ -88,7 +89,7 @@ export function serve({ settings, writeTypes, serverFnIds, devIds }: ServeContex
     return true;
   };
 
-  return {
+  const plugin: Plugin = {
     name: "rinka:serve",
     apply: "serve",
     perEnvironmentStartEndDuringDev: true,
@@ -175,6 +176,10 @@ export function serve({ settings, writeTypes, serverFnIds, devIds }: ServeContex
       const id = devIds.get(this.environment);
       if (id !== undefined) devHooks().delete(id);
     },
+  };
+  return {
+    plugin,
+    appModule: (environment, options) => devAppModule(options, devIds.get(environment) ?? ""),
   };
 }
 
