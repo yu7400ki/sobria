@@ -78,7 +78,7 @@ const SERVER_FN = "__rinka_serverFn";
 export function transformSource(code: string, options: SourceOptions): SourceResult {
   const program = parseModule(code, options);
   const output = new MagicString(code);
-  const definitions = findDefinitions(program, options.file, options.client);
+  const definitions = findDefinitions(program, options.file);
   const replaced = new Set<Node>(
     options.client ? definitions.map((definition) => definition.init) : [],
   );
@@ -92,7 +92,8 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
         `import { stopIfSeeding as ${STOP_IF_SEEDING} } from "${entries.internal}";\n`,
       );
     }
-    replaceDefinitions(program, output, code, definitions);
+    const kept = replaceDefinitions(program, output, code, definitions);
+    checkServerImports(program, options.file, kept);
   } else {
     registerServerFns(output, definitions);
   }
@@ -365,9 +366,8 @@ type Definition =
 /**
  * `rinka/server` から import した `defineServerFn` と `defineMiddleware` で初期化したトップレベルの const を、ソースの順に返す。
  * `defineServerFn` をそれ以外の位置で使用するか、サーバー関数のメソッドを静的に読み取れないか、`rinka/server` を名前を指定せずに import すると、ビルドのエラーにする。
- * クライアント向けでは、定義の式の外にある、それ以外の位置の `defineMiddleware` もビルドのエラーにする。
  */
-function findDefinitions(program: ESTree.Program, file: string, client: boolean): Definition[] {
+function findDefinitions(program: ESTree.Program, file: string): Definition[] {
   for (const statement of program.body) {
     if (statement.type !== "ImportDeclaration" || statement.source.value !== entries.server)
       continue;
@@ -417,12 +417,6 @@ function findDefinitions(program: ESTree.Program, file: string, client: boolean)
     (node) => {
       if (allowed.has(node)) return;
       if (defineNames.has(node.name)) throw misplaced("defineServerFn", "defineServerFn(…)");
-      const replaced = definitions.some(
-        ({ init }) => init.start <= node.start && node.end <= init.end,
-      );
-      if (client && !replaced && middlewareNames.has(node.name)) {
-        throw misplaced("defineMiddleware", "defineMiddleware(…)");
-      }
     },
   );
   return definitions;
@@ -499,8 +493,8 @@ function replaceDefinitions(
   output: MagicString,
   code: string,
   definitions: readonly Definition[],
-): void {
-  if (definitions.length === 0) return;
+): (specifier: ImportSpecifierNode) => boolean {
+  if (definitions.length === 0) return () => true;
   const helpers = helpersOf(program);
   const declarations = new Set(helpers.map((helper) => helper.id));
   const removed = new Set<Node>(definitions.map((definition) => definition.init));
@@ -568,6 +562,31 @@ function replaceDefinitions(
   if (serverFns) {
     output.prepend(`import { serverFn as ${SERVER_FN} } from "${entries.internal}";\n`);
   }
+  return (specifier) => after.has(specifier.local.name) || !before.has(specifier.local.name);
+}
+
+type ImportSpecifierNode = ESTree.ImportDeclaration["specifiers"][number];
+
+/** クライアント向けの出力に、`kept` が真を返す `rinka/server` の値の import が残るなら、ビルドのエラーを投げる。 */
+function checkServerImports(
+  program: ESTree.Program,
+  file: string,
+  kept: (specifier: ImportSpecifierNode) => boolean,
+): void {
+  const names: string[] = [];
+  for (const statement of program.body) {
+    if (statement.type !== "ImportDeclaration" || statement.source.value !== entries.server)
+      continue;
+    if (statement.importKind === "type") continue;
+    for (const specifier of statement.specifiers) {
+      if (specifier.type === "ImportSpecifier" && specifier.importKind === "type") continue;
+      if (kept(specifier)) names.push(specifier.local.name);
+    }
+  }
+  if (names.length === 0) return;
+  throw new CompileError(
+    `${file}: クライアント向けの出力に、${entries.server} から import した ${names.join("、")} が残ります。${entries.server} の値は、サーバー関数とミドルウェアの定義の式の中でだけ使用できます。`,
+  );
 }
 
 /** 文を、直後の改行とともに除去する。 */

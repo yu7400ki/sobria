@@ -675,11 +675,22 @@ export const shown = label("x");`,
     }
   });
 
-  it("クライアント向けでは、トップレベルの const の初期化の式以外の defineMiddleware をビルドのエラーにする", () => {
-    const body = `import { defineMiddleware } from "rinka/server";
+  it("クライアント向けの出力に rinka/server の値の import が残るときは、残る名前を示すビルドのエラーにする", () => {
+    const misplaced = `import { defineMiddleware } from "rinka/server";
 export const list = [defineMiddleware(async (_c, next) => next())];`;
-    expect(() => module(body, true)).toThrow(CompileError);
-    expect(() => module(body)).not.toThrow();
+    expect(() => module(misplaced, true)).toThrow(
+      "src/lib/a.ts: クライアント向けの出力に、rinka/server から import した defineMiddleware が残ります。",
+    );
+    expect(() => module(misplaced)).not.toThrow();
+    const outside = `import { defineServerFn, redirect } from "rinka/server";
+export const a = defineServerFn(() => { throw redirect("/a"); });
+export const go = () => redirect("/b");`;
+    expect(() => module(outside, true)).toThrow(
+      "src/lib/a.ts: クライアント向けの出力に、rinka/server から import した redirect が残ります。",
+    );
+    expect(() =>
+      module(`import { notFound } from "rinka/server";\nexport const f = () => notFound();`, true),
+    ).toThrow("import した notFound が残ります。");
   });
 
   it("サーバー関数の定義の式の中の defineMiddleware と、rinka/server の型だけの import は、ビルドのエラーにしない", () => {
