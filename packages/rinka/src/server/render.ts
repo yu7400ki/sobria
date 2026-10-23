@@ -439,7 +439,7 @@ interface WalkCtx {
 
 /**
  * タグを `<head>` に移動するかどうかを表す。
- * `auto` は `<title>`、`<meta>`、`<link>` を移動し、`all` はシェルの `<head>` の子として、すべてのタグを移動し、`none` は `<svg>` か `<noscript>` の配下として、どのタグも移動しない。
+ * `auto` は `<title>`、`<meta>`、`<link>` を移動し、`all` はシェルの `<head>` の子として、すべてのタグを移動し、`none` は `<svg>` か `<noscript>` の配下と、`<head>` に移動するタグの子孫として、どのタグも移動しない。
  * `fallback` は `<Loading>` のフォールバックの中として、どのタグも移動せずに、`<Loading>` の内側と同じく警告する。
  */
 type HeadPlacement = "auto" | "all" | "none" | "fallback";
@@ -817,7 +817,7 @@ class Renderer {
     );
     this.hoisted.set(id, { kind: "head", key: headTagKey, depth: ctx.depth });
     out.push(this.marker(id, ""));
-    this.nativeTag(tag, props, key, unslotted, out);
+    this.nativeTag(tag, props, key, { ...unslotted, head: "none" }, out);
     out.push(this.marker(id, "/"));
   }
 
@@ -827,7 +827,7 @@ class Renderer {
     if (ctx.head === "none") {
       if (import.meta.env?.DEV) {
         console.warn(
-          "[rinka] <Navigation> は <svg> か <noscript> の配下にあるので、反映しません。",
+          "[rinka] <Navigation> は <head> に移動しない位置（<svg> や <noscript> の配下、<head> に移動するタグの中）にあるので、反映しません。",
         );
       }
       return;
@@ -1354,7 +1354,6 @@ class Renderer {
       body: [],
       navigation: [],
     };
-    const inner = new RegExp(`<!--${this.nonce}:\\d+/?-->`, "g");
     const rest = shell.replace(
       new RegExp(`<!--${this.nonce}:(\\d+)-->([\\s\\S]*?)<!--${this.nonce}:\\1/-->`, "g"),
       (_match, id: string, html: string) => {
@@ -1371,7 +1370,7 @@ class Renderer {
           case "head":
             heads.push(
               (async () => ({
-                html: html.replace(inner, ""),
+                html,
                 key: await hoisted.key,
                 depth: hoisted.depth,
               }))(),

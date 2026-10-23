@@ -603,7 +603,17 @@ describe("<Navigation>", () => {
     ]);
     expect(head).toBe('<meta charset="utf-8">');
     expect(warn).toHaveBeenCalledTimes(2);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("<svg> か <noscript>"));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("<head> に移動しない位置"));
+  });
+
+  it("<head> に移動するタグの中に記述したものは反映せず、開発時に警告する", async () => {
+    vi.stubEnv("DEV", true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { head } = await documentOf(
+      jsx("head", { children: jsx("div", { children: jsx(Navigation, { transitions: true }) }) }),
+    );
+    expect(head).toBe('<meta charset="utf-8"><div></div>');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("<head> に移動しない位置"));
   });
 
   it("renderToString は、何も出力しない", async () => {
