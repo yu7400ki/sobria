@@ -498,6 +498,27 @@ export default function X(props: Props) { return <p>{props.children}{props.child
     ).toThrow(/2 回/);
   });
 
+  it("デフォルトの中身の位置のスロットの参照は、ビルドのエラーにする", () => {
+    expect(() =>
+      element(`type Props = { header?: JSX.Element; children?: JSX.Element };
+export default function X(props: Props) { return <p>{props.header ?? props.children}</p>; }`),
+    ).toThrow(/スロット children は/);
+  });
+
+  it("デフォルトの中身の JSX の子に置いたスロットも、<slot> にする", async () => {
+    const code = await compile(
+      `type Props = { header?: JSX.Element; children?: JSX.Element };
+export default function X(props: Props) { return <p>{props.header ?? <div>{props.children}</div>}</p>; }`,
+      {
+        id: "src/elements/x.tsx",
+        file: "src/elements/x.tsx",
+        element: { tag: "app-x", module: "/src/elements/x.tsx" },
+      },
+    );
+    expect(code).toContain('_jsx("slot", { name: "header", children: _jsx("div", {');
+    expect(code).toContain('_jsx("slot", {})');
+  });
+
   it("要素でないファイルの props.children は、そのまま関数で包む", async () => {
     expect(
       await compile(`function Layout(props) { return <main>{props.children}</main>; }`),

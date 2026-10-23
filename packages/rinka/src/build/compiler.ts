@@ -278,8 +278,9 @@ function insertStop(fn: FunctionNode, output: MagicString): void {
 }
 
 /**
- * 要素の関数の JSX の子に置いた `{props.children}`、`{props.X}`、`{props.X ?? 既定の中身}` を `<slot>` にする。
- * 要素の関数の中の関数にスロットを置くと、ビルドのエラーにする。props と同じ名前の引数を持つ関数の中は変換しない。
+ * 要素の関数の JSX の子に置いた `{props.children}`、`{props.X}`、`{props.X ?? デフォルトの中身}` を `<slot>` にする。
+ * 要素の関数の中の関数にスロットを置くか、同じスロットを 2 回置くか、それ以外の位置で `props` のメンバーか分割代入でスロットを参照すると、ビルドのエラーにする。
+ * props と同じ名前の引数を持つ関数の中は変換しない。
  */
 function convertSlots(
   fn: ESTree.Function,
@@ -294,9 +295,53 @@ function convertSlots(
     new CompileError(
       `${file}: スロット ${name} は、要素の関数が返す JSX の子に、{${param.name}.${name}} か {${param.name}.${name} ?? デフォルトの中身} の形で置いてください。それ以外の位置ではスロットの内容を参照できません。`,
     );
+  const isParam = (node: Node): boolean => {
+    const expression = unwrap(node);
+    return expression.type === "Identifier" && expression.name === param.name;
+  };
+  /** `props` のメンバーの参照か、`props` を初期値にした分割代入が取り出すスロットの名前を返す。 */
+  const referencedSlot = (node: Node): string | undefined => {
+    if (node.type === "VariableDeclarator" && node.init && isParam(node.init)) {
+      return node.id.type === "ObjectPattern" ? patternSlot(node.id, names) : undefined;
+    }
+    if (node.type !== "MemberExpression" || !isParam(node.object)) return undefined;
+    const key = node.computed ? unwrap(node.property) : node.property;
+    const name =
+      key.type === "Identifier" && !node.computed
+        ? key.name
+        : key.type === "Literal" && typeof key.value === "string"
+          ? key.value
+          : undefined;
+    return name !== undefined && names.has(name) ? name : undefined;
+  };
   const placed = new Set<string>();
-  /** `<slot>` に変換した `props` のスロットの参照である。 */
-  const converted = new Set<Node>();
+  /** JSX の子の式の位置のスロット `slot` を、`<slot>` に変換する。 */
+  const place = (
+    container: ESTree.JSXExpressionContainer,
+    slot: NonNullable<ReturnType<typeof slotOf>>,
+    nested: boolean,
+  ): void => {
+    if (nested) {
+      throw new CompileError(
+        `${file}: スロット ${slot.name} は、要素の関数の中の関数に置けません。要素の関数が返す JSX に直接置いてください。`,
+      );
+    }
+    if (placed.has(slot.name)) {
+      throw new CompileError(
+        `${file}: スロット ${slot.name} を 2 回置いています。スロットは 1 回だけ置いてください。`,
+      );
+    }
+    placed.add(slot.name);
+    const name = slot.name === "children" ? "" : ` name=${JSON.stringify(slot.name)}`;
+    const { fallback } = slot;
+    if (!fallback) {
+      output.overwrite(container.start, container.end, `<slot${name} />`);
+      return;
+    }
+    const jsx = fallback.type === "JSXElement" || fallback.type === "JSXFragment";
+    output.overwrite(container.start, fallback.start, `<slot${name}>${jsx ? "" : "{"}`);
+    output.overwrite(fallback.end, container.end, `${jsx ? "" : "}"}</slot>`);
+  };
   const visit = (node: Node, nested: boolean): void => {
     if (isFunction(node)) {
       const rebinds = node.params.some(
@@ -305,69 +350,29 @@ function convertSlots(
       if (!rebinds) for (const child of children(node)) visit(child, true);
       return;
     }
-    if (node.type === "JSXElement" || node.type === "JSXFragment") placeSlots(node, nested);
-    for (const child of children(node)) visit(child, nested);
-  };
-  const placeSlots = (node: ESTree.JSXElement | ESTree.JSXFragment, nested: boolean): void => {
-    for (const child of node.children) {
+    const referenced = referencedSlot(node);
+    if (referenced !== undefined) throw misplaced(referenced);
+    const containers =
+      node.type === "JSXElement" || node.type === "JSXFragment"
+        ? new Set<Node>(node.children)
+        : undefined;
+    for (const child of children(node)) {
       if (
-        child.type !== "JSXExpressionContainer" ||
-        child.expression.type === "JSXEmptyExpression"
+        containers?.has(child) &&
+        child.type === "JSXExpressionContainer" &&
+        child.expression.type !== "JSXEmptyExpression"
       ) {
-        continue;
+        const slot = slotOf(child.expression, param.name, names);
+        if (slot) {
+          place(child, slot, nested);
+          if (slot.fallback) visit(slot.fallback, nested);
+          continue;
+        }
       }
-      const slot = slotOf(child.expression, param.name, names);
-      if (!slot) continue;
-      if (nested) {
-        throw new CompileError(
-          `${file}: スロット ${slot.name} は、要素の関数の中の関数に置けません。要素の関数が返す JSX に直接置いてください。`,
-        );
-      }
-      if (placed.has(slot.name)) {
-        throw new CompileError(
-          `${file}: スロット ${slot.name} を 2 回置いています。スロットは 1 回だけ置いてください。`,
-        );
-      }
-      placed.add(slot.name);
-      converted.add(slot.member);
-      const name = slot.name === "children" ? "" : ` name=${JSON.stringify(slot.name)}`;
-      const { fallback } = slot;
-      if (!fallback) {
-        output.overwrite(child.start, child.end, `<slot${name} />`);
-        continue;
-      }
-      const jsx = fallback.type === "JSXElement" || fallback.type === "JSXFragment";
-      output.overwrite(child.start, fallback.start, `<slot${name}>${jsx ? "" : "{"}`);
-      output.overwrite(fallback.end, child.end, `${jsx ? "" : "}"}</slot>`);
+      visit(child, nested);
     }
   };
   visit(fn.body, false);
-  const isParam = (node: Node): boolean => {
-    const expression = unwrap(node);
-    return expression.type === "Identifier" && expression.name === param.name;
-  };
-  const check = (node: Node): void => {
-    if (isFunction(node)) {
-      const rebinds = node.params.some(
-        (other) => other.type === "Identifier" && other.name === param.name,
-      );
-      if (rebinds) return;
-    }
-    if (node.type === "VariableDeclarator" && node.init && isParam(node.init)) {
-      const name = node.id.type === "ObjectPattern" ? patternSlot(node.id, names) : undefined;
-      if (name !== undefined) throw misplaced(name);
-    }
-    if (node.type === "MemberExpression" && isParam(node.object) && node.computed) {
-      const key = unwrap(node.property);
-      if (key.type === "Literal" && typeof key.value === "string" && names.has(key.value)) {
-        throw misplaced(key.value);
-      }
-    }
-    const slot = slotOf(node, param.name, names);
-    if (slot && !slot.fallback && !converted.has(slot.member)) throw misplaced(slot.name);
-    for (const child of children(node)) check(child);
-  };
-  check(fn.body);
 }
 
 /** 分割代入のパターンが取り出すスロットの名前を返す。スロットを取り出さなければ undefined を返す。 */
@@ -385,12 +390,12 @@ function patternSlot(
   return undefined;
 }
 
-/** 式が `props` のスロットの参照なら、スロットの名前、`props` のメンバーの式、デフォルトの中身を返す。式を囲む括弧は外して判定する。 */
+/** 式が `props` のスロットの参照なら、スロットの名前とデフォルトの中身を返す。式を囲む括弧は外して判定する。 */
 function slotOf(
   node: Node,
   props: string,
   names: ReadonlySet<string>,
-): { name: string; member: Node; fallback?: ESTree.Expression } | undefined {
+): { name: string; fallback?: ESTree.Expression } | undefined {
   const expression = unwrap(node);
   if (expression.type === "LogicalExpression" && expression.operator === "??") {
     const slot = slotOf(expression.left, props, names);
@@ -401,7 +406,7 @@ function slotOf(
   if (object.type !== "Identifier" || object.name !== props || property.type !== "Identifier") {
     return undefined;
   }
-  return names.has(property.name) ? { name: property.name, member: expression } : undefined;
+  return names.has(property.name) ? { name: property.name } : undefined;
 }
 
 /** トップレベルの const の、サーバー関数の定義かミドルウェアの定義を表す。 */
