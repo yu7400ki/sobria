@@ -212,6 +212,82 @@ describe("createApp のミドルウェア", () => {
   });
 });
 
+/** 503 の handled を返す onError である。 */
+const handled = () => new Response("handled", { status: 503 });
+
+describe("フォームの送信先のサーバー関数が投げたエラー", () => {
+  const explode = defineServerFn(() => {
+    throw new Error("kaboom");
+  });
+  const id = "src/app-test.ts#explode";
+  registerServerFn(id, explode);
+  const routes: Routes = {
+    routes: [
+      pageRoute("/users/:id/edit", page("edit"), [], [], {
+        error: fallbackOf(fallback("user"), [layout("main", "users")]),
+      }),
+      notFoundRoute("/", fallbackOf(fallback("missing")), [], fallbackOf(fallback("root"))),
+    ],
+  };
+  /** Referer を `referer` にして、フォームの送信を `id` のサーバー関数に送る。 */
+  const submit = async (referer: string | undefined, headers: Record<string, string> = {}) => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    onTestFinished(() => {
+      error.mockRestore();
+    });
+    const response = await createApp(routes, { onError: handled }).fetch(
+      new Request(`http://localhost${rpcPath(id)}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          ...(referer !== undefined && { referer }),
+          ...headers,
+        },
+        body: "a=1",
+      }),
+    );
+    return { response, logged: error.mock.calls.map(([value]) => value) };
+  };
+
+  it("Referer のページの error.tsx を、そのレイアウトで包み、投げられた値とともに 500 で返し、エラーを記録する", async () => {
+    const { response, logged } = await submit("http://localhost/users/3/edit");
+    expect(response.status).toBe(500);
+    expect(await bodyOf(response)).toContain(
+      '<main id="users"><h1>user /users/3/edit kaboom</h1></main>',
+    );
+    expect(logged).toEqual([expect.objectContaining({ message: "kaboom" })]);
+  });
+
+  it("Referer が表に無い URL なら、その URL に一致する not-found.tsx の行の error.tsx を返す", async () => {
+    const { response } = await submit("http://localhost/other");
+    expect(response.status).toBe(500);
+    expect(await bodyOf(response)).toContain("<h1>root /other kaboom</h1>");
+  });
+
+  it("x-rinka-refresh: 1 の送信には、error.tsx を描き直しの JSON で 500 にして返す", async () => {
+    const { response } = await submit("http://localhost/users/3/edit", { "x-rinka-refresh": "1" });
+    expect(response.status).toBe(500);
+    expect(((await response.json()) as { body: string }).body).toBe(
+      '<main id="users"><h1>user /users/3/edit kaboom</h1></main>',
+    );
+  });
+
+  it("Referer が無いときと、別のオリジンのときは、onError のレスポンスを返す", async () => {
+    const results = await Promise.all([
+      submit(undefined),
+      submit("http://example.com/users/3/edit"),
+    ]);
+    expect(
+      await Promise.all(
+        results.map(async ({ response }) => [response.status, await response.text()]),
+      ),
+    ).toEqual([
+      [503, "handled"],
+      [503, "handled"],
+    ]);
+  });
+});
+
 describe("createApp のミドルウェアが返した Response", () => {
   it("ディレクトリの middleware.ts が返した Response を、ページの代わりに返す", async () => {
     const response = await request(

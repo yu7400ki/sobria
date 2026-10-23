@@ -15,7 +15,7 @@ import {
   type Routes,
 } from "../shared/routes.ts";
 import { runInRequest, withContextHeaders } from "./context.ts";
-import { serverFnMiddleware } from "./endpoint.ts";
+import { serverFnMiddleware, type FormFailure } from "./endpoint.ts";
 import { notFound } from "./errors.ts";
 import { jsx } from "./jsx-runtime.ts";
 import { renderDocument, renderRefresh } from "./render.ts";
@@ -60,6 +60,34 @@ async function wrap(
 const fallbackNode = (page: Fallback, props: object): unknown =>
   jsx(() => wrap(page.module, page.layouts, props), {});
 
+/** `error` を投げるコンポーネントを返す。 */
+const throwing = (error: unknown) => (): never => {
+  throw error;
+};
+
+/** URL に一致したページか `not-found.tsx` の行と、そのパラメータを表す。 */
+interface Found {
+  readonly route: Extract<Route, { kind: "page" | "not-found" }>;
+  readonly params: Record<string, string>;
+}
+
+/** ページと `not-found.tsx` の行を、`app` と同じ順序で登録し、URL に一致する最初の行を返す関数を作成する。 */
+function finder(routes: readonly Route[]): (url: URL) => Promise<Found | undefined> {
+  const rows = new Hono<{ Bindings: { found?: Found } }>();
+  for (const route of routes) {
+    if (route.kind === "route") continue;
+    rows.get(route.path, (c) => {
+      c.env.found = { route, params: c.req.param() };
+      return c.body(null);
+    });
+  }
+  return async (url) => {
+    const box: { found?: Found } = {};
+    await rows.fetch(new Request(url), box);
+    return box.found;
+  };
+}
+
 /** `notFound()` を投げるページである。 */
 const missing = (): never => {
   throw notFound();
@@ -70,7 +98,24 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   const app = new Hono();
   const handle = options.onError ?? defaultFailure;
   app.onError((c) => withContextHeaders(c, handle(c.error)));
-  const serverFns = serverFnMiddleware(options, handle);
+  const find = finder(routes);
+  const formFailure: FormFailure = async (c, error) => {
+    const referer = c.req.header("referer");
+    const url = referer !== undefined && URL.canParse(referer) ? new URL(referer) : undefined;
+    if (url === undefined || url.origin !== new URL(c.req.url).origin) return handle(error);
+    const found = await find(url);
+    if (found?.route.error === undefined) return handle(error);
+    return respond(
+      c,
+      jsx(throwing(error), {}),
+      { error: found.route.error },
+      {
+        params: found.params,
+        url,
+      },
+    );
+  };
+  const serverFns = serverFnMiddleware(options, handle, formFailure);
   const rinka = middleware === undefined ? serverFns : every(lazy(middleware), serverFns);
   app.use((c, next) => runInRequest(c, () => rinka(c, next)));
   const respond: Respond = async (c, node, { notFound: missingPage, error: errorPage }, props) => {

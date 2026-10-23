@@ -27,21 +27,27 @@ export function registerServerFn<F extends { readonly [serverFnRef]: ServerFnRef
  * サーバー関数のエンドポイントへのリクエストを処理し、それ以外のリクエストを後続の処理に渡す Hono のミドルウェアを返す。
  * rinka が扱わない例外は、`fail` が返すレスポンスにする。
  */
-export function serverFnMiddleware(options: AppOptions, fail: Failure): MiddlewareHandler {
+export function serverFnMiddleware(
+  options: AppOptions,
+  fail: Failure,
+  formFailure: FormFailure,
+): MiddlewareHandler {
   return async (c, next) => {
     const { pathname } = new URL(c.req.url);
     if (!pathname.startsWith(rpcPrefix)) {
       await next();
       return undefined;
     }
-    const responder = responders[isFormSubmission(c) ? "form" : "rpc"];
+    const form = isFormSubmission(c);
+    const responder = responders[form ? "form" : "rpc"];
+    const failure: Failure = form ? (error) => formFailure(c, error) : fail;
     let id: string;
     try {
       id = decodeURIComponent(pathname.slice(rpcPrefix.length));
     } catch {
       return responder.reject(c, 404);
     }
-    return endpoint(c, id, responder, options, fail);
+    return endpoint(c, id, responder, options, failure);
   };
 }
 
@@ -104,6 +110,9 @@ function outcomeOf(error: unknown): Outcome {
 
 /** rinka が扱わない例外から、レスポンスを作成する。 */
 export type Failure = (error: unknown) => Response | Promise<Response>;
+
+/** フォームの送信先のサーバー関数が投げた、rinka が扱わない例外から、リクエスト `c` のレスポンスを作成する。 */
+export type FormFailure = (c: Context, error: unknown) => Response | Promise<Response>;
 
 /** rinka が handler を呼ばずに拒否するときのステータスである。 */
 type Rejection = 400 | 403 | 404 | 405;
