@@ -68,7 +68,7 @@ export function getContext(): Context | undefined {
 /**
  * `response` に、Context で設定したヘッダーを加えて返す。
  * `Set-Cookie` は、Context で設定したものを順に並べ、`response` のうち Context で設定していないものを後に加える。
- * `Vary` は、Context で設定した値の後に、`response` の値を連結する。
+ * `Vary` は、Context で設定した値の後に、`response` の値のうち Context で設定していないものを連結する。
  */
 export function withContextHeaders(c: Pick<Context, "newResponse">, response: Response): Response {
   const context = c.newResponse(null).headers;
@@ -81,10 +81,15 @@ export function withContextHeaders(c: Pick<Context, "newResponse">, response: Re
   });
   const headers = new Headers(response.headers);
   headers.delete("set-cookie");
-  const vary = [context.get("vary"), response.headers.get("vary")].filter(
-    (value) => value !== null,
-  );
-  if (vary.length > 0) headers.set("vary", vary.join(", "));
+  const vary = new Map<string, string>();
+  for (const value of [context.get("vary"), response.headers.get("vary")]) {
+    for (const name of value?.split(",") ?? []) {
+      const trimmed = name.trim();
+      if (trimmed !== "" && !vary.has(trimmed.toLowerCase()))
+        vary.set(trimmed.toLowerCase(), trimmed);
+    }
+  }
+  if (vary.size > 0) headers.set("vary", [...vary.values()].join(", "));
   const init = new Response(null, {
     status: response.status,
     statusText: response.statusText,
