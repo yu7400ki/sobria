@@ -112,10 +112,13 @@ function applyAttributes(
   element: Element,
   attributes: Readonly<Record<string, string | null>>,
 ): void {
-  const names = Object.keys(attributes).filter((name) => attributes[name] !== null);
+  const set = Object.entries(attributes).filter(
+    (entry): entry is [string, string] => entry[1] !== null,
+  );
+  const names = set.map(([name]) => name);
   for (const name of applied.get(element) ?? []) {
     if (!names.includes(name)) element.removeAttribute(name);
   }
-  for (const name of names) element.setAttribute(name, attributes[name] ?? "");
+  for (const [name, value] of set) element.setAttribute(name, value);
   applied.set(element, names);
 }
