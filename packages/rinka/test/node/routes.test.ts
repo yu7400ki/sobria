@@ -36,6 +36,12 @@ const scan = (files: readonly string[]) => scanRoutes(project(files), "src/route
 const moduleOf = (route: Route<PathFiles>): string =>
   route.kind === "not-found" ? route.notFound.module : route.module;
 
+/** `(a)/users/[inner]` と `users/[outer]` の not-found.tsx を走査し、並んだファイルを返す。 */
+const nestedNotFounds = (inner: string, outer: string) =>
+  scan([`(a)/users/[${inner}]/not-found.tsx`, `users/[${outer}]/not-found.tsx`]).routes.map(
+    moduleOf,
+  );
+
 describe("scanRoutes", () => {
   it("特別な名前のファイルを、レイアウトとミドルウェアとともに、静的な区切り、動的な区切り、キャッチオールの順に列挙する", () => {
     const table = scan([
@@ -169,7 +175,6 @@ describe("scanRoutes が拒否する構成", () => {
     expect(() => scan(["(a)/x/not-found.tsx", "(b)/x/not-found.tsx"])).toThrow(
       "src/routes/(b)/x/not-found.tsx",
     );
-    expect(scan(["x/not-found.tsx", "(a)/x/not-found.tsx"]).routes).toHaveLength(2);
   });
 
   it("キャッチオールの配下のディレクトリにあるルートのファイルは、エラーにする", () => {
@@ -221,6 +226,17 @@ describe("scanRoutes のエラーのページ", () => {
         error: root,
       },
       { module: "src/routes/not-found.tsx", notFound: undefined, error: root },
+    ]);
+  });
+
+  it("同じ URL を扱い、ディレクトリの深さが違う not-found.tsx は、パラメータの名前にかかわらず、浅いほうを先に並べる", () => {
+    expect(nestedNotFounds("id", "slug")).toEqual([
+      "src/routes/users/[slug]/not-found.tsx",
+      "src/routes/(a)/users/[id]/not-found.tsx",
+    ]);
+    expect(nestedNotFounds("slug", "id")).toEqual([
+      "src/routes/users/[id]/not-found.tsx",
+      "src/routes/(a)/users/[slug]/not-found.tsx",
     ]);
   });
 

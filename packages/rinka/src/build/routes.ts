@@ -75,7 +75,7 @@ const shapeOf = (segments: readonly UrlSegment[]): string =>
     .join("/");
 
 /** `left` と `right` の同じ位置の要素を、短いほうの長さまで組にする。 */
-function zip<T>(left: readonly T[], right: readonly T[]): (readonly [T, T])[] {
+function zip<T extends object>(left: readonly T[], right: readonly T[]): (readonly [T, T])[] {
   return left.flatMap((item, index) => {
     const other = right[index];
     return other === undefined ? [] : [[item, other] as const];
@@ -92,7 +92,7 @@ interface Scanned {
 /**
  * `not-found.tsx` の行を、ページと `route.ts` の行の後に、区切りの数が多い順に並べる。
  * ページと `route.ts` の行どうしと、区切りの数が同じ `not-found.tsx` の行どうしは、区切りの優先順位を前から比較し、一方が他方の前方と一致するなら短いほうを先にする。
- * 優先順位が同じなら、区切りの名前を前から比較し、名前も同じならファイルのディレクトリが浅いほうを先にする。
+ * 優先順位が同じなら、静的な区切りの名前を前から比較し、名前も同じならファイルのディレクトリが浅いほうを先にする。
  */
 function compareRoutes(a: Scanned, b: Scanned): number {
   const isNotFound = a.route.kind === "not-found";
@@ -107,7 +107,7 @@ function compareRoutes(a: Scanned, b: Scanned): number {
   }
   if (a.segments.length !== b.segments.length) return a.segments.length - b.segments.length;
   for (const [left, right] of pairs) {
-    if (left.name !== right.name) return left.name < right.name ? -1 : 1;
+    if (left.kind === "static" && left.name !== right.name) return left.name < right.name ? -1 : 1;
   }
   return a.depth - b.depth;
 }
@@ -142,7 +142,7 @@ function rowOf({
  * プロジェクトのルート `root` からの相対パス `dir` のディレクトリを走査し、ルートの表を返す。
  * ルートは、同じ位置では静的な区切り、動的な区切り、キャッチオールの順に並ぶ。
  * 2 つの `page.tsx` か `route.ts` が同じ URL に対応するときは、エラーを投げる。同じディレクトリに `page.tsx` と `route.ts` を置いたときも、このエラーになる。
- * 同じ URL に対応し、グループを含めたディレクトリの深さが同じ 2 つの `not-found.tsx` も、エラーにする。
+ * 同じ URL に対応し、グループを含めたディレクトリの深さが同じ 2 つの `not-found.tsx` があるときも、エラーを投げる。
  * キャッチオールのディレクトリの配下のディレクトリにルートのファイルがあるときも、エラーを投げる。
  */
 export function scanRoutes(root: string, dir: string): Routes<PathFiles> {
@@ -206,11 +206,13 @@ export function scanRoutes(root: string, dir: string): Routes<PathFiles> {
   };
   if (existsSync(start)) visit(start, [], 0, [], [], {});
 
-  const handled = new Map<string, string>();
+  const pages = new Map<string, string>();
+  const notFounds = new Map<string, string>();
   for (const { route, segments, depth } of scanned) {
-    const isNotFound = route.kind === "not-found";
-    const key = isNotFound ? `not-found ${depth} ${shapeOf(segments)}` : shapeOf(segments);
-    const file = isNotFound ? route.notFound.module : route.module;
+    const [handled, key, file] =
+      route.kind === "not-found"
+        ? [notFounds, `${depth} ${shapeOf(segments)}`, route.notFound.module]
+        : [pages, shapeOf(segments), route.module];
     const other = handled.get(key);
     if (other !== undefined) {
       throw new Error(
