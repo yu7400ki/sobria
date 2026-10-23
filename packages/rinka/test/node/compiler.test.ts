@@ -10,9 +10,12 @@ import { CompileError, transformSource, type SourceOptions } from "../../src/bui
 import { oxc } from "../../src/build/entries.ts";
 import { transformJsx } from "../../src/build/jsx.ts";
 import { stopIfSeeding } from "../../src/client/internal.ts";
+import { registerServerFn } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToString } from "../../src/server/render.ts";
+import { defineServerFn } from "../../src/server/server-fn.ts";
 import { runSeeding } from "../../src/shared/scope.ts";
+import { serverFnRefOf } from "../../src/shared/server-fn.ts";
 
 /** `.ts` のモジュール `src/lib/a.ts` として `code` を変換し、空白をまとめたコードを返す。 */
 function module(code: string, client = false): string {
@@ -593,6 +596,18 @@ export const config = { db: 1, limit };
       'export const ping = __rinka_registerServerFn("src/lib/a.ts#ping", define(auth, () => "pong"));',
     );
     expect(code).toContain("const auth = defineMiddleware(");
+  });
+
+  it("メソッドを省略した定義の出力のメソッドは、defineServerFn の実行時のデフォルトのメソッドと一致する", () => {
+    const fn = registerServerFn(
+      "src/lib/default.ts#fn",
+      defineServerFn(() => null),
+    );
+    const code = module(
+      'import { defineServerFn } from "rinka/server";\nexport const fn = defineServerFn(() => null);\n',
+      true,
+    );
+    expect(code).toContain(`__rinka_serverFn("src/lib/a.ts#fn", "${serverFnRefOf(fn)?.method}")`);
   });
 
   it("クライアント向けでは、定義の式を RPC の関数を作る呼び出しに、ミドルウェアの定義を undefined に置換し、使用されなくなった import を除去する", () => {

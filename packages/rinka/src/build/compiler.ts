@@ -4,6 +4,12 @@ import type { ESTree } from "vite";
 import type { DefaultLoad, Delivery, ElementInfo, ElementOptions } from "../shared/element.ts";
 import { defaultLoads } from "../shared/names.ts";
 import {
+  defaultServerFnMethod,
+  isServerFnMethod,
+  serverFnMethods,
+  type ServerFnMethod,
+} from "../shared/server-fn.ts";
+import {
   children,
   isFunction,
   lineColumn,
@@ -348,7 +354,7 @@ type Definition =
       readonly kind: "serverFn";
       readonly name: string;
       readonly init: ESTree.Expression;
-      readonly method: "GET" | "POST";
+      readonly method: ServerFnMethod;
     }
   | { readonly kind: "middleware"; readonly name: string; readonly init: ESTree.Expression };
 
@@ -417,19 +423,19 @@ function findDefinitions(program: ESTree.Program, file: string, client: boolean)
   return definitions;
 }
 
-/** `defineServerFn` の 1 段目のオプションから、サーバー関数のメソッドを読み取る。1 段目が無いか、`method` が無ければ `POST` を返す。 */
+/** `defineServerFn` の 1 段目のオプションから、サーバー関数のメソッドを読み取る。1 段目が無いか、`method` が無ければ `defaultServerFnMethod` を返す。 */
 function methodOf(
   options: ESTree.Argument | undefined,
   file: string,
   name: string,
-): "GET" | "POST" {
+): ServerFnMethod {
   const error = () =>
     new CompileError(
-      `${file}: サーバー関数 ${name} の method は、defineServerFn の 1 段目のオブジェクトに "GET" か "POST" の文字列で記述してください。`,
+      `${file}: サーバー関数 ${name} の method は、defineServerFn の 1 段目のオブジェクトに ${serverFnMethods.map((method) => JSON.stringify(method)).join(" か ")} の文字列で記述してください。`,
     );
-  if (options === undefined) return "POST";
+  if (options === undefined) return defaultServerFnMethod;
   if (options.type !== "ObjectExpression") throw error();
-  let method: "GET" | "POST" = "POST";
+  let method: ServerFnMethod = defaultServerFnMethod;
   for (const property of options.properties) {
     if (property.type === "SpreadElement" || property.computed) throw error();
     const { key } = property;
@@ -437,8 +443,7 @@ function methodOf(
       key.type === "Identifier" ? key.name : key.type === "Literal" ? key.value : undefined;
     if (keyName !== "method") continue;
     const value = withoutTypes(property.value);
-    if (value.type !== "Literal" || (value.value !== "GET" && value.value !== "POST"))
-      throw error();
+    if (value.type !== "Literal" || !isServerFnMethod(value.value)) throw error();
     method = value.value;
   }
   return method;

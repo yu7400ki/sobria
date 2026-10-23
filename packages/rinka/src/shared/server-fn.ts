@@ -1,5 +1,15 @@
+/** サーバー関数を呼び出す HTTP のメソッドを列挙する。 */
+export const serverFnMethods = ["GET", "POST"] as const;
+
 /** サーバー関数を呼び出す HTTP のメソッドである。 */
-export type ServerFnMethod = "GET" | "POST";
+export type ServerFnMethod = (typeof serverFnMethods)[number];
+
+/** `defineServerFn` でメソッドを省略したときのメソッドである。 */
+export const defaultServerFnMethod = "POST" satisfies ServerFnMethod;
+
+/** `value` がサーバー関数のメソッドかどうかを返す。 */
+export const isServerFnMethod = (value: unknown): value is ServerFnMethod =>
+  serverFnMethods.some((method) => method === value);
 
 /** `serverFnRef` を `Symbol.for` で取得するときの名前である。 */
 export const serverFnRefName = "rinka.serverFnRef";
@@ -20,7 +30,7 @@ export function serverFnRefOf(value: unknown): ServerFnRef | undefined {
   if (typeof ref !== "object" || ref === null || !("id" in ref) || !("method" in ref))
     return undefined;
   const { id, method } = ref;
-  if (typeof id !== "string" || (method !== "GET" && method !== "POST")) return undefined;
+  if (typeof id !== "string" || !isServerFnMethod(method)) return undefined;
   return { id, method };
 }
 

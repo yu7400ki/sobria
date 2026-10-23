@@ -2,7 +2,13 @@ import { Context, type MiddlewareHandler } from "hono";
 import type { StandardSchema } from "hono/factory";
 import type { IntersectNonAnyTypes } from "hono/types";
 
-import type { CallOptions, serverFnRef, ServerFnMethod, ServerFnRef } from "../shared/server-fn.ts";
+import {
+  defaultServerFnMethod,
+  type CallOptions,
+  type serverFnRef,
+  type ServerFnMethod,
+  type ServerFnRef,
+} from "../shared/server-fn.ts";
 import { currentContext } from "./context.ts";
 
 type AnyMiddleware = MiddlewareHandler<any, any, any>;
@@ -90,7 +96,7 @@ type StandardSchemaIssues = Extract<
  */
 export function defineServerFn<
   V extends Validation = never,
-  Method extends ServerFnMethod = "POST",
+  Method extends ServerFnMethod = typeof defaultServerFnMethod,
 >(
   options: ServerFnOptions<V, Method>,
 ): <M extends AnyMiddleware[], R>(
@@ -99,7 +105,7 @@ export function defineServerFn<
 /** オプションを省略して、ミドルウェアと handler からサーバー関数を作成する。 */
 export function defineServerFn<M extends AnyMiddleware[], R>(
   ...args: [...middleware: M, handler: ServerFnHandler<M, undefined, R>]
-): ServerFn<undefined, R, "POST">;
+): ServerFn<undefined, R, typeof defaultServerFnMethod>;
 export function defineServerFn(...args: (ServerFnOptions<Validation> | Step)[]): unknown {
   const [first] = args;
   if (typeof first === "object") return (...steps: Step[]) => create(first, steps);
@@ -117,7 +123,7 @@ function create(options: ServerFnOptions<Validation>, steps: Step[]): unknown {
   const handler = steps.at(-1);
   if (handler === undefined) throw new TypeError("defineServerFn には handler を渡してください。");
   const definition: Definition = {
-    method: options.method ?? "POST",
+    method: options.method ?? defaultServerFnMethod,
     middlewares,
     handle: async (c, input) => handler(c, { input: await validate(options.input, input, c) }),
   };
