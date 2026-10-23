@@ -170,7 +170,7 @@ async function checkRuntime(command: string, out: string): Promise<void> {
   const copy = await mkdtemp(join(tmpdir(), "rinka-dist-"));
   await cp(out, copy, { recursive: true });
   try {
-    const server = await startServer(command, join(copy, "server/entry.js"));
+    const server = await startServer(command, () => [join(copy, "server/entry.js")]);
     try {
       await checkServer(server.origin);
     } finally {

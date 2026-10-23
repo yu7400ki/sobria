@@ -53,10 +53,18 @@ export interface RunningServer {
   readonly stop: () => void;
 }
 
-/** `command` でサーバーのエントリー `index` を、使用されていないポートで起動し、応答するまで待つ。 */
-export async function startServer(command: string, index: string): Promise<RunningServer> {
+/**
+ * `command` を、使用されていないポートの番号から作成した引数 `args` で、ディレクトリ `cwd` で起動し、応答するまで待つ。
+ * ポートの番号は環境変数 PORT にも渡す。
+ */
+export async function startServer(
+  command: string,
+  args: (port: number) => readonly string[],
+  cwd?: string,
+): Promise<RunningServer> {
   const port = await freePort();
-  const child = spawn(command, [index], {
+  const child = spawn(command, args(port), {
+    cwd,
     env: { ...process.env, PORT: String(port) },
     stdio: "ignore",
   });

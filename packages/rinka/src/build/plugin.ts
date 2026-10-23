@@ -83,6 +83,28 @@ const NO_ELEMENTS = `\0${entries.noElements}`;
 /** 本番のサーバーのビルドに含める、rinka と、rinka の依存と、アプリと rinka が共有する hono を返す。 */
 const bundled = (): string[] => [entries.main, "hono", ...Object.keys(rinkaPackage().dependencies)];
 
+/** Cloudflare のプラグインと組み合わせた開発中に、サーバーの環境で事前にバンドルする、rinka の実行時のコードが import するモジュールである。 */
+const WORKER_DEPS = [
+  "hono",
+  "hono/combine",
+  "hono/factory",
+  "hono/http-exception",
+  `${entries.main} > seroval`,
+  `${entries.main} > @solidjs/signals`,
+];
+
+/** Vite の設定の `plugins` に、入れ子の配列の中も含めて、Cloudflare のプラグインがあるかどうかを返す。 */
+const hasCloudflare = (plugins: readonly unknown[]): boolean =>
+  plugins.some((plugin) =>
+    Array.isArray(plugin)
+      ? hasCloudflare(plugin)
+      : typeof plugin === "object" &&
+        plugin !== null &&
+        "name" in plugin &&
+        typeof plugin.name === "string" &&
+        plugin.name.startsWith("vite-plugin-cloudflare"),
+  );
+
 /** アプリのルート `root` と設定 `options` から、要素のディレクトリとビルドの出力先の絶対パスを返す。 */
 const dirsOf = (root: string, options: RinkaOptions) => ({
   root,
@@ -116,6 +138,8 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   let elementsDir = "";
   let outDir = "";
   let isBuild = false;
+  /** Vite の設定に Cloudflare のプラグインがあるかどうかである。 */
+  let withCloudflare = false;
   /** サーバーのビルドで読み込んだ、クライアントのビルドの manifest である。 */
   let clientAssets: ClientAssets | undefined;
   /** 要素のファイル `file` を、ブラウザが読み込むときの URL と、静的に import するチャンクの URL を返す。 */
@@ -168,6 +192,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       api,
       sharedDuringBuild: true,
       config: (user, { command }) => {
+        withCloudflare = hasCloudflare(user.plugins ?? []);
         const dirs = dirsOf(resolve(user.root ?? "."), options);
         const out = dirs.outDir;
         const elements = scanElements(prefix, dirs.elementsDir);
@@ -212,7 +237,11 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       configEnvironment(name, config, { command }) {
         const consumer = config.consumer ?? (name === "client" ? "client" : "server");
         if (consumer !== "server") return null;
-        return { resolve: { noExternal: command === "build" ? bundled() : [entries.main] } };
+        if (command === "build") return { resolve: { noExternal: bundled() } };
+        return {
+          resolve: { noExternal: [entries.main] },
+          ...(withCloudflare && name === "ssr" && { optimizeDeps: { include: WORKER_DEPS } }),
+        };
       },
       configResolved(config) {
         if (config.plugins.filter((plugin) => plugin.name === NAME).length > 1) {
