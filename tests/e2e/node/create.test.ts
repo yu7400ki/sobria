@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -14,6 +14,8 @@ const modules = fileURLToPath(new URL("../node_modules", import.meta.url));
 const packages = {
   rinka: rinkaDir,
   hono: join(rinkaDir, "node_modules/hono"),
+  "@hono/node-server": join(rinkaDir, "node_modules/@hono/node-server"),
+  "@types/node": join(modules, "@types/node"),
   vite: join(modules, "vite"),
   typescript: typescriptDir,
 } as const;
@@ -25,11 +27,12 @@ beforeAll(async () => {
   workspace = await mkdtemp(join(tmpdir(), "rinka-create-"));
   app = join(workspace, "app");
   await run(process.execPath, [rinkaBin, "create", app]);
-  await mkdir(join(app, "node_modules"));
   await Promise.all(
-    Object.entries(packages).map(([name, target]) =>
-      symlink(target, join(app, "node_modules", name), "junction"),
-    ),
+    Object.entries(packages).map(async ([name, target]) => {
+      const link = join(app, "node_modules", name);
+      await mkdir(dirname(link), { recursive: true });
+      await symlink(target, link, "junction");
+    }),
   );
   await run(process.execPath, [rinkaBin, "prepare", app]);
 }, 60_000);

@@ -12,7 +12,7 @@ const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 
 /** 雛形のファイルの、アプリのルートからの相対パスごとの内容を返す。`name` はアプリの名前である。 */
 function templateFiles(name: string): Record<string, string> {
-  const { version, peerDependencies, devDependencies } = rinkaPackage();
+  const { version, dependencies, peerDependencies, devDependencies } = rinkaPackage();
   return {
     "package.json": json({
       name,
@@ -22,11 +22,19 @@ function templateFiles(name: string): Record<string, string> {
         dev: "vite",
         build: "vite build --app",
         preview: "vite preview",
-        start: "node dist/server/index.js",
+        start: "node dist/server/entry.js",
         typecheck: "rinka prepare && tsc -b",
       },
-      dependencies: { hono: peerDependencies.hono, rinka: `^${version}` },
-      devDependencies: { typescript: devDependencies.typescript, vite: peerDependencies.vite },
+      dependencies: {
+        "@hono/node-server": dependencies["@hono/node-server"],
+        hono: peerDependencies.hono,
+        rinka: `^${version}`,
+      },
+      devDependencies: {
+        "@types/node": devDependencies["@types/node"],
+        typescript: devDependencies.typescript,
+        vite: peerDependencies.vite,
+      },
     }),
     "vite.config.ts": `import { rinka } from "${entries.main}/vite";
 import { defineConfig } from "vite";
@@ -43,6 +51,25 @@ export default defineConfig({
     }),
     "tsconfig.base.json": json({ compilerOptions: { strict: true } }),
     ".gitignore": "node_modules\ndist\n.rinka\n",
+    "src/server.ts": `/// <reference types="node" />
+
+import { fileURLToPath } from "node:url";
+
+import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
+import { Hono } from "hono";
+import app from "${entries.app}";
+
+const server = new Hono();
+if (import.meta.main) {
+  server.use(serveStatic({ root: fileURLToPath(new URL("../client", import.meta.url)) }));
+}
+server.route("/", app);
+
+if (import.meta.main) serve({ fetch: server.fetch, port: Number(process.env.PORT ?? 3000) });
+
+export default server;
+`,
     "src/lib/greet.ts": `import { defineServerFn } from "${entries.server}";
 
 export const greet = defineServerFn(() => "こんにちは");

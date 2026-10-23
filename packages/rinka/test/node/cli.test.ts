@@ -38,6 +38,7 @@ describe("rinka create", () => {
       "src/routes",
       "src/routes/layout.tsx",
       "src/routes/page.tsx",
+      "src/server.ts",
       "tsconfig.base.json",
       "tsconfig.json",
       "vite.config.ts",
@@ -46,10 +47,12 @@ describe("rinka create", () => {
     expect(pkg.name).toBe("my-app");
     const rinka = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
     expect(pkg.dependencies).toEqual({
+      "@hono/node-server": rinka.dependencies["@hono/node-server"],
       hono: rinka.peerDependencies.hono,
       rinka: `^${rinka.version}`,
     });
     expect(pkg.devDependencies).toEqual({
+      "@types/node": rinka.devDependencies["@types/node"],
       typescript: rinka.devDependencies.typescript,
       vite: rinka.peerDependencies.vite,
     });
@@ -57,7 +60,7 @@ describe("rinka create", () => {
       dev: "vite",
       build: "vite build --app",
       preview: "vite preview",
-      start: "node dist/server/index.js",
+      start: "node dist/server/entry.js",
       typecheck: "rinka prepare && tsc -b",
     });
     expect(readFileSync(join(dir, ".gitignore"), "utf8").split("\n")).toContain(".rinka");

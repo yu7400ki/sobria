@@ -5,7 +5,7 @@ export interface RinkaPackage {
   readonly version: string;
   readonly dependencies: Readonly<Record<string, string>>;
   readonly peerDependencies: Readonly<Record<"hono" | "vite", string>>;
-  readonly devDependencies: Readonly<Record<"typescript", string>>;
+  readonly devDependencies: Readonly<Record<"typescript" | "@types/node", string>>;
 }
 
 /** rinka の package.json を読み込む。 */

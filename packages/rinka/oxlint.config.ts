@@ -83,9 +83,12 @@ export default defineConfig({
   },
   overrides: [
     {
+      files: ["src/client/**", "src/server/**", "src/shared/**"],
+      rules: { "rinka/no-transfer-key-literal": "error" },
+    },
+    {
       files: ["src/**"],
       rules: {
-        "rinka/no-transfer-key-literal": "error",
         "rinka/no-receiver-literal": "error",
         "rinka/no-marker-attribute-literal": "error",
       },
