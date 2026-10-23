@@ -47,6 +47,17 @@ const Lazy = defineElement(
   { props: [] },
 );
 
+/** Shadow DOM に `<html>`、`<body>`、`<head>` を持つ要素である。 */
+const Rooted = defineElement(
+  "x-rooted",
+  () => [
+    jsx("html", { lang: "en", children: "a" }),
+    jsx("body", { class: "b", children: "b" }),
+    jsx("head", { children: "c" }),
+  ],
+  { props: [] },
+);
+
 const Titled = defineElement(
   "x-titled",
   () => [title("inner"), jsx("link", { rel: "stylesheet", href: "/x.css" })],
@@ -346,13 +357,75 @@ describe("<html> と <body>", () => {
     );
   });
 
-  it("<head> は子だけを描画し、子の <title> と <meta> を <head> に移動する", async () => {
+  it("シェルの <head> の子は、タグの種類にかかわらず <head> に移動し、キーが同じタグは 1 つにする", async () => {
     const { head, body } = await documentOf([
-      jsx("head", { children: [title("T"), jsx("meta", { name: "a", content: "b" })] }),
+      title("outer"),
+      jsx("head", {
+        lang: "x",
+        children: [title("T"), jsx("script", { src: "/a.js" }), jsx("style", { children: "p{}" })],
+      }),
       "text",
     ]);
-    expect(head).toBe('<meta charset="utf-8"><title>T</title><meta name="a" content="b">');
+    expect(head).toBe(
+      '<meta charset="utf-8"><title>T</title><script src="/a.js"></script><style>p{}</style>',
+    );
     expect(body).toBe("text");
+  });
+
+  it("同じファイルが同じ属性を 2 回記述したときは後の値を、深いファイルの false は属性を出力しない", async () => {
+    const html = await (
+      await renderToResponse([
+        jsx("html", { lang: "en", class: "a", children: "a" }),
+        jsx("html", { lang: "ja", children: "b" }),
+      ])
+    ).text();
+    expect(html.startsWith('<!doctype html><html lang="ja" class="a"><head>')).toBe(true);
+    const removed = await documentOfPage(
+      () => jsx("html", { class: false, children: "page" }),
+      [rootLayout],
+    );
+    expect(removed.startsWith('<!doctype html><html lang="ja"><head>')).toBe(true);
+  });
+
+  it("イベントの関数、ref、slot は、属性にしない", async () => {
+    const html = await (
+      await renderToResponse(
+        jsx("body", { onClick: () => "clicked", ref: () => {}, slot: "s", id: "b", children: "x" }),
+      )
+    ).text();
+    expect(html).toBe(
+      '<!doctype html><html><head><meta charset="utf-8"></head><body id="b">x</body></html>',
+    );
+  });
+
+  it("属性の値が未解決以外の理由で投げたエラーは、<Errored> が受け止める", async () => {
+    const html = await (
+      await renderToResponse(
+        jsx(Errored, {
+          fallback: () => "failed",
+          children: jsx("html", {
+            lang: () => {
+              throw new Error("boom");
+            },
+            children: "x",
+          }),
+        }),
+      )
+    ).text();
+    expect(html).toBe(
+      '<!doctype html><html><head><meta charset="utf-8"></head><body>failed</body></html>',
+    );
+  });
+
+  it("要素の中の <html>、<body>、<head> は、属性を移動せずに子を描画し、開発時に警告する", async () => {
+    vi.stubEnv("DEV", true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const html = await (await renderToResponse(jsx(Rooted, {}))).text();
+    expect(html).toContain('<html><head><meta charset="utf-8">');
+    expect(html).toContain("<body><x-rooted");
+    expect(html).toContain('<template shadowrootmode="open">abc</template>');
+    expect(warn).toHaveBeenCalledTimes(3);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("要素の中"));
   });
 
   it("<Errored> が受け止めた部分の属性を除く", async () => {
