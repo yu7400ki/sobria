@@ -181,14 +181,34 @@ class Out {
   /** `Out` を、同じ形のオブジェクトと区別する。 */
   declare private readonly nominal: never;
   /** この位置の出力と同じ書き込みで、出力の後に書き込むスクリプトである。 */
-  readonly scripts: string[] = [];
+  private readonly scripts: string[] = [];
   /** この位置に出力した、起動スクリプトに伝える要素を、タグ名ごとに表す。 */
-  readonly elements = new Map<string, Delivered>();
+  private readonly elements = new Map<string, Delivered>();
+
+  /** 出力の後に書き込むスクリプトを加える。 */
+  addScript(script: string): void {
+    this.scripts.push(script);
+  }
+
+  /** 起動スクリプトに伝える要素を加える。 */
+  addElement(delivered: Delivered): void {
+    mergeDelivered(this.elements, [delivered]);
+  }
 
   /** `other` の位置のスクリプトと要素を、この位置に加える。 */
   absorb(other: Out): void {
     this.scripts.push(...other.scripts);
     mergeDelivered(this.elements, other.elements.values());
+  }
+
+  /** 出力の後に書き込むスクリプトを連結した文字列である。 */
+  get scriptText(): string {
+    return this.scripts.join("");
+  }
+
+  /** 起動スクリプトに伝える要素である。 */
+  get delivered(): Iterable<Delivered> {
+    return this.elements.values();
   }
 
   private constructor(
@@ -753,7 +773,7 @@ class Renderer {
       }
       case "host": {
         const { record, attributes, open, chunks, announce, delivered } = chunk.host;
-        if (delivered) mergeDelivered(out.elements, [delivered]);
+        if (delivered) out.addElement(delivered);
         const inner = await this.serialize(chunks, out);
         const resolved = await attributes;
         if (resolved.transfer) {
@@ -763,7 +783,7 @@ class Renderer {
             Promise.resolve(toScript(resolved.transfer, `<${record.tag}>`)),
           );
         }
-        if (announce) out.scripts.push(announce);
+        if (announce) out.addScript(announce);
         return open(resolved, out.shown) + inner;
       }
       case "errored": {
@@ -963,7 +983,7 @@ class Renderer {
   /** `outs` に出力した要素のうち、まだ起動スクリプトに伝えていない要素を、伝えたものとして記録して返す。 */
   private takeUnannounced(outs: readonly Out[]): Delivered[] {
     const merged = new Map<string, Delivered>();
-    for (const out of outs) mergeDelivered(merged, out.elements.values());
+    for (const out of outs) mergeDelivered(merged, out.delivered);
     const fresh = [...merged.values()].filter(({ tag }) => !this.announcedTags.has(tag));
     for (const { tag } of fresh) this.announcedTags.add(tag);
     return fresh;
@@ -972,7 +992,7 @@ class Renderer {
   /** `outs` のスクリプトと、まだ起動スクリプトに伝えていない要素を伝えるスクリプトを、連結して返す。 */
   private tailOf(outs: readonly Out[]): string {
     return (
-      outs.flatMap((position) => position.scripts).join("") +
+      outs.map((position) => position.scriptText).join("") +
       announceScript(this.takeUnannounced(outs))
     );
   }
@@ -986,7 +1006,7 @@ class Renderer {
         : "";
       this.reveal(
         this.shellOut.flush,
-        `<!doctype html><html><head><meta charset="utf-8">${script}${this.head}</head><body>${shell}${this.shellOut.scripts.join("")}`,
+        `<!doctype html><html><head><meta charset="utf-8">${script}${this.head}</head><body>${shell}${this.shellOut.scriptText}`,
       );
       await this.drain();
       for (const host of this.hosts) host.hide();

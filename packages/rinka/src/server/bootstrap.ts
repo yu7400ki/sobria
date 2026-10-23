@@ -8,15 +8,7 @@ export const loadAttributeName = "data-rinka-load";
 /** `load:media` を指定したインスタンスの、属性の値の接頭辞である。値はこの接頭辞とメディアクエリを連結したものである。 */
 export const mediaPrefix = "media:";
 
-/**
- * `<script>` で囲まない起動スクリプトである。`window.$rinka` に受け口を定義する。既に `$rinka` があれば、保持している値を残して受け口を追加する。
- * `d(ホストの ID, 値のオブジェクト)` は、ホストに引き継ぐ値を保持して、待っている関数に通知する。
- * `r(spec)` は、1 つの境界の中身と、その境界の差し替えを適用する。開始と終了の目印がそろわない差し替えは、適用せずに除去する。
- * `n` は、memo の値が無いことを表すオブジェクトである。
- * `m([[タグ名, モジュールの URL, デフォルトの起動タイミング], …])` は、要素の一覧を保持し、各要素の最初のインスタンスが起動の条件を満たした時点で、モジュールを 1 回だけ読み込む。
- * ドキュメントにあるインスタンスと、後から追加されたインスタンスを確認する。
- * `w(インスタンス, start)` は、インスタンスの起動のタイミングの属性か、一覧のデフォルトの起動タイミングの条件を満たした時点で `start` を呼ぶ。一覧に無いタグなら、すぐに呼ぶ。
- */
+/** `<script>` で囲まない起動スクリプトである。`window.$rinka` に `Receiver` の受け口を定義する。既に `$rinka` があれば、保持している値を残して受け口を追加する。 */
 export const bootstrapSource = `(R=>{const E={},Q=new WeakSet();let O;
 const when=(el,t,f)=>{const v=el.getAttribute('${loadAttributeName}')||t;
 if(v==='idle')(window.requestIdleCallback||setTimeout)(()=>f());

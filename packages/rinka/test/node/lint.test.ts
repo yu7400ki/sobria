@@ -228,7 +228,7 @@ describe("値の受け渡しのキー", () => {
 });
 
 describe("起動スクリプトの受け口の文字列", () => {
-  it("src/ の中の、$rinka. か data-rinka-load を含む文字列のリテラルとテンプレートリテラルを報告する", () => {
+  it("src/ の中の、$rinka か data-rinka-load を含む文字列のリテラルとテンプレートリテラルを報告する", () => {
     expect(
       reports("src/server/receiver-use.ts", [
         'export const a = "$rinka.n";',
@@ -236,11 +236,13 @@ describe("起動スクリプトの受け口の文字列", () => {
         'export const c = (x: string) => `<p ${x} data-rinka-load="idle">`;',
         'export const d = "rinka";',
         'export const e = "data-oh";',
+        'export const f = (x: string) => "$rinka" + x;',
       ]),
     ).toEqual([
       [1, "receiver"],
       [2, "receiver"],
       [3, "receiver"],
+      [6, "receiver"],
     ]);
   });
 

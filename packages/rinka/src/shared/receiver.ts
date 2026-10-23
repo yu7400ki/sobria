@@ -23,11 +23,11 @@ export interface Receiver {
   readonly n: object;
   /** ホストに引き継ぐ値を保持して、そのホストで値を待っている関数に通知する。 */
   readonly d: (id: string, values: Record<string, unknown>) => void;
-  /** 1 つの境界の中身と、その境界の中の差し替えを適用する。 */
+  /** 1 つの境界の中身と、その境界の中の差し替えを適用する。開始と終了の目印がそろわない差し替えは、適用せずに除去する。 */
   readonly r: (spec: SwapSpec) => void;
   /** 要素の一覧を保持し、各要素の最初のインスタンスが起動の条件を満たした時点で、モジュールを 1 回だけ読み込む。 */
   readonly m: (list: readonly ListedElement[]) => void;
-  /** インスタンスの起動の条件を満たした時点で `start` を呼ぶ。 */
+  /** インスタンスの起動のタイミングの属性か、一覧のデフォルトの起動タイミングの条件を満たした時点で `start` を呼ぶ。一覧に無いタグなら、すぐに呼ぶ。 */
   readonly w: (host: Element, start: () => void) => void;
 }
 
