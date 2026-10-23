@@ -299,6 +299,41 @@ describe("createApp の route.ts", () => {
     expect(response.headers.getSetCookie()).toEqual(["session=1; Path=/", "user=ann; Path=/"]);
   });
 
+  it("同じ名前の Cookie を設定し直した順序を保つ", async () => {
+    const response = await request(
+      {
+        routes: [
+          apiRoute("/theme", {
+            GET: (c) => {
+              setCookie(c, "theme", "dark");
+              setCookie(c, "theme", "light");
+              setCookie(c, "theme", "dark");
+              return c.text("ok");
+            },
+          }),
+        ],
+      },
+      "/theme",
+    );
+    expect(response.headers.getSetCookie().at(-1)).toBe("theme=dark; Path=/");
+  });
+
+  it("関数が直接作成した Response の Set-Cookie は、ミドルウェアの Set-Cookie の後に加える", async () => {
+    const response = await request(
+      {
+        routes: [
+          apiRoute(
+            "/raw-cookie",
+            { GET: () => new Response("raw", { headers: { "set-cookie": "r=3" } }) },
+            [session],
+          ),
+        ],
+      },
+      "/raw-cookie",
+    );
+    expect(response.headers.getSetCookie()).toEqual(["session=1; Path=/", "r=3"]);
+  });
+
   it("関数が直接作成した Response にも、ミドルウェアが next() の前に設定したヘッダーを付ける", async () => {
     const response = await request(
       { routes: [apiRoute("/raw", { GET: () => new Response("raw") }, [marking("x-dir")])] },

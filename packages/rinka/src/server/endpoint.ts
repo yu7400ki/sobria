@@ -173,15 +173,27 @@ function unreachable(value: never): never {
   throw new Error(`想定していない値です: ${JSON.stringify(value)}`);
 }
 
-/** `response` に、Context で設定したヘッダーを加えて返す。同じ値の `Set-Cookie` は 1 つにする。 */
+/**
+ * `response` に、Context で設定したヘッダーを加えて返す。
+ * `Set-Cookie` は、Context で設定したものを順に並べ、`response` のうち Context で設定していないものを後に加える。
+ */
 export function withContextHeaders(c: Pick<Context, "newResponse">, response: Response): Response {
-  const merged = c.newResponse(response.body, response);
-  const cookies = merged.headers.getSetCookie();
-  const unique = new Set(cookies);
-  if (unique.size !== cookies.length) {
-    merged.headers.delete("set-cookie");
-    for (const cookie of unique) merged.headers.append("set-cookie", cookie);
-  }
+  const pending = c.newResponse(null).headers.getSetCookie();
+  const added = response.headers.getSetCookie().filter((cookie) => {
+    const index = pending.indexOf(cookie);
+    if (index === -1) return true;
+    pending.splice(index, 1);
+    return false;
+  });
+  const headers = new Headers(response.headers);
+  headers.delete("set-cookie");
+  const init = new Response(null, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+  const merged = c.newResponse(response.body, init);
+  for (const cookie of added) merged.headers.append("set-cookie", cookie);
   return merged;
 }
 
