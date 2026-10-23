@@ -66,6 +66,26 @@ const Titled = defineElement(
   },
 );
 
+/** <title> と、フォールバックに <title> と <html> を持つ <Loading> を描画するページである。 */
+const fallbackTitledPage = () =>
+  jsx("main", {
+    children: [
+      title("Page"),
+      jsx(Loading, {
+        fallback: [title("Loading"), jsx("html", { lang: "en" })],
+        children: jsx(later(10, "done"), {}),
+      }),
+    ],
+  });
+
+/** `fallbackTitledPage` を `blocking` で描画し、起動スクリプトを除いた、文書の先頭から `</head>` までを返す。 */
+const shellOf = async (blocking: boolean) => {
+  const html = await (await renderToResponse(fallbackTitledPage(), { blocking })).text();
+  return /^<!doctype html><html[^>]*><head>.*?<\/head>/s
+    .exec(html)?.[0]
+    .replace(/<script>.*<\/script>/s, "");
+};
+
 describe("文書の <head>", () => {
   it("シェルの中かつ要素の外の <title>、<meta>、<link> を、<head> に移動する", async () => {
     const { head, body } = await documentOf(
@@ -116,13 +136,29 @@ describe("文書の <head>", () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("<title>"));
   });
 
-  it("後送りにした <Loading> のフォールバックのタグは移動し、中身のタグは移動しない", async () => {
+  it("後送りにした <Loading> のフォールバックと中身のタグは移動せず、開発時に警告する", async () => {
+    vi.stubEnv("DEV", true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { head, body } = await documentOf(
-      jsx(Loading, { fallback: title("wait"), children: jsx(later(10, title("done")), {}) }),
+      jsx(Loading, {
+        fallback: [
+          title("wait"),
+          jsx("html", { lang: "en" }),
+          jsx(Navigation, { transitions: true }),
+        ],
+        children: jsx(later(10, title("done")), {}),
+      }),
     );
-    expect(head.startsWith('<meta charset="utf-8"><title>wait</title><script>')).toBe(true);
-    expect(head).not.toContain("done");
+    expect(head).not.toContain("<title>");
+    expect(head).not.toContain("view-transition");
+    expect(body).toContain("<title>wait</title>");
     expect(body).toContain("<title>done</title>");
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("<Loading> のフォールバックの中"));
+    expect(warn).toHaveBeenCalledTimes(4);
+  });
+
+  it("<head> と <html> は、blocking が真でも偽でも同じになる", async () => {
+    expect(await shellOf(false)).toBe(await shellOf(true));
   });
 
   it("要素の中のタグは移動せず、<title> と <meta> だけを開発時に警告する", async () => {

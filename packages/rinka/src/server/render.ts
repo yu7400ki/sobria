@@ -440,8 +440,15 @@ interface WalkCtx {
 /**
  * タグを `<head>` に移動するかどうかを表す。
  * `auto` は `<title>`、`<meta>`、`<link>` を移動し、`all` はシェルの `<head>` の子として、すべてのタグを移動し、`none` は `<svg>` か `<noscript>` の配下として、どのタグも移動しない。
+ * `fallback` は `<Loading>` のフォールバックの中として、どのタグも移動せずに、`<Loading>` の内側と同じく警告する。
  */
-type HeadPlacement = "auto" | "all" | "none";
+type HeadPlacement = "auto" | "all" | "none" | "fallback";
+
+/** `placement` の位置にある `tag` の子の `HeadPlacement` を返す。 */
+function childPlacement(tag: string, placement: HeadPlacement): HeadPlacement {
+  if (headlessParents.has(tag) || placement === "none") return "none";
+  return placement === "fallback" ? "fallback" : "auto";
+}
 
 /** 要素のホストごとの状態を表す。 */
 class HostRecord {
@@ -693,7 +700,15 @@ class Renderer {
       case "loading": {
         const boundary = this.newBoundary(`b${++this.seq}`, ctx.path);
         this.walk(node.children, { ...ctx, boundary }, boundary.region);
-        out.push({ kind: "mark", mark: boundary, fallback: () => this.chunks(node.fallback, ctx) });
+        out.push({
+          kind: "mark",
+          mark: boundary,
+          fallback: () =>
+            this.chunks(node.fallback, {
+              ...ctx,
+              head: ctx.head === "none" ? "none" : "fallback",
+            }),
+        });
         return;
       }
       case "errored":
@@ -762,7 +777,7 @@ class Renderer {
     out: Chunk[],
   ): void {
     const role = this.document ? documentTags.get(tag) : undefined;
-    const atShell = ctx.owner === null && ctx.boundary === this.root;
+    const atShell = ctx.owner === null && ctx.boundary === this.root && ctx.head !== "fallback";
     if (role === "html" || role === "body" || role === "transparent") {
       if (!atShell) {
         this.warnOutside(tag, ctx, `文書の <${tag}> に反映せずに、子だけを出力します`);
@@ -817,7 +832,7 @@ class Renderer {
       }
       return;
     }
-    if (ctx.owner !== null || ctx.boundary !== this.root) {
+    if (ctx.owner !== null || ctx.boundary !== this.root || ctx.head === "fallback") {
       this.warnOutside("Navigation", ctx, "反映しません");
       return;
     }
@@ -833,9 +848,11 @@ class Renderer {
   private warnOutside(tag: string, ctx: WalkCtx, action: string): void {
     if (!import.meta.env?.DEV) return;
     const where =
-      ctx.owner === null
-        ? " <Loading> の内側（要素の中の <Loading> に配置される子を含む）"
-        : "要素の中";
+      ctx.owner !== null
+        ? "要素の中"
+        : ctx.head === "fallback"
+          ? " <Loading> のフォールバックの中"
+          : " <Loading> の内側（要素の中の <Loading> に配置される子を含む）";
     console.warn(`[rinka] <${tag}> は${where}にあるので、${action}。`);
   }
 
@@ -890,11 +907,7 @@ class Renderer {
     out.push(typeof open === "string" ? open : this.hole(open.then((text) => [text])));
     if (voidTags.has(tag)) return;
     const { slot: _, ...inner } = ctx;
-    this.walk(
-      asNode(props.children),
-      { ...inner, head: headlessParents.has(tag) || ctx.head === "none" ? "none" : "auto" },
-      out,
-    );
+    this.walk(asNode(props.children), { ...inner, head: childPlacement(tag, ctx.head) }, out);
     out.push(`</${tag}>`);
   }
 
