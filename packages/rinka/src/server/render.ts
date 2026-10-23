@@ -17,6 +17,7 @@ import {
   type Delivery,
   type ElementComponent,
 } from "../shared/element.ts";
+import { headKey } from "../shared/head.ts";
 import { isEventProp, propToAttribute, reservedProp } from "../shared/names.ts";
 import type { NavigationProps } from "../shared/navigation.ts";
 import { isFunction } from "../shared/objects.ts";
@@ -149,32 +150,6 @@ function warnsOutOfHead(tag: string, props: Record<string, unknown>): boolean {
   );
 }
 
-/** `<meta>` のキーになる属性のうち、`charset` 以外のものである。キーになる属性を複数持つ `<meta>` は、この順で最初の属性をキーにする。 */
-const metaKeyNames = ["name", "property", "http-equiv"] as const;
-
-/**
- * `<head>` に移動するタグのキーを返す。`read` は、属性の名前から値を返す。
- * `<title>`、`charset` を持つ `<meta>`、`rel` が `canonical` の `<link>` は、タグの種類がキーになる。ほかの `<meta>` は、キーになる属性の名前と値の組がキーになる。
- */
-function headKey(tag: string, read: (name: string) => unknown): string | undefined {
-  const text = (name: string): string | null => attributeValue(name, read(name));
-  switch (tag) {
-    case "title":
-      return "title";
-    case "meta": {
-      if (text("charset") !== null) return "charset";
-      for (const name of metaKeyNames) {
-        const value = text(name);
-        if (value !== null) return `${name}=${value}`;
-      }
-      return undefined;
-    }
-    case "link":
-      return text("rel") === "canonical" ? "canonical" : undefined;
-  }
-  return undefined;
-}
-
 /**
  * 文書の骨組みに移動するものを、目印の番号ごとに表す。`depth` は、記述したルートのファイルの深さである。
  * `head` は `<head>` に移動するタグで、`html` と `body` は、そのタグの属性で、`navigation` は `<Navigation>` の props である。
@@ -210,17 +185,18 @@ interface HeadOutput {
 }
 
 /**
- * 文書の順序で並んだ `<head>` のタグから、キーごとに、深さが最も大きく、同じ深さなら後のタグだけを残す。
- * 残したタグは、そのキーのタグが最初に現れた位置に出力する。
+ * 文書の順序で並んだ `<head>` のタグから、キーごとに、深さが最も大きく、同じ深さなら後のタグだけを選択して、文書の順序で返す。
+ * 選択したタグは、そのキーのタグが最初に現れた位置に置く。`<meta charset>` は、rinka が出力するので選択しない。
  */
-function dedupeHead(tags: readonly HeadOutput[]): string {
+function selectHead(tags: readonly HeadOutput[]): HeadOutput[] {
   const chosen = new Map<string | number, HeadOutput>();
   for (const [index, tag] of tags.entries()) {
+    if (tag.key === "charset") continue;
     const key = tag.key ?? index;
     const current = chosen.get(key);
     if (!current || tag.depth >= current.depth) chosen.set(key, tag);
   }
-  return [...chosen.values()].map(({ html }) => html).join("");
+  return [...chosen.values()];
 }
 
 /**
@@ -1388,7 +1364,7 @@ class Renderer {
 
   /**
    * 文書の先頭と `shell` を出力し、後送りの境界をすべて出力してから、文書を閉じる。
-   * `<head>` には、先頭に rinka の `<meta charset="utf-8">` を加えてキーが同じタグを 1 つにしたタグと、`<Navigation>` の出力を並べる。`<meta charset>` は、常に rinka のタグを残す。
+   * `<head>` には、rinka の `<meta charset="utf-8">`、キーが同じタグを 1 つにしたタグ、`<Navigation>` の出力の順に並べる。
    */
   async finish(shell: string): Promise<void> {
     try {
@@ -1397,8 +1373,12 @@ class Renderer {
         ? bootstrap + preloadLinks(fresh) + announceScript(fresh)
         : "";
       const parts = await this.takeDocument(shell);
-      const charset = { html: '<meta charset="utf-8">', key: "charset", depth: Infinity };
-      const head = dedupeHead([charset, ...parts.heads]) + navigationHead(parts.navigation);
+      const head =
+        '<meta charset="utf-8">' +
+        selectHead(parts.heads)
+          .map(({ html }) => html)
+          .join("") +
+        navigationHead(parts.navigation);
       this.reveal(
         this.shellOut.flush,
         `<!doctype html><html${attributesText(parts.html)}><head>${head}${script}${this.document?.head ?? ""}</head><body${attributesText(parts.body)}>${parts.rest}${this.shellOut.scriptText}`,
