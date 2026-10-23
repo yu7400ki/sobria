@@ -151,6 +151,25 @@ describe("サーバー関数を定義できる範囲", () => {
       },
     );
   });
+
+  it("ライブラリのソースでサーバー関数を定義すると、ライブラリでは定義できないことを示すエラーにする", async () => {
+    await withProject(
+      {
+        "package.json": JSON.stringify({ dependencies: { "acme-lib": "1.0.0" } }),
+        "node_modules/acme-lib/package.json": JSON.stringify({
+          name: "acme-lib",
+          rinka: { prefix: "acme", elements: "src/elements" },
+        }),
+        "node_modules/acme-lib/src/fns.ts":
+          'import { defineServerFn } from "rinka/server";\nexport const f = defineServerFn(() => 1);\n',
+      },
+      async (dev) => {
+        await expect(
+          dev.environments.ssr.transformRequest("/node_modules/acme-lib/src/fns.ts"),
+        ).rejects.toThrow(/ライブラリでは定義できません/);
+      },
+    );
+  });
 });
 
 describe("変換の対象", () => {

@@ -58,6 +58,8 @@ interface ProjectFile {
   readonly path: string;
   readonly file: string;
   readonly lang: Lang;
+  /** ライブラリのファイルなら真である。 */
+  readonly library: boolean;
 }
 
 /**
@@ -99,11 +101,12 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
     const lang = langs[extname(id)];
     if (!lang || id.includes("?") || id.startsWith("\0")) return undefined;
     const { root, sources } = current();
-    const owned = sources.some(({ dir }) => {
+    const owner = sources.findIndex(({ dir }) => {
       const inner = inside(dir, id);
       return inner !== undefined && !inner.split("/").includes("node_modules");
     });
-    return owned ? { path: id, file: relative(root, id).split(sep).join("/"), lang } : undefined;
+    if (owner === -1) return undefined;
+    return { path: id, file: relative(root, id).split(sep).join("/"), lang, library: owner > 0 };
   };
 
   return [
@@ -197,9 +200,11 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           }),
           fnModule: fnModuleOf(target.file),
         });
-        if (result.serverFns.length > 0 && !isServerFnSource(target.file)) {
+        if (result.serverFns.length > 0 && (target.library || !isServerFnSource(target.file))) {
           throw new Error(
-            `${target.file}: サーバー関数は、src/ の中のファイルで定義してください。`,
+            target.library
+              ? `${target.file}: サーバー関数は、ライブラリでは定義できません。アプリの src/ の中のファイルで定義してください。`
+              : `${target.file}: サーバー関数は、src/ の中のファイルで定義してください。`,
           );
         }
         return { code: result.code, map: result.map };
