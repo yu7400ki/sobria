@@ -71,7 +71,7 @@ interface Found {
   readonly params: Record<string, string>;
 }
 
-/** ページと `not-found.tsx` の行を、`app` と同じ順序で登録し、URL に一致する最初の行を返す関数を作成する。 */
+/** ページと `not-found.tsx` の行を、`createApp` がページを登録するのと同じ順序で登録し、URL に一致する最初の行を返す関数を作成する。 */
 function finder(routes: readonly Route[]): (url: URL) => Promise<Found | undefined> {
   const rows = new Hono<{ Bindings: { found?: Found } }>();
   for (const route of routes) {
@@ -98,27 +98,6 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   const app = new Hono();
   const handle = options.onError ?? defaultFailure;
   app.onError((c) => withContextHeaders(c, handle(c.error)));
-  const find = finder(routes);
-  const formFailure: FormFailure = async (c, error) => {
-    const referer = c.req.header("referer");
-    const url = referer !== undefined && URL.canParse(referer) ? new URL(referer) : undefined;
-    if (url === undefined || url.origin !== new URL(c.req.url).origin) return handle(error);
-    const found = await find(url);
-    if (found?.route.error === undefined) return handle(error);
-    return respond(
-      c,
-      jsx(throwing(error), {}),
-      { error: found.route.error },
-      {
-        params: found.params,
-        url,
-      },
-    );
-  };
-  const serverFns = serverFnMiddleware(options, handle, formFailure);
-  const rinka = middleware === undefined ? serverFns : every(lazy(middleware), serverFns);
-  app.use(formRedirects);
-  app.use((c, next) => runInRequest(c, () => rinka(c, next)));
   const respond: Respond = async (c, node, { notFound: missingPage, error: errorPage }, props) => {
     const pages = {
       headers: { vary: REFRESH_HEADER },
@@ -139,6 +118,27 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
           });
     return withContextHeaders(c, response);
   };
+  const find = finder(routes);
+  const formFailure: FormFailure = async (c, error) => {
+    const referer = c.req.header("referer");
+    const url = referer !== undefined && URL.canParse(referer) ? new URL(referer) : undefined;
+    if (url === undefined || url.host !== new URL(c.req.url).host) return handle(error);
+    const found = await find(url);
+    if (found?.route.error === undefined) return handle(error);
+    return respond(
+      c,
+      jsx(throwing(error), {}),
+      { error: found.route.error },
+      {
+        params: found.params,
+        url,
+      },
+    );
+  };
+  const serverFns = serverFnMiddleware(options, handle, formFailure);
+  const rinka = middleware === undefined ? serverFns : every(lazy(middleware), serverFns);
+  app.use(formRedirects);
+  app.use((c, next) => runInRequest(c, () => rinka(c, next)));
   for (const route of routes) register(app, route, respond);
   app.notFound((c) => respond(c, jsx(missing, {}), {}, {}));
   return app;

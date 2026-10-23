@@ -26,7 +26,7 @@ export function registerServerFn<F extends { readonly [serverFnRef]: ServerFnRef
 
 /**
  * サーバー関数のエンドポイントへのリクエストを処理し、それ以外のリクエストを後続の処理に渡す Hono のミドルウェアを返す。
- * rinka が扱わない例外は、`fail` が返すレスポンスにする。
+ * rinka が扱わない例外は、RPC では `fail` が返すレスポンスにし、フォームの送信では `formFailure` が返すレスポンスにする。
  */
 export function serverFnMiddleware(
   options: AppOptions,

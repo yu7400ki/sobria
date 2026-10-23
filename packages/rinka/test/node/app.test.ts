@@ -272,7 +272,13 @@ describe("フォームの送信先のサーバー関数が投げたエラー", (
     );
   });
 
-  it("Referer が無いときと、別のオリジンのときは、onError のレスポンスを返す", async () => {
+  it("Referer のスキームがリクエストの URL と異なっても、ホストが同じなら Referer のページの error.tsx を返す", async () => {
+    const { response } = await submit("https://localhost/users/3/edit");
+    expect(response.status).toBe(500);
+    expect(await bodyOf(response)).toContain("<h1>user /users/3/edit kaboom</h1>");
+  });
+
+  it("Referer が無いときと、ホストが異なるときは、onError のレスポンスを返す", async () => {
     const results = await Promise.all([
       submit(undefined),
       submit("http://example.com/users/3/edit"),
