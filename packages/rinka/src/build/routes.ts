@@ -5,6 +5,7 @@ import { parseSegment } from "../shared/route-segments.ts";
 import {
   mapRouteFiles,
   type Fallback,
+  type Fallbacks,
   type Route,
   type RouteFiles,
   type RouteKind,
@@ -20,12 +21,6 @@ export interface PathFiles extends RouteFiles {
 
 /** 走査したルートの表の 1 行を表す。 */
 type ScannedRoute = Route<PathFiles>;
-
-/** ページと `not-found.tsx` の行に付ける、エラーのページを表す。 */
-interface Fallbacks {
-  readonly notFound?: Fallback<PathFiles>;
-  readonly error?: Fallback<PathFiles>;
-}
 
 /** ディレクトリにあれば表の行になるファイルの名前と、その種類である。 */
 const routeFiles: readonly (readonly [string, RouteKind])[] = [
@@ -99,14 +94,21 @@ function compareRoutes(a: ScannedRoute, b: ScannedRoute): number {
 }
 
 /** 種類が `kind` の行を返す。ページには `fallbacks` を、`not-found.tsx` には `fallbacks` の `error` を付ける。 */
-function rowOf(
-  kind: RouteKind,
-  path: string,
-  module: string,
-  layouts: readonly string[],
-  middlewares: readonly string[],
-  fallbacks: Fallbacks,
-): ScannedRoute {
+function rowOf({
+  kind,
+  path,
+  module,
+  layouts,
+  middlewares,
+  fallbacks,
+}: {
+  readonly kind: RouteKind;
+  readonly path: string;
+  readonly module: string;
+  readonly layouts: readonly string[];
+  readonly middlewares: readonly string[];
+  readonly fallbacks: Fallbacks<PathFiles>;
+}): ScannedRoute {
   switch (kind) {
     case "page":
       return { kind, path, module, layouts, middlewares, ...fallbacks };
@@ -140,7 +142,7 @@ export function scanRoutes(root: string, dir: string): Routes<PathFiles> {
     segments: readonly string[],
     outerLayouts: readonly string[],
     outerMiddlewares: readonly string[],
-    outerFallbacks: Fallbacks,
+    outerFallbacks: Fallbacks<PathFiles>,
   ): void => {
     const entries = readdirSync(current, { withFileTypes: true }).toSorted((a, b) =>
       a.name < b.name ? -1 : 1,
@@ -159,7 +161,7 @@ export function scanRoutes(root: string, dir: string): Routes<PathFiles> {
       files.has(name) ? { module: fileOf(join(current, name)), layouts } : undefined;
     const notFound = fallbackOf("not-found.tsx") ?? outerFallbacks.notFound;
     const error = fallbackOf("error.tsx") ?? outerFallbacks.error;
-    const fallbacks: Fallbacks = {
+    const fallbacks: Fallbacks<PathFiles> = {
       ...(notFound !== undefined && { notFound }),
       ...(error !== undefined && { error }),
     };
@@ -172,7 +174,7 @@ export function scanRoutes(root: string, dir: string): Routes<PathFiles> {
         );
       }
       const path = `/${(kind === "not-found" ? [...segments, "*"] : segments).join("/")}`;
-      routes.push(rowOf(kind, path, file, layouts, middlewares, fallbacks));
+      routes.push(rowOf({ kind, path, module: file, layouts, middlewares, fallbacks }));
     }
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;

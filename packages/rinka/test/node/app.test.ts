@@ -10,6 +10,7 @@ import { jsx } from "../../src/server/jsx-runtime.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
 import type {
   Fallback,
+  Fallbacks,
   Route,
   RouteComponent,
   RouteMethod,
@@ -61,12 +62,6 @@ function pageRoute(
     middlewares: middlewares.map(module),
     ...fallbacks,
   };
-}
-
-/** ページと `not-found.tsx` の行の、エラーのページを表す。 */
-interface Fallbacks {
-  readonly notFound?: Fallback;
-  readonly error?: Fallback;
 }
 
 /** `component` を `layouts` で包むエラーのページを返す。 */

@@ -7,6 +7,7 @@ import {
   type AppOptions,
   type CreateApp,
   type Fallback,
+  type Fallbacks,
   type Load,
   type Route,
   type RouteComponent,
@@ -50,12 +51,6 @@ async function wrap(
     (children, { default: layout }) => jsx(layout, { ...props, children }),
     jsx(component, props),
   );
-}
-
-/** ページの描画で使用する `not-found.tsx` と `error.tsx` を表す。 */
-interface Fallbacks {
-  readonly notFound?: Fallback;
-  readonly error?: Fallback;
 }
 
 /** エラーのページを、そのレイアウトで包み、`props` を渡して描画するノードを返す。 */

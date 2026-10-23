@@ -35,6 +35,14 @@ export interface Fallback<F extends RouteFiles = LoadedFiles> {
   readonly layouts: readonly F["component"][];
 }
 
+/** ページと `not-found.tsx` の行の、エラーのページを表す。 */
+export interface Fallbacks<F extends RouteFiles = LoadedFiles> {
+  /** そのディレクトリか祖先のディレクトリで最も近い `not-found.tsx` である。 */
+  readonly notFound?: Fallback<F>;
+  /** そのディレクトリか祖先のディレクトリで最も近い `error.tsx` である。 */
+  readonly error?: Fallback<F>;
+}
+
 /** ルートの表の 1 行を表す。`layouts` と `middlewares` は、外側から順に列挙する。 */
 export type Route<F extends RouteFiles = LoadedFiles> = {
   /** Hono のパスである。`not-found.tsx` の行では、そのディレクトリの配下のすべての URL に一致するパスである。 */
@@ -42,15 +50,11 @@ export type Route<F extends RouteFiles = LoadedFiles> = {
   /** ルートのディレクトリ以外の `middleware.ts` である。 */
   readonly middlewares: readonly F["middleware"][];
 } & (
-  | {
+  | ({
       readonly kind: "page";
       readonly module: F["component"];
       readonly layouts: readonly F["component"][];
-      /** そのディレクトリか祖先のディレクトリで最も近い `not-found.tsx` である。 */
-      readonly notFound?: Fallback<F>;
-      /** そのディレクトリか祖先のディレクトリで最も近い `error.tsx` である。 */
-      readonly error?: Fallback<F>;
-    }
+    } & Fallbacks<F>)
   | {
       readonly kind: "not-found";
       readonly module: F["component"];

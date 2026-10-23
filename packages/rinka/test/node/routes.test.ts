@@ -214,8 +214,13 @@ describe("scanRoutes のエラーのページ", () => {
 });
 
 /** モジュールを読み込む関数のコードから、読み込むファイルのパスを取り出す。 */
-const importedFile = (load: unknown): string =>
-  /import\("\/(.*)"\)/.exec(String(load))?.[1] ?? String(load);
+const importedFile = (load: unknown): string => {
+  const file =
+    typeof load === "function" ? /import\("\/(.*)"\)/.exec(String(load))?.[1] : undefined;
+  if (file === undefined)
+    throw new Error(`モジュールを読み込む関数ではありません: ${String(load)}`);
+  return file;
+};
 
 describe("routesModule", () => {
   it("走査した表のすべてのファイルを、そのファイルを読み込む関数にした表を export する", () => {
@@ -235,6 +240,7 @@ describe("routesModule", () => {
       `${code.replaceAll("export const ", "const ")}\nreturn { routes, middleware };`,
     );
     const table = evaluate() as Routes<RouteFiles>;
+    expect(JSON.stringify(table)).not.toContain("src/routes/");
     expect(
       mapRouteFiles(table, {
         component: importedFile,
