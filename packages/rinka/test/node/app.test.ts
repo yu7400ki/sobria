@@ -1,4 +1,5 @@
 import type { Context, Handler, MiddlewareHandler } from "hono";
+import { setCookie } from "hono/cookie";
 import { describe, expect, it, vi } from "vitest";
 
 import { getContext } from "../../src/server/api.ts";
@@ -85,6 +86,12 @@ const marking =
     c.header(name, "1");
     await next();
   };
+
+/** Cookie の `session` を設定するミドルウェアである。 */
+const session: MiddlewareHandler = async (c, next) => {
+  setCookie(c, "session", "1");
+  await next();
+};
 
 /** 401 の Response を返すミドルウェアである。 */
 const deny: MiddlewareHandler = async (c) => c.text("denied", 401);
@@ -238,6 +245,27 @@ describe("createApp の route.ts", () => {
   it("HEAD は GET の関数で処理する", async () => {
     const response = await request(routes, "/api/items/5", { method: "HEAD" });
     expect(response.status).toBe(200);
+  });
+
+  it("Context で作成した Response には、ミドルウェアと関数が設定した Set-Cookie を 1 回ずつ付ける", async () => {
+    const response = await request(
+      {
+        routes: [
+          apiRoute(
+            "/login",
+            {
+              GET: (c) => {
+                setCookie(c, "user", "ann");
+                return c.text("ok");
+              },
+            },
+            [session],
+          ),
+        ],
+      },
+      "/login",
+    );
+    expect(response.headers.getSetCookie()).toEqual(["session=1; Path=/", "user=ann; Path=/"]);
   });
 
   it("関数が直接作成した Response にも、ミドルウェアが next() の前に設定したヘッダーを付ける", async () => {

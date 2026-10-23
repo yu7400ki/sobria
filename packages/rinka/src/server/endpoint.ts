@@ -173,9 +173,16 @@ function unreachable(value: never): never {
   throw new Error(`想定していない値です: ${JSON.stringify(value)}`);
 }
 
-/** `response` に、Context で設定したヘッダーを加えて返す。 */
+/** `response` に、Context で設定したヘッダーを加えて返す。同じ値の `Set-Cookie` は 1 つにする。 */
 export function withContextHeaders(c: Pick<Context, "newResponse">, response: Response): Response {
-  return c.newResponse(response.body, response);
+  const merged = c.newResponse(response.body, response);
+  const cookies = merged.headers.getSetCookie();
+  const unique = new Set(cookies);
+  if (unique.size !== cookies.length) {
+    merged.headers.delete("set-cookie");
+    for (const cookie of unique) merged.headers.append("set-cookie", cookie);
+  }
+  return merged;
 }
 
 /** フォームの送信と同じ `Content-Type` の POST かどうかを返す。 */
