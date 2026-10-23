@@ -43,10 +43,17 @@ export { CompileError } from "./errors.ts";
 export interface SourceOptions extends ModuleSource {
   /** クライアント向けのコードなら真である。 */
   readonly client: boolean;
-  /** 要素のファイルなら、要素のタグ名と、ブラウザが読み込むモジュールの URL を持つ。 */
-  readonly element?: { readonly tag: string; readonly module: string };
+  /** 要素のファイルなら、要素のタグ名と、ブラウザが読み込むモジュールの URL と、そのモジュールが静的に import するチャンクの URL を持つ。 */
+  readonly element?: ElementTarget;
   /** サーバー関数の ID のモジュールの部分である。省略すると `file` を使用する。 */
   readonly fnModule?: string;
+}
+
+/** 変換する要素のファイルの、タグ名と、ブラウザが読み込むモジュールの URL と、モジュールが静的に import するチャンクの URL を表す。 */
+export interface ElementTarget {
+  readonly tag: string;
+  readonly module: string;
+  readonly chunks?: readonly string[];
 }
 
 /** 変換したコードと、元のコードへのソースマップを表す。 */
@@ -121,7 +128,7 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
 function registerElement(
   program: ESTree.Program,
   output: MagicString,
-  { tag, module }: { readonly tag: string; readonly module: string },
+  { tag, module, chunks }: ElementTarget,
   file: string,
   client: boolean,
 ): ElementInfo {
@@ -140,7 +147,14 @@ function registerElement(
   output.remove(exported.start, fn.start);
   const [last, accept] = client
     ? ["import.meta.hot", "if (import.meta.hot) import.meta.hot.accept();\n"]
-    : [JSON.stringify({ module, load: defaultLoad(program, file) } satisfies Delivery), ""];
+    : [
+        JSON.stringify({
+          module,
+          load: defaultLoad(program, file),
+          ...(chunks && { chunks }),
+        } satisfies Delivery),
+        "",
+      ];
   output.append(`
 export default ${DEFINE}(${[JSON.stringify(tag), fn.id.name, JSON.stringify(elementOptions), last].join(", ")});
 ${accept}`);

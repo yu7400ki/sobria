@@ -710,12 +710,17 @@ const listed = ({ tag, delivery }: Delivered): ListedElement => [
 /** `elements` を起動スクリプトに伝えるスクリプトを返す。要素が無ければ空の文字列を返す。 */
 const announceScript = (elements: readonly Delivered[]): string => listScript(elements.map(listed));
 
-/** `elements` のうち、すぐ起動するインスタンスがある要素の `modulepreload` を返す。 */
-const preloadLinks = (elements: readonly Delivered[]): string =>
-  elements
-    .filter((delivered) => delivered.immediate)
-    .map(({ delivery }) => `<link rel="modulepreload" href="${escapeAttribute(delivery.module)}">`)
+/** `elements` のうち、すぐ起動するインスタンスがある要素のモジュールと、そのチャンクの `modulepreload` を、同じ URL を 1 回だけ含めて返す。 */
+const preloadLinks = (elements: readonly Delivered[]): string => {
+  const urls = new Set(
+    elements
+      .filter((delivered) => delivered.immediate)
+      .flatMap(({ delivery }) => [delivery.module].concat(delivery.chunks ?? [])),
+  );
+  return [...urls]
+    .map((url) => `<link rel="modulepreload" href="${escapeAttribute(url)}">`)
     .join("");
+};
 
 /** サーバーで木を描画する。 */
 class Renderer<K extends Target["kind"] = Target["kind"]> {

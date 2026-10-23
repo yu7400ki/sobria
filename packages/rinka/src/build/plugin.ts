@@ -21,6 +21,7 @@ import { elementTag, scanElements } from "./elements.ts";
 import { entries, oxc, runtimes } from "./entries.ts";
 import { entryModule } from "./entry.ts";
 import { transformJsx } from "./jsx.ts";
+import { readClientAssets, type ClientAssets } from "./manifest.ts";
 import { rinkaPackage } from "./package.ts";
 import { devPath, directUrl, inside } from "./paths.ts";
 import { preparedFiles, writePrepared } from "./prepare.ts";
@@ -105,6 +106,14 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   let elementsDir = "";
   let outDir = "";
   let isBuild = false;
+  /** サーバーのビルドで読み込んだ、クライアントのビルドの manifest である。 */
+  let clientAssets: ClientAssets | undefined;
+  /** 要素のファイル `file` を、ブラウザが読み込むときの URL と、静的に import するチャンクの URL を返す。 */
+  const elementAssets = (file: string, client: boolean) => {
+    if (!isBuild || client) return { module: `/${file}` };
+    clientAssets ??= readClientAssets(join(outDir, "client"));
+    return clientAssets(file);
+  };
   const writeTypes = (): void => {
     if (root === "") {
       throw new Error("[rinka] .rinka/ は、Vite の設定を解決した後に生成してください。");
@@ -293,7 +302,9 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           file: target.file,
           lang: target.lang,
           client: isClient(this.environment),
-          ...(tag !== undefined && { element: { tag, module: `/${target.file}` } }),
+          ...(tag !== undefined && {
+            element: { tag, ...elementAssets(target.file, isClient(this.environment)) },
+          }),
           ...(isBuild && { fnModule: hashedFnModule(target.file) }),
         });
         if (!isClient(this.environment)) {

@@ -17,6 +17,19 @@ const element = (tag: string, load: DefaultLoad = "load", body: unknown = jsx("p
     { module: `/src/elements/${tag}.tsx`, load },
   );
 
+/** `tag` の名前で、モジュールと、共有するチャンクと、自身のチャンクを持つ要素を作成する。 */
+const chunked = (tag: string) =>
+  defineElement(
+    tag,
+    () => null,
+    { props: [] },
+    {
+      module: `/assets/${tag}.js`,
+      load: "load",
+      chunks: ["/assets/shared.js", `/assets/${tag}-dep.js`],
+    },
+  );
+
 /** `node` を描画した文書の全体を返す。 */
 const html = async (node: unknown): Promise<string> => (await read(renderToStream(node))).join("");
 
@@ -27,6 +40,15 @@ const head = (document: string): string =>
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("要素の配信", () => {
+  it("すぐ起動するインスタンスがある要素のモジュールと、そのモジュールが静的に import するチャンクを、重複せずに先読みする", async () => {
+    const document = await html(
+      jsx("main", { children: [jsx(chunked("x-p"), {}), jsx(chunked("x-q"), {})] }),
+    );
+    expect(head(document)).toContain(
+      '<link rel="modulepreload" href="/assets/x-p.js"><link rel="modulepreload" href="/assets/shared.js"><link rel="modulepreload" href="/assets/x-p-dep.js"><link rel="modulepreload" href="/assets/x-q.js"><link rel="modulepreload" href="/assets/x-q-dep.js"><script>',
+    );
+  });
+
   it("シェルで使用した要素を $rinka.m で伝え、すぐ起動するインスタンスがある要素だけを先読みする", async () => {
     const A = element("x-a");
     const B = element("x-b", "visible");

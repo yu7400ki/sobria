@@ -95,6 +95,8 @@ export type DefaultLoad = (typeof defaultLoads)[number];
 export interface Delivery {
   readonly module: string;
   readonly load: DefaultLoad;
+  /** 本番のビルドで、要素のモジュールが静的に import するチャンクの URL である。 */
+  readonly chunks?: readonly string[];
 }
 
 /** 要素のタグ名と、`defineElement` に渡したオプションを表す。`delivery` は、Vite プラグインがコンパイルしたサーバー向けの要素だけが持つ。 */

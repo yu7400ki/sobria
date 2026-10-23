@@ -74,6 +74,19 @@ describe("本番のビルド", () => {
     expect(await (await request("/api")).json()).toEqual({ ok: true });
   });
 
+  it("ページの要素のモジュールの URL と先読みは、クライアントのビルドが出力した /assets/ のファイルを指す", async () => {
+    const html = await (await request("/")).text();
+    const module = /\$rinka\.m\(\[\["app-counter","([^"]+)"/.exec(html)?.[1];
+    expect(module).toMatch(/^\/assets\/.+\.js$/);
+    const preloads = [...html.matchAll(/<link rel="modulepreload" href="([^"]+)">/g)].map(
+      ([, href]) => href!,
+    );
+    expect(preloads).toContain(module);
+    // 2 つの要素が共有する rinka のランタイムは、要素のモジュールが静的に import するチャンクになる
+    expect(preloads.length).toBeGreaterThan(2);
+    await Promise.all(preloads.map((url) => readFile(join(outDir, "client", url))));
+  });
+
   it("どのページからも import されていないサーバー関数も、ハッシュの ID の RPC で呼び出せる", async () => {
     const response = await request(rpcPath("src/lib/orphan.ts", "orphan"), { method: "POST" });
     expect(await response.json()).toEqual({ ok: "orphan" });
