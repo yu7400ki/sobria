@@ -185,7 +185,7 @@ describe("renderRefresh", () => {
 });
 
 describe("サーバーの refreshPage", () => {
-  it("呼び出すとエラーを投げる", () => {
-    expect(() => refreshPage()).toThrow("refreshPage()");
+  it("呼び出すと、エラーで reject する Promise を返す", async () => {
+    await expect(refreshPage()).rejects.toThrow("refreshPage()");
   });
 });

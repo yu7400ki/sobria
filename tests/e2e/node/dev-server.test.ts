@@ -166,6 +166,19 @@ writeFileSync(${JSON.stringify(marker)}, "x");
     }
   }, 30_000);
 
+  it("refreshPage() のレスポンスがリダイレクトのときは、ページを読み込み直してリダイレクト先に移動する", async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage();
+      await page.goto(`${origin}/refresh-moved`);
+      await page.locator("app-refresher[data-started]").waitFor({ timeout: 5000 });
+      await page.locator("app-refresher #refresh").dispatchEvent("click");
+      await page.waitForURL(`${origin}/refresh`, { timeout: 5000 });
+    } finally {
+      await browser.close();
+    }
+  }, 30_000);
+
   it("Vite が処理するリクエストは、Vite が返す", async () => {
     const response = await fetch(`${origin}/src/elements/counter.tsx`);
     expect(response.status).toBe(200);

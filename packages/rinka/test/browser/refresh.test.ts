@@ -83,6 +83,7 @@ const counterView = (h: H) => (props: { label?: string; data?: { name: string } 
 
 describe("applyRefresh", () => {
   it("<title> を置換し、キーが同じタグを置換し、ページに無いタグを加え、描き直しに無いタグを残す", () => {
+    run(bootstrapSource);
     document.head.insertAdjacentHTML(
       "beforeend",
       '<meta name="description" content="old"><meta name="keep" content="k">',
@@ -102,19 +103,35 @@ describe("applyRefresh", () => {
     expect(document.head.querySelectorAll('link[href="/x.css"]')).toHaveLength(1);
   });
 
-  it("<html> と <body> の属性を設定し、前回の描き直しで設定して今回の描き直しに無い属性を削除する", () => {
+  it("<html> と <body> の属性を設定し、前回の描き直しで設定して今回の描き直しで設定しない属性を削除する", () => {
+    run(bootstrapSource);
     applyRefresh(
-      refreshJson({ doc: { html: { lang: "ja" }, body: { "data-a": "1", hidden: null } } }),
+      refreshJson({
+        doc: { html: { lang: "ja", "data-x": "1" }, body: { "data-a": "", hidden: null } },
+      }),
     );
     expect(document.documentElement.getAttribute("lang")).toBe("ja");
-    expect(document.body.getAttribute("data-a")).toBe("1");
-    expect(document.body.getAttribute("hidden")).toBe("");
-    document.body.classList.add("theme");
-    applyRefresh(refreshJson({ doc: { html: { lang: "en" }, body: {} } }));
-    expect(document.documentElement.getAttribute("lang")).toBe("en");
-    expect(document.body.hasAttribute("data-a")).toBe(false);
+    expect(document.body.getAttribute("data-a")).toBe("");
     expect(document.body.hasAttribute("hidden")).toBe(false);
+    document.body.classList.add("theme");
+    applyRefresh(
+      refreshJson({ doc: { html: { lang: "en", "data-x": null }, body: { class: null } } }),
+    );
+    expect(document.documentElement.getAttribute("lang")).toBe("en");
+    expect(document.documentElement.hasAttribute("data-x")).toBe(false);
+    expect(document.body.hasAttribute("data-a")).toBe(false);
     expect(document.body.getAttribute("class")).toBe("theme");
+  });
+
+  it("<head> に加える <script> を実行する", () => {
+    run(bootstrapSource);
+    applyRefresh(refreshJson({ head: "<script>globalThis.refreshedHead = true</script>" }));
+    expect((globalThis as { refreshedHead?: boolean }).refreshedHead).toBe(true);
+    delete (globalThis as { refreshedHead?: boolean }).refreshedHead;
+  });
+
+  it("rinka のサーバーが描画していないページでは、エラーを投げる", () => {
+    expect(() => applyRefresh(refreshJson({}))).toThrow("refreshPage()");
   });
 
   it("ページにある要素は状態を保ったまま新しい props を受け取り、新しく現れた要素は描き直しの props で起動する", async () => {
@@ -134,8 +151,12 @@ describe("applyRefresh", () => {
     expect(first?.shadowRoot?.textContent).toBe("a ann 1");
 
     const response = await renderRefresh(page(["b", "bob"], ["c", "cy"]));
-    applyRefresh((await response.json()) as RefreshJson);
+    const json = (await response.json()) as RefreshJson;
+    applyRefresh(json);
     await tick();
+    const [keptId, addedId] = Object.keys(json.data);
+    expect(globalThis.$rinka?.v[keptId ?? ""]).toBeUndefined();
+    expect(globalThis.$rinka?.v[addedId ?? ""]).toBeDefined();
     const [kept, added] = document.querySelectorAll(tag);
     expect(kept).toBe(first);
     expect(kept?.shadowRoot?.textContent).toBe("b bob 1");
@@ -156,16 +177,24 @@ describe("refreshPage", () => {
     expect(document.title).toBe("refreshed");
   });
 
-  it("後に呼び出した描き直しのレスポンスだけを反映する", async () => {
+  it("後に呼び出した描き直しのレスポンスだけを反映し、前の呼び出しは後の反映が終わってから解決する", async () => {
     run(bootstrapSource);
     const firstResponse = Promise.withResolvers<Response>();
+    const secondResponse = Promise.withResolvers<Response>();
     vi.spyOn(globalThis, "fetch")
       .mockReturnValueOnce(firstResponse.promise)
-      .mockResolvedValueOnce(Response.json(refreshJson({ head: "<title>second</title>" })));
-    const first = refreshPage();
-    await refreshPage();
+      .mockReturnValueOnce(secondResponse.promise);
+    let firstDone = false;
+    const first = refreshPage().then(() => {
+      firstDone = true;
+    });
+    const second = refreshPage();
     firstResponse.resolve(Response.json(refreshJson({ head: "<title>first</title>" })));
-    await first;
+    await tick();
+    expect(firstDone).toBe(false);
+    expect(document.title).toBe(titleBefore);
+    secondResponse.resolve(Response.json(refreshJson({ head: "<title>second</title>" })));
+    await Promise.all([first, second]);
     expect(document.title).toBe("second");
   });
 
