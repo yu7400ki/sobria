@@ -777,7 +777,7 @@ class Renderer {
     out: Chunk[],
   ): void {
     const role = this.document ? documentTags.get(tag) : undefined;
-    const atShell = ctx.owner === null && ctx.boundary === this.root && ctx.head !== "fallback";
+    const atShell = this.atShell(ctx);
     if (role === "html" || role === "body" || role === "transparent") {
       if (!atShell) {
         this.warnOutside(tag, ctx, `文書の <${tag}> に反映せずに、子だけを出力します`);
@@ -824,15 +824,7 @@ class Renderer {
   /** 文書を出力する描画で、`<title>` を `<head>` に移動する位置の `<Navigation>` の props を、深さとともに記録する。 */
   private navigation(props: NavigationProps, ctx: WalkCtx, out: Chunk[]): void {
     if (!this.document) return;
-    if (ctx.head === "none") {
-      if (import.meta.env?.DEV) {
-        console.warn(
-          "[rinka] <Navigation> は <head> に移動しない位置（<svg> や <noscript> の配下、<head> に移動するタグの中）にあるので、反映しません。",
-        );
-      }
-      return;
-    }
-    if (ctx.owner !== null || ctx.boundary !== this.root || ctx.head === "fallback") {
+    if (ctx.head === "none" || !this.atShell(ctx)) {
       this.warnOutside("Navigation", ctx, "反映しません");
       return;
     }
@@ -844,15 +836,22 @@ class Renderer {
     out.push(this.marker(id, ""), this.marker(id, "/"));
   }
 
+  /** `ctx` が、シェルの境界にあり、要素の外にあり、`<Loading>` のフォールバックの外にあるかを返す。 */
+  private atShell(ctx: WalkCtx): boolean {
+    return ctx.owner === null && ctx.boundary === this.root && ctx.head !== "fallback";
+  }
+
   /** 文書の骨組みに移動できない位置にある `tag` を、開発時に、位置と、`action` に記述した扱いとともに警告する。 */
   private warnOutside(tag: string, ctx: WalkCtx, action: string): void {
     if (!import.meta.env?.DEV) return;
     const where =
-      ctx.owner !== null
-        ? "要素の中"
-        : ctx.head === "fallback"
-          ? " <Loading> のフォールバックの中"
-          : " <Loading> の内側（要素の中の <Loading> に配置される子を含む）";
+      ctx.head === "none"
+        ? " <head> に移動しない位置（<svg> や <noscript> の配下、<head> に移動するタグの中）"
+        : ctx.owner !== null
+          ? "要素の中"
+          : ctx.head === "fallback"
+            ? " <Loading> のフォールバックの中"
+            : " <Loading> の内側（要素の中の <Loading> に配置される子を含む）";
     console.warn(`[rinka] <${tag}> は${where}にあるので、${action}。`);
   }
 
