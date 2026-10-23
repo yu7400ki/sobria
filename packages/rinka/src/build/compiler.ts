@@ -6,6 +6,7 @@ import { defaultLoads } from "../shared/names.ts";
 import {
   defaultServerFnMethod,
   isServerFnMethod,
+  serverFnId,
   serverFnMethods,
   type ServerFnMethod,
 } from "../shared/server-fn.ts";
@@ -400,7 +401,7 @@ function findDefinitions(program: ESTree.Program, file: string): Definition[] {
       definitions.push({
         kind: "serverFn",
         name: id.name,
-        id: `${file}#${id.name}`,
+        id: serverFnId(file, id.name),
         init,
         method: methodOf(options, file, id.name),
       });

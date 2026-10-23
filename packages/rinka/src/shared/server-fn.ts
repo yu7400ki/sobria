@@ -11,6 +11,15 @@ export const defaultServerFnMethod = "POST" satisfies ServerFnMethod;
 export const isServerFnMethod = (value: unknown): value is ServerFnMethod =>
   serverFnMethods.some((method) => method === value);
 
+/** `file` の `name` のサーバー関数の ID を返す。 */
+export const serverFnId = (file: string, name: string): string => `${file}#${name}`;
+
+/** サーバー関数の ID から、定義したファイルを返す。ID の形式に合わなければ `undefined` を返す。 */
+export function fileOfServerFnId(id: string): string | undefined {
+  const separator = id.lastIndexOf("#");
+  return separator === -1 ? undefined : id.slice(0, separator);
+}
+
 /** `serverFnRef` を `Symbol.for` で取得するときの名前である。 */
 export const serverFnRefName = "rinka.serverFnRef";
 

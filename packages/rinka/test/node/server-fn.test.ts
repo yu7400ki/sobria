@@ -9,6 +9,7 @@ import { Loading } from "../../src/server/control.ts";
 import { createApp } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
+import { fileOfServerFnId, serverFnId } from "../../src/shared/server-fn.ts";
 
 /** `value` が数の文字列なら数を返し、そうでなければ issues を返す Standard Schema である。 */
 const numeric: StandardSchema<string, number> = {
@@ -268,5 +269,12 @@ describe("ページの描画中に呼んだサーバー関数", () => {
     const response = await requestPage(async () => secret());
     expect(response.status).toBe(401);
     expect(response.headers.get("www-authenticate")).toContain("Basic");
+  });
+});
+
+describe("サーバー関数の ID", () => {
+  it("ファイルと名前から作った ID から、ファイルを取り出せる。# を含まない ID は undefined にする", () => {
+    expect(fileOfServerFnId(serverFnId("src/lib/a#b.ts", "like"))).toBe("src/lib/a#b.ts");
+    expect(fileOfServerFnId("src/lib/a.ts")).toBeUndefined();
   });
 });
