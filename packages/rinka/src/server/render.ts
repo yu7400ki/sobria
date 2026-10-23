@@ -467,13 +467,13 @@ type HeadPlacement = "auto" | "all" | "none" | "fallback" | "element";
 
 /**
  * 文書を出力する描画で、描画している位置を表す。`shell` は、文書の骨組みに移動できる位置である。
- * ほかの値は、移動できない理由を表す。`headless` は `HeadPlacement` が `none` の位置である。
+ * ほかの値は、移動できない理由を表す。`loading` は `<Loading>` の内側で、ほかの値は同じ名前の `HeadPlacement` の位置である。
  */
-type Position = "shell" | "headless" | "element" | "fallback" | "loading";
+type Position = Exclude<HeadPlacement, "auto" | "all"> | "shell" | "loading";
 
 /** 移動できない位置ごとの、開発時の警告に表示する位置の説明である。 */
 const positionNames = {
-  headless: " <head> に移動しない位置（<svg> や <noscript> の配下、<head> に移動するタグの中）",
+  none: " <head> に移動しない位置（<svg> や <noscript> の配下、<head> に移動するタグの中）",
   element: "要素の中",
   fallback: " <Loading> のフォールバックの中",
   loading: " <Loading> の内側",
@@ -861,7 +861,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     }
     const movable =
       role === "head" && (tag === "title" || attributeValue("itemprop", props.itemprop) === null);
-    if (movable && position !== "shell" && position !== "headless" && warnsOutOfHead(tag, props)) {
+    if (movable && position !== "shell" && position !== "none" && warnsOutOfHead(tag, props)) {
       this.warnOutside(tag, position, "<head> に移動せずに、記述した位置に出力します");
     }
     const hoist = position === "shell" && (ctx.head === "all" || movable);
@@ -897,9 +897,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /** `ctx` の位置を返す。`<head>` に移動しない位置、要素の中と要素に渡した Light DOM の子、フォールバックの中、`<Loading>` の内側の順に判定する。 */
   private position(ctx: WalkCtx): Position {
-    if (ctx.head === "none") return "headless";
-    if (ctx.head === "element") return "element";
-    if (ctx.head === "fallback") return "fallback";
+    if (ctx.head !== "auto" && ctx.head !== "all") return ctx.head;
     return ctx.boundary === this.root ? "shell" : "loading";
   }
 
