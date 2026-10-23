@@ -1,7 +1,13 @@
 import { MagicString, type SourceMap } from "magic-string";
 import type { ESTree } from "vite";
 
-import type { DefaultLoad, Delivery, ElementInfo, ElementOptions } from "../shared/element.ts";
+import {
+  propKinds,
+  type DefaultLoad,
+  type Delivery,
+  type ElementInfo,
+  type ElementOptions,
+} from "../shared/element.ts";
 import { defaultLoads } from "../shared/names.ts";
 import {
   defaultServerFnMethod,
@@ -329,7 +335,7 @@ function convertSlots(
 ): void {
   const [param] = fn.params;
   if (param?.type !== "Identifier" || !fn.body) return;
-  const names = new Set(["children", ...(elementOptions.slots ?? [])]);
+  const names = propKinds(elementOptions).slots;
   const misplaced = (name: string) =>
     new CompileError(
       `${file}: スロット ${name} は、要素の関数が返す JSX の子に、{${param.name}.${name}} か {${param.name}.${name} ?? デフォルトの中身} の形で置いてください。それ以外の位置ではスロットの内容を参照できません。`,

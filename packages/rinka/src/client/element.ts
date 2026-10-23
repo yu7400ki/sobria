@@ -21,12 +21,12 @@ import {
   type Ctx,
   type ElementComponent,
   type ElementOptions,
-  formAttributeTypes,
+  propKinds,
   unsupportedFormControls,
 } from "../shared/element.ts";
 import { checkExposeName } from "../shared/expose-names.ts";
 import { reloadEvent } from "../shared/hmr.ts";
-import { customEventName, isEventProp, propToAttribute } from "../shared/names.ts";
+import { customEventName, isEventProp } from "../shared/names.ts";
 import type { ClientNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
 import { createScope, scopedChild, withScope } from "../shared/scope.ts";
@@ -210,21 +210,15 @@ export function registerElement<P, M extends object = object>(
   }
   const definition: Definition = { fn, signature, shown: new Set() };
   const types = options.types ?? {};
-  const functionProps: ReadonlySet<string> = new Set(options.functionProps);
-  const slotNames: ReadonlySet<string> = new Set(["children", ...(options.slots ?? [])]);
-  const unobserved = new Set([...functionProps, ...slotNames, ...(options.objectProps ?? [])]);
-  /** ホストの属性に反映する props の名前である。反映した属性の変化は、props に書き戻さない。 */
-  const reflects: ReadonlySet<string> = new Set(
-    options.form ? Object.keys(formAttributeTypes) : [],
-  );
+  const {
+    slots: slotNames,
+    functions: functionProps,
+    attributes: propOfAttribute,
+    reflects,
+  } = propKinds(options);
   const unsupported = unsupportedFormControls(tag);
   /** 要素の関数に渡す ctx の `form` を返す。 */
   const formOf = options.form ? formControls : () => unsupported;
-  const propOfAttribute = new Map(
-    options.props
-      .filter((name) => !unobserved.has(name))
-      .map((name) => [propToAttribute(name), name]),
-  );
 
   /** 要素の関数に渡す props を、インスタンスの props の状態から作成する。 */
   function createProps(host: HTMLElement, instance: Instance): object {

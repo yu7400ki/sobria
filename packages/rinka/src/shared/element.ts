@@ -1,9 +1,38 @@
-import type { defaultLoads } from "./names.ts";
+import { propToAttribute, type defaultLoads } from "./names.ts";
 import type { ClientNode, Slot } from "./nodes.ts";
 import type { ElementCss } from "./styles.ts";
 
 /** 属性の値から変換する props の型を表す。 */
 export type AttributeType = "string" | "number" | "boolean";
+
+/** 要素の設定から求めた、props の分類を表す。 */
+export interface PropKinds {
+  /** `children` を含む、スロットの props の名前である。 */
+  readonly slots: ReadonlySet<string>;
+  /** 関数の props の名前である。 */
+  readonly functions: ReadonlySet<string>;
+  /** 属性の名前ごとの、属性の変化を受け取る props の名前である。 */
+  readonly attributes: ReadonlyMap<string, string>;
+  /** ホストの属性に反映する props の名前である。反映した属性の変化は、props に書き戻さない。 */
+  readonly reflects: ReadonlySet<string>;
+}
+
+/** 要素の設定 `options` から、props の分類を返す。 */
+export function propKinds(options: ElementOptions): PropKinds {
+  const slots = new Set(["children", ...(options.slots ?? [])]);
+  const functions = new Set(options.functionProps);
+  const objects = new Set(options.objectProps);
+  return {
+    slots,
+    functions,
+    attributes: new Map(
+      options.props
+        .filter((name) => !slots.has(name) && !functions.has(name) && !objects.has(name))
+        .map((name) => [propToAttribute(name), name]),
+    ),
+    reflects: new Set(options.form ? Object.keys(formAttributeTypes) : []),
+  };
+}
 
 /** フォームの部品が、Props の型に記述していなくても受け付け、ホストの属性に反映する props の名前と、JSX の型で受け付ける値の型である。 */
 export const formAttributeTypes = {

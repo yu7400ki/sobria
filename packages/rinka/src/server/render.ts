@@ -24,6 +24,7 @@ import {
 import {
   elementInfo,
   isElementComponent,
+  propKinds,
   type Ctx,
   type Delivery,
   type ElementComponent,
@@ -1110,8 +1111,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
         announce = dataScript(creator.id, mapKey, scriptJson(id));
       }
     }
-    const slotNames = new Set(["children", ...(options.slots ?? [])]);
-    const functionProps = new Set(options.functionProps);
+    const { slots: slotNames, functions: functionProps } = propKinds(options);
     const descriptors = Object.getOwnPropertyDescriptors(props);
     const read = (name: string): unknown => {
       const descriptor = descriptors[name];
