@@ -139,6 +139,16 @@ describe("scanRoutes", () => {
     );
   });
 
+  it("静的な区切りは、名前が param や catch-all でも、動的な区切りやキャッチオールと別の URL とみなす", () => {
+    expect(scan(["param/page.tsx", "[id]/page.tsx"]).routes.map((route) => route.path)).toEqual([
+      "/param",
+      "/:id",
+    ]);
+    expect(
+      scan(["catch-all/page.tsx", "[...slug]/page.tsx"]).routes.map((route) => route.path),
+    ).toEqual(["/catch-all", "/:slug{.+}"]);
+  });
+
   it("同じ位置の動的な区切りは、名前が異なっても同じ URL を扱うとみなす", () => {
     expect(() => scan(["users/[id]/page.tsx", "users/[slug]/page.tsx"])).toThrow("/users/");
     expect(() => scan(["docs/[...a]/page.tsx", "docs/[...b]/route.ts"])).toThrow("/docs/");

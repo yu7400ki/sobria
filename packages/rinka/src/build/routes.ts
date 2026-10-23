@@ -47,7 +47,7 @@ function segmentOf(name: string, file: string): RouteSegment {
 /** URL の区切りになる、グループ以外の区切りを表す。 */
 type UrlSegment = Exclude<RouteSegment, { readonly kind: "group" }>;
 
-/** 区切りの種類ごとの優先順位である。静的な区切り、動的な区切り、キャッチオールの順に小さい。 */
+/** 区切りの種類ごとの優先順位である。 */
 const ranks = { static: 0, param: 1, "catch-all": 2 } as const satisfies Record<
   UrlSegment["kind"],
   number
@@ -68,9 +68,11 @@ function honoPath(segments: readonly UrlSegment[], kind: RouteKind): string {
   return `/${(kind === "not-found" ? [...parts, "*"] : parts).join("/")}`;
 }
 
-/** パラメータの名前を除いた、区切りの列が一致する URL の形を返す。 */
+/** パラメータの名前を除いた、区切りの列が一致する URL の形を返す。動的な区切りとキャッチオールは、静的な区切りの名前と重ならない `[` で始まる記号で表す。 */
 const shapeOf = (segments: readonly UrlSegment[]): string =>
-  segments.map((segment) => (segment.kind === "static" ? segment.name : segment.kind)).join("/");
+  segments
+    .map((segment) => (segment.kind === "static" ? segment.name : `[${segment.kind}]`))
+    .join("/");
 
 /** 走査した行と、その区切りの列と、グループを含めたファイルのディレクトリの深さを表す。 */
 interface Scanned {
@@ -101,11 +103,7 @@ function compareRoutes(a: Scanned, b: Scanned): number {
   return a.depth - b.depth;
 }
 
-/** 行のモジュールのファイルを返す。`not-found.tsx` の行では、その `not-found.tsx` のファイルを返す。 */
-const moduleOf = (route: ScannedRoute): string =>
-  route.kind === "not-found" ? route.notFound.module : route.module;
-
-/** 種類が `kind` の行を返す。ページには `fallbacks` を、`not-found.tsx` には `fallbacks` の `error` を付ける。 */
+/** 種類が `kind` の行を返す。ページと `not-found.tsx` には `fallbacks` を付け、`not-found.tsx` の `notFound` はその行のファイルにする。 */
 function rowOf({
   kind,
   path,
@@ -125,13 +123,7 @@ function rowOf({
     case "page":
       return { kind, path, module, layouts, middlewares, ...fallbacks };
     case "not-found":
-      return {
-        kind,
-        path,
-        middlewares,
-        notFound: { module, layouts },
-        ...(fallbacks.error && { error: fallbacks.error }),
-      };
+      return { kind, path, middlewares, ...fallbacks, notFound: { module, layouts } };
     case "route":
       return { kind, path, module, middlewares };
   }
@@ -204,17 +196,17 @@ export function scanRoutes(root: string, dir: string): Routes<PathFiles> {
   };
   if (existsSync(start)) visit(start, [], 0, [], [], {});
 
-  const handled = new Map<string, ScannedRoute>();
+  const handled = new Map<string, string>();
   for (const { route, segments } of scanned) {
     if (route.kind === "not-found") continue;
     const shape = shapeOf(segments);
     const other = handled.get(shape);
-    if (other) {
+    if (other !== undefined) {
       throw new Error(
-        `${moduleOf(other)} と ${moduleOf(route)} は、同じ URL に対応します。どちらか一方にしてください。`,
+        `${other} と ${route.module} は、同じ URL に対応します。どちらか一方にしてください。`,
       );
     }
-    handled.set(shape, route);
+    handled.set(shape, route.module);
   }
   return {
     routes: scanned.toSorted(compareRoutes).map(({ route }) => route),
