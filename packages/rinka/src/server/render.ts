@@ -48,7 +48,7 @@ import {
   swapScript,
 } from "./bootstrap.ts";
 import { classify } from "./errors.ts";
-import { escapeAttribute, escapeText } from "./escape.ts";
+import { attribute, checkAttributeName, escapeAttribute, escapeText } from "./html.ts";
 import { Labels } from "./labels.ts";
 import { scriptJson } from "./script.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
@@ -644,27 +644,6 @@ const voidTags: ReadonlySet<string> = new Set([
   "wbr",
 ]);
 
-/** HTML の属性の名前として使用できる文字列に一致する正規表現である。 */
-const attributeName = /^[^\s"'>/=\p{Cc}]+$/u;
-
-/** 名前に属性の名前として使用できない文字があれば、エラーを投げる。 */
-function checkAttributeName(name: string): void {
-  if (!attributeName.test(name)) {
-    throw new Error(`属性の名前 ${JSON.stringify(name)} には、使用できない文字が含まれています。`);
-  }
-}
-
-/**
- * 属性の出力の規則で、`value` を `name` の属性として出力する文字列を返す。`true` は値の無い属性にする。
- * 名前に属性の名前として使用できない文字があれば、エラーを投げる。
- */
-function attribute(name: string, value: unknown): string {
-  checkAttributeName(name);
-  const text = attributeValue(name, value);
-  if (text === null) return "";
-  return value === true && text === "" ? ` ${name}` : ` ${name}="${escapeAttribute(text)}"`;
-}
-
 /** 目印の開始と終了の HTML を返す。 */
 const marker = (id: string, inner = ""): string =>
   `<template ${BOUNDARY_ATTRIBUTE}="${id}"></template>${inner}<!--/ob:${id}-->`;
@@ -1176,7 +1155,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       : undefined;
     const chunks: Chunk[] = shadow?.chunks ?? [];
     const aria = ariaAttributes(shadow?.internals ?? {});
-    const hostId = options.form && shadow ? this.settle(ctx, () => propValue("id")) : undefined;
+    const hostId = form && shadow ? this.settle(ctx, () => propValue("id")) : undefined;
     for (const name of Object.keys(descriptors)) {
       if (!slotNames.has(name)) continue;
       const slot = name === "children" ? "" : name;
@@ -1226,7 +1205,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       if (transfer) this.send(record, PROPS_KEY, Promise.resolve(toScript(transfer, `<${tag}>`)));
       const keys = record.seal(transfer ? [PROPS_KEY] : [], at.shown);
       const om = keys.length > 0 ? attribute(AWAITED_ATTRIBUTE, keys.join(" ")) : "";
-      return `${start}${om}><template shadowrootmode="open"${options.form ? " shadowrootdelegatesfocus" : ""}>`;
+      return `${start}${om}><template shadowrootmode="open"${form ? " shadowrootdelegatesfocus" : ""}>`;
     };
     out.push({ kind: "host", host: { attributes, open, chunks, announce, delivered } });
   }
@@ -1254,7 +1233,8 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
     let owner: Owner | null = null;
     let tree: Node = null;
     const internals = {};
-    let valueOf: (() => unknown) | undefined;
+    /** 要素の関数が `form.value` に渡した関数と、ホストの `name` と `disabled` を返す関数である。 */
+    let submitted: { readonly form: FormProps; readonly value: () => unknown } | undefined;
     const elementCtx: Ctx = {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       host: serverHost as HTMLElement,
@@ -1263,7 +1243,7 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       form: form
         ? {
             value: (fn) => {
-              valueOf = fn;
+              submitted = { form, value: fn };
             },
             validity: () => {},
             onReset: () => {},
@@ -1300,12 +1280,14 @@ class Renderer<K extends Target["kind"] = Target["kind"]> {
       disabled: notDisabled,
       fallback: false,
     };
-    const read = valueOf;
+    const pending = submitted;
     const input =
-      form &&
-      read &&
+      pending &&
       this.chunkOf(
-        this.settle(shadowCtx, () => [form.name(), read(), form.disabled()] as const),
+        this.settle(
+          shadowCtx,
+          () => [pending.form.name(), pending.value(), pending.form.disabled()] as const,
+        ),
         ([given, value, off]) => hiddenInput(tag, given, value, off),
       );
     this.walk(tree, shadowCtx, chunks);

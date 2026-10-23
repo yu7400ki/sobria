@@ -1,4 +1,4 @@
-import { escapeAttribute } from "./escape.ts";
+import { attribute } from "./html.ts";
 
 /**
  * `<label for>` の補完の目印を表す。`label` は `for` を持つ `<label>` で、`host` は `<label>` で名前を補うフォームの部品のホストである。
@@ -76,7 +76,7 @@ export class Labels {
         const mark = markOf(index);
         if (mark.kind === "label") return "";
         const id = this.written.get(mark.key) ?? unit.get(mark.key);
-        return id === undefined ? "" : ` aria-labelledby="${escapeAttribute(id)}"`;
+        return id === undefined ? "" : attribute("aria-labelledby", id);
       }),
     );
     for (const [key, id] of unit) if (!this.written.has(key)) this.written.set(key, id);
