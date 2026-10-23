@@ -82,14 +82,18 @@ type Outcome =
   | { readonly kind: "value"; readonly value: unknown }
   | { readonly kind: "redirect"; readonly location: string }
   | { readonly kind: "notFound" }
-  | { readonly kind: "schema"; readonly issues: SchemaError["issues"] };
+  | { readonly kind: "schema"; readonly issues: SchemaError["issues"] }
+  | { readonly kind: "error"; readonly error: unknown };
 
-/** `redirect()`、`notFound()`、スキーマの失敗を分類する。それ以外の値は投げ直す。 */
+/** handler の結果の分類の名前である。 */
+export type OutcomeKind = Outcome["kind"];
+
+/** handler が投げた値を分類する。`redirect()`、`notFound()`、スキーマの失敗以外の値は `error` にする。 */
 function outcomeOf(error: unknown): Outcome {
   if (error instanceof Redirect) return { kind: "redirect", location: error.location };
   if (error instanceof NotFound) return { kind: "notFound" };
   if (error instanceof SchemaError) return { kind: "schema", issues: error.issues };
-  throw error;
+  return { kind: "error", error };
 }
 
 /** rinka が handler を呼ばずに拒否するときのステータスである。 */
@@ -102,7 +106,7 @@ interface Responder {
   /** handler を呼ばずに拒否するときのレスポンスを返す。 */
   readonly reject: (c: Context, status: Rejection) => Response;
   /** handler の結果のレスポンスを返す。 */
-  readonly respond: (c: Context, outcome: Outcome) => Response;
+  readonly respond: (c: Context, outcome: Outcome) => Response | Promise<Response>;
 }
 
 const rejectionText = {
@@ -126,6 +130,8 @@ const responders = {
           return rpc(c, null, 404);
         case "schema":
           return rpc(c, { issues: outcome.issues }, 422);
+        case "error":
+          throw outcome.error;
         default:
           return unreachable(outcome);
       }
@@ -144,6 +150,8 @@ const responders = {
           return c.text(rejectionText[404], 404);
         case "schema":
           return c.json({ issues: outcome.issues }, 422);
+        case "error":
+          throw outcome.error;
         default:
           return unreachable(outcome);
       }

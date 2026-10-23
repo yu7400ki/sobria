@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import { fromJSON, toJSON } from "seroval";
 import { describe, expect, it, vi } from "vitest";
 
+import type { OutcomeKind } from "../../src/server/endpoint.ts";
 import { notFound, redirect } from "../../src/server/errors.ts";
 import { createApp, registerServerFn } from "../../src/server/internal.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
@@ -333,7 +334,10 @@ describe("リクエストの種類ごとのレスポンス", () => {
     http: defineServerFn(() => {
       throw new HTTPException(418, { message: "teapot" });
     }),
-  };
+    error: defineServerFn(() => {
+      throw new Error("boom");
+    }),
+  } satisfies Record<OutcomeKind | "http", unknown>;
   const ids = Object.fromEntries(
     Object.entries(handlers).map(([name, fn]) => [name, register(fn)]),
   ) as Record<keyof typeof handlers, string>;
@@ -353,9 +357,12 @@ describe("リクエストの種類ごとのレスポンス", () => {
     ["form", "notFound", 404, false, "Not Found"],
     ["form", "schema", 422, false, issues],
     ["form", "http", 418, false, "teapot"],
+    ["rpc", "error", 500, false, "Internal Server Error"],
+    ["form", "error", 500, false, "Internal Server Error"],
   ];
 
   it("種類と結果のすべての組で、ステータス、x-rinka-wire の有無、本文が表と一致する", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
     const actual = await Promise.all(
       table.map(async ([kind, result]) => {
         const response = await call(ids[result], requests[kind]());
@@ -369,5 +376,6 @@ describe("リクエストの種類ごとのレスポンス", () => {
       }),
     );
     expect(actual).toEqual(table);
+    vi.restoreAllMocks();
   });
 });
