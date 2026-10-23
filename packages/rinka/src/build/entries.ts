@@ -1,6 +1,6 @@
 import type { UserConfig } from "vite";
 
-/** rinka の入口の指定子である。`routes` と `entry` はプラグインが作成する仮想モジュールである。 */
+/** rinka の入口の指定子である。`routes`、`entry`、`serverIndex` はプラグインが作成する仮想モジュールである。 */
 export const entries = {
   main: "rinka",
   jsxRuntime: "rinka/jsx-runtime",
@@ -8,6 +8,8 @@ export const entries = {
   server: "rinka/server",
   routes: "rinka/routes",
   entry: "rinka/entry",
+  serverIndex: "rinka/server-index",
+  static: "rinka/static",
   router: "rinka/router",
   tsconfig: "rinka/tsconfig.json",
 } as const;
@@ -29,5 +31,6 @@ export const runtimes: Readonly<Record<"client" | "server", Readonly<Record<stri
     [entries.main]: "server/index.js",
     [entries.jsxRuntime]: "server/jsx-runtime.js",
     [entries.internal]: "server/internal.js",
+    [entries.static]: "server/static.js",
   },
 };

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename, extname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { getRequestListener } from "@hono/node-server";
 import {
@@ -20,7 +20,7 @@ import { embedRouteStyles, moveServerAssets } from "./build-styles.ts";
 import { transformSource } from "./compiler.ts";
 import { elementTag, scanElements } from "./elements.ts";
 import { entries, oxc, runtimes } from "./entries.ts";
-import { entryModule } from "./entry.ts";
+import { entryModule, serverIndexModule } from "./entry.ts";
 import { transformJsx } from "./jsx.ts";
 import { readClientAssets, type ClientAssets } from "./manifest.ts";
 import { rinkaPackage } from "./package.ts";
@@ -84,6 +84,9 @@ const ROUTES = `\0${entries.routes}`;
 
 /** サーバーのエントリーの仮想モジュールの ID である。 */
 const ENTRY = `\0${entries.entry}`;
+
+/** 起動用のエントリーの仮想モジュールの ID である。 */
+const SERVER_INDEX = `\0${entries.serverIndex}`;
 
 /** 本番のサーバーのビルドに含める、rinka と、rinka の依存と、アプリと rinka が共有する hono である。 */
 const bundled = [entries.main, "hono", ...Object.keys(rinkaPackage().dependencies)];
@@ -193,7 +196,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
                 build: {
                   outDir: join(out, "server"),
                   emitAssets: true,
-                  rolldownOptions: { input: { entry: entries.entry } },
+                  rolldownOptions: { input: { entry: entries.entry, index: entries.serverIndex } },
                 },
               },
             },
@@ -228,6 +231,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       resolveId(id, importer, resolveOptions) {
         if (id === entries.routes) return ROUTES;
         if (id === entries.entry) return ENTRY;
+        if (id === entries.serverIndex) return SERVER_INDEX;
         if (id.endsWith(SHEET_QUERY)) {
           return this.resolve(id.slice(0, -SHEET_QUERY.length), importer, { skipSelf: true }).then(
             (resolved) => resolved && sheetId(resolved.id),
@@ -246,6 +250,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       },
       load(id) {
         if (id === ROUTES) return routesModule(root, ROUTES_DIR);
+        if (id === SERVER_INDEX) return serverIndexModule(options.deploy ?? "node");
         if (id === ENTRY) {
           return entryModule({ serverFns: serverFnModules(root, [outDir]), trustedOrigins });
         }
@@ -268,6 +273,18 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         if (isBuild && !isClient(this.environment)) {
           moveServerAssets(bundle, join(outDir, "server"), join(outDir, "client"));
         }
+      },
+      configurePreviewServer(server) {
+        return () => {
+          const entry = pathToFileURL(join(outDir, "server/entry.js")).href;
+          server.middlewares.use((request, response, next) => {
+            (async () => {
+              // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+              const { app } = (await import(entry)) as { readonly app: ReturnType<CreateApp> };
+              await getRequestListener((incoming) => app.fetch(incoming))(request, response);
+            })().catch(next);
+          });
+        };
       },
       configureServer(server) {
         const routesDir = resolve(root, ROUTES_DIR);

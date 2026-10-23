@@ -27,6 +27,16 @@ export const app = createApp(routes, {
 ${loaders.join("")}  }),
 });
 
-export default { fetch: (request) => app.fetch(request) };
+export default { fetch: app.fetch };
+`;
+}
+
+/** `deploy` のランタイムで、`dist/client` を配信し、サーバーのエントリーのアプリに応答させるサーバーを起動する、起動用のエントリーのコードを返す。 */
+export function serverIndexModule(deploy: "node" | "bun"): string {
+  const serveName = deploy === "bun" ? "serveBun" : "serveNode";
+  return `import { ${serveName} } from "${entries.static}";
+import { app } from "${entries.entry}";
+
+${serveName}(app, import.meta.url);
 `;
 }
