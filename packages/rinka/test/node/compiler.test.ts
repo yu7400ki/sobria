@@ -261,6 +261,14 @@ export default function X(props: Props) { return <p />; }`);
     });
   });
 
+  it("同じ名前の interface は、すべての宣言のメンバーを合わせてから分類する", () => {
+    const { element: info } = element(`interface H {}
+interface H { (x: number): void }
+type Props = { onPick: H };
+export default function X(props: Props) { return <p />; }`);
+    expect(info?.options).toEqual({ props: ["onPick"], functionProps: ["onPick"] });
+  });
+
   it("同じ名前の interface の宣言を、1 つの Props の型にまとめる", () => {
     expect(
       props(`interface Props { a: string }
