@@ -41,10 +41,7 @@ export function serverFnModule(fnModule: string): typeof registerServerFn {
  * サーバー関数のエンドポイントへのリクエストを処理し、それ以外のリクエストを後続の処理に渡す Hono のミドルウェアを返す。
  * rinka が扱わない例外は、リクエストの種類に対応する `failures` の関数が返すレスポンスにする。
  */
-export function serverFnMiddleware(
-  options: AppOptions,
-  failures: Record<RequestKind, Failure>,
-): MiddlewareHandler {
+export function serverFnMiddleware(options: AppOptions, failures: Failures): MiddlewareHandler {
   return async (c, next) => {
     const kind = requestKind(c);
     if (kind === undefined) {
@@ -63,13 +60,13 @@ export function serverFnMiddleware(
 }
 
 /**
- * サーバー関数のエンドポイントへのリクエスト `c` では、ルートの `middleware.ts` が投げた値 `error` から、サーバー関数が投げた値と同じレスポンスを作成する。
+ * サーバー関数のエンドポイントへのリクエスト `c` では、投げられた値 `error` から、サーバー関数が投げた値と同じレスポンスを作成する。
  * それ以外のリクエストでは `undefined` を返す。
  */
 export function serverFnFailure(
   c: Context,
   error: unknown,
-  failures: Record<RequestKind, Failure>,
+  failures: Failures,
 ): Response | Promise<Response> | undefined {
   const kind = requestKind(c);
   return kind === undefined ? undefined : respondThrown(c, kind, error, failures[kind]);
@@ -149,6 +146,9 @@ type RequestKind = "rpc" | "form";
 
 /** サーバー関数が投げた、rinka が扱わない例外から、リクエスト `c` のレスポンスを作成する。 */
 export type Failure = (c: Context, error: unknown) => Response | Promise<Response>;
+
+/** リクエストの種類ごとの `Failure` である。 */
+export type Failures = Readonly<Record<RequestKind, Failure>>;
 
 /** rinka が handler を呼ばずに拒否するときのステータスである。 */
 type Rejection = 400 | 403 | 404 | 405;

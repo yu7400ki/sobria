@@ -960,6 +960,11 @@ describe("サーバー関数のリクエストで、ルートの middleware.ts �
       body,
     });
 
+  it("ページのリクエストでは、notFound() に URL に一致する not-found.tsx を使用する", async () => {
+    const response = await request(routes, "/nope", { headers: { "x-throw": "notFound" } });
+    expect([response.status, await bodyOf(response)]).toEqual([404, "<h1>missing /nope</h1>"]);
+  });
+
   it("RPC では、サーバー関数が投げた値と同じく、redirect() を { redirect } に、notFound() を本文の無い 404 にする", async () => {
     const [moved, gone] = await Promise.all([
       send("redirect", "application/json", "null"),
@@ -986,6 +991,45 @@ describe("サーバー関数のリクエストで、ルートの middleware.ts �
       500,
       "<h1>user /users/3/edit root</h1>",
     ]);
+  });
+
+  it("フォームの送信で使用した error.tsx のシェルが投げたエラーは、onError に渡す", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    onTestFinished(() => {
+      error.mockRestore();
+    });
+    const onError = vi.fn(handled);
+    const app = createApp(
+      {
+        middleware: loadOf(thrower),
+        routes: [
+          pageRoute("/broken", page("broken"), [], [], {
+            error: fallbackOf(throwing(new Error("shell"))),
+          }),
+        ],
+      },
+      { onError },
+    );
+    const submit = (id: string, kind: string) =>
+      Promise.resolve(
+        app.fetch(
+          new Request(`http://localhost${rpcPath(id)}`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/x-www-form-urlencoded",
+              referer: "http://localhost/broken",
+              "x-throw": kind,
+            },
+            body: "a=1",
+          }),
+        ),
+      );
+    const [fromHandler, fromMiddleware] = await Promise.all([
+      submit("src/app-test.ts#explode", "none"),
+      submit("src/app-test.ts#unknown", "error"),
+    ]);
+    expect([fromHandler.status, fromMiddleware.status]).toEqual([503, 503]);
+    expect(onError).toHaveBeenCalledTimes(2);
   });
 });
 

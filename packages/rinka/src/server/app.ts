@@ -15,7 +15,13 @@ import {
 } from "../shared/routes.ts";
 import { isBot } from "./bots.ts";
 import { blockingRenderOf, runInRequest, withContextHeaders } from "./context.ts";
-import { formRedirects, serverFnFailure, serverFnMiddleware, type Failure } from "./endpoint.ts";
+import {
+  formRedirects,
+  serverFnFailure,
+  serverFnMiddleware,
+  type Failure,
+  type Failures,
+} from "./endpoint.ts";
 import { classify, notFound } from "./errors.ts";
 import { stylesheetLink } from "./html.ts";
 import { jsx } from "./jsx-runtime.ts";
@@ -38,11 +44,35 @@ const lazy =
     return result instanceof Response ? withContextHeaders(c, result) : result;
   };
 
+/**
+ * サーバー関数のエンドポイントへのリクエストでは、ミドルウェア `middleware` が投げた値を、`failures` を使用して、サーバー関数が投げた値と同じレスポンスにするミドルウェアを返す。
+ * `middleware` が、`next()` が投げた値と同じ値を投げたときは、その値をそのまま投げる。
+ */
+const root =
+  (middleware: MiddlewareHandler, failures: Failures): MiddlewareHandler =>
+  async (c, next) => {
+    let downstream: { readonly error: unknown } | undefined;
+    try {
+      return await middleware(c, async () => {
+        try {
+          await next();
+        } catch (error) {
+          downstream = { error };
+          throw error;
+        }
+      });
+    } catch (error) {
+      const response =
+        downstream !== undefined && downstream.error === error
+          ? undefined
+          : serverFnFailure(c, error, failures);
+      if (response === undefined) throw error;
+      return response;
+    }
+  };
+
 /** ページとレイアウトが受け取る、リクエストの props を返す。 */
-const propsOf = (c: Context) => ({
-  params: c.req.param(),
-  url: new URL(c.req.url),
-});
+const propsOf = (c: Context) => ({ params: c.req.param(), url: new URL(c.req.url) });
 
 /** `page` を、外側から順に並んだ `layouts` で包んだノードを返す。各ファイルの描画には、外側から順に 0 から始まる深さを与える。 */
 async function wrap(
@@ -174,12 +204,11 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
       },
     );
   };
+  app.onError(async (c) => withContextHeaders(c, await fail(c, c.error)));
   const failures = { rpc: fail, form: formFailure };
-  app.onError(async (c: Context) =>
-    withContextHeaders(c, await (serverFnFailure(c, c.error, failures) ?? fail(c, c.error))),
-  );
   const serverFns = serverFnMiddleware(options, failures);
-  const rinka = middleware === undefined ? serverFns : every(lazy(middleware), serverFns);
+  const rinka =
+    middleware === undefined ? serverFns : every(root(lazy(middleware), failures), serverFns);
   app.use(formRedirects);
   app.use((c, next) => runInRequest(c, () => rinka(c, next)));
   for (const route of routes) register(app, route, respond);

@@ -37,7 +37,7 @@ export function propKinds(options: ElementOptions): PropKinds {
   const functions = new Set<string>();
   const attributes = new Map<string, AttributeProp>();
   for (const [name, kind] of Object.entries(options.props)) {
-    if (kind === "slot") {
+    if (kind === "slot" || name === "children") {
       slots.add(name);
       continue;
     }
