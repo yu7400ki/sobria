@@ -276,9 +276,9 @@ export function scanPages(
   dir: string,
 ): { readonly path: string; readonly params: readonly string[] }[] {
   return scan(root, dir)
-    .scanned.filter(({ route }) => route.kind === "page")
-    .map(({ segments }) => ({
-      path: filePath(segments),
+    .scanned.flatMap(({ route, segments }) => (route.kind === "page" ? [{ route, segments }] : []))
+    .map(({ route, segments }) => ({
+      path: route.pattern,
       params: segments.flatMap((segment) => (segment.kind === "static" ? [] : [segment.name])),
     }));
 }

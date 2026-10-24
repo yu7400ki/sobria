@@ -62,7 +62,7 @@ const page =
 
 /** Hono のパス `path` を、ファイルの形のパスにする。 */
 const patternOf = (path: string): string =>
-  path.replaceAll(/:(w+){.+}/g, "[...$1]").replaceAll(/:(w+)/g, "[$1]");
+  path.replaceAll(/:(\w+)\{\.\+\}/g, "[...$1]").replaceAll(/:(\w+)/g, "[$1]");
 
 /** ページの行を返す。 */
 function pageRoute(
