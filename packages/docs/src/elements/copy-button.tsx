@@ -6,7 +6,7 @@ import sheet from "../styles.css" with { type: "css" };
 type Props = { code: string };
 
 /** ボタンの通常のラベルである。 */
-const LABEL = "コードをコピー";
+const LABEL = "コピー";
 
 /** コピーの結果をラベルに表示する時間（ミリ秒）である。 */
 const RESULT_DURATION = 2000;
@@ -15,6 +15,7 @@ const RESULT_DURATION = 2000;
 export default function CopyButton(props: Props, ctx: Ctx) {
   ctx.css(sheet);
   const [label, setLabel] = signal(LABEL);
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(props.code);
@@ -22,7 +23,8 @@ export default function CopyButton(props: Props, ctx: Ctx) {
     } catch {
       setLabel("ブラウザがコピーを拒否しました");
     }
-    setTimeout(() => setLabel(LABEL), RESULT_DURATION);
+    clearTimeout(timer);
+    timer = setTimeout(() => setLabel(LABEL), RESULT_DURATION);
   };
   return (
     <button

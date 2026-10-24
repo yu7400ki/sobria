@@ -5,30 +5,32 @@ import { css } from "styled-system/css";
 import Pager from "../../components/pager.tsx";
 import Sidebar from "../../components/sidebar.tsx";
 import Toc from "../../components/toc.tsx";
-import { nav } from "../../content/nav.ts";
-import { loadContent, loadTitles, slugs } from "../../lib/content.ts";
+import { loadContent, loadSections, slugs } from "../../lib/content.ts";
 
 export const prerender: Prerender<"/[...slug]"> = () => slugs.map((slug) => ({ slug }));
 
-/** slug が `slug` の本文の URL を返す。 */
-const urlOf = (slug: string) => href("/[...slug]", { slug });
+/** 本文 `page` へのリンクを返す。 */
+const linkOf = (page: { slug: string; title: string }) => ({
+  href: href("/[...slug]", { slug: page.slug }),
+  title: page.title,
+});
 
 export default async function Page({ params }: PageProps<"/[...slug]">) {
   const content = await loadContent(params.slug);
   if (content === undefined) throw notFound();
-  const titles = await loadTitles();
-  const { default: Body, frontmatter, toc } = content;
-  const sections = nav.map((section) => ({
+  const { Body, title, toc } = content;
+  const loaded = await loadSections();
+  const sections = loaded.map((section) => ({
     title: section.title,
-    links: section.slugs.map((slug) => ({
-      href: urlOf(slug),
-      title: titles.get(slug)!,
-      current: slug === params.slug,
+    links: section.pages.map((page) => ({
+      ...linkOf(page),
+      current: page.slug === params.slug,
     })),
   }));
-  const index = slugs.indexOf(params.slug);
-  const linkOf = (slug: string | undefined) =>
-    slug === undefined ? undefined : { href: urlOf(slug), title: titles.get(slug)! };
+  const pages = loaded.flatMap((section) => section.pages);
+  const index = pages.findIndex((page) => page.slug === params.slug);
+  const prev = pages[index - 1];
+  const next = pages[index + 1];
   const sidebar = <Sidebar sections={sections} />;
   return (
     <div
@@ -46,7 +48,7 @@ export default async function Page({ params }: PageProps<"/[...slug]">) {
         py: "10",
       })}
     >
-      <title>{`${frontmatter.title} | rinka`}</title>
+      <title>{`${title} | rinka`}</title>
       <aside class={css({ display: { base: "none", lg: "block" } })}>
         <div class={css({ pos: "sticky", top: "10" })}>{sidebar}</div>
       </aside>
@@ -57,11 +59,11 @@ export default async function Page({ params }: PageProps<"/[...slug]">) {
           </summary>
           <div class={css({ mt: "4" })}>{sidebar}</div>
         </details>
-        <h1 class={css({ fontSize: "3xl", fontWeight: "bold", mb: "8" })}>{frontmatter.title}</h1>
+        <h1 class={css({ fontSize: "3xl", fontWeight: "bold", mb: "8" })}>{title}</h1>
         <article class="markdown">
           <Body />
         </article>
-        <Pager prev={linkOf(slugs[index - 1])} next={linkOf(slugs[index + 1])} />
+        <Pager prev={prev && linkOf(prev)} next={next && linkOf(next)} />
       </main>
       <aside class={css({ display: { base: "none", xl: "block" } })}>
         {toc.length > 0 && (

@@ -1,7 +1,7 @@
 import { href } from "rinka/router";
 import { css } from "styled-system/css";
 
-import { slugs } from "../lib/content.ts";
+import { firstSlug } from "../lib/content.ts";
 
 /** トップページで紹介する、rinka の特徴である。 */
 const features = [
@@ -23,7 +23,7 @@ export default function Home() {
         </p>
         <div class={css({ display: "flex", justifyContent: "center", gap: "3", mt: "8" })}>
           <a
-            href={href("/[...slug]", { slug: slugs[0]! })}
+            href={href("/[...slug]", { slug: firstSlug })}
             class={css({
               px: "5",
               py: "2",
