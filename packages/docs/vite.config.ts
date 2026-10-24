@@ -11,4 +11,6 @@ export default defineConfig({
     rinka({ extensions: [".mdx"], output: "static" }),
   ],
   resolve: { tsconfigPaths: true },
+  // 色のトークンの light-dark() を、変換せずに出力する
+  build: { cssTarget: ["chrome123", "edge123", "firefox120", "safari17.5"] },
 });

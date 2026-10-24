@@ -1,11 +1,7 @@
 import { defineGlobalStyles, type Config } from "@pandacss/dev";
 
 /** Shiki が色付けした要素の、ライトとダークの文字の色である。 */
-const shiki = {
-  color: "var(--shiki-light)",
-  _osDark: { color: "var(--shiki-dark)" },
-  _dark: { color: "var(--shiki-dark)" },
-};
+const shiki = { color: "light-dark(var(--shiki-light), var(--shiki-dark))" };
 
 /** 本文の MDX から変換したタグのスタイルである。本文の要素の `markdown` のクラスの配下に適用する。 */
 const markdown = {
