@@ -9,14 +9,14 @@ import { CompileError } from "./errors.ts";
 /** props の分類を表す。`unknown` は、型の記述だけでは属性にできるかどうかが分からない props である。 */
 type Kind = AttributeType | "function" | "slot" | "object" | "unknown";
 
-/** `rinka` から import した型の、ファイルの中の名前を表す。 */
+/** Props の型を解析するときに参照する、ファイルの中の型の名前を表す。 */
 interface Helpers {
   /** `Props` の名前である。 */
   readonly props: ReadonlySet<string>;
   /** `Slot` の名前である。 */
   readonly slot: ReadonlySet<string>;
-  /** ファイルのトップレベルで宣言した type の名前ごとの型の記述である。interface の名前は `interface` に対応させる。 */
-  readonly declared: ReadonlyMap<string, ESTree.TSType | "interface">;
+  /** ファイルのトップレベルで宣言した type と interface の名前ごとの、型の記述か、宣言だけで決まる分類である。 */
+  readonly declared: ReadonlyMap<string, ESTree.TSType | Kind>;
 }
 
 /** 解析できない理由を受け取り、ビルドのエラーを返す関数を表す。 */
@@ -45,7 +45,7 @@ export function analyzeProps(
       "要素の関数の第 1 引数に、Props の型注釈を記述してください。props を受け取る要素は、TypeScript のファイル（.tsx）に記述してください。",
     );
   }
-  const members = propsMembers(program, annotation, rinkaTypes(program), fail);
+  const members = propsMembers(program, annotation, helpersOf(program), fail);
   const errors = checkPropNames([...members.keys()]);
   if (errors.length > 0) throw fail(errors.join("\n"));
   const types: Record<string, AttributeType> = {};
@@ -113,17 +113,28 @@ function propsMembers(
 }
 
 /** `rinka` から import した `Props` と `Slot` の、ファイルの中の名前と、ファイルで宣言した type と interface を返す。 */
-function rinkaTypes(program: ESTree.Program): Helpers {
+function helpersOf(program: ESTree.Program): Helpers {
   const names = importedNames(program, entries.main);
+  const declared = new Map<string, ESTree.TSType | Kind>();
+  for (const declaration of declarations(program)) {
+    const { name } = declaration.id;
+    if (declaration.type === "TSTypeAliasDeclaration") {
+      declared.set(name, declaration.typeParameters ? "unknown" : declaration.typeAnnotation);
+      continue;
+    }
+    const callable =
+      declaration.body.body.length > 0 &&
+      declaration.body.body.every((member) => member.type === "TSCallSignatureDeclaration");
+    const previous = declared.get(name);
+    declared.set(
+      name,
+      callable && (previous === undefined || previous === "function") ? "function" : "object",
+    );
+  }
   return {
     props: names.get("Props") ?? new Set(),
     slot: names.get("Slot") ?? new Set(),
-    declared: new Map(
-      declarations(program).map((declaration) => [
-        declaration.id.name,
-        declaration.type === "TSTypeAliasDeclaration" ? declaration.typeAnnotation : "interface",
-      ]),
-    ),
+    declared,
   };
 }
 
@@ -221,7 +232,7 @@ function classify(
 /** 同じファイルで宣言した type と interface と、値がオブジェクトになる組み込みの型の名前 `name` の分類を返す。 */
 function referenceKind(name: string, helpers: Helpers, seen: ReadonlySet<string>): Kind {
   const declared = helpers.declared.get(name);
-  if (declared === "interface") return "object";
+  if (typeof declared === "string") return declared;
   if (declared !== undefined) {
     return seen.has(name) ? "unknown" : classify(declared, helpers, new Set([...seen, name]));
   }

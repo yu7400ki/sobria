@@ -238,6 +238,16 @@ export default function X(props: Props) { return <p />; }`);
     });
   });
 
+  it("呼び出しのシグネチャだけを持つ interface は関数に、型引数を持つ type の別名は不明に分類する", () => {
+    const { element: info } = element(`type Item = { a: 1 };
+type Id<Item> = Item;
+interface Handler { (x: number): void }
+interface Handler { (x: string): void }
+type Props = { onPick: Handler; label: Id<string> };
+export default function X(props: Props) { return <p />; }`);
+    expect(info?.options).toEqual({ props: ["onPick", "label"], functionProps: ["onPick"] });
+  });
+
   it("同じ名前の interface の宣言を、1 つの Props の型にまとめる", () => {
     expect(
       props(`interface Props { a: string }
