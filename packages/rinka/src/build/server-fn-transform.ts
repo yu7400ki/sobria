@@ -38,6 +38,10 @@ export type Definition =
     }
   | { readonly kind: "middleware"; readonly name: string; readonly init: ESTree.Expression };
 
+/** 定義 `definitions` のうち、サーバー関数の ID を返す。 */
+export const serverFnIds = (definitions: readonly Definition[]): string[] =>
+  definitions.flatMap((definition) => (definition.kind === "serverFn" ? [definition.id] : []));
+
 /**
  * `rinka/server` から import した `defineServerFn` と `defineMiddleware` で初期化したトップレベルの const を、ソースの順に返す。
  * `defineServerFn` をそれ以外の位置で使用するか、サーバー関数のメソッドを静的に読み取れないか、`rinka/server` を名前を指定せずに import すると、ビルドのエラーにする。

@@ -4,7 +4,7 @@ import { extname, join, posix } from "node:path";
 
 import { langs, parseModule } from "./ast.ts";
 import { relativePath } from "./paths.ts";
-import { findDefinitions } from "./server-fn-transform.ts";
+import { findDefinitions, serverFnIds } from "./server-fn-transform.ts";
 
 /** サーバー関数を定義できるファイルを置く、アプリのルートからの相対パスのディレクトリである。 */
 const SERVER_FN_DIR = "src";
@@ -37,8 +37,7 @@ export function serverFnModules(root: string): string[] {
       if (!code.includes("defineServerFn")) continue;
       const lang = langs[extname(file)]!;
       const program = parseModule(code, { id: path, file, lang });
-      const definitions = findDefinitions(program, file, file);
-      if (definitions.some((definition) => definition.kind === "serverFn")) modules.push(file);
+      if (serverFnIds(findDefinitions(program, file, file)).length > 0) modules.push(file);
     }
   };
   const start = join(root, SERVER_FN_DIR);

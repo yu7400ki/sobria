@@ -5,7 +5,12 @@ import { parseModule, type ModuleSource, type Node } from "./ast.ts";
 import { registerElement, type ElementTarget } from "./element-transform.ts";
 import { importInternalAs } from "./entries.ts";
 import { STOP_IF_SEEDING, stopAwaits } from "./seeding.ts";
-import { findDefinitions, registerServerFns, replaceDefinitions } from "./server-fn-transform.ts";
+import {
+  findDefinitions,
+  registerServerFns,
+  replaceDefinitions,
+  serverFnIds,
+} from "./server-fn-transform.ts";
 import { rewriteSheetImports } from "./sheets.ts";
 import { addElementSites, addMemoSites } from "./sites.ts";
 
@@ -68,8 +73,6 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
     code: output.toString(),
     map: output.generateMap({ hires: true, source: options.id, includeContent: true }),
     element,
-    serverFns: definitions.flatMap((definition) =>
-      definition.kind === "serverFn" ? [definition.id] : [],
-    ),
+    serverFns: serverFnIds(definitions),
   };
 }
