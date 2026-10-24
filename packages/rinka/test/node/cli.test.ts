@@ -58,7 +58,7 @@ describe("rinka create", () => {
     });
     expect(pkg.scripts).toEqual({
       dev: "vite",
-      build: "vite build --app",
+      build: "vite build",
       preview: "vite preview",
       start: "node dist/server/entry.js",
       typecheck: "rinka prepare && tsc -b",

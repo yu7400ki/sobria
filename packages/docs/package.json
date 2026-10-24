@@ -5,7 +5,7 @@
   "scripts": {
     "prepare": "panda codegen --config theme/panda.config.ts",
     "dev": "vite",
-    "build": "vite build --app",
+    "build": "vite build",
     "typecheck": "rinka prepare && pnpm run prepare && tsc -b",
     "test": "vitest run"
   },

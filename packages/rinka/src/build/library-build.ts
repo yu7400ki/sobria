@@ -4,7 +4,7 @@ import { inside } from "./paths.ts";
 import { DEFAULT_PREFIX, sceneOf, type SceneContext } from "./settings.ts";
 
 /**
- * `library: true` の `vite build --app` で、アプリの要素を、自分自身を登録する ES モジュールとして
+ * `library: true` の `vite build` で、アプリの要素を、自分自身を登録する ES モジュールとして
  * 出力先のタグ名のファイルに出力するプラグインを返す。
  */
 export function libraryBuild({ options, settings }: SceneContext): Plugin {
