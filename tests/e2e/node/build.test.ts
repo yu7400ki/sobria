@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { rinka } from "rinka/vite";
-import { preview } from "vite";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { preview, type InlineConfig } from "vite";
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from "vitest";
 
 import { buildFixture, rpcPath, startServer } from "./production.ts";
 
@@ -298,6 +298,42 @@ describe("src/server.ts の無いアプリ", () => {
   }, 120_000);
 });
 
+/** レイアウトと要素が同じ CSS を読み込むテスト用のアプリを表す。 */
+interface SharedSheetBuild {
+  /** ビルドの出力先である。 */
+  readonly out: string;
+  /** `<head>` の `<link>` の URL である。 */
+  readonly head: readonly string[];
+  /** 要素の DSD の `<link>` の URL である。 */
+  readonly dsd: readonly string[];
+  /** 要素のモジュールが取得する CSS の URL である。 */
+  readonly fetched: readonly string[];
+}
+
+/** shared-sheet のテスト用のアプリを Vite の設定 `config` で一時ディレクトリにビルドし、`/` のページが参照する CSS の URL を返す。一時ディレクトリはテストの終了後に削除する。 */
+async function buildSharedSheet(config: InlineConfig): Promise<SharedSheetBuild> {
+  const out = await mkdtemp(join(tmpdir(), "rinka-build-shared-sheet-"));
+  onTestFinished(() => rm(out, { recursive: true, force: true }));
+  await buildFixture(
+    fileURLToPath(new URL("../fixtures/shared-sheet", import.meta.url)),
+    out,
+    {},
+    [],
+    config,
+  );
+  const html = await (
+    await (await serverEntry(out)).fetch(new Request("http://localhost/"))
+  ).text();
+  const module = /\$rinka\.m\(\[\["app-note","([^"]+)"/.exec(html)![1]!;
+  const code = await readFile(join(out, "client", module), "utf8");
+  return {
+    out,
+    head: stylesheets(html.slice(0, html.indexOf("</head>"))),
+    dsd: stylesheets(html.slice(html.indexOf("<app-note"), html.indexOf("</app-note>"))),
+    fetched: [...code.matchAll(/["'`](\/[^"'`]+\.css)["'`]/g)].map(([, url]) => url!),
+  };
+}
+
 describe("レイアウトと要素が同じ CSS を import するアプリ", () => {
   it.each([
     ["Vite のデフォルトの設定", {}],
@@ -313,36 +349,27 @@ describe("レイアウトと要素が同じ CSS を import するアプリ", () 
   ])(
     "%sでビルドすると、<head> の <link>、要素のシートの DSD の <link>、要素のモジュールは、同じ 1 つの CSS の URL を参照する",
     async (_name, config) => {
-      const out = await mkdtemp(join(tmpdir(), "rinka-build-shared-sheet-"));
-      try {
-        const sharedSheet = fileURLToPath(new URL("../fixtures/shared-sheet", import.meta.url));
-        await buildFixture(sharedSheet, out, {}, [], config);
-        const html = await (
-          await (await serverEntry(out)).fetch(new Request("http://localhost/"))
-        ).text();
-        const head = html.slice(0, html.indexOf("</head>"));
-        const note = html.slice(html.indexOf("<app-note"), html.indexOf("</app-note>"));
-        const module = /\$rinka\.m\(\[\["app-note","([^"]+)"/.exec(html)![1]!;
-        const fetched = [
-          ...(await readFile(join(out, "client", module), "utf8")).matchAll(
-            /["'`](\/[^"'`]+\.css)["'`]/g,
-          ),
-        ].map(([, url]) => url!);
-        const urls = [...stylesheets(head), ...stylesheets(note), ...fetched];
-        expect(urls).toHaveLength(3);
-        expect(new Set(urls)).toEqual(new Set([urls[0]]));
-        const css = await readFile(join(out, "client", urls[0]!), "utf8");
-        const files = await readdir(join(out, "client"), { recursive: true });
-        const same = await Promise.all(
-          files
-            .filter((file) => file.endsWith(".css"))
-            .map(async (file) => (await readFile(join(out, "client", file), "utf8")) === css),
-        );
-        expect(same.filter(Boolean)).toHaveLength(1);
-      } finally {
-        await rm(out, { recursive: true, force: true });
-      }
+      const { out, head, dsd, fetched } = await buildSharedSheet(config);
+      const urls = [...head, ...dsd, ...fetched];
+      expect(urls).toHaveLength(3);
+      expect(new Set(urls)).toEqual(new Set([urls[0]]));
+      const css = await readFile(join(out, "client", urls[0]!), "utf8");
+      const files = await readdir(join(out, "client"), { recursive: true });
+      const same = await Promise.all(
+        files
+          .filter((file) => file.endsWith(".css"))
+          .map(async (file) => (await readFile(join(out, "client", file), "utf8")) === css),
+      );
+      expect(same.filter(Boolean)).toHaveLength(1);
     },
     120_000,
   );
+
+  it("サーバーの環境だけで CSS の処理を変更しても、要素のシートの DSD の <link> と要素のモジュールは、同じ URL を参照する", async () => {
+    const { dsd, fetched } = await buildSharedSheet({
+      environments: { ssr: { build: { cssTarget: "chrome100" } } },
+    });
+    expect(dsd).toHaveLength(1);
+    expect(fetched).toEqual(dsd);
+  }, 120_000);
 });

@@ -98,24 +98,22 @@ export default await loadSheet(url);
 `;
 }
 
-/** 本番のビルドで、`?url` の指定子 `url` の URL から作成したシートの情報を default export する、サーバーのシートのモジュールのコードを返す。 */
-function serverBuildSheetModule(url: string): string {
-  return `${importInternal("server", "serverSheet")}
-import href from ${JSON.stringify(url)};
-export default serverSheet(href);
-`;
-}
-
 /**
  * 開発サーバーのパス `path` の CSS から、場面 `scene` の、`client` が真ならクライアントの、偽ならサーバーのシートのモジュールのコードを返す。
  * ライブラリのビルドはクライアントの環境だけを持ち、CSS をモジュールに埋め込む。
+ * アプリの本番のビルドのサーバーのモジュールは、`builtHref` が返す、クライアントのビルドが出力した CSS の URL を使用する。
  */
-export function sheetModule(path: string, scene: Scene, client: boolean): string {
+export function sheetModule(
+  path: string,
+  scene: Scene,
+  client: boolean,
+  builtHref: () => string,
+): string {
   switch (scene) {
     case "serve":
       return client ? clientSheetModule(`${path}?inline`) : serverSheetModule(directUrl(path));
     case "app":
-      return client ? clientBuildSheetModule(`${path}?url`) : serverBuildSheetModule(`${path}?url`);
+      return client ? clientBuildSheetModule(`${path}?url`) : serverSheetModule(builtHref());
     case "library":
       return librarySheetModule(`${path}?inline`);
   }

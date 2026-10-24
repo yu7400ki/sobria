@@ -52,24 +52,24 @@ function cssOutput(config: UserConfig) {
 
 /**
  * アプリの `vite build` で、要素のクライアントのビルドと、サーバーのエントリーのサーバーのビルドを、この順に出力するプラグインと、
- * サーバーのビルドで、クライアントのビルドの manifest から要素のファイルの URL を返す関数を返す。
+ * サーバーのビルドで、クライアントのビルドの manifest から要素のファイルとシートの CSS の URL を返す関数の組を返す。
  * サーバーのビルドを開始する前に URL を求めると、その関数はエラーを投げる。
  */
 export function appBuild({ options, settings }: SceneContext): {
   readonly plugin: Plugin;
-  readonly elementAssets: ClientAssets;
+  readonly clientAssets: ClientAssets;
 } {
-  /** クライアントのビルドの manifest から作成した関数である。 */
-  let clientAssets: ClientAssets | undefined;
+  /** クライアントのビルドの manifest から作成した関数の組である。 */
+  let assets: ClientAssets | undefined;
   /** 書き出すルートの範囲である。書き出すルートが無ければ `undefined` である。 */
   let scope: PrerenderScope | undefined;
-  const elementAssets: ClientAssets = (file) => {
-    if (clientAssets === undefined) {
+  const loaded = (file: string): ClientAssets => {
+    if (assets === undefined) {
       throw new Error(
-        `[rinka] 要素のファイル ${file} の URL を、クライアントのビルドの manifest を読み込む前に求めました。`,
+        `[rinka] ファイル ${file} の URL を、クライアントのビルドの manifest を読み込む前に求めました。`,
       );
     }
-    return clientAssets(file);
+    return assets;
   };
   const plugin: Plugin = {
     name: "rinka:build",
@@ -151,7 +151,7 @@ export function appBuild({ options, settings }: SceneContext): {
           }
         : null,
     buildStart() {
-      clientAssets = readClientAssets(settings().clientDir);
+      assets = readClientAssets(settings().clientDir, settings().root);
     },
     resolveId: (id) => (id === entries.prerender ? virtualId(id) : null),
     load: (id) =>
@@ -170,5 +170,11 @@ export function appBuild({ options, settings }: SceneContext): {
       rmSync(join(clientDir, ".vite"), { recursive: true, force: true });
     },
   };
-  return { plugin, elementAssets };
+  return {
+    plugin,
+    clientAssets: {
+      element: (file) => loaded(file).element(file),
+      sheet: (path) => loaded(path).sheet(path),
+    },
+  };
 }

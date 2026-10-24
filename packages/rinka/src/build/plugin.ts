@@ -139,7 +139,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         element: {
           tag,
           ...(scene === "app" && !client
-            ? build.elementAssets(target.file)
+            ? build.clientAssets.element(target.file)
             : { module: devPath(target.path, root) }),
         },
       }),
@@ -225,7 +225,9 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         const sheet = sheetPath(id);
         return sheet === undefined
           ? null
-          : sheetModule(devPath(sheet, root), scene, isClient(this.environment));
+          : sheetModule(devPath(sheet, root), scene, isClient(this.environment), () =>
+              build.clientAssets.sheet(sheet),
+            );
       },
       transform(code, id) {
         const target = projectFile(id);
