@@ -7,3 +7,5 @@ void defineServerFn;
 
 // @ts-expect-error 要素の tsconfig では、rinka/jsx-runtime は要素の JSX の型に解決され、load:* を受け付けない
 void (<Counter start={1} load:idle />);
+
+void import.meta.glob("../styles/*.css");

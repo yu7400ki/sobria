@@ -134,11 +134,12 @@ function routesDeclaration(root: string, extensions: readonly string[]): string 
   return `${HEADER}export {};\n\ndeclare module "${entries.router}" {\n  interface RouteParams {\n${lines.toSorted().join("")}  }\n}\n`;
 }
 
-/** `*.css` の型と、`globalJSX` が真ならグローバルの `JSX.Element` を宣言する、モジュールではない型宣言を返す。 */
+/** Vite の `ImportMeta` の型を参照し、`*.css` の型と、`globalJSX` が真ならグローバルの `JSX.Element` を宣言する、モジュールではない型宣言を返す。 */
 function envDeclaration(globalJSX: boolean): string {
+  const importMeta = `/// <reference types="vite/types/importMeta.d.ts" />\n\n`;
   const css = `declare module "*.css" {\n  const sheet: CSSStyleSheet;\n  export default sheet;\n}\n`;
   const jsx = `\ndeclare namespace JSX {\n  type Element = import("${entries.main}").Slot;\n}\n`;
-  return `${HEADER}${css}${globalJSX ? jsx : ""}`;
+  return `${HEADER}${importMeta}${css}${globalJSX ? jsx : ""}`;
 }
 
 /** `source` の要素のタグを、`HTMLElementTagNameMap` に追加する型宣言を返す。 */

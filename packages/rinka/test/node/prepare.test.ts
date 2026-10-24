@@ -77,6 +77,10 @@ describe("env.d.ts", () => {
     expect(content).toContain("const sheet: CSSStyleSheet;");
   });
 
+  it("Vite の ImportMeta の型を参照する", () => {
+    expect(fileOf("env.d.ts")).toContain('/// <reference types="vite/types/importMeta.d.ts" />');
+  });
+
   it("グローバルの JSX.Element を Slot にし、globalJSX が偽なら JSX の宣言を出力しない", () => {
     expect(fileOf("env.d.ts")).toContain('type Element = import("rinka").Slot;');
     expect(fileOf("env.d.ts", { globalJSX: false })).not.toContain("JSX");
