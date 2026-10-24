@@ -1,8 +1,18 @@
 import type { ListedElement } from "./receiver.ts";
 import type { PROPS_KEY, REFRESH_PROPS_KEY } from "./transfer-keys.ts";
 
-/** `refreshPage()` が描き直しを要求するリクエストに付けるヘッダーの名前である。値は `1` である。 */
+/** ページの描き直しを要求するリクエストに付けるヘッダーの名前である。値は `1` である。 */
 export const REFRESH_HEADER = "x-rinka-refresh";
+
+/** JS からサーバー関数を呼び出したリクエストで、呼び出したページの URL を値に持つヘッダーの名前である。 */
+export const PAGE_HEADER = "x-rinka-page";
+
+/** hash を除いた `url` の文字列を返す。 */
+export function withoutHash(url: URL): string {
+  const copy = new URL(url);
+  copy.hash = "";
+  return copy.href;
+}
 
 /** `refreshPage()` のレスポンスの JSON を表す。 */
 export interface RefreshJson {

@@ -1,5 +1,5 @@
 import type { Context, Handler, MiddlewareHandler, Next } from "hono";
-import { setCookie } from "hono/cookie";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
@@ -336,8 +336,10 @@ describe("フォームの送信先のサーバー関数が投げたエラー", (
     expect(await bodyOf(response)).toContain("<h1>root /other kaboom</h1>");
   });
 
-  it("x-rinka-refresh: 1 の送信には、error.tsx を描き直しの JSON で 500 にして返す", async () => {
-    const { response } = await submit("http://localhost/users/3/edit", { "x-rinka-refresh": "1" });
+  it("x-rinka-page のある送信には、Referer の代わりに x-rinka-page の URL のページの error.tsx を、描き直しの JSON で 500 にして返す", async () => {
+    const { response } = await submit("http://localhost/other", {
+      "x-rinka-page": "http://localhost/users/3/edit",
+    });
     expect(response.status).toBe(500);
     expect(((await response.json()) as { body: string }).body).toBe(
       '<main id="users"><h1>user /users/3/edit kaboom</h1></main>',
@@ -374,7 +376,30 @@ const loginGate: MiddlewareHandler = async (c, next) => {
   return undefined;
 };
 
-describe("x-rinka-refresh: 1 のフォームの送信のリダイレクト", () => {
+/** Cookie の flash の値を c.var.flash に設定し、レスポンスの後で Cookie を削除するミドルウェアである。 */
+const flashGate: MiddlewareHandler = async (c, next) => {
+  const flash = getCookie(c, "flash");
+  if (flash !== undefined) c.set("flash", flash);
+  await next();
+  if (flash !== undefined) deleteCookie(c, "flash");
+};
+
+/** 描き直しの JSON の本文が `body` であることを表す。 */
+const refreshedTo = (body: string) => expect.objectContaining({ body });
+
+/** c.var.flash と、リクエストの x-test と accept-encoding のヘッダーを出力するページである。 */
+const flashPage = () => {
+  const c = getContext();
+  return jsx("p", {
+    children: `${String(c?.get("flash"))} ${String(c?.req.header("x-test"))} ${String(c?.req.header("accept-encoding"))}`,
+  });
+};
+
+/** JSON として読めない本文を、JSON の Content-Type で返すミドルウェアである。 */
+const brokenJson: MiddlewareHandler = async (c) =>
+  c.body("{", 200, { "content-type": "application/json" });
+
+describe("x-rinka-page を付与したフォームの送信", () => {
   const ids = {
     saved: "src/app-test.ts#saved",
     moved: "src/app-test.ts#moved",
@@ -409,7 +434,7 @@ describe("x-rinka-refresh: 1 のフォームの送信のリダイレクト", () 
     ids.flashing,
     defineServerFn((c) => {
       setCookie(c, "flash", "1");
-      return c.redirect("/form", 303);
+      return c.redirect("/form?x=1", 303);
     }),
   );
   registerServerFn(
@@ -420,17 +445,22 @@ describe("x-rinka-refresh: 1 のフォームの送信のリダイレクト", () 
     middleware: loadOf(loginGate),
     routes: [
       pageRoute("/", () => jsx("p", { children: "page" })),
+      pageRoute("/form", flashPage, [], [flashGate]),
+      pageRoute("/guarded", flashPage, [], [toLogin]),
+      pageRoute("/broken", flashPage, [], [brokenJson]),
       notFoundRoute("/", fallbackOf(fallback("missing"))),
     ],
   };
-  /** `id` のサーバー関数にフォームを送信する。 */
+  /** `id` のサーバー関数に、`/form?x=1` のページからフォームを送信する。 */
   const submit = (id: string, headers: Record<string, string> = {}) =>
     request(routes, rpcPath(id), {
       method: "POST",
       headers: {
         "content-type": "application/x-www-form-urlencoded",
-        referer: "http://localhost/form?x=1",
-        "x-rinka-refresh": "1",
+        referer: "http://localhost/referer",
+        "x-rinka-page": "http://localhost/form?x=1#top",
+        "x-test": "t",
+        "accept-encoding": "gzip",
         ...headers,
       },
       body: "a=1",
@@ -446,7 +476,7 @@ describe("x-rinka-refresh: 1 のフォームの送信のリダイレクト", () 
     ];
   };
 
-  it("PRG、redirect()、handler とサーバー関数のミドルウェアとルートの middleware.ts が返したリダイレクトを、Location の値を持つ JSON にして 200 で返す", async () => {
+  it("PRG、redirect()、handler とサーバー関数のミドルウェアとルートの middleware.ts が返したリダイレクトを、Location の値を持つ JSON にして 200 で返す。PRG の移動先は x-rinka-page の URL で、そのページの描き直しを page に含める", async () => {
     expect(
       await Promise.all([
         result(ids.saved),
@@ -456,7 +486,15 @@ describe("x-rinka-refresh: 1 のフォームの送信のリダイレクト", () 
         result(ids.saved, { "x-login": "1" }),
       ]),
     ).toEqual([
-      [200, null, "rpc", { redirect: "http://localhost/form?x=1" }],
+      [
+        200,
+        null,
+        "rpc",
+        {
+          redirect: "http://localhost/form?x=1#top",
+          page: refreshedTo("<p>undefined t undefined</p>"),
+        },
+      ],
       [200, null, "rpc", { redirect: "/done" }],
       [200, null, "rpc", { redirect: "https://auth.example.com/login" }],
       [200, null, "rpc", { redirect: "/login" }],
@@ -472,12 +510,55 @@ describe("x-rinka-refresh: 1 のフォームの送信のリダイレクト", () 
     ]);
   });
 
-  it("リダイレクトのレスポンスの Set-Cookie を、JSON のレスポンスに引き継ぐ", async () => {
-    const response = await submit(ids.flashing);
-    expect([response.status, response.headers.getSetCookie()]).toEqual([200, ["flash=1; Path=/"]]);
+  it("リダイレクトのレスポンスの Set-Cookie を反映した Cookie で描き直し、描き直しのレスポンスの Set-Cookie を加えて返す", async () => {
+    const response = await submit(ids.flashing, { cookie: "flash=0; other=2" });
+    expect([response.status, response.headers.getSetCookie(), await response.json()]).toEqual([
+      200,
+      ["flash=1; Path=/", "flash=; Max-Age=0; Path=/"],
+      { redirect: "/form?x=1", page: refreshedTo("<p>1 t undefined</p>") },
+    ]);
   });
 
-  it("x-rinka-refresh の無いフォームの送信と、RPC には、リダイレクトのまま返す", async () => {
+  it("相対 URL の移動先は、x-rinka-page の URL のオリジンで解決して比べる", async () => {
+    const response = await submit(ids.flashing, { "x-rinka-page": "https://localhost/form?x=1" });
+    expect(await response.json()).toEqual({
+      redirect: "/form?x=1",
+      page: refreshedTo("<p>1 t undefined</p>"),
+    });
+  });
+
+  it("描き直しのレスポンスが JSON でないときと、JSON として読めないときは、page を含めない", async () => {
+    const results = await Promise.all(
+      ["http://localhost/guarded", "http://localhost/broken"].map(async (url) => {
+        const response = await submit(ids.saved, { "x-rinka-page": url });
+        return response.json();
+      }),
+    );
+    expect(results).toEqual([
+      { redirect: "http://localhost/guarded" },
+      { redirect: "http://localhost/broken" },
+    ]);
+  });
+
+  it("フォームの送信でないページのリクエストは、x-rinka-page があっても HTML の文書で返す", async () => {
+    const response = await request(routes, "/", { headers: { "x-rinka-page": "a" } });
+    expect(response.headers.get("content-type")).toContain("text/html");
+  });
+
+  it("x-rinka-page の URL のホストがリクエストと異なるときと、/_rinka/ の下にあるときは、Referer に戻り、描き直さない", async () => {
+    const results = await Promise.all(
+      ["http://example.com/form?x=1", "http://localhost/_rinka/fn/x"].map(async (url) => {
+        const response = await submit(ids.saved, { "x-rinka-page": url });
+        return response.json();
+      }),
+    );
+    expect(results).toEqual([
+      { redirect: "http://localhost/referer" },
+      { redirect: "http://localhost/referer" },
+    ]);
+  });
+
+  it("x-rinka-page の無いフォームの送信と、RPC には、リダイレクトのまま返す", async () => {
     const plain = await request(routes, rpcPath(ids.moved), {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -485,7 +566,7 @@ describe("x-rinka-refresh: 1 のフォームの送信のリダイレクト", () 
     });
     const rpc = await request(routes, rpcPath(ids.saved), {
       method: "POST",
-      headers: { "content-type": "application/json", "x-rinka-refresh": "1", "x-login": "1" },
+      headers: { "content-type": "application/json", "x-login": "1" },
       body: "null",
     });
     expect([plain.status, plain.headers.get("location")]).toEqual([303, "/done"]);

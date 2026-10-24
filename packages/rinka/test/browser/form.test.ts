@@ -70,7 +70,7 @@ const placeSlotted = async () => {
 };
 
 describe("JS があるときのフォームの送信", () => {
-  it("押したボタンの値を含む FormData を、x-rinka-refresh: 1 を付けて送信先に POST し、送信中は aria-busy を付与する", async () => {
+  it("押したボタンの値を含む FormData を、x-rinka-page に現在の URL を付けて送信先に POST し、送信中は aria-busy を付与する", async () => {
     const response = Promise.withResolvers<Response>();
     const fetch = vi.spyOn(globalThis, "fetch").mockReturnValue(response.promise);
     const { form, button } = placeForm();
@@ -80,7 +80,7 @@ describe("JS があるときのフォームの送信", () => {
     const [url, init] = fetch.mock.calls[0] ?? [];
     expect(url).toEqual(new URL(action, location.href));
     expect(init?.method).toBe("POST");
-    expect(new Headers(init?.headers).get("x-rinka-refresh")).toBe("1");
+    expect(new Headers(init?.headers).get("x-rinka-page")).toBe(location.href);
     const body = init?.body;
     expect(body instanceof FormData && [...body]).toEqual([
       ["a", "1"],
@@ -101,31 +101,25 @@ describe("JS があるときのフォームの送信", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("送信先の URL で解決した移動先が現在のページなら、フォームを初期値に戻してから、ページを描き直して反映する", async () => {
-    const order: string[] = [];
-    const fetch = vi
-      .spyOn(globalThis, "fetch")
-      .mockImplementationOnce(async () => {
-        order.push("submit");
-        return Response.json(
-          { redirect: `${location.pathname}${location.search}#top` },
-          { headers: rpcHeaders },
-        );
-      })
-      .mockImplementationOnce(async () => {
-        order.push("refresh");
-        return Response.json(refreshJson({ head: "<title>saved</title>" }));
-      });
+  it("送信先の URL で解決した移動先が現在のページなら、フォームを初期値に戻してから、レスポンスの page を反映する", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json(
+        {
+          redirect: `${location.pathname}${location.search}#top`,
+          page: refreshJson({ head: "<title>saved</title>" }),
+        },
+        { headers: rpcHeaders },
+      ),
+    );
     const { form, button } = placeForm();
+    let titleAtReset = "";
     vi.spyOn(form, "reset").mockImplementation(() => {
-      order.push("reset");
+      titleAtReset = document.title;
     });
     button.click();
     await vi.waitFor(() => expect(document.title).toBe("saved"));
-    expect(order).toEqual(["submit", "reset", "refresh"]);
-    const [url, init] = fetch.mock.calls[1] ?? [];
-    expect(url).toBe(location.href);
-    expect(new Headers(init?.headers).get("x-rinka-refresh")).toBe("1");
+    expect(titleAtReset).toBe(titleBefore);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("rinka が組み立てたことを示すヘッダーの無い { redirect } は、移動せずにコンソールに記録する", async () => {

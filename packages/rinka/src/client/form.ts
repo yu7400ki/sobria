@@ -1,15 +1,9 @@
+import { PAGE_HEADER, withoutHash } from "../shared/refresh.ts";
 import { isRedirectJson, rpcPrefix, wireFormat, wireHeader } from "../shared/wire.ts";
-import { applyRefresh, isRefreshJson, refreshPage, sendRefresh, startRewrite } from "./refresh.ts";
+import { applyRefresh, isRefreshJson, reflectPage, sendRefresh, startRewrite } from "./refresh.ts";
 
 /** 送信中のフォームである。 */
 const busy = new WeakSet<HTMLFormElement>();
-
-/** hash を除いた `url` の文字列を返す。 */
-const withoutHash = (url: URL): string => {
-  const copy = new URL(url);
-  copy.hash = "";
-  return copy.href;
-};
 
 /**
  * 起動スクリプトを読み込んだページで、リスナーを登録した `document` か `ShadowRoot` の木の中にあり、サーバー関数を送信先にして `post` で送信するフォームの submit のイベントで、
@@ -48,17 +42,21 @@ export function handleSubmit(event: Event): void {
     });
 }
 
-/** `form` を `action` に送信し、結果をページに反映する。レスポンスが届く前に、後に始まった描き直しを反映していたら、描き直しの JSON は反映しない。 */
+/**
+ * `form` を `action` に送信し、結果をページに反映する。移動先が現在のページなら、フォームを初期値に戻してから、レスポンスの `page` を反映する。
+ * `page` が描き直しの JSON でなければ、ページを読み込み直す。レスポンスが届く前に、後に始まった描き直しを反映していたら、描き直しの JSON は反映しない。
+ */
 async function submit(
   form: HTMLFormElement,
   action: URL,
   submitter: HTMLElement | null,
 ): Promise<void> {
   const reflect = startRewrite();
-  const received = await sendRefresh(action, {
-    method: "POST",
-    body: new FormData(form, submitter),
-  });
+  const received = await sendRefresh(
+    action,
+    { [PAGE_HEADER]: location.href },
+    { method: "POST", body: new FormData(form, submitter) },
+  );
   if (received.kind === "redirect") {
     console.error(
       "[rinka] サーバー関数にフォームを送信して、リダイレクトのレスポンスを受け取りました。ページに反映できないので無視します。",
@@ -73,7 +71,7 @@ async function submit(
       return;
     }
     form.reset();
-    await refreshPage();
+    reflectPage(reflect, "page" in body ? body.page : undefined);
   } else if (isRefreshJson(body)) {
     reflect(() => applyRefresh(body));
   } else {

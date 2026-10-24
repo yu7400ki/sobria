@@ -2,7 +2,7 @@ import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { every } from "hono/combine";
 
 import { prerenderKindOf, type Output } from "../shared/prerender.ts";
-import { REFRESH_HEADER } from "../shared/refresh.ts";
+import { PAGE_HEADER, REFRESH_HEADER } from "../shared/refresh.ts";
 import {
   routeMethods,
   type AppOptions,
@@ -17,7 +17,8 @@ import {
 import { isBot } from "./bots.ts";
 import { blockingRenderOf, runInRequest, withContextHeaders } from "./context.ts";
 import {
-  formRedirects,
+  callerResponses,
+  pageUrlOf,
   serverFnFailure,
   serverFnMiddleware,
   type Failure,
@@ -124,6 +125,15 @@ function finder(routes: readonly Route[]): (url: URL) => Promise<Found | undefin
   };
 }
 
+/** リクエスト `c` の `executionCtx` を返す。無ければ `undefined` を返す。 */
+function executionCtxOf(c: Context): Context["executionCtx"] | undefined {
+  try {
+    return c.executionCtx;
+  } catch {
+    return undefined;
+  }
+}
+
 /** `notFound()` を投げるページである。 */
 const missing = (): never => {
   throw notFound();
@@ -138,7 +148,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     node,
     { notFound: missingPage, error: errorPage },
     props,
-    files = [],
+    { files = [], refresh = c.req.header(REFRESH_HEADER) === "1" } = {},
   ) => {
     const pages = {
       headers: { vary: REFRESH_HEADER },
@@ -150,7 +160,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
         },
       }),
     };
-    if (c.req.header(REFRESH_HEADER) === "1") {
+    if (refresh) {
       return withContextHeaders(c, await renderRefresh(node, pages));
     }
     const styles = options.styles && files.length > 0 ? await options.styles(files) : [];
@@ -194,7 +204,9 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   };
   const formFailure: Failure = async (c, error) => {
     const referer = c.req.header("referer");
-    const url = referer !== undefined && URL.canParse(referer) ? new URL(referer) : undefined;
+    const url =
+      pageUrlOf(c) ??
+      (referer !== undefined && URL.canParse(referer) ? new URL(referer) : undefined);
     if (url === undefined || url.host !== new URL(c.req.url).host) return fail(c, error);
     const found = await find(url);
     if (found?.route.error === undefined) return fail(c, error);
@@ -206,6 +218,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
         params: found.params,
         url,
       },
+      { refresh: c.req.header(PAGE_HEADER) !== undefined },
     );
   };
   app.onError(async (c) => withContextHeaders(c, await fail(c, c.error)));
@@ -213,7 +226,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   const serverFns = serverFnMiddleware(options, failures);
   const rinka =
     middleware === undefined ? serverFns : every(root(lazy(middleware), failures), serverFns);
-  app.use(formRedirects);
+  app.use(callerResponses((c, request) => app.fetch(request, c.env, executionCtxOf(c))));
   app.use((c, next) =>
     runInRequest(c, () =>
       rinka(
@@ -234,14 +247,15 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
 
 /**
  * `node` を描画した文書を、`c` のリクエストのレスポンスとして返す関数を表す。
- * `fallbacks` の `not-found.tsx` と `error.tsx` には、`props` を渡す。
+ * `fallbacks` の `not-found.tsx` と `error.tsx` には、`props` を渡す。`files` は、スタイルシートを読み込むモジュールのファイルである。
+ * `refresh` が真なら、描き直しの JSON で返す。`refresh` のデフォルト値は、リクエストが `x-rinka-refresh: 1` を持つかどうかである。
  */
 type Respond = (
   c: Pick<Context, "req" | "newResponse" | "env">,
   node: unknown,
   fallbacks: Fallbacks,
   props: object,
-  files?: readonly string[],
+  options?: { readonly files?: readonly string[]; readonly refresh?: boolean },
 ) => Promise<Response>;
 
 /**
@@ -262,13 +276,9 @@ function register(app: Hono, route: Route, respond: Respond, output: Output): vo
           if (listed === false) throw notFound();
         }
         const props = propsOf(c);
-        return respond(
-          c,
-          await wrap(route.module, route.layouts, props),
-          route,
-          props,
-          [...route.layouts, route.module].map((load) => load.file),
-        );
+        return respond(c, await wrap(route.module, route.layouts, props), route, props, {
+          files: [...route.layouts, route.module].map((load) => load.file),
+        });
       });
       return;
     case "route":

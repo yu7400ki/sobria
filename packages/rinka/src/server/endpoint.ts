@@ -1,6 +1,6 @@
 import type { Context, MiddlewareHandler } from "hono";
 
-import { REFRESH_HEADER } from "../shared/refresh.ts";
+import { PAGE_HEADER, REFRESH_HEADER, withoutHash } from "../shared/refresh.ts";
 import type { AppOptions } from "../shared/routes.ts";
 import {
   moduleOfServerFnId,
@@ -8,7 +8,16 @@ import {
   type serverFnRef,
   type ServerFnRef,
 } from "../shared/server-fn.ts";
-import { rpcPrefix, rpcQuery, wireFormat, wireHeader, type RedirectJson } from "../shared/wire.ts";
+import {
+  internalPrefix,
+  isRedirectJson,
+  rpcPrefix,
+  rpcQuery,
+  wireFormat,
+  wireHeader,
+  type RedirectJson,
+} from "../shared/wire.ts";
+import { cookieAfter } from "./cookies.ts";
 import { classify, isSafeLocation } from "./errors.ts";
 import { formDataToInput } from "./form-data.ts";
 import { handledMethod } from "./request.ts";
@@ -197,7 +206,7 @@ const responders = {
     respond: (c, outcome, fail) => {
       switch (outcome.kind) {
         case "value":
-          return c.redirect(c.req.header("referer") ?? "/", 303);
+          return c.redirect(pageUrlOf(c)?.href ?? c.req.header("referer") ?? "/", 303);
         case "redirect":
           return c.redirect(outcome.location, 303);
         case "notFound":
@@ -218,29 +227,110 @@ function unreachable(value: never): never {
   throw new Error(`想定していない値です: ${JSON.stringify(value)}`);
 }
 
+/** サブリクエスト `request` を、リクエスト `c` と同じアプリで処理したレスポンスを返す関数を表す。 */
+export type FetchPage = (c: Context, request: Request) => Response | Promise<Response>;
+
 /**
- * `x-rinka-refresh: 1` を付与したサーバー関数のエンドポイントへのフォームの送信で、3xx で `Location` を持つレスポンスを、
- * `Location` の値を持つ `{ redirect }` の 200 の JSON に、rinka が組み立てたことを示す `x-rinka-wire: rpc` を付与して置き換える。`Location`、`Content-Length`、`Content-Type` のほかのヘッダーは引き継ぐ。
+ * JS から呼び出したサーバー関数のレスポンスを、クライアントが反映する形にする Hono のミドルウェアを返す。対象は、`x-rinka-page` を持つフォームの送信である。
+ * 3xx で安全な `Location` を持つレスポンスは、`Location` の値を持つ `{ redirect }` の 200 の JSON に置換する。
+ * `x-rinka-page` の URL が有効で、`{ redirect }` の移動先（相対 URL は `x-rinka-page` の URL のオリジンで解決する）が hash を除いてその URL と一致するときは、`fetchPage` でそのページを描き直し、描き直しの JSON を `page` に含める。
+ * 描き直しのサブリクエストの `Cookie` は、サーバー関数のレスポンスの `Set-Cookie` を反映した値にし、描き直しのレスポンスの `Set-Cookie` はレスポンスに追加する。
+ * 描き直しのレスポンスが JSON として読めなければ、`page` を含めない。
  */
-export const formRedirects: MiddlewareHandler = async (c, next) => {
-  await next();
-  const requested = requestKind(c) === "form" && c.req.header(REFRESH_HEADER) === "1";
-  const location = c.res.headers.get("location");
-  if (!requested || location === null || c.res.status < 300 || c.res.status >= 400) return;
-  if (!isSafeLocation(location)) return;
-  const headers = new Headers(c.res.headers);
+export function callerResponses(fetchPage: FetchPage): MiddlewareHandler {
+  return async (c, next) => {
+    await next();
+    if (requestKind(c) !== "form" || c.req.header(PAGE_HEADER) === undefined) return;
+    const location = c.res.headers.get("location");
+    if (
+      location !== null &&
+      c.res.status >= 300 &&
+      c.res.status < 400 &&
+      isSafeLocation(location)
+    ) {
+      replaceJson(c, { redirect: location } satisfies RedirectJson, c.res.headers);
+    }
+    const page = pageUrlOf(c);
+    if (
+      page === undefined ||
+      c.res.status !== 200 ||
+      c.res.headers.get(wireHeader) !== wireFormat.rpc
+    ) {
+      return;
+    }
+    const body: unknown = await c.res
+      .clone()
+      .json()
+      .catch(() => undefined);
+    if (!isRedirectJson(body) || !sameDocument(locationOf(body.redirect, c, page), page)) return;
+    const response = await fetchPage(c, pageRequest(c, page));
+    if (!(response.headers.get("content-type")?.startsWith("application/json") ?? false)) return;
+    const refreshed: unknown = await response.json().catch(() => undefined);
+    if (refreshed === undefined) return;
+    const headers = new Headers(c.res.headers);
+    for (const cookie of response.headers.getSetCookie()) headers.append("set-cookie", cookie);
+    replaceJson(c, { ...body, page: refreshed }, headers);
+  };
+}
+
+/**
+ * リクエスト `c` の `x-rinka-page` の URL を返す。
+ * ヘッダーが無いとき、URL として解析できないとき、ホストがリクエストの URL と異なるとき、パスが `/_rinka/` の下にあるときは `undefined` を返す。
+ */
+export function pageUrlOf(c: Pick<Context, "req">): URL | undefined {
+  const value = c.req.header(PAGE_HEADER);
+  if (value === undefined || !URL.canParse(value)) return undefined;
+  const url = new URL(value);
+  return url.host === new URL(c.req.url).host && !url.pathname.startsWith(internalPrefix)
+    ? url
+    : undefined;
+}
+
+/** `a` と `b` が、hash を除いて同じ URL かどうかを返す。 */
+const sameDocument = (a: URL, b: URL): boolean => withoutHash(a) === withoutHash(b);
+
+/** リクエスト `c` のレスポンスの移動先 `location` を、`c` の URL のパスとクエリと、ページ `page` の URL のオリジンを基準に解決する。 */
+function locationOf(location: string, c: Context, page: URL): URL {
+  const { pathname, search } = new URL(c.req.url);
+  return new URL(location, new URL(`${pathname}${search}`, page.origin));
+}
+
+/**
+ * リクエスト `c` のヘッダーを引き継いで、ページ `page` を描き直す GET のリクエストを返す。
+ * 本文、圧縮、条件付きのリクエストのヘッダーと `x-rinka-page` は除外し、`Cookie` は、`c` のレスポンスの `Set-Cookie` を反映した値にする。
+ */
+function pageRequest(c: Context, page: URL): Request {
+  const headers = new Headers(c.req.raw.headers);
+  for (const name of [
+    "content-type",
+    "content-length",
+    "accept-encoding",
+    "if-none-match",
+    "if-modified-since",
+    wireHeader,
+    PAGE_HEADER,
+  ]) {
+    headers.delete(name);
+  }
+  headers.set(REFRESH_HEADER, "1");
+  const cookie = cookieAfter(c.req.header("cookie"), c.res.headers.getSetCookie());
+  if (cookie === "") headers.delete("cookie");
+  else headers.set("cookie", cookie);
+  return new Request(new URL(`${page.pathname}${page.search}`, c.req.url), { headers });
+}
+
+/** `c` のレスポンスを、`from` のヘッダーを引き継いだ、`body` の 200 の JSON に置換する。`Location` と `Content-Length` は引き継がず、`x-rinka-wire: rpc` を付与する。 */
+function replaceJson(c: Context, body: object, from: Headers): void {
+  const headers = new Headers(from);
   headers.delete("location");
   headers.delete("content-length");
   headers.set("content-type", "application/json");
   headers.set(wireHeader, wireFormat.rpc);
-  const json = new Response(JSON.stringify({ redirect: location } satisfies RedirectJson), {
-    status: 200,
-    headers,
-  });
+  const json = new Response(JSON.stringify(body), { status: 200, headers });
   // c.res の setter に前のレスポンスのヘッダーをマージさせない
   c.res = undefined;
   c.res = json;
-};
+}
 
 /** リクエスト `c` が、サーバー関数のエンドポイントへのリクエストなら、その種類を返す。それ以外のリクエストでは `undefined` を返す。 */
 function requestKind(c: Context): RequestKind | undefined {

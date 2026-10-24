@@ -48,16 +48,13 @@ export type Received =
   | { readonly kind: "redirect" }
   | { readonly kind: "response"; readonly response: Response; readonly body: unknown };
 
-/** `x-rinka-refresh: 1` を付与し、リダイレクトを追跡せずに `url` にリクエストを送信する。 */
+/** `headers` を付与し、リダイレクトを追跡せずに `url` にリクエストを送信する。 */
 export async function sendRefresh(
   url: string | URL,
+  headers: Readonly<Record<string, string>>,
   init: Omit<RequestInit, "headers" | "redirect"> = {},
 ): Promise<Received> {
-  const response = await fetch(url, {
-    ...init,
-    headers: { [REFRESH_HEADER]: "1" },
-    redirect: "manual",
-  });
+  const response = await fetch(url, { ...init, headers, redirect: "manual" });
   if (response.type === "opaqueredirect") return { kind: "redirect" };
   const json = response.headers.get("content-type")?.startsWith("application/json") ?? false;
   return {
@@ -75,12 +72,17 @@ export async function sendRefresh(
 export const refreshPage: RefreshPage = async () => {
   receiver();
   const reflect = startRewrite();
-  const received = await sendRefresh(location.href);
+  const received = await sendRefresh(location.href, { [REFRESH_HEADER]: "1" });
+  reflectPage(reflect, received.kind === "response" ? received.body : undefined);
+};
+
+/** `startRewrite` が返した `reflect` で、`page` が描き直しの JSON ならページに反映し、そうでなければページを読み込み直す。 */
+export function reflectPage(reflect: (apply: () => void) => void, page: unknown): void {
   reflect(() => {
-    if (received.kind === "response" && isRefreshJson(received.body)) applyRefresh(received.body);
+    if (isRefreshJson(page)) applyRefresh(page);
     else location.reload();
   });
-};
+}
 
 /** `value` が、描き直しのレスポンスの JSON かどうかを返す。 */
 export const isRefreshJson = (value: unknown): value is RefreshJson =>
