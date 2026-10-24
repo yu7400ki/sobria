@@ -78,7 +78,7 @@ export function mdx(options: MdxOptions): Plugin {
 }
 
 /**
- * MDX のソース `source` を TSX のソースにする。TSX は、本文のコンポーネントを default export し、frontmatter の `title` の文字列を `title`、深さ 2 と 3 の見出しの `{ depth, id, text }` の配列を `toc` として export する。
+ * MDX のソース `source` を TSX のソースにする。TSX は、本文のコンポーネントを default export し、frontmatter の `title` の文字列を `title`、深さ 2 と 3 の見出しの `{ depth, id, text }` の配列を `toc`、`/` で始まるリンクの URL の配列を `links` として export する。
  * frontmatter に文字列の `title` が無いときと、深さ 1 の見出しがあるときは、エラーを投げる。
  * MDX の ESM と式は、ソースの文字列のまま出力する。JSX の属性の式も、ソースの文字列のまま出力する。
  */
@@ -95,6 +95,7 @@ export async function toTsx(source: string, options: MdxOptions): Promise<string
   const root = JSON.parse(result.astJson) as Node;
   const ids = new Set<string>();
   const toc: TocItem[] = [];
+  const links: string[] = [];
   const esm: string[] = [];
   const blocks: CodeBlock[] = [];
 
@@ -170,6 +171,7 @@ export async function toTsx(source: string, options: MdxOptions): Promise<string
       case "break":
         return "<br />";
       case "link":
+        if (node.url?.startsWith("/")) links.push(node.url);
         return `<a href={${literal(node.url ?? "")}}${optional("title", node.title)}>${children(node)}</a>`;
       case "image":
         return `<img src={${literal(node.url ?? "")}} alt={${literal(node.alt ?? "")}}${optional("title", node.title)} />`;
@@ -245,6 +247,7 @@ export async function toTsx(source: string, options: MdxOptions): Promise<string
     ...esm,
     `export const title = ${literal(title)};`,
     `export const toc = ${JSON.stringify(toc)};`,
+    `export const links = ${JSON.stringify(links)};`,
     `export default function Content() {`,
     `  return <>${content}</>;`,
     `}`,

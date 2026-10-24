@@ -41,6 +41,12 @@ describe("toTsx", () => {
     expect(code).toContain('<h4 id={"深い"}>{"深い"}</h4>');
   });
 
+  it("/ で始まるリンクの URL を、出現した順に links として export する", async () => {
+    expect(await tsx("[a](/guide/x#見出し) [b](https://example.com) [c](./y)\n\n[d](/)")).toContain(
+      'export const links = ["/guide/x#見出し","/"];',
+    );
+  });
+
   it("テキストを文字列のリテラルとして出力する", async () => {
     expect(await body(String.raw`a \{b\} \<c\> "d" &lt;`)).toBe(
       String.raw`<p>{"a {b} <c> \"d\" <"}</p>`,

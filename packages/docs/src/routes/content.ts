@@ -11,6 +11,7 @@ export interface Page {
   readonly title: string;
   readonly Body: () => ServerNode;
   readonly toc: readonly TocItem[];
+  readonly links: readonly string[];
 }
 
 /** サイドバーの区分である。 */
@@ -24,6 +25,7 @@ interface MdxModule {
   readonly default: () => ServerNode;
   readonly title: string;
   readonly toc: readonly TocItem[];
+  readonly links: readonly string[];
 }
 
 /** glob のキーのうち、slug の前にある部分である。キーは、このファイルからの相対パスである。 */
@@ -44,8 +46,8 @@ export const sections: readonly Section[] = nav.map((section) => ({
     if (module === undefined) {
       throw new Error(`nav.ts の ${slug} の本文が src/content/ にありません。`);
     }
-    const { default: Body, title, toc } = module;
-    return { slug, href: href("/[...slug]", { slug }), title, Body, toc };
+    const { default: Body, title, toc, links } = module;
+    return { slug, href: href("/[...slug]", { slug }), title, Body, toc, links };
   }),
 }));
 
@@ -55,6 +57,21 @@ export const pages: readonly Page[] = sections.flatMap((section) => section.page
 for (const slug of modules.keys()) {
   if (!pages.some((page) => page.slug === slug)) {
     throw new Error(`src/content/${slug}.mdx を nav.ts に記述してください。`);
+  }
+}
+
+// 本文の内部リンクは、トップページか、本文のページとその見出しを指す。
+for (const page of pages) {
+  for (const link of page.links) {
+    const [path = "", hash] = link.split("#");
+    const target = pages.find((candidate) => candidate.href === path);
+    const valid =
+      path === "/"
+        ? hash === undefined
+        : target !== undefined &&
+          (hash === undefined || target.toc.some((item) => item.id === decodeURIComponent(hash)));
+    if (!valid)
+      throw new Error(`src/content/${page.slug}.mdx のリンク ${link} の行き先がありません。`);
   }
 }
 
