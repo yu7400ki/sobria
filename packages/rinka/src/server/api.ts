@@ -7,7 +7,7 @@ export {
   type RenderOptions,
   type ResponseOptions,
 } from "./response.ts";
-export { getContext } from "./context.ts";
+export { getContext, setBlockingRender } from "./context.ts";
 export { defineHandler, defineMiddleware } from "hono/factory";
 export {
   defineServerFn,

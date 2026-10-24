@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import type { ServerNode } from "rinka";
 import { href, type LayoutProps, type PageProps } from "rinka/router";
-import { defineHandler, getContext } from "rinka/server";
+import { defineHandler, getContext, setBlockingRender } from "rinka/server";
 import { describe, expectTypeOf, it } from "vitest";
 
 declare module "rinka/router" {
@@ -46,6 +46,10 @@ describe("rinka/router", () => {
 describe("rinka/server のルーティングの API", () => {
   it("getContext は、Hono の Context か undefined を返す", () => {
     expectTypeOf(getContext).returns.toEqualTypeOf<Context | undefined>();
+  });
+
+  it("setBlockingRender は、Hono の Context と真偽値を受け取る", () => {
+    expectTypeOf(setBlockingRender).parameters.toEqualTypeOf<[Context, boolean]>();
   });
 
   it("defineHandler は、hono/factory の defineHandler である", () => {

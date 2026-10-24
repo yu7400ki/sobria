@@ -3,7 +3,7 @@ import { setCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { getContext } from "../../src/server/api.ts";
+import { getContext, setBlockingRender } from "../../src/server/api.ts";
 import { Loading } from "../../src/server/control.ts";
 import { notFound, redirect } from "../../src/server/errors.ts";
 import { createApp, registerServerFn } from "../../src/server/internal.ts";
@@ -41,6 +41,12 @@ const shell = ({
 const slow = async () => {
   await new Promise((resolve) => setTimeout(resolve, 10));
   return jsx("p", { children: "done" });
+};
+
+/** クエリの `blocking` が `1` のときだけ、すべての `<Loading>` を待つ描画を指定するミドルウェアである。 */
+const choose: MiddlewareHandler = async (c, next) => {
+  setBlockingRender(c, c.req.query("blocking") === "1");
+  await next();
 };
 
 /** `slow` を `<Loading>` で包むページである。 */
@@ -191,6 +197,17 @@ describe("createApp のページ", () => {
     const person = await bodyOf(await request(routes, "/"));
     expect(person).toContain("<p>wait</p>");
     expect(person).toContain("$rinka");
+  });
+
+  it("ミドルウェアが setBlockingRender で指定した値は、User-Agent の判定より優先する", async () => {
+    const routes: Routes = { routes: [pageRoute("/", view, [], [choose])] };
+    const person = await bodyOf(await request(routes, "/?blocking=1"));
+    expect(person).toContain("<p>done</p>");
+    expect(person).not.toContain("$rinka");
+    const bot = await bodyOf(
+      await request(routes, "/?blocking=0", { headers: { "user-agent": "Googlebot/2.1" } }),
+    );
+    expect(bot).toContain("<p>wait</p>");
   });
 });
 

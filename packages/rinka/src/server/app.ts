@@ -15,7 +15,7 @@ import {
   type Routes,
 } from "../shared/routes.ts";
 import { isBot } from "./bots.ts";
-import { runInRequest, withContextHeaders } from "./context.ts";
+import { blockingRenderOf, runInRequest, withContextHeaders } from "./context.ts";
 import { formRedirects, serverFnMiddleware, type Failure } from "./endpoint.ts";
 import { notFound } from "./errors.ts";
 import { stylesheetLink } from "./html.ts";
@@ -127,7 +127,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     const head = `${options.head ?? ""}${styles.map(stylesheetLink).join("")}`;
     const response = await renderDocument(node, {
       ...pages,
-      blocking: isBot(c.req.header("user-agent")),
+      blocking: blockingRenderOf(c) ?? isBot(c.req.header("user-agent")),
       ...(head !== "" && { head }),
     });
     return withContextHeaders(c, response);

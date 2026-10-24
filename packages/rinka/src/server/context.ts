@@ -99,3 +99,14 @@ export function withContextHeaders(c: Pick<Context, "newResponse">, response: Re
   for (const cookie of added) merged.headers.append("set-cookie", cookie);
   return merged;
 }
+
+/** リクエストの Context ごとの、すべての `<Loading>` を待って描画するかどうかの指定である。 */
+const blockingRenders = new WeakMap<object, boolean>();
+
+/** リクエスト `c` のページを、すべての `<Loading>` の中身を待って描画するかどうかを指定する。指定しなければ、bot の User-Agent のリクエストだけを待って描画する。 */
+export function setBlockingRender(c: Context, value: boolean): void {
+  blockingRenders.set(c, value);
+}
+
+/** リクエスト `c` に `setBlockingRender` で指定した値を返す。指定していなければ undefined を返す。 */
+export const blockingRenderOf = (c: object): boolean | undefined => blockingRenders.get(c);
