@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { createServer, type AddressInfo } from "node:net";
 
 import { rinka, type RinkaOptions } from "rinka/vite";
-import { createBuilder, type PluginOption } from "vite";
+import { createBuilder, type InlineConfig, type PluginOption } from "vite";
 
 /** 本番のビルドでの、ファイル `file` のサーバー関数 `name` の RPC のパスを返す。 */
 export const rpcPath = (file: string, name: string) => {
@@ -11,14 +11,16 @@ export const rpcPath = (file: string, name: string) => {
   return `/_rinka/fn/${encodeURIComponent(`${module}#${name}`)}`;
 };
 
-/** テスト用のアプリのルート `root` を、rinka のプラグイン（接頭辞は `app`）と `plugins` で `outDir` にビルドする。 */
+/** テスト用のアプリのルート `root` を、rinka のプラグイン（接頭辞は `app`）と `plugins` と Vite の設定 `config` で `outDir` にビルドする。 */
 export async function buildFixture(
   root: string,
   outDir: string,
   options: RinkaOptions = {},
   plugins: PluginOption[] = [],
+  config: InlineConfig = {},
 ): Promise<void> {
   const builder = await createBuilder({
+    ...config,
     root,
     configFile: false,
     logLevel: "error",

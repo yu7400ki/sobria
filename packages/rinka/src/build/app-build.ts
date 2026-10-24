@@ -127,6 +127,10 @@ export function appBuild({ options, settings }: SceneContext): {
           rolldownOptions: {
             output: { assetFileNames: assetFileNames(config.build?.assetsDir ?? "assets") },
           },
+          // クライアントの環境の cssMinify のデフォルトと同じ値にする
+          ...(name === "ssr" && {
+            cssMinify: config.build?.cssMinify ?? config.build?.minify !== false,
+          }),
         },
       }),
       ...(isServerEnvironment(name, config) && {
