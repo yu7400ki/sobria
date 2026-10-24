@@ -1,7 +1,7 @@
 import { rmSync } from "node:fs";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 
-import type { Plugin } from "vite";
+import type { Plugin, Rolldown } from "vite";
 
 import type { PrerenderScope } from "../shared/prerender.ts";
 import { embedRouteStyles, moveServerAssets } from "./build-styles.ts";
@@ -23,6 +23,15 @@ import {
   sceneOf,
   type SceneContext,
 } from "./settings.ts";
+
+/** `assetsDir` に出力するアセットのファイル名を返す関数を返す。CSS のアセットは内容のハッシュだけを名前にし、ほかのアセットは Vite のデフォルトと同じ名前にする。 */
+const assetFileNames =
+  (assetsDir: string) =>
+  ({ names }: Rolldown.PreRenderedAsset): string =>
+    posix.join(
+      assetsDir,
+      names.some((name) => name.endsWith(".css")) ? "[hash].css" : "[name]-[hash].[ext]",
+    );
 
 /**
  * アプリの `vite build` で、要素のクライアントのビルドと、サーバーのエントリーのサーバーのビルドを、この順に出力するプラグインと、
@@ -51,8 +60,9 @@ export function appBuild({ options, settings }: SceneContext): {
     enforce: "pre",
     sharedDuringBuild: true,
     applyToEnvironment: (environment) => !isClient(environment),
-    config: () => {
+    config: (config) => {
       const { root, clientDir, serverDir, elements } = settings();
+      const output = { assetFileNames: assetFileNames(config.build?.assetsDir ?? "assets") };
       const file = serverEntry(root);
       if (settings().output === "static") {
         const serverFns = serverFnModules(root);
@@ -77,6 +87,7 @@ export function appBuild({ options, settings }: SceneContext): {
                   elements.length > 0
                     ? elements.map((element) => element.path)
                     : [entries.noElements],
+                output,
               },
             },
           },
@@ -89,7 +100,7 @@ export function appBuild({ options, settings }: SceneContext): {
                   [SERVER_ENTRY_NAME]: file === undefined ? entries.app : join(root, file),
                   ...(scope !== undefined && { [PRERENDER_ENTRY_NAME]: entries.prerender }),
                 },
-                output: { entryFileNames: "[name].js" },
+                output: { ...output, entryFileNames: "[name].js" },
               },
             },
           },

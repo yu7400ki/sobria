@@ -295,3 +295,38 @@ describe("src/server.ts の無いアプリ", () => {
     }
   }, 120_000);
 });
+
+/** HTML `html` の `<link rel="stylesheet">` の URL を、出現する順に返す。 */
+const stylesheets = (html: string) =>
+  [...html.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map(([, href]) => href!);
+
+describe("レイアウトと要素が同じ CSS を import するアプリ", () => {
+  it("<head> の <link>、要素のシートの DSD の <link>、要素のモジュールが取得する CSS は、同じ 1 つの URL を参照する", async () => {
+    const out = await mkdtemp(join(tmpdir(), "rinka-build-shared-sheet-"));
+    try {
+      await buildFixture(fileURLToPath(new URL("../fixtures/shared-sheet", import.meta.url)), out);
+      const html = await (
+        await (await serverEntry(out)).fetch(new Request("http://localhost/"))
+      ).text();
+      const head = html.slice(0, html.indexOf("</head>"));
+      const note = html.slice(html.indexOf("<app-note"), html.indexOf("</app-note>"));
+      const module = /\$rinka\.m\(\[\["app-note","([^"]+)"/.exec(html)![1]!;
+      const fetched = (await readFile(join(out, "client", module), "utf8")).match(
+        /\/assets\/[^"'`]+\.css/g,
+      );
+      const urls = [...stylesheets(head), ...stylesheets(note), ...fetched!];
+      expect(urls).toHaveLength(3);
+      expect(new Set(urls)).toEqual(new Set([urls[0]]));
+      const css = await readFile(join(out, "client", urls[0]!), "utf8");
+      const assets = await readdir(join(out, "client/assets"));
+      const same = await Promise.all(
+        assets
+          .filter((file) => file.endsWith(".css"))
+          .map(async (file) => (await readFile(join(out, "client/assets", file), "utf8")) === css),
+      );
+      expect(same.filter(Boolean)).toHaveLength(1);
+    } finally {
+      await rm(out, { recursive: true, force: true });
+    }
+  }, 120_000);
+});
