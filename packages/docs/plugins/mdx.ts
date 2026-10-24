@@ -9,7 +9,7 @@ export interface MdxOptions {
 }
 
 /** 目次の項目である。 */
-export interface TocItem {
+interface TocItem {
   readonly depth: number;
   readonly id: string;
   readonly text: string;
@@ -78,12 +78,19 @@ export function mdx(options: MdxOptions): Plugin {
 }
 
 /**
- * MDX のソース `source` を TSX のソースにする。TSX は、本文のコンポーネントを default export し、frontmatter のオブジェクトを `frontmatter`、深さ 2 と 3 の見出しの `TocItem` の配列を `toc` として export する。
+ * MDX のソース `source` を TSX のソースにする。TSX は、本文のコンポーネントを default export し、frontmatter の `title` の文字列を `title`、深さ 2 と 3 の見出しの `{ depth, id, text }` の配列を `toc` として export する。
+ * frontmatter に文字列の `title` が無いときと、深さ 1 の見出しがあるときは、エラーを投げる。
  * MDX の ESM と式は、ソースの文字列のまま出力する。JSX の属性の式も、ソースの文字列のまま出力する。
  */
 export async function toTsx(source: string, options: MdxOptions): Promise<string> {
   const result = transformMdast(source, { mdx: true, gfm: true });
   if (result.errors.length > 0) throw new Error(result.errors.join("\n"));
+  const frontmatter: unknown = JSON.parse(result.frontmatter || "{}");
+  const title: unknown =
+    typeof frontmatter === "object" && frontmatter !== null
+      ? Reflect.get(frontmatter, "title")
+      : undefined;
+  if (typeof title !== "string") throw new Error("frontmatter に title を記述してください。");
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   const root = JSON.parse(result.astJson) as Node;
   const ids = new Set<string>();
@@ -140,6 +147,11 @@ export async function toTsx(source: string, options: MdxOptions): Promise<string
         const text = textOf(node).trim();
         const id = idOf(text);
         const depth = node.depth ?? 1;
+        if (depth === 1) {
+          throw new Error(
+            `# ${text} の見出しは記述できません。ページの題名は frontmatter の title に記述してください。`,
+          );
+        }
         if (TOC_DEPTHS.has(depth)) toc.push({ depth, id, text });
         return `<h${depth} id={${literal(id)}}>${children(node)}</h${depth}>`;
       }
@@ -231,7 +243,7 @@ export async function toTsx(source: string, options: MdxOptions): Promise<string
   return [
     `import ${CODE_BLOCK} from ${literal(options.codeBlock)};`,
     ...esm,
-    `export const frontmatter = ${result.frontmatter || "{}"};`,
+    `export const title = ${literal(title)};`,
     `export const toc = ${JSON.stringify(toc)};`,
     `export default function Content() {`,
     `  return <>${content}</>;`,

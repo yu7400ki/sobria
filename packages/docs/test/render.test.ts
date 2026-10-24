@@ -22,7 +22,8 @@ describe("MDX の描画", () => {
     const { renderToString } = await server.ssrLoadModule("rinka/server");
     const content = await server.ssrLoadModule("/test/fixtures/sample.mdx");
     const html: string = await renderToString(content.default({}));
-    expect(content.frontmatter).toEqual({ title: "見本" });
+    expect(content.title).toBe("見本");
+    expect(content.toc).toEqual([{ depth: 2, id: "見出し", text: "見出し" }]);
     expect(html).toContain('<h2 id="見出し">見出し</h2>');
     expect(html).toContain(
       '<p>本文の <strong>強調</strong> 注<br>改行 <img src="/a.png" alt="図" title="画像"></p>',

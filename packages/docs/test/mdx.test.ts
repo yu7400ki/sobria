@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { toTsx } from "../plugins/mdx.ts";
 
-/** コードブロックのコンポーネントの指定子を設定して、`source` を TSX にする。 */
-const tsx = (source: string) => toTsx(source, { codeBlock: "/code-block.tsx" });
+/** コードブロックのコンポーネントの指定子を設定して、MDX のソース `source` を TSX にする。 */
+const convert = (source: string) => toTsx(source, { codeBlock: "/code-block.tsx" });
+
+/** 題名の frontmatter を前に付けた本文 `source` を、TSX にする。 */
+const tsx = (source: string) => convert(`---\ntitle: 題名\n---\n\n${source}`);
 
 /** `source` から生成した TSX の、本文のコンポーネントが返す JSX を返す。 */
 async function body(source: string): Promise<string> {
@@ -14,24 +17,26 @@ async function body(source: string): Promise<string> {
 }
 
 describe("toTsx", () => {
-  it("frontmatter を export する", async () => {
-    expect(await tsx("---\ntitle: 題名\n---\n\n本文")).toContain(
-      'export const frontmatter = {"title":"題名"};',
+  it("frontmatter の題名を title として export する", async () => {
+    expect(await convert("---\ntitle: 題名\n---\n\n本文")).toContain(
+      'export const title = "題名";',
     );
   });
 
-  it("frontmatter が無ければ、空のオブジェクトを export する", async () => {
-    expect(await tsx("本文")).toContain("export const frontmatter = {};");
+  it("frontmatter に文字列の title が無ければ、エラーにする", async () => {
+    await expect(convert("本文")).rejects.toThrow("title");
+    await expect(convert("---\ntitle: 1\n---\n\n本文")).rejects.toThrow("title");
+  });
+
+  it("深さ 1 の見出しは、エラーにする", async () => {
+    await expect(tsx("# 題名")).rejects.toThrow("#");
   });
 
   it("見出しに ID を付け、深さ 2 と 3 の見出しを目次として export する", async () => {
-    const code = await tsx(
-      "# 題名\n\n## 使い方 `css`\n\n### Props と属性\n\n## 使い方 `css`\n\n#### 深い",
-    );
+    const code = await tsx("## 使い方 `css`\n\n### Props と属性\n\n## 使い方 `css`\n\n#### 深い");
     expect(code).toContain(
       'export const toc = [{"depth":2,"id":"使い方-css","text":"使い方 css"},{"depth":3,"id":"props-と属性","text":"Props と属性"},{"depth":2,"id":"使い方-css-1","text":"使い方 css"}];',
     );
-    expect(code).toContain('<h1 id={"題名"}>{"題名"}</h1>');
     expect(code).toContain('<h2 id={"使い方-css"}>{"使い方 "}<code>{"css"}</code></h2>');
     expect(code).toContain('<h4 id={"深い"}>{"深い"}</h4>');
   });
