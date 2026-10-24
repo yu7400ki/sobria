@@ -60,9 +60,8 @@ export function appBuild({ options, settings }: SceneContext): {
     enforce: "pre",
     sharedDuringBuild: true,
     applyToEnvironment: (environment) => !isClient(environment),
-    config: (config) => {
+    config: () => {
       const { root, clientDir, serverDir, elements } = settings();
-      const output = { assetFileNames: assetFileNames(config.build?.assetsDir ?? "assets") };
       const file = serverEntry(root);
       if (settings().output === "static") {
         const serverFns = serverFnModules(root);
@@ -87,7 +86,6 @@ export function appBuild({ options, settings }: SceneContext): {
                   elements.length > 0
                     ? elements.map((element) => element.path)
                     : [entries.noElements],
-                output,
               },
             },
           },
@@ -100,7 +98,7 @@ export function appBuild({ options, settings }: SceneContext): {
                   [SERVER_ENTRY_NAME]: file === undefined ? entries.app : join(root, file),
                   ...(scope !== undefined && { [PRERENDER_ENTRY_NAME]: entries.prerender }),
                 },
-                output: { ...output, entryFileNames: "[name].js" },
+                output: { entryFileNames: "[name].js" },
               },
             },
           },
@@ -123,14 +121,20 @@ export function appBuild({ options, settings }: SceneContext): {
         },
       };
     },
-    configEnvironment: (name, config) =>
-      isServerEnvironment(name, config)
-        ? {
-            resolve: {
-              noExternal: ["@hono/node-server", ...new Set(serverImports.map(packageOf))],
-            },
-          }
-        : null,
+    configEnvironment: (name, config) => ({
+      ...((name === "client" || name === "ssr") && {
+        build: {
+          rolldownOptions: {
+            output: { assetFileNames: assetFileNames(config.build?.assetsDir ?? "assets") },
+          },
+        },
+      }),
+      ...(isServerEnvironment(name, config) && {
+        resolve: {
+          noExternal: ["@hono/node-server", ...new Set(serverImports.map(packageOf))],
+        },
+      }),
+    }),
     buildStart() {
       clientAssets = readClientAssets(settings().clientDir);
     },
