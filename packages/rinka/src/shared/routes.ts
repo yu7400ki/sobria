@@ -29,7 +29,7 @@ export type RouteFiles = Files<unknown, unknown, unknown>;
 export type LoadedFiles = Files<
   Load<RouteComponent>,
   Load<MiddlewareHandler>,
-  () => Promise<Partial<Readonly<Record<RouteMethod, Handler>>>>
+  (() => Promise<Partial<Readonly<Record<RouteMethod, Handler>>>>) & { readonly file: string }
 >;
 
 /** エラーのページと、外側から順に列挙した、そのディレクトリのレイアウトを表す。 */

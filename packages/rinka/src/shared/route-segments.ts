@@ -43,10 +43,3 @@ export function fillPattern(
     })
     .join("/");
 }
-
-/** ファイルの形のパス `pattern` の、パラメータとキャッチオールの名前を返す。 */
-export const patternParams = (pattern: string): string[] =>
-  pattern.split("/").flatMap((part) => {
-    const segment = parseSegment(part);
-    return segment?.kind === "param" || segment?.kind === "catch-all" ? [segment.name] : [];
-  });

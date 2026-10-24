@@ -118,7 +118,7 @@ function apiRoute(
     kind: "route",
     path,
     pattern: patternOf(path),
-    module: async () => handlers,
+    module: Object.assign(async () => handlers, { file: `src/routes${path}/route.ts` }),
     middlewares: middlewares.map((value) => loadOf(value)),
   };
 }
