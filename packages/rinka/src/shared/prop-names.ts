@@ -165,7 +165,10 @@ type ReasonMessage<K extends string, R> = R extends readonly [
 /** 名前 `K` が props にできない名前なら、ビルドのエラーと同じメッセージを表す。props にできる名前なら `never` を表す。 */
 export type PropNameError<K extends string> = ReasonMessage<K, ReasonOf<K>>;
 
-/** Props の型 `T` のうち、props にできない名前のキーの型を、`PropNameError` のメッセージの型にする。 */
+/**
+ * Props の型 `T` のうち、props にできない名前のキーの型を、`PropNameError` のメッセージの型にする。
+ * @internal
+ */
 type CheckedProps<T> = {
   [K in keyof T]: K extends string
     ? [PropNameError<K>] extends [never]

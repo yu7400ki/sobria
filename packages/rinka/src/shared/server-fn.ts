@@ -26,7 +26,10 @@ export const serverFnRefName = "rinka.serverFnRef";
 /** サーバー関数の ID とメソッドを、関数に保持するときのキーである。 */
 export const serverFnRef: unique symbol = Symbol.for(serverFnRefName);
 
-/** サーバー関数の ID とメソッドを表す。 */
+/**
+ * サーバー関数の ID とメソッドを表す。
+ * @internal
+ */
 export interface ServerFnRef<M extends ServerFnMethod = ServerFnMethod> {
   readonly id: string;
   readonly method: M;

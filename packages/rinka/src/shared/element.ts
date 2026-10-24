@@ -73,7 +73,7 @@ export type PropKind = AttributeType | "unknown" | "function" | "object" | "slot
 
 /** `defineElement` の 3 つ目の引数を表す。 */
 export interface ElementOptions {
-  /** 受け付ける props の名前ごとの分類。`children` は、表に無いときもスロットになる。 */
+  /** 受け付ける props の名前ごとの分類である。`children` は、表に無いときもスロットになる。 */
   readonly props: Readonly<Record<string, PropKind>> & { readonly children?: "slot" };
   /** 要素の関数が ctx の `form` を使用し、要素がフォームの部品になるときに `true` である。 */
   readonly form?: true;
@@ -87,9 +87,9 @@ export type FormState = string | File | FormData | null;
 
 /** `form.validity` に渡す関数が返す、無効の理由を表す。`true` にした制約が 1 つも無ければ `customError` とする。 */
 export interface FormInvalidity extends ValidityStateFlags {
-  /** 検証エラーの吹き出しに表示する文言。 */
+  /** 検証エラーの吹き出しに表示する文言である。 */
   readonly message: string;
-  /** 検証エラーの吹き出しを表示する位置のノード。 */
+  /** 検証エラーの吹き出しを表示する位置のノードである。 */
   readonly anchor?: HTMLElement;
 }
 
@@ -125,13 +125,13 @@ export function unsupportedFormControls(tag: string): FormControls {
 
 /** 要素の関数が 2 番目の引数で受け取る、ホストに依存する能力を表す。 */
 export interface Ctx<M extends object = object> {
-  /** ホストの要素。 */
+  /** ホストの要素である。 */
   readonly host: HTMLElement;
-  /** フォームの部品の値、検証、リセット、復元、無効の状態を扱う関数。 */
+  /** フォームの部品の値、検証、リセット、復元、無効の状態を扱う関数である。 */
   readonly form: FormControls;
-  /** ホストの `ElementInternals`。 */
+  /** ホストの `ElementInternals` である。 */
   readonly internals: ElementInternals;
-  /** Shadow DOM に適用するスタイルを、呼び出した順に追加する関数。 */
+  /** Shadow DOM に適用するスタイルを、呼び出した順に追加する関数である。 */
   readonly css: ElementCss;
   /** 要素が DOM に接続され、最初の内容を Shadow DOM に表示した後に呼ぶ関数を登録する。 */
   readonly onMount: (fn: () => void) => void;
@@ -153,7 +153,10 @@ export interface Delivery {
   readonly chunks?: readonly string[];
 }
 
-/** 要素のタグ名と、`defineElement` に渡したオプションを表す。`delivery` は、Vite プラグインがコンパイルしたサーバー向けの要素だけが持つ。 */
+/**
+ * 要素のタグ名と、`defineElement` に渡したオプションを表す。`delivery` は、Vite プラグインがコンパイルしたサーバー向けの要素だけが持つ。
+ * @internal
+ */
 export interface ElementInfo {
   readonly tag: string;
   readonly options: ElementOptions;

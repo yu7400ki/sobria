@@ -86,7 +86,7 @@ export function refresh<T>(target: Memo<T>): Promise<T> {
   return solidRefresh(target as unknown as SourceAccessor<T>);
 }
 
-/** `action` が返す関数。 */
+/** `action` が返す関数を表す。 */
 export type Action<Args extends unknown[], R> = ((...args: Args) => Promise<R>) & {
   /** この action の呼び出しが実行中かどうかを返す。 */
   pending(): boolean;

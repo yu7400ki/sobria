@@ -13,7 +13,10 @@ export interface RinkaOptions {
   readonly prefix?: string;
   /** 要素を置くディレクトリである。プロジェクトのルートからの相対パスで記述し、デフォルトは `src/elements` である。 */
   readonly elementsDir?: string;
-  /** GET 以外のサーバー関数のリクエストで、別のサイトからでも受け付けるオリジンを、スキーム、ホスト、ポートを含めて列挙する。 */
+  /**
+   * GET 以外のサーバー関数のリクエストで、別のオリジンのページからでも受け付けるオリジンを列挙する。
+   * オリジンは `https://www.example.com` のように、パスと末尾の `/` を付けず、デフォルトのポートを省略して記述する。
+   */
   readonly trustedOrigins?: readonly string[];
   /** `false` なら、`.rinka/env.d.ts` でグローバルの `JSX` を宣言しない。 */
   readonly globalJSX?: false;
