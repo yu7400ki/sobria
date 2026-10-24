@@ -53,6 +53,8 @@ export interface CallOptions {
   signal?: AbortSignal;
   /** リクエストに付与するヘッダーである。 */
   headers?: HeadersInit;
+  /** GET 以外のサーバー関数をブラウザから呼び出したときに、呼び出したページを描き直すかどうかである。デフォルト値は `true` である。 */
+  refresh?: boolean;
 }
 
 /** クライアントから呼び出したサーバー関数が、2xx 以外のレスポンスを返したことを表す。 */

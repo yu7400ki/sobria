@@ -399,8 +399,12 @@ const flashPage = () => {
 const brokenJson: MiddlewareHandler = async (c) =>
   c.body("{", 200, { "content-type": "application/json" });
 
-describe("x-rinka-page を付与したフォームの送信", () => {
+describe("JS からのサーバー関数の呼び出し", () => {
   const ids = {
+    created: "src/app-test.ts#created",
+    dated: "src/app-test.ts#dated",
+    read: "src/app-test.ts#read",
+    readMoved: "src/app-test.ts#readMoved",
     saved: "src/app-test.ts#saved",
     moved: "src/app-test.ts#moved",
     handed: "src/app-test.ts#handed",
@@ -411,6 +415,25 @@ describe("x-rinka-page を付与したフォームの送信", () => {
   registerServerFn(
     ids.saved,
     defineServerFn(() => "saved"),
+  );
+  registerServerFn(
+    ids.dated,
+    defineServerFn(() => new Date(0)),
+  );
+  registerServerFn(
+    ids.read,
+    defineServerFn({ method: "GET" })(() => "read"),
+  );
+  registerServerFn(
+    ids.readMoved,
+    defineServerFn({ method: "GET" })((c) => c.redirect("/form?x=1", 302)),
+  );
+  registerServerFn(
+    ids.created,
+    defineServerFn((c) => {
+      c.status(201);
+      return "created";
+    }),
   );
   registerServerFn(
     ids.moved,
@@ -558,21 +581,62 @@ describe("x-rinka-page を付与したフォームの送信", () => {
     ]);
   });
 
-  it("x-rinka-page の無いフォームの送信と、RPC には、リダイレクトのまま返す", async () => {
+  it("x-rinka-page の無いフォームの送信には、リダイレクトのまま返す", async () => {
     const plain = await request(routes, rpcPath(ids.moved), {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: "a=1",
     });
-    const rpc = await request(routes, rpcPath(ids.saved), {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-login": "1" },
-      body: "null",
-    });
     expect([plain.status, plain.headers.get("location")]).toEqual([303, "/done"]);
-    expect([rpc.status, rpc.headers.get("location")]).toEqual([
-      302,
-      "https://auth.example.com/login",
+  });
+
+  /** `/form?x=1` のページから、`id` のサーバー関数を `method` の RPC で呼び出し、ステータスと本文の JSON を返す。 */
+  const call = async (id: string, headers: Record<string, string> = {}, method = "POST") => {
+    const response = await request(routes, rpcPath(id), {
+      method,
+      headers: {
+        ...(method === "POST" && { "content-type": "application/json" }),
+        "x-rinka-page": "http://localhost/form?x=1",
+        ...headers,
+      },
+      ...(method === "POST" && { body: "null" }),
+    });
+    return [response.status, await response.json()];
+  };
+
+  it("RPC の { ok } と { s } と、x-rinka-page の URL への { redirect } に、そのページの描き直しを page に含める", async () => {
+    expect(await Promise.all([call(ids.saved), call(ids.dated), call(ids.flashing)])).toEqual([
+      [200, { ok: "saved", page: refreshedTo("<p>undefined undefined undefined</p>") }],
+      [200, { s: expect.anything(), page: refreshedTo("<p>undefined undefined undefined</p>") }],
+      [200, { redirect: "/form?x=1", page: refreshedTo("<p>1 undefined undefined</p>") }],
+    ]);
+  });
+
+  it("RPC では、x-rinka-page が無くても、handler とミドルウェアが返したリダイレクトを { redirect } にし、page を含めない", async () => {
+    expect(
+      await Promise.all([
+        call(ids.handed, { "x-rinka-page": "" }),
+        call(ids.saved, { "x-rinka-page": "", "x-login": "1" }),
+        call(ids.moved),
+      ]),
+    ).toEqual([
+      [200, { redirect: "https://auth.example.com/login" }],
+      [200, { redirect: "https://auth.example.com/login" }],
+      [200, { redirect: "/done" }],
+    ]);
+  });
+
+  it("2xx の { ok } には、handler が設定したステータスのまま page を含める", async () => {
+    expect(await call(ids.created)).toEqual([
+      201,
+      { ok: "created", page: refreshedTo("<p>undefined undefined undefined</p>") },
+    ]);
+  });
+
+  it("GET の RPC には、x-rinka-page があっても、{ ok } と x-rinka-page の URL への { redirect } に page を含めない", async () => {
+    expect(await Promise.all([call(ids.read, {}, "GET"), call(ids.readMoved, {}, "GET")])).toEqual([
+      [200, { ok: "read" }],
+      [200, { redirect: "/form?x=1" }],
     ]);
   });
 });

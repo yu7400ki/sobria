@@ -30,11 +30,14 @@ function receiver(): Receiver {
   return store;
 }
 
+/** `startRewrite` が返す、描き直しの結果を反映する関数を表す。 */
+export type Reflect = (apply: () => void) => void;
+
 /**
  * ページの描き直しを始め、その結果を `reflect` で反映する関数を返す。
  * 返した関数は、この描き直しより後に始まった描き直しを既に反映していれば、`reflect` を呼ばない。
  */
-export function startRewrite(): (reflect: () => void) => void {
+export function startRewrite(): Reflect {
   const order = ++startedCount;
   return (reflect) => {
     if (order < reflectedOrder) return;
@@ -76,12 +79,18 @@ export const refreshPage: RefreshPage = async () => {
   reflectPage(reflect, received.kind === "response" ? received.body : undefined);
 };
 
-/** `startRewrite` が返した `reflect` で、`page` が描き直しの JSON ならページに反映し、そうでなければページを読み込み直す。 */
-export function reflectPage(reflect: (apply: () => void) => void, page: unknown): void {
+/** `startRewrite` が返した `reflect` で、`page` が描き直しの JSON ならページに反映し、そうでなければページを読み込み直す。ページを読み込み直したら真を返す。 */
+export function reflectPage(reflect: Reflect, page: unknown): boolean {
+  let reloaded = false;
   reflect(() => {
-    if (isRefreshJson(page)) applyRefresh(page);
-    else location.reload();
+    if (isRefreshJson(page)) {
+      applyRefresh(page);
+      return;
+    }
+    reloaded = true;
+    location.reload();
   });
+  return reloaded;
 }
 
 /** `value` が、描き直しのレスポンスの JSON かどうかを返す。 */

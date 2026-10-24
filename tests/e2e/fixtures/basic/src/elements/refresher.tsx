@@ -1,5 +1,7 @@
 import { refreshPage, signal, type Ctx } from "rinka";
 
+import { save } from "../lib/fns.ts";
+
 type Props = { label: string };
 
 export default function Refresher(props: Props, ctx: Ctx) {
@@ -12,6 +14,9 @@ export default function Refresher(props: Props, ctx: Ctx) {
       </button>
       <button id="refresh" onClick={() => void refreshPage()}>
         refresh
+      </button>
+      <button id="save" onClick={() => void save()}>
+        save
       </button>
     </div>
   );

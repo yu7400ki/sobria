@@ -1,8 +1,10 @@
 import { toJSON } from "seroval";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { jsx as clientJsx } from "../../src/client/jsx-runtime.ts";
+import { startRewrite } from "../../src/client/refresh.ts";
 import { serverFn } from "../../src/client/server-fn.ts";
+import { bootstrapSource } from "../../src/server/bootstrap.ts";
 import { runSeeding } from "../../src/shared/scope.ts";
 import { ServerFnError } from "../../src/shared/server-fn.ts";
 
@@ -31,13 +33,22 @@ function stubFetch(response: () => Response): () => Request {
   };
 }
 
+/** `<title>` を `title` にする描き直しの JSON を返す。 */
+const pageTitled = (title: string) => ({
+  head: `<title>${title}</title>`,
+  body: document.body.innerHTML,
+  data: {},
+  elements: [],
+  doc: { html: {}, body: {} },
+});
+
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("serverFn", () => {
   it("POST は、入力を本文の JSON にして送り、{ ok } の値を返す", async () => {
     const sent = stubFetch(() => Response.json({ ok: 42 }, { headers: rpcHeaders }));
     const like = serverFn("src/fns.ts#like", "POST");
-    expect(await like(21, { headers: { "x-a": "b" } })).toBe(42);
+    expect(await like(21, { headers: { "x-a": "b" }, refresh: false })).toBe(42);
     const request = sent();
     expect(request.method).toBe("POST");
     expect(new URL(request.url).pathname).toBe("/_rinka/fn/src%2Ffns.ts%23like");
@@ -61,7 +72,7 @@ describe("serverFn", () => {
     expect(JSON.parse(new URL(sentGet().url).searchParams.get("s") ?? "")).toEqual(toJSON(date));
 
     const sentPost = stubFetch(() => Response.json({ ok: null }, { headers: rpcHeaders }));
-    await serverFn("src/fns.ts#post", "POST")(new Map([["a", 1]]));
+    await serverFn("src/fns.ts#post", "POST")(new Map([["a", 1]]), { refresh: false });
     const request = sentPost();
     expect(request.headers.get("x-rinka-wire")).toBe("seroval");
     expect(await request.json()).toEqual(toJSON(new Map([["a", 1]])));
@@ -71,7 +82,10 @@ describe("serverFn", () => {
     const controller = new AbortController();
     const fetchMock = vi.fn(async () => Response.json({ ok: 1 }, { headers: rpcHeaders }));
     vi.stubGlobal("fetch", fetchMock);
-    await serverFn("src/fns.ts#ping", "POST")(undefined, { signal: controller.signal });
+    await serverFn("src/fns.ts#ping", "POST")(undefined, {
+      signal: controller.signal,
+      refresh: false,
+    });
     expect(fetchMock.mock.calls[0]?.at(1)).toMatchObject({ signal: controller.signal });
   });
 
@@ -82,7 +96,7 @@ describe("serverFn", () => {
 
   it("入力が無ければ、本文とクエリを付けずに送る", async () => {
     const sent = stubFetch(() => Response.json({ ok: 1 }, { headers: rpcHeaders }));
-    await serverFn("src/fns.ts#ping", "POST")();
+    await serverFn("src/fns.ts#ping", "POST")(undefined, { refresh: false });
     expect(await sent().text()).toBe("");
   });
 
@@ -122,7 +136,7 @@ describe("serverFn", () => {
       ),
     );
     let settled = false;
-    void serverFn("src/fns.ts#move", "POST")().finally(() => {
+    void serverFn("src/fns.ts#move", "POST")(undefined, { refresh: false }).finally(() => {
       settled = true;
     });
     try {
@@ -139,7 +153,7 @@ describe("serverFn", () => {
     const page = `/a/b/c/d${location.search}`;
     history.replaceState(null, "", page);
     stubFetch(() => Response.json({ redirect: `../..${page}#moved` }, { headers: rpcHeaders }));
-    void serverFn("src/fns.ts#move", "POST")();
+    void serverFn("src/fns.ts#move", "POST")(undefined, { refresh: false });
     try {
       await vi.waitUntil(() => location.hash === "#moved");
       expect(location.pathname).toBe("/a/b/c/d");
@@ -163,6 +177,69 @@ describe("serverFn", () => {
     await tick();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(settled).toBe(false);
+  });
+});
+
+describe("RPC の描き直し", () => {
+  let titleBefore = "";
+  beforeEach(() => {
+    titleBefore = document.title;
+    // oxlint-disable-next-line typescript/no-implied-eval
+    new Function(bootstrapSource)();
+  });
+  afterEach(() => {
+    document.title = titleBefore;
+    delete (globalThis as { $rinka?: unknown }).$rinka;
+  });
+
+  it("GET 以外では x-rinka-page に現在の URL を付与し、GET と refresh: false では付与しない", async () => {
+    const pages: (string | null)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        pages.push(new Headers(init?.headers).get("x-rinka-page"));
+        return Response.json({ ok: 1, page: pageTitled("x") }, { headers: rpcHeaders });
+      }),
+    );
+    await serverFn("src/fns.ts#like", "POST")(1);
+    await serverFn("src/fns.ts#get", "GET")(1);
+    await serverFn("src/fns.ts#like", "POST")(1, { refresh: false });
+    expect(pages).toEqual([location.href, null, null]);
+  });
+
+  it("{ ok } の page を反映してから値を返す", async () => {
+    stubFetch(() => Response.json({ ok: 1, page: pageTitled("liked") }, { headers: rpcHeaders }));
+    const value = await serverFn("src/fns.ts#like", "POST")(1);
+    expect([value, document.title]).toEqual([1, "liked"]);
+  });
+
+  it("呼び出しの後に始まった描き直しを反映済みなら、同じページへの { redirect } は、ページを読み込み直さずに undefined を返す", async () => {
+    const response = Promise.withResolvers<Response>();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => response.promise),
+    );
+    const calling = serverFn("src/fns.ts#move", "POST")();
+    startRewrite()(() => {});
+    response.resolve(
+      Response.json(
+        { redirect: `${location.pathname}${location.search}` },
+        { headers: rpcHeaders },
+      ),
+    );
+    expect(await calling).toBeUndefined();
+  });
+
+  it("page を含む { redirect } は、移動せずに page を反映し、undefined を返す", async () => {
+    const before = location.href;
+    stubFetch(() =>
+      Response.json(
+        { redirect: `${location.pathname}${location.search}`, page: pageTitled("moved") },
+        { headers: rpcHeaders },
+      ),
+    );
+    const value = await serverFn("src/fns.ts#move", "POST")();
+    expect([value, document.title, location.href]).toEqual([undefined, "moved", before]);
   });
 });
 
