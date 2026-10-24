@@ -1,0 +1,177 @@
+---
+title: チュートリアル
+---
+
+メモを追加して一覧するアプリを作成します。[クイックスタート](/introduction/quick-start)の `rinka create` で作成した雛形から開始して、`pnpm dev` で開発サーバーを起動しておきます。
+
+## ページでメモの一覧を表示する
+
+メモは、サーバーのメモリ上の配列に保存します。サーバーを再起動すると、配列は最初の状態に戻ります。
+
+```ts
+// src/lib/db.ts
+export const memos: string[] = ["牛乳を買う", "rinka のチュートリアルを読む"];
+```
+
+`src/routes/page.tsx` を次のように置換して、配列の内容を一覧にします。雛形の `src/elements/greeter.tsx` と `src/lib/greet.ts` は使用しないので、置換した後に削除します。
+
+```tsx
+// src/routes/page.tsx
+import { memos } from "../lib/db.ts";
+
+export default function Page() {
+  return (
+    <>
+      <h1>メモ</h1>
+      <ul>
+        {memos.map((memo) => (
+          <li>{memo}</li>
+        ))}
+      </ul>
+    </>
+  );
+}
+```
+
+ページはサーバーでだけ実行するので、サーバーのモジュールの値を直接参照できます。ブラウザで `http://localhost:5173/` を開くと、2 件のメモが表示されます。rinka は、このページではブラウザに JS を送信しません。
+
+ページのファイルの配置と URL の対応は[ルーティング](/guide/routing)で、ページでデータを取得する方法は[ページとデータ](/guide/pages-and-data)で説明します。
+
+## 要素で入力欄を作成する
+
+メモを入力する欄を、要素として作成します。要素は、ブラウザでも動作するコンポーネントです。ページと異なり、要素の JS はブラウザに送信されます。この章の要素は、入力中の文字数を入力欄の横に表示します。
+
+```tsx
+// src/elements/memo-form.tsx
+import { signal } from "rinka";
+
+export default function MemoForm() {
+  const [text, setText] = signal("");
+  return (
+    <div>
+      <input value={text()} onInput={(e) => setText(e.currentTarget.value)} />
+      <span>{text().length} 文字</span>
+    </div>
+  );
+}
+```
+
+`signal` は、読み取りの関数と書き込みの関数の組を返します。`text()` を参照している箇所は、`setText` で値を書き込むたびに更新されます。要素の関数は 1 回だけ実行し、それ以降は `text()` を参照している入力欄と文字数の表示だけを更新します。
+
+ページに要素を配置します。
+
+```tsx
+// src/routes/page.tsx
+import MemoForm from "../elements/memo-form.tsx";
+import { memos } from "../lib/db.ts";
+
+export default function Page() {
+  return (
+    <>
+      <h1>メモ</h1>
+      <MemoForm />
+      <ul>
+        {memos.map((memo) => (
+          <li>{memo}</li>
+        ))}
+      </ul>
+    </>
+  );
+}
+```
+
+ファイル名が `memo-form.tsx` なので、要素のタグ名は `rinka-memo-form` になります。要素もサーバーで描画するので、HTML には `0 文字` の表示を含む Shadow DOM が出力されます。JS が届くと要素が起動し、入力に合わせて文字数の表示が変化するようになります。
+
+要素の作り方は[要素](/guide/elements)で、Signal の使い方は[リアクティビティ](/guide/reactivity)で説明します。
+
+## サーバー関数でメモを追加する
+
+メモを配列に追加する処理は、サーバーで実行します。サーバー関数とは、要素から呼び出すとサーバーで実行される関数のことです。`defineServerFn` で定義します。
+
+```ts
+// src/lib/memos.ts
+import { defineServerFn } from "rinka/server";
+
+import { memos } from "./db.ts";
+
+export const addMemo = defineServerFn({
+  input: (value: { text: string }) => (typeof value?.text === "string" ? value.text.trim() : ""),
+})((_c, { input }) => {
+  if (input !== "") memos.push(input);
+});
+```
+
+`defineServerFn` には、1 段目にオプションを、2 段目にサーバーで実行する関数（handler）を渡します。オプションの `input` に指定した関数は、ブラウザから受け取った値を検証して変換します。この関数が返した値が、handler の `input` になります。例えば、`{ text: "  牛乳  " }` を受け取ると、`text` の前後の空白を除いた `"牛乳"` を handler に渡します。ブラウザから届く値は型のとおりとは限らないので、`text` が文字列でなければ空の文字列にします。
+
+要素にボタンを追加して、押したときにサーバー関数を呼び出します。
+
+```tsx
+// src/elements/memo-form.tsx
+import { signal } from "rinka";
+
+import { addMemo } from "../lib/memos.ts";
+
+export default function MemoForm() {
+  const [text, setText] = signal("");
+  const add = async () => {
+    await addMemo({ text: text() });
+    setText("");
+  };
+  return (
+    <div>
+      <input value={text()} onInput={(e) => setText(e.currentTarget.value)} />
+      <span>{text().length} 文字</span>
+      <button onClick={add}>追加</button>
+    </div>
+  );
+}
+```
+
+要素の中で `addMemo` を呼び出すと、rinka はブラウザからサーバーにリクエストを送信し、サーバーで handler を実行します。ブラウザに送信する JS には、handler と `src/lib/db.ts` は含まれません。
+
+`addMemo` は、HTTP の POST で呼び出すサーバー関数です。POST で呼び出すサーバー関数のレスポンスには、呼び出したページをサーバーで描き直した結果が含まれます。rinka はその結果をページに反映してから、`await` の後の処理に進みます。そのため、ボタンを押すと、追加したメモが一覧に表示されます。
+
+開発サーバーでは、ファイルを保存すると、配列が最初の 2 件に戻ることがあります。
+
+サーバー関数の定義と呼び出しは[サーバー関数](/guide/server-functions)で説明します。
+
+## フォームにして JS が無くても送信できるようにする
+
+前の章のボタンは、要素の JS が動作するまで機能しません。サーバー関数を `<form>` の `action` に指定すると、JS が無い環境でもメモを追加できるようになります。
+
+```tsx
+// src/elements/memo-form.tsx
+import { signal } from "rinka";
+
+import { addMemo } from "../lib/memos.ts";
+
+export default function MemoForm() {
+  const [text, setText] = signal("");
+  return (
+    <form action={addMemo} onReset={() => setText("")}>
+      <input name="text" value={text()} onInput={(e) => setText(e.currentTarget.value)} required />
+      <span>{text().length} 文字</span>
+      <button>追加</button>
+    </form>
+  );
+}
+```
+
+rinka は、`action` にサーバー関数のエンドポイントの URL を出力し、`method` を `post` にします。フォームの値は、入力欄の `name` をキーにして `{ text: "..." }` の形でサーバー関数の `input` に渡ります。前の章で `input` の形をオブジェクトにしたので、`src/lib/memos.ts` は変更しません。
+
+JS が無いときは、ブラウザが通常のフォームの送信を実行します。サーバーは handler を実行した後に、送信したページにリダイレクトします。ブラウザは `/` を読み込み直すので、追加したメモを含む一覧が表示されます。
+
+一方、JS があるときは、rinka がフォームの値をサーバーに送信し、`form.reset()` で入力欄を空にしてから、描き直したページの差分を反映します。ページの読み込み直しは発生しません。文字数の Signal はリセットで変化しないので、`onReset` で空の文字列に戻します。
+
+フォームの扱いは[フォーム](/guide/forms)で説明します。
+
+## ビルドして起動する
+
+```sh
+pnpm build
+pnpm start
+```
+
+`http://localhost:3000/` を開くと、開発サーバーと同じページが表示されます。
+
+Node 以外の環境にデプロイする方法は[デプロイ](/guide/deploy)で説明します。

@@ -5,5 +5,8 @@ export interface NavSection {
 }
 
 export const nav: readonly NavSection[] = [
-  { title: "はじめに", slugs: ["introduction/what-is-rinka", "introduction/quick-start"] },
+  {
+    title: "はじめに",
+    slugs: ["introduction/what-is-rinka", "introduction/quick-start", "introduction/tutorial"],
+  },
 ];
