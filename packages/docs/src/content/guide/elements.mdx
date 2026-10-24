@@ -94,7 +94,7 @@ Props の型に無い属性（`id`、`class`、`aria-*`、`data-*` など）を�
 <Stepper label="数" id="stepper" class="wide" />
 ```
 
-要素の中の JSX では、Props の型に無い `onClick` のような名前に関数を渡すと、ホストのイベントリスナーになります。ページの JSX では、Props の型に無い `onClick` は型エラーになります。
+要素の中の JSX では、Props の型に無い DOM の標準のイベントの名前（`onClick` など）に関数を渡すと、ホストのイベントリスナーになります。イベント名は、`on` の後の部分を小文字にした名前です。Props の型に無く、DOM の標準のイベントにも無い名前（`onLikeClick` など）を要素のタグに記述すると、型エラーになります。ページの JSX では、Props の型に無い `onClick` は型エラーになります。
 
 ### サーバーから渡す値
 
