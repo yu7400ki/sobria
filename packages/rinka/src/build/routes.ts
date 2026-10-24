@@ -22,23 +22,35 @@ type ScannedRoute = Route<PathFiles>;
 /** ルートのファイルを置く、アプリのルートからの相対パスのディレクトリである。 */
 export const ROUTES_DIR = "src/routes";
 
-/** ページのファイルの名前である。 */
-const PAGE_FILE = "page.tsx";
+/** ルートの表に関わるファイルの、拡張子を除いた名前である。 */
+type RouteFileName = "page" | "layout" | "not-found" | "error" | "route" | "middleware";
 
-/** ディレクトリにあれば表の行になるファイルの名前と、その種類である。 */
-const routeFiles: readonly (readonly [string, RouteKind])[] = [
-  [PAGE_FILE, "page"],
-  ["route.ts", "route"],
-  ["not-found.tsx", "not-found"],
-];
+/** ルートの表に関わるファイルの、拡張子を除いた名前ごとの、使用できる拡張子である。 */
+const routeFileExtensions: Readonly<Record<RouteFileName, readonly string[]>> = {
+  page: [".tsx"],
+  layout: [".tsx"],
+  "not-found": [".tsx"],
+  error: [".tsx"],
+  route: [".ts"],
+  middleware: [".ts"],
+};
 
-/** ルートの表に関わるファイルの名前である。 */
-export const routeFileNames: ReadonlySet<string> = new Set([
-  ...routeFiles.map(([name]) => name),
-  "layout.tsx",
-  "middleware.ts",
-  "error.tsx",
-]);
+/** ディレクトリにあれば表の行になるファイルの種類である。種類の名前は、拡張子を除いたファイルの名前と同じである。 */
+const rowKinds: readonly RouteKind[] = ["page", "route", "not-found"];
+
+/** ファイルの名前 `file` が、ルートの表に関わるファイルの名前かどうかを返す。 */
+export function isRouteFile(file: string): boolean {
+  return Object.entries(routeFileExtensions).some(([name, extensions]) =>
+    extensions.some((extension) => file === name + extension),
+  );
+}
+
+/** ファイルの名前の集合 `files` から、拡張子を除いた名前が `name` のルートのファイルの名前を返す。 */
+function routeFileIn(files: ReadonlySet<string>, name: RouteFileName): string | undefined {
+  return routeFileExtensions[name]
+    .map((extension) => name + extension)
+    .find((file) => files.has(file));
+}
 
 /** ディレクトリの名前を区切りにする。`[` か `(` で始まり、動的な区切り、キャッチオール、グループのどれの形でもない名前は、`file` を示すエラーにする。 */
 function segmentOf(name: string, file: string): RouteSegment {
@@ -188,26 +200,31 @@ function scan(
       a.name < b.name ? -1 : 1,
     );
     const files = new Set(entries.filter((entry) => entry.isFile()).map((entry) => entry.name));
-    const layouts = files.has("layout.tsx")
-      ? [...outerLayouts, fileOf(join(current, "layout.tsx"))]
-      : outerLayouts;
+    const fileNamed = (name: RouteFileName): string | undefined => {
+      const found = routeFileIn(files, name);
+      return found === undefined ? undefined : fileOf(join(current, found));
+    };
+    const layout = fileNamed("layout");
+    const layouts = layout === undefined ? outerLayouts : [...outerLayouts, layout];
     let middlewares = outerMiddlewares;
-    if (files.has("middleware.ts")) {
-      const file = fileOf(join(current, "middleware.ts"));
-      if (current === start) middleware = file;
-      else middlewares = [...outerMiddlewares, file];
+    const ownMiddleware = fileNamed("middleware");
+    if (ownMiddleware !== undefined) {
+      if (current === start) middleware = ownMiddleware;
+      else middlewares = [...outerMiddlewares, ownMiddleware];
     }
-    const fallbackOf = (name: string): Fallback<PathFiles> | undefined =>
-      files.has(name) ? { module: fileOf(join(current, name)), layouts } : undefined;
-    const notFound = fallbackOf("not-found.tsx") ?? outerFallbacks.notFound;
-    const error = fallbackOf("error.tsx") ?? outerFallbacks.error;
+    const fallbackOf = (name: "not-found" | "error"): Fallback<PathFiles> | undefined => {
+      const module = fileNamed(name);
+      return module === undefined ? undefined : { module, layouts };
+    };
+    const notFound = fallbackOf("not-found") ?? outerFallbacks.notFound;
+    const error = fallbackOf("error") ?? outerFallbacks.error;
     const fallbacks: Fallbacks<PathFiles> = {
       ...(notFound !== undefined && { notFound }),
       ...(error !== undefined && { error }),
     };
-    for (const [name, kind] of routeFiles) {
-      if (!files.has(name)) continue;
-      const file = fileOf(join(current, name));
+    for (const kind of rowKinds) {
+      const file = fileNamed(kind);
+      if (file === undefined) continue;
       if (segments.slice(0, -1).some((segment) => segment.kind === "catch-all")) {
         throw new Error(
           `${file} は、キャッチオールのディレクトリの配下にあります。キャッチオールの配下には、ルートのファイルを置けません。`,

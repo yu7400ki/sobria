@@ -16,7 +16,7 @@ import { fromApp } from "./package.ts";
 import { inside } from "./paths.ts";
 import { isPrepareInput } from "./prepare.ts";
 import { routeStyles } from "./route-styles.ts";
-import { ROUTES_DIR, routeFileNames } from "./routes.ts";
+import { isRouteFile, ROUTES_DIR } from "./routes.ts";
 import { isServerFnSource } from "./server-fns.ts";
 import { SERVER_ENTRY_NAME, isClient, type SceneContext } from "./settings.ts";
 
@@ -141,7 +141,7 @@ export function serve({ settings, writeTypes }: ServeContext): Plugin {
         }
       };
       const onFile = (path: string): void => {
-        if (inside(routesDir, path) !== undefined && routeFileNames.has(basename(path))) {
+        if (inside(routesDir, path) !== undefined && isRouteFile(basename(path))) {
           invalidate(entries.routes);
         }
         if (isPrepareInput(root, elementsDir, path)) rewriteTypes();
