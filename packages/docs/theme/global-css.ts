@@ -33,7 +33,7 @@ const markdown = {
   "& :not(pre) > code": { px: "1", py: "0.5", rounded: "sm", bg: "muted", fontSize: "0.9em" },
   "& table": { display: "block", overflowX: "auto", borderCollapse: "collapse" },
   "& th, & td": { px: "3", py: "2", borderWidth: "1px", borderColor: "border" },
-  "& th": { bg: "muted", fontWeight: "medium" },
+  "& th": { bg: "muted", fontWeight: "medium", textAlign: "left" },
   "& hr": { borderColor: "border" },
 };
 

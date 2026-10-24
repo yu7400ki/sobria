@@ -5,7 +5,7 @@ import { slugs } from "../lib/content.ts";
 
 /** トップページで紹介する、rinka の特徴である。 */
 const features = [
-  { title: "ページ", text: "サーバーコンポーネントとして描画し、JS を送りません。" },
+  { title: "ページ", text: "サーバーコンポーネントとして描画し、JS を送信しません。" },
   { title: "要素", text: "Custom Element を Declarative Shadow DOM で SSR します。" },
   { title: "更新", text: "Signal で、変わった箇所だけを更新します。" },
 ];
@@ -19,7 +19,7 @@ export default function Home() {
       <main class={css({ maxW: "5xl", mx: "auto", px: "6", py: "24", textAlign: "center" })}>
         <h1 class={css({ fontSize: "5xl", fontWeight: "bold" })}>rinka</h1>
         <p class={css({ mt: "4", fontSize: "lg", color: "muted.foreground" })}>
-          Hono と Vite の上で動く、サーバーファーストの Web フレームワーク
+          Hono と Vite の上で動作する、サーバーファーストの Web フレームワーク
         </p>
         <div class={css({ display: "flex", justifyContent: "center", gap: "3", mt: "8" })}>
           <a

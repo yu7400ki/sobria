@@ -6,7 +6,7 @@ import sheet from "../styles.css" with { type: "css" };
 type Props = { code: string };
 
 /** ボタンの通常のラベルである。 */
-const LABEL = "コピー";
+const LABEL = "コードをコピー";
 
 /** コピーの結果をラベルに表示する時間（ミリ秒）である。 */
 const RESULT_DURATION = 2000;
@@ -20,7 +20,7 @@ export default function CopyButton(props: Props, ctx: Ctx) {
       await navigator.clipboard.writeText(props.code);
       setLabel("コピーしました");
     } catch {
-      setLabel("コピーできませんでした");
+      setLabel("ブラウザがコピーを拒否しました");
     }
     setTimeout(() => setLabel(LABEL), RESULT_DURATION);
   };

@@ -2,6 +2,48 @@
 title: クイックスタート
 ---
 
-## 作成する
+## アプリを作成する
 
-仮の本文です。
+```sh
+pnpm dlx rinka create my-app
+cd my-app
+pnpm install
+```
+
+`rinka create` は、ページ、レイアウト、要素、サーバー関数を 1 つずつ持つアプリの雛形を作成します。空でないディレクトリを指定すると、エラーを表示して停止します。
+
+## 開発サーバーを起動する
+
+```sh
+pnpm dev
+```
+
+Vite の開発サーバーが起動します。ファイルを編集すると、ブラウザの表示に反映されます。
+
+## ファイルの構成
+
+| ファイル                   | 内容                                                     |
+| -------------------------- | -------------------------------------------------------- |
+| `src/routes/page.tsx`      | `/` のページ                                             |
+| `src/routes/layout.tsx`    | すべてのページを囲むレイアウト                           |
+| `src/elements/greeter.tsx` | ボタンを押すとサーバー関数を呼び出し、結果を表示する要素 |
+| `src/lib/greet.ts`         | 挨拶の文字列を返すサーバー関数                           |
+| `src/server.ts`            | Node でサーバーを起動するエントリー                      |
+| `vite.config.ts`           | rinka の Vite プラグインの設定                           |
+
+## ビルドして起動する
+
+```sh
+pnpm build
+pnpm start
+```
+
+`pnpm build` は、`vite build --app` でアプリを `dist/` に出力します。`pnpm start` は、`dist/server/entry.js` を Node で起動します。`pnpm start` で起動したサーバーは、環境変数 `PORT` が無ければ 3000 番のポートを使用します。
+
+## 型を検査する
+
+```sh
+pnpm typecheck
+```
+
+`rinka prepare` で、ページのパスのパラメータ（`[id]` など）と要素の型を生成してから、`tsc -b` で検査します。
