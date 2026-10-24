@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -62,10 +63,23 @@ export function serve({ settings, writeTypes }: ServeContext): Plugin {
         : null,
     configurePreviewServer(server) {
       return () => {
-        const { serverDir, clientDir } = settings();
+        const { serverDir, clientDir, output } = settings();
         const entry = pathToFileURL(join(serverDir, `${SERVER_ENTRY_NAME}.js`)).href;
         // 本番の Node のサーバーと同じく、書き出したページをサーバーのエントリーより先に返す
         const statics = new Hono().use(serveStatic({ root: clientDir }));
+        if (output === "static") {
+          // 一致するファイルが無い URL には、404.html を 404 で返す
+          const missing = join(clientDir, "404.html");
+          statics.notFound((c) =>
+            existsSync(missing)
+              ? c.html(readFileSync(missing, "utf8"), 404)
+              : c.text("Not Found", 404),
+          );
+          server.middlewares.use(
+            entryMiddleware(async () => ({ default: statics }), { forwardErrors: false }),
+          );
+          return;
+        }
         const load = async (): Promise<ServerModule> => {
           // oxlint-disable-next-line typescript/no-unsafe-type-assertion
           const { default: app } = (await import(entry)) as ServerModule;

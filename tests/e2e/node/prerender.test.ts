@@ -104,6 +104,22 @@ describe("output: 'static'", () => {
     expect(await written("posts/hello/index.html")).toContain("<h1>post hello</h1>");
     expect(await written("404.html")).toContain("<h1>missing</h1>");
     expect(existsSync(join(outDir, "server"))).toBe(false);
+    const server = await preview({
+      root,
+      configFile: false,
+      logLevel: "error",
+      plugins: [rinka({ prefix: "app", outDir, output: "static" })],
+      preview: { port: 0 },
+    });
+    try {
+      const origin = server.resolvedUrls!.local[0]!.replace(/\/$/, "");
+      const about = await fetch(`${origin}/about`);
+      expect([about.status, await about.text()]).toEqual([200, await written("about/index.html")]);
+      const missing = await fetch(`${origin}/nope`);
+      expect([missing.status, await missing.text()]).toEqual([404, await written("404.html")]);
+    } finally {
+      await server.close();
+    }
   }, 60_000);
 
   it("ルートのキャッチオールのページがあっても、ルートの middleware.ts を実行してから描画した not-found.tsx を 404.html に保存する", async () => {
