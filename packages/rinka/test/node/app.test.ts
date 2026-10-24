@@ -140,6 +140,15 @@ const hide: MiddlewareHandler = async () => {
   throw notFound();
 };
 
+/** ヘッダーの `x-throw` に応じて、`redirect()`、`notFound()`、通常のエラーを投げるミドルウェアである。 */
+const thrower: MiddlewareHandler = async (c, next) => {
+  const kind = c.req.header("x-throw");
+  if (kind === "redirect") throw redirect("/login", 307);
+  if (kind === "notFound") throw notFound();
+  if (kind === "error") throw new Error("root");
+  await next();
+};
+
 /** 401 の Response を返すミドルウェアである。 */
 const deny: MiddlewareHandler = async (c) => c.text("denied", 401);
 
@@ -930,6 +939,53 @@ describe("Context のヘッダー", () => {
       "/",
     );
     expect(response.headers.get("vary")).toBe("cookie");
+  });
+});
+
+describe("サーバー関数のリクエストで、ルートの middleware.ts が投げた値", () => {
+  const routes: Routes = {
+    middleware: loadOf(thrower),
+    routes: [
+      pageRoute("/users/:id/edit", page("edit"), [], [], {
+        error: fallbackOf(fallback("user")),
+      }),
+      notFoundRoute("/", fallbackOf(fallback("missing"))),
+    ],
+  };
+  /** `x-throw` を `kind` にして、`body` をサーバー関数のエンドポイントに送る。 */
+  const send = (kind: string, type: string, body: string, headers: Record<string, string> = {}) =>
+    request(routes, rpcPath("src/app-test.ts#unknown"), {
+      method: "POST",
+      headers: { "content-type": type, "x-throw": kind, ...headers },
+      body,
+    });
+
+  it("RPC では、サーバー関数が投げた値と同じく、redirect() を { redirect } に、notFound() を本文の無い 404 にする", async () => {
+    const [moved, gone] = await Promise.all([
+      send("redirect", "application/json", "null"),
+      send("notFound", "application/json", "null"),
+    ]);
+    expect([moved.status, await moved.json()]).toEqual([200, { redirect: "/login" }]);
+    expect([gone.status, await gone.text()]).toEqual([404, ""]);
+  });
+
+  it("フォームの送信では、redirect() を 303 に、notFound() を素のテキストの 404 に、通常のエラーを Referer のページの error.tsx にする", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    onTestFinished(() => {
+      error.mockRestore();
+    });
+    const form = "application/x-www-form-urlencoded";
+    const [moved, gone, broken] = await Promise.all([
+      send("redirect", form, "a=1"),
+      send("notFound", form, "a=1"),
+      send("error", form, "a=1", { referer: "http://localhost/users/3/edit" }),
+    ]);
+    expect([moved.status, moved.headers.get("location")]).toEqual([303, "/login"]);
+    expect([gone.status, await gone.text()]).toEqual([404, "Not Found"]);
+    expect([broken.status, await bodyOf(broken)]).toEqual([
+      500,
+      "<h1>user /users/3/edit root</h1>",
+    ]);
   });
 });
 

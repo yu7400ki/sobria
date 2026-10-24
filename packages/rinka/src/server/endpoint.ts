@@ -46,30 +46,43 @@ export function serverFnMiddleware(
   failures: Record<RequestKind, Failure>,
 ): MiddlewareHandler {
   return async (c, next) => {
-    const { pathname } = new URL(c.req.url);
-    if (!pathname.startsWith(rpcPrefix)) {
+    const kind = requestKind(c);
+    if (kind === undefined) {
       await next();
       return undefined;
     }
-    const kind: RequestKind = isFormSubmission(c) ? "form" : "rpc";
     const responder = responders[kind];
     let id: string;
     try {
-      id = decodeURIComponent(pathname.slice(rpcPrefix.length));
+      id = decodeURIComponent(new URL(c.req.url).pathname.slice(rpcPrefix.length));
     } catch {
       return responder.reject(c, 404);
     }
-    return endpoint(c, id, responder, options, failures[kind]);
+    return endpoint(c, id, kind, options, failures[kind]);
   };
+}
+
+/**
+ * サーバー関数のエンドポイントへのリクエスト `c` では、ルートの `middleware.ts` が投げた値 `error` から、サーバー関数が投げた値と同じレスポンスを作成する。
+ * それ以外のリクエストでは `undefined` を返す。
+ */
+export function serverFnFailure(
+  c: Context,
+  error: unknown,
+  failures: Record<RequestKind, Failure>,
+): Response | Promise<Response> | undefined {
+  const kind = requestKind(c);
+  return kind === undefined ? undefined : respondThrown(c, kind, error, failures[kind]);
 }
 
 async function endpoint(
   c: Context,
   id: string,
-  responder: Responder,
+  kind: RequestKind,
   options: AppOptions,
   fail: Failure,
 ): Promise<Response> {
+  const responder = responders[kind];
   const definition = await find(id, options);
   if (!definition) return responder.reject(c, 404);
   const { method, middlewares, handle } = definition;
@@ -93,22 +106,31 @@ async function endpoint(
         ? value
         : responder.respond(c, { kind: "value", value }, fail);
     },
-    (error) => {
-      const thrown = classify(error);
-      switch (thrown.kind) {
-        case "redirect":
-          return responder.respond(c, { kind: "redirect", location: thrown.location }, fail);
-        case "moved":
-        case "response":
-          return thrown.response;
-        case "notFound":
-        case "schema":
-          return responder.respond(c, thrown, fail);
-        case "error":
-          return responder.respond(c, { kind: "error", error }, fail);
-      }
-    },
+    (error) => respondThrown(c, kind, error, fail),
   );
+}
+
+/** リクエストの種類が `kind` のリクエスト `c` で投げられた値 `error` から、レスポンスを作成する。 */
+function respondThrown(
+  c: Context,
+  kind: RequestKind,
+  error: unknown,
+  fail: Failure,
+): Response | Promise<Response> {
+  const { respond } = responders[kind];
+  const thrown = classify(error);
+  switch (thrown.kind) {
+    case "redirect":
+      return respond(c, { kind: "redirect", location: thrown.location }, fail);
+    case "moved":
+    case "response":
+      return thrown.response;
+    case "notFound":
+    case "schema":
+      return respond(c, thrown, fail);
+    case "error":
+      return respond(c, { kind: "error", error }, fail);
+  }
 }
 
 /** handler の戻り値と、handler が投げた値のうち、レスポンスの形をリクエストの種類で決めるものを表す。 */
@@ -202,10 +224,7 @@ function unreachable(value: never): never {
  */
 export const formRedirects: MiddlewareHandler = async (c, next) => {
   await next();
-  const requested =
-    new URL(c.req.url).pathname.startsWith(rpcPrefix) &&
-    isFormSubmission(c) &&
-    c.req.header(REFRESH_HEADER) === "1";
+  const requested = requestKind(c) === "form" && c.req.header(REFRESH_HEADER) === "1";
   const location = c.res.headers.get("location");
   if (!requested || location === null || c.res.status < 300 || c.res.status >= 400) return;
   if (!isSafeLocation(location)) return;
@@ -222,6 +241,12 @@ export const formRedirects: MiddlewareHandler = async (c, next) => {
   c.res = undefined;
   c.res = json;
 };
+
+/** リクエスト `c` が、サーバー関数のエンドポイントへのリクエストなら、その種類を返す。それ以外のリクエストでは `undefined` を返す。 */
+function requestKind(c: Context): RequestKind | undefined {
+  if (!new URL(c.req.url).pathname.startsWith(rpcPrefix)) return undefined;
+  return isFormSubmission(c) ? "form" : "rpc";
+}
 
 /** フォームの送信と同じ `Content-Type` の POST かどうかを返す。 */
 function isFormSubmission(c: Context): boolean {
