@@ -21,6 +21,8 @@ import { hashedFnModule, isServerFnSource, serverFnModules } from "./server-fns.
 import {
   isClient,
   isServerEnvironment,
+  checkOrigin,
+  parseExtensions,
   settingsOf,
   type RinkaOptions,
   type Settings,
@@ -72,7 +74,7 @@ interface ProjectFile {
 export function rinka(options: RinkaOptions = {}): Plugin[] {
   const trustedOrigins = options.trustedOrigins ?? [];
   for (const origin of trustedOrigins) checkOrigin(origin);
-  checkExtensions(options.extensions ?? []);
+  const extensions = parseExtensions(options.extensions);
   /** `config` で求めたプラグインの設定である。 */
   let settings: Settings | undefined;
   /** プラグインの設定を返す。`config` のフックより前に呼び出すと、エラーを投げる。 */
@@ -88,7 +90,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   const fnModuleOf = (file: string): string =>
     current().scene === "serve" ? file : hashedFnModule(file);
   const writeTypes = (): void => {
-    const { root, prefix, elementsDir, extensions } = current();
+    const { root, prefix, elementsDir } = current();
     writePrepared(
       root,
       preparedFiles({
@@ -109,7 +111,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
    */
   const projectFile = (id: string): ProjectFile | undefined => {
     if (id.includes("?") || id.startsWith("\0")) return undefined;
-    const { root, sources, extensions } = current();
+    const { root, sources } = current();
     const extension = extname(id);
     const registered = extensions.includes(extension);
     const lang = registered ? "tsx" : langs[extension];
@@ -169,7 +171,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       api,
       sharedDuringBuild: true,
       config: (user, { command }) => {
-        settings = settingsOf(user.root, command, options);
+        settings = settingsOf(user.root, command, options, extensions);
         const { clientDir, libraries } = settings;
         return {
           appType: "custom",
@@ -218,7 +220,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         return entry === undefined ? null : fileURLToPath(new URL(`../${entry}`, import.meta.url));
       },
       load(id) {
-        const { root, scene, extensions } = current();
+        const { root, scene } = current();
         if (id === ROUTES) return routesModule(root, ROUTES_DIR, extensions);
         if (id === NO_ELEMENTS) return "export {};\n";
         if (id === APP) {
@@ -278,56 +280,4 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
     build.plugin,
     libraryBuild({ options, settings: current }),
   ];
-}
-
-/** rinka や Vite が拡張子で扱いを決める、`extensions` に登録できない拡張子である。 */
-const reservedExtensions: ReadonlySet<string> = new Set([
-  ".ts",
-  ".tsx",
-  ".js",
-  ".jsx",
-  ".mts",
-  ".cts",
-  ".mjs",
-  ".cjs",
-  ".json",
-  ".css",
-]);
-
-/**
- * `extensions` に、`.` の後に英数字だけが続く形でない拡張子、`reservedExtensions` の拡張子、重複した拡張子があれば、エラーを投げる。
- */
-function checkExtensions(extensions: readonly string[]): void {
-  for (const [index, extension] of extensions.entries()) {
-    if (!/^\.[a-z0-9]+$/i.test(extension)) {
-      throw new Error(
-        `extensions の ${JSON.stringify(extension)} は、".mdx" のように、ドットの後に英数字だけが続く形で記述してください。`,
-      );
-    }
-    if (reservedExtensions.has(extension)) {
-      throw new Error(
-        `extensions の ${JSON.stringify(extension)} は、rinka か Vite が扱う拡張子なので登録できません。`,
-      );
-    }
-    if (extensions.indexOf(extension) !== index) {
-      throw new Error(
-        `extensions に ${JSON.stringify(extension)} が重複しています。1 回だけ記述してください。`,
-      );
-    }
-  }
-}
-
-/** `origin` が、スキーム、ホスト、ポートだけのオリジンでなければ、エラーを投げる。 */
-function checkOrigin(origin: string): void {
-  let parsed: string | undefined;
-  try {
-    parsed = new URL(origin).origin;
-  } catch {
-    parsed = undefined;
-  }
-  if (parsed !== origin || origin.includes("*")) {
-    throw new Error(
-      `trustedOrigins の ${JSON.stringify(origin)} は、"https://www.example.com" のように、スキーム、ホスト、ポートだけのオリジンで記述してください。ワイルドカードは使用できません。`,
-    );
-  }
 }

@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { normalizePath, type EnvironmentOptions } from "vite";
 
 import type { Output } from "../shared/prerender.ts";
+import { langs } from "./ast.ts";
 import { scanElements, type ElementFile, type ElementSource } from "./elements.ts";
 import { findLibraries, type Library } from "./libraries.ts";
 
@@ -65,18 +66,19 @@ export interface Settings {
   readonly sources: readonly ElementSource[];
   /** 設定を求めた時点の、`sources` の要素のファイルである。 */
   readonly elements: readonly ElementFile[];
-  /** プラグインの設定の `extensions` に、デフォルト値の空の配列を補った値である。 */
+  /** プラグインの設定の `extensions` を検証し、デフォルト値の空の配列を補った値である。 */
   readonly extensions: readonly string[];
 }
 
 /**
- * Vite のユーザーの設定のルート `userRoot`、`command`、プラグインの設定 `options` から、プラグインの設定を求める。
+ * Vite のユーザーの設定のルート `userRoot`、`command`、プラグインの設定 `options`、`parseExtensions` で検証した `extensions` から、プラグインの設定を求める。
  * 2 つの要素のファイルが同じタグになれば、エラーを投げる。
  */
 export function settingsOf(
   userRoot: string | undefined,
   command: "build" | "serve",
   options: RinkaOptions,
+  extensions: readonly string[],
 ): Settings {
   const root = normalizePath(resolve(userRoot ?? "."));
   const elementsDir = resolve(root, options.elementsDir ?? "src/elements");
@@ -95,8 +97,59 @@ export function settingsOf(
     libraries,
     sources,
     elements: scanElements(sources),
-    extensions: options.extensions ?? [],
+    extensions,
   };
+}
+
+/** rinka や Vite が拡張子で扱いを決める、`extensions` に登録できない拡張子である。 */
+const reservedExtensions: ReadonlySet<string> = new Set([
+  ...Object.keys(langs),
+  ".mts",
+  ".cts",
+  ".mjs",
+  ".cjs",
+  ".json",
+  ".css",
+]);
+
+/**
+ * プラグインの設定の `extensions` に、デフォルト値の空の配列を補って返す。
+ * `.` の後に英数字だけが続く形でない拡張子、`reservedExtensions` の拡張子、重複した拡張子があれば、エラーを投げる。
+ */
+export function parseExtensions(extensions: readonly string[] = []): readonly string[] {
+  for (const [index, extension] of extensions.entries()) {
+    if (!/^\.[a-z0-9]+$/i.test(extension)) {
+      throw new Error(
+        `extensions の ${JSON.stringify(extension)} は、".mdx" のように、ドットの後に英数字だけが続く形で記述してください。`,
+      );
+    }
+    if (reservedExtensions.has(extension)) {
+      throw new Error(
+        `extensions の ${JSON.stringify(extension)} は、rinka か Vite が扱う拡張子なので登録できません。`,
+      );
+    }
+    if (extensions.indexOf(extension) !== index) {
+      throw new Error(
+        `extensions に ${JSON.stringify(extension)} が重複しています。1 回だけ記述してください。`,
+      );
+    }
+  }
+  return extensions;
+}
+
+/** `origin` が、スキーム、ホスト、ポートだけのオリジンでなければ、エラーを投げる。 */
+export function checkOrigin(origin: string): void {
+  let parsed: string | undefined;
+  try {
+    parsed = new URL(origin).origin;
+  } catch {
+    parsed = undefined;
+  }
+  if (parsed !== origin || origin.includes("*")) {
+    throw new Error(
+      `trustedOrigins の ${JSON.stringify(origin)} は、"https://www.example.com" のように、スキーム、ホスト、ポートだけのオリジンで記述してください。ワイルドカードは使用できません。`,
+    );
+  }
 }
 
 /** 場面ごとのプラグインを作成する関数が受け取る値を表す。 */
