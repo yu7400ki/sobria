@@ -12,8 +12,8 @@ import {
   unwrap,
   type ModuleSource,
   type Node,
+  type Transformed,
 } from "./ast.ts";
-import type { Transformed } from "./ast.ts";
 import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 

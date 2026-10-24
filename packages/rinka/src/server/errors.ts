@@ -13,7 +13,7 @@ export class Redirect extends Error {
   ) {
     if (!isSafeLocation(location)) {
       throw new Error(
-        `redirect() の移動先 ${JSON.stringify(location)} には、相対 URL か、http か https の URL を指定してください。`,
+        `リダイレクトの移動先 ${JSON.stringify(location)} には、相対 URL か、http か https の URL を指定してください。`,
       );
     }
     super(`${location} にリダイレクトします。`);
