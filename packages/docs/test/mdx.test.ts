@@ -42,9 +42,11 @@ describe("toTsx", () => {
   });
 
   it("/ で始まるリンクの URL を、出現した順に links として export する", async () => {
-    expect(await tsx("[a](/guide/x#見出し) [b](https://example.com) [c](./y)\n\n[d](/)")).toContain(
-      'export const links = ["/guide/x#見出し","/"];',
-    );
+    expect(
+      await tsx(
+        "[a](/guide/x#見出し) [b](https://example.com) [c](./y) [e](//example.com)\n\n[d](/)",
+      ),
+    ).toContain('export const links = ["/guide/x#見出し","/"];');
   });
 
   it("テキストを文字列のリテラルとして出力する", async () => {

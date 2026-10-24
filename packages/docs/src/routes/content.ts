@@ -11,7 +11,6 @@ export interface Page {
   readonly title: string;
   readonly Body: () => ServerNode;
   readonly toc: readonly TocItem[];
-  readonly links: readonly string[];
 }
 
 /** サイドバーの区分である。 */
@@ -46,8 +45,8 @@ export const sections: readonly Section[] = nav.map((section) => ({
     if (module === undefined) {
       throw new Error(`nav.ts の ${slug} の本文が src/content/ にありません。`);
     }
-    const { default: Body, title, toc, links } = module;
-    return { slug, href: href("/[...slug]", { slug }), title, Body, toc, links };
+    const { default: Body, title, toc } = module;
+    return { slug, href: href("/[...slug]", { slug }), title, Body, toc };
   }),
 }));
 
@@ -60,18 +59,26 @@ for (const slug of modules.keys()) {
   }
 }
 
+/** URL の `#` の後の部分 `hash` を復号する。復号できなければ `undefined` を返す。 */
+const decodeHash = (hash: string): string | undefined => {
+  try {
+    return decodeURIComponent(hash);
+  } catch {
+    return undefined;
+  }
+};
+
 // 本文の内部リンクは、トップページか、本文のページとその見出しを指す。
-for (const page of pages) {
-  for (const link of page.links) {
+for (const [slug, { links }] of modules) {
+  for (const link of links) {
     const [path = "", hash] = link.split("#");
     const target = pages.find((candidate) => candidate.href === path);
     const valid =
       path === "/"
         ? hash === undefined
         : target !== undefined &&
-          (hash === undefined || target.toc.some((item) => item.id === decodeURIComponent(hash)));
-    if (!valid)
-      throw new Error(`src/content/${page.slug}.mdx のリンク ${link} の行き先がありません。`);
+          (hash === undefined || target.toc.some((item) => item.id === decodeHash(hash)));
+    if (!valid) throw new Error(`src/content/${slug}.mdx のリンク ${link} の行き先がありません。`);
   }
 }
 
