@@ -1,7 +1,7 @@
 import type { Context, MiddlewareHandler } from "hono";
 
 import { isPlainObject } from "../shared/objects.ts";
-import { PAGE_HEADER, REFRESH_HEADER, withoutHash } from "../shared/refresh.ts";
+import { PAGE_HEADER, REFRESH_HEADER, sameDocument } from "../shared/refresh.ts";
 import type { AppOptions } from "../shared/routes.ts";
 import {
   moduleOfServerFnId,
@@ -304,9 +304,6 @@ export function callerOf(c: Context): Caller | undefined {
   const local = url.host === new URL(c.req.url).host && !url.pathname.startsWith(internalPrefix);
   return { page: local ? url : undefined };
 }
-
-/** `a` と `b` が、hash を除いて同じ URL かどうかを返す。 */
-const sameDocument = (a: URL, b: URL): boolean => withoutHash(a) === withoutHash(b);
 
 /** リクエスト `c` のレスポンスの移動先 `location` を、`c` の URL のパスとクエリと、ページ `page` の URL のオリジンを基準に解決する。 */
 function locationOf(location: string, c: Context, page: URL): URL {

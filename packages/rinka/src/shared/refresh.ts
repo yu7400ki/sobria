@@ -7,8 +7,11 @@ export const REFRESH_HEADER = "x-rinka-refresh";
 /** JS からサーバー関数を呼び出したリクエストで、呼び出したページの URL を値に持つヘッダーの名前である。 */
 export const PAGE_HEADER = "x-rinka-page";
 
+/** `a` と `b` が、hash を除いて同じ URL かどうかを返す。 */
+export const sameDocument = (a: URL, b: URL): boolean => withoutHash(a) === withoutHash(b);
+
 /** hash を除いた `url` の文字列を返す。 */
-export function withoutHash(url: URL): string {
+function withoutHash(url: URL): string {
   const copy = new URL(url);
   copy.hash = "";
   return copy.href;

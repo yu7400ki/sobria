@@ -1,4 +1,4 @@
-import { PAGE_HEADER, withoutHash } from "../shared/refresh.ts";
+import { PAGE_HEADER, sameDocument } from "../shared/refresh.ts";
 import { isRedirectJson, rpcPrefix, wireFormat, wireHeader } from "../shared/wire.ts";
 import { applyRefresh, isRefreshJson, reflectPage, sendRefresh, startRewrite } from "./refresh.ts";
 
@@ -66,7 +66,7 @@ async function submit(
   const { response, body } = received;
   if (response.headers.get(wireHeader) === wireFormat.rpc && isRedirectJson(body)) {
     const target = new URL(body.redirect, action);
-    if (withoutHash(target) !== withoutHash(new URL(location.href))) {
+    if (!sameDocument(target, new URL(location.href))) {
       location.assign(target.href);
       return;
     }

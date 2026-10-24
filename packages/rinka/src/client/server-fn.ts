@@ -1,4 +1,4 @@
-import { PAGE_HEADER, withoutHash } from "../shared/refresh.ts";
+import { PAGE_HEADER, sameDocument } from "../shared/refresh.ts";
 import { isSeeding } from "../shared/scope.ts";
 import type { CallOptions, ServerFnMethod } from "../shared/server-fn.ts";
 import { ServerFnError, withServerFnRef } from "../shared/server-fn.ts";
@@ -93,7 +93,7 @@ async function read(
     }
     if (isRedirectJson(body)) {
       const target = new URL(body.redirect, endpoint);
-      if (reflect && withoutHash(target) === withoutHash(new URL(location.href))) {
+      if (reflect && sameDocument(target, new URL(location.href))) {
         return reflectPage(reflect, page) ? never() : undefined;
       }
       location.assign(target);
