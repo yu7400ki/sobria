@@ -9,14 +9,28 @@ import { CompileError } from "./errors.ts";
 /** props の分類を表す。`unknown` は、型の記述だけでは属性にできるかどうかが分からない props である。 */
 type Kind = AttributeType | "function" | "slot" | "object" | "unknown";
 
+/**
+ * ファイルのトップレベルで宣言した 1 つの型の名前に対応する、type か interface の宣言を表す。
+ * 同じ名前を type と interface の両方で宣言したときは、先に宣言した方を表す。
+ */
+type Declared =
+  | { readonly kind: "alias"; readonly declaration: ESTree.TSTypeAliasDeclaration }
+  | {
+      readonly kind: "interface";
+      /** 同じ名前の interface の宣言のすべてのメンバーである。 */
+      readonly members: readonly ESTree.TSSignature[];
+      /** 同じ名前の interface の宣言のどれかが extends を持つかどうかである。 */
+      readonly extended: boolean;
+    };
+
 /** Props の型を解析するときに参照する、ファイルの中の型の名前を表す。 */
 interface Helpers {
   /** `Props` の名前である。 */
   readonly props: ReadonlySet<string>;
   /** `Slot` の名前である。 */
   readonly slot: ReadonlySet<string>;
-  /** ファイルのトップレベルで宣言した type と interface の名前ごとの、type の宣言か、interface の分類である。 */
-  readonly declared: ReadonlyMap<string, ESTree.TSTypeAliasDeclaration | Kind>;
+  /** ファイルのトップレベルで宣言した type と interface の、名前ごとの宣言である。 */
+  readonly declared: ReadonlyMap<string, Declared>;
 }
 
 /** 解析できない理由を受け取り、ビルドのエラーを返す関数を表す。 */
@@ -45,7 +59,7 @@ export function analyzeProps(
       "要素の関数の第 1 引数に、Props の型注釈を記述してください。props を受け取る要素は、TypeScript のファイル（.tsx）に記述してください。",
     );
   }
-  const members = propsMembers(program, annotation, helpersOf(program), fail);
+  const members = propsMembers(annotation, helpersOf(program), fail);
   const errors = checkPropNames([...members.keys()]);
   if (errors.length > 0) throw fail(errors.join("\n"));
   const types: Record<string, AttributeType> = {};
@@ -73,12 +87,7 @@ export function analyzeProps(
 }
 
 /** Props の型注釈 `type` が表す型リテラルの、メンバーの名前と分類を返す。 */
-function propsMembers(
-  program: ESTree.Program,
-  type: ESTree.TSType,
-  helpers: Helpers,
-  fail: Fail,
-): Map<string, Kind> {
+function propsMembers(type: ESTree.TSType, helpers: Helpers, fail: Fail): Map<string, Kind> {
   const classifyAll = (members: readonly ESTree.TSSignature[]) =>
     classifyMembers(members, helpers, fail);
   const unwrap = (reference: ESTree.TSTypeReference) => {
@@ -96,40 +105,40 @@ function propsMembers(
   if (type.type === "TSTypeLiteral") return classifyAll(type.members);
   if (type.type !== "TSTypeReference" || type.typeName.type !== "Identifier") throw unsupported;
   if (isHelper(type)) return unwrap(type);
-  const { name } = type.typeName;
-  const found = declarations(program).filter((declaration) => declaration.id.name === name);
-  const [first] = found;
-  if (first?.type === "TSTypeAliasDeclaration") {
-    const aliased = first.typeAnnotation;
-    if (aliased.type === "TSTypeLiteral") return classifyAll(aliased.members);
-    if (aliased.type === "TSTypeReference" && isHelper(aliased)) return unwrap(aliased);
-    throw unsupported;
+  const declared = helpers.declared.get(type.typeName.name);
+  if (declared === undefined) throw unsupported;
+  if (declared.kind === "interface") {
+    if (declared.extended) throw unsupported;
+    return classifyAll(declared.members);
   }
-  const interfaces = found.filter((declaration) => declaration.type === "TSInterfaceDeclaration");
-  if (interfaces.length === 0 || interfaces.some((declaration) => declaration.extends.length > 0)) {
-    throw unsupported;
-  }
-  return classifyAll(interfaces.flatMap((declaration) => declaration.body.body));
+  const aliased = declared.declaration.typeAnnotation;
+  if (aliased.type === "TSTypeLiteral") return classifyAll(aliased.members);
+  if (aliased.type === "TSTypeReference" && isHelper(aliased)) return unwrap(aliased);
+  throw unsupported;
 }
 
 /** `rinka` から import した `Props` と `Slot` の、ファイルの中の名前と、ファイルで宣言した type と interface を返す。 */
 function helpersOf(program: ESTree.Program): Helpers {
   const names = importedNames(program, entries.main);
-  const declared = new Map<string, ESTree.TSTypeAliasDeclaration | Kind>();
+  const declared = new Map<string, Declared>();
   for (const declaration of declarations(program)) {
     const { name } = declaration.id;
-    if (declaration.type === "TSTypeAliasDeclaration") {
-      declared.set(name, declaration);
-      continue;
-    }
-    const callable =
-      declaration.body.body.length > 0 &&
-      declaration.body.body.every((member) => member.type === "TSCallSignatureDeclaration");
     const previous = declared.get(name);
-    declared.set(
-      name,
-      callable && (previous === undefined || previous === "function") ? "function" : "object",
-    );
+    if (declaration.type === "TSTypeAliasDeclaration") {
+      if (previous === undefined) declared.set(name, { kind: "alias", declaration });
+    } else if (previous === undefined) {
+      declared.set(name, {
+        kind: "interface",
+        members: declaration.body.body,
+        extended: declaration.extends.length > 0,
+      });
+    } else if (previous.kind === "interface") {
+      declared.set(name, {
+        kind: "interface",
+        members: [...previous.members, ...declaration.body.body],
+        extended: previous.extended || declaration.extends.length > 0,
+      });
+    }
   }
   return {
     props: names.get("Props") ?? new Set(),
@@ -231,15 +240,22 @@ function classify(
 
 /**
  * 同じファイルで宣言した type と interface と、値がオブジェクトになる組み込みの型の名前 `name` の分類を返す。
+ * interface は、メンバーが 1 つ以上あり、すべてが呼び出しのシグネチャなら関数に、それ以外はオブジェクトに分類する。
  * type の別名の本体では、別名の型引数の名前を、解決できない名前として扱う。
  */
 function referenceKind(name: string, helpers: Helpers, seen: ReadonlySet<string>): Kind {
   if (seen.has(name)) return "unknown";
   const declared = helpers.declared.get(name);
-  if (typeof declared === "string") return declared;
-  if (declared !== undefined) {
-    const params = declared.typeParameters?.params.map((param) => param.name.name) ?? [];
-    return classify(declared.typeAnnotation, helpers, new Set([...seen, name, ...params]));
+  if (declared?.kind === "interface") {
+    const callable =
+      declared.members.length > 0 &&
+      declared.members.every((member) => member.type === "TSCallSignatureDeclaration");
+    return callable ? "function" : "object";
+  }
+  if (declared?.kind === "alias") {
+    const { declaration } = declared;
+    const params = declaration.typeParameters?.params.map((param) => param.name.name) ?? [];
+    return classify(declaration.typeAnnotation, helpers, new Set([...seen, name, ...params]));
   }
   return objectReferences.has(name) ? "object" : "unknown";
 }
