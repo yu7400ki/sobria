@@ -25,4 +25,14 @@ export const nav: readonly NavSection[] = [
       "guide/interop",
     ],
   },
+  {
+    title: "リファレンス",
+    slugs: [
+      "reference/api/rinka",
+      "reference/api/server",
+      "reference/api/router",
+      "reference/api/vite",
+      "reference/api/app",
+    ],
+  },
 ];

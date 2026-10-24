@@ -1,0 +1,76 @@
+---
+title: rinka/router
+---
+
+{/* pnpm --filter @rinka/docs generate で生成する。手動で編集しない。 */}
+
+## RouteParams
+
+ページのファイルの形のパスごとに、そのルートのパラメータの名前から値への対応を表す。`declare module "rinka/router"` で拡張できる。
+
+```ts
+interface RouteParams {}
+```
+
+## PageProps
+
+`Route` のページが受け取る props を表す。`url` はリクエストの URL である。
+
+```ts
+interface PageProps<Route extends keyof RouteParams> {
+  readonly params: RouteParams[Route];
+  readonly url: URL;
+}
+```
+
+## LayoutProps
+
+レイアウトが受け取る props を表す。`url` はリクエストの URL である。
+
+```ts
+interface LayoutProps {
+  readonly params: Readonly<Record<string, string>>;
+  readonly url: URL;
+  readonly children: ServerNode;
+}
+```
+
+## Prerender
+
+`Route` のパラメータがあれば、そのパラメータの配列を返す関数を、無ければ `true` を表す。
+
+```ts
+type Prerender<Route extends keyof RouteParams> = keyof RouteParams[Route] extends never
+  ? true
+  : () => readonly Params<Route>[] | Promise<readonly Params<Route>[]>;
+
+type Params<Route extends keyof RouteParams> = {
+  readonly [Name in keyof RouteParams[Route]]: string | number;
+};
+```
+
+## href
+
+ページのファイルの形のパス `route` とパラメータから、URL を返す。パラメータの値は URL エンコードし、キャッチオールの値は `/` を区切りとして残す。クエリが空でなければ、`?` に続けて付ける。
+
+```ts
+function href<Route extends keyof RouteParams>(
+  route: Route,
+  ...[params, query]: HrefArgs<Route>
+): string;
+
+type HrefArgs<Route extends keyof RouteParams> =
+  true extends IsUnion<Route>
+    ? never
+    : keyof RouteParams[Route] extends never
+      ? [params?: undefined, query?: Query]
+      : [params: Params<Route>, query?: Query];
+
+type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;
+
+type Query = Readonly<Record<string, string | number>> | URLSearchParams;
+
+type Params<Route extends keyof RouteParams> = {
+  readonly [Name in keyof RouteParams[Route]]: string | number;
+};
+```

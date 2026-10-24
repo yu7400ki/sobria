@@ -15,6 +15,7 @@
     "oxlint.config.ts",
     "oxlint-panda.ts",
     "plugins",
+    "scripts",
     "test"
   ]
 }

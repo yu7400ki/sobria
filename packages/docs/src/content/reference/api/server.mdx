@@ -1,0 +1,273 @@
+---
+title: rinka/server
+---
+
+{/* pnpm --filter @rinka/docs generate で生成する。手動で編集しない。 */}
+
+## isBot
+
+`userAgent` が、JS を実行しないことがある bot かどうかを返す。
+
+```ts
+const isBot: (userAgent: string | null | undefined) => boolean;
+```
+
+## NotFound
+
+`notFound()` が返す値を表す。
+
+```ts
+class NotFound extends Error {
+  constructor();
+}
+```
+
+## notFound
+
+ページが見つからないことを表す値を返す。返した値をシェルの中で投げると、404 のレスポンスになる。シェルの後では、`<Errored>` が受け止める。
+
+```ts
+const notFound: () => NotFound;
+```
+
+## Redirect
+
+`location` への移動を表す。`location` が相対 URL でも http や https の URL でもなければ、作成するときにエラーを投げる。
+
+```ts
+class Redirect extends Error {
+  readonly location: string;
+  readonly status: RedirectStatus;
+  constructor(location: string, status: RedirectStatus);
+}
+```
+
+## redirect
+
+`location` への移動を表す値を返す。返した値をシェルの中で投げると、`status` のリダイレクトのレスポンスになり、シェルの後で投げると、ブラウザで移動させる。`location` には、相対 URL か、http か https の URL を指定する。それ以外のスキームを指定すると、エラーを投げる。
+
+```ts
+const redirect: (location: string, status?: RedirectStatus) => Redirect;
+```
+
+## RedirectStatus
+
+リダイレクトのステータスを表す。
+
+```ts
+type RedirectStatus = 301 | 302 | 303 | 307 | 308;
+```
+
+## renderToResponse
+
+`node` を描画し、シェルが揃った時点で、本文を送り続ける Response を返す。シェルの中で投げた `redirect()` はリダイレクトのレスポンスにし、Response はそのまま返す。`notFound()` は `notFound` のページを 404 で返し、ページが無ければ `Not Found` のテキストを 404 で返す。どの `<Errored>` も受け止めなかったエラーは、`error` のページを 500 で返し、ページが無ければ reject する。`notFound` のページの描画で投げたエラーには `error` のページを使用する。`error` のページの描画で投げた値は、ページを使用せずに、`redirect()` と `notFound()` と Response を同じ規則で扱い、それ以外では reject する。
+
+```ts
+function renderToResponse(
+  node: unknown,
+  { notFound, error, ...options }?: ResponseOptions,
+): Promise<Response>;
+```
+
+## renderToStream
+
+`node` を、文書の全体の HTML のストリームとして描画する。シェルを送った後に、後送りの境界を届いた順に送る。
+
+```ts
+function renderToStream(node: unknown, options?: RenderOptions): ReadableStream<Uint8Array>;
+```
+
+## renderToString
+
+`node` を描画し、すべての非同期の内容を待ってから、`node` の HTML の文字列を返す。
+
+```ts
+function renderToString(node: unknown): Promise<string>;
+```
+
+## RenderOptions
+
+描画のオプションを表す。
+
+```ts
+interface RenderOptions {
+  /** すべての `<Loading>` の中身を待ち、中身を埋め込んだ HTML を送る。 */
+  readonly blocking?: boolean;
+}
+```
+
+## ResponseOptions
+
+レスポンスのオプションを表す。
+
+```ts
+type ResponseOptions = PageOptions<unknown>;
+
+interface PageOptions<P> extends RenderOptions {
+  readonly headers?: Record<string, string>;
+  /** シェルの中で `notFound()` を投げたときに、404 で返すページを返す。 */
+  readonly notFound?: () => P;
+  /** シェルの中で、どの `<Errored>` も受け止めなかったエラーを受け取り、500 で返すページを返す。 */
+  readonly error?: (error: unknown) => P;
+}
+```
+
+## getContext
+
+処理中のリクエストの Hono の Context を返す。リクエストの外では `undefined` を返す。
+
+```ts
+function getContext(): Context | undefined;
+```
+
+## setBlockingRender
+
+リクエスト `c` のページを、すべての `<Loading>` の中身を待って描画するかどうかを指定する。指定しなければ、bot の User-Agent のリクエストだけを待って描画する。
+
+```ts
+function setBlockingRender(c: Context, value: boolean): void;
+```
+
+## defineHandler
+
+`hono/factory` の `defineHandler` を、`rinka/server` から再 export する。
+
+## defineMiddleware
+
+`hono/factory` の `defineMiddleware` を、`rinka/server` から再 export する。
+
+## defineServerFn
+
+1 段目のオプションを受け取り、ミドルウェアと handler からサーバー関数を作成する関数を返す。サーバーで呼び出すと、処理中のリクエストの Context を使用して、ミドルウェア、入力の検証、handler の順に実行する。ミドルウェアが `next()` を呼ばずに Response を返したら、その Response を投げる。Standard Schema の検証が失敗したら、`issues` を持つ `SchemaError` を投げる。
+
+オプションを省略して、ミドルウェアと handler からサーバー関数を作成する。
+
+```ts
+function defineServerFn<
+  V extends Validation = never,
+  Method extends ServerFnMethod = typeof defaultServerFnMethod,
+>(
+  options: ServerFnOptions<V, Method>,
+): <M extends AnyMiddleware[], R>(
+  ...args: [...middleware: M, handler: ServerFnHandler<M, OutputOf<V>, R>]
+) => ServerFn<InputOf<V>, R, Method>;
+
+function defineServerFn<M extends AnyMiddleware[], R>(
+  ...args: [...middleware: M, handler: ServerFnHandler<M, undefined, R>]
+): ServerFn<undefined, R, typeof defaultServerFnMethod>;
+
+const defaultServerFnMethod = "POST";
+
+type AnyMiddleware = MiddlewareHandler<any, any, any>;
+
+type ServerFnHandler<M extends AnyMiddleware[], In, R> = (
+  c: Context<IntersectNonAnyTypes<MiddlewareEnvs<M>>>,
+  args: {
+    input: In;
+  },
+) => R;
+
+type MiddlewareEnvs<M extends AnyMiddleware[]> = {
+  [K in keyof M]: M[K] extends MiddlewareHandler<infer E, any, any> ? E : never;
+};
+
+type OutputOf<V> = [V] extends [never]
+  ? undefined
+  : V extends StandardSchema<any, infer O>
+    ? O
+    : V extends (...args: never[]) => infer O
+      ? Awaited<O>
+      : never;
+
+type InputOf<V> = [V] extends [never]
+  ? undefined
+  : V extends AnySchema
+    ? "types" extends keyof V["~standard"]
+      ? NonNullable<V["~standard"]["types"]>["input"]
+      : OutputOf<V>
+    : V extends (value: infer I, c: Context) => unknown
+      ? I
+      : never;
+
+type AnySchema = StandardSchema<any, any>;
+```
+
+## SchemaError
+
+Standard Schema の検証が失敗したことを表すエラーである。
+
+```ts
+class SchemaError extends Error {
+  readonly issues: StandardSchemaIssues;
+  constructor(issues: StandardSchemaIssues);
+}
+
+type StandardSchemaIssues = Extract<
+  Awaited<ReturnType<StandardSchema["~standard"]["validate"]>>,
+  {
+    issues: unknown;
+  }
+>["issues"];
+```
+
+## ServerFn
+
+入力の型が `undefined` なら、入力を省略して呼び出せる。
+
+```ts
+type ServerFn<In, R, M extends ServerFnMethod = ServerFnMethod> = ([In] extends [undefined]
+  ? (input?: In, options?: CallOptions) => Promise<Awaited<R>>
+  : (input: In, options?: CallOptions) => Promise<Awaited<R>>) & {
+  readonly [serverFnRef]: ServerFnRef<M>;
+};
+```
+
+## ServerFnOptions
+
+`defineServerFn` の 1 段目に指定するオプションである。
+
+```ts
+interface ServerFnOptions<V extends Validation, M extends ServerFnMethod = ServerFnMethod> {
+  /** デフォルトは `"POST"` である。 */
+  method?: M;
+  /** 入力を検証する。検証を通過した値が、handler の `input` になる。 */
+  input?: V;
+}
+```
+
+## Validation
+
+サーバー関数の入力を検証する Standard Schema か関数である。
+
+```ts
+type Validation = AnySchema | ValidateFn;
+
+type AnySchema = StandardSchema<any, any>;
+
+type ValidateFn = (value: any, c: Context) => unknown;
+```
+
+## CallOptions
+
+クライアントからサーバー関数を呼び出すときのオプションである。
+
+```ts
+interface CallOptions {
+  /** 中止すると、リクエストを中止する。 */
+  signal?: AbortSignal;
+  /** リクエストに付与するヘッダーである。 */
+  headers?: HeadersInit;
+  /** GET 以外のサーバー関数をブラウザから呼び出したときに、呼び出したページを描き直すかどうかである。デフォルト値は `true` である。 */
+  refresh?: boolean;
+}
+```
+
+## ServerFnMethod
+
+サーバー関数を呼び出す HTTP のメソッドである。
+
+```ts
+type ServerFnMethod = (typeof serverFnMethods)[number];
+
+const serverFnMethods: readonly ["GET", "POST"];
+```

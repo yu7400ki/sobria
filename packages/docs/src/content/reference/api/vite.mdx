@@ -1,0 +1,69 @@
+---
+title: rinka/vite
+---
+
+{/* pnpm --filter @rinka/docs generate で生成する。手動で編集しない。 */}
+
+## RinkaOptions
+
+rinka のプラグインの設定を表す。
+
+```ts
+interface RinkaOptions {
+  /** 要素のタグ名の接頭辞である。デフォルトは `rinka` である。 */
+  readonly prefix?: string;
+  /** 要素を置くディレクトリである。プロジェクトのルートからの相対パスで記述し、デフォルトは `src/elements` である。 */
+  readonly elementsDir?: string;
+  /**
+   * GET 以外のサーバー関数のリクエストで、別のオリジンのページからでも受け付けるオリジンを列挙する。
+   * オリジンは `https://www.example.com` のように、パスと末尾の `/` を付けず、デフォルトのポートを省略して記述する。
+   */
+  readonly trustedOrigins?: readonly string[];
+  /** `false` なら、`.rinka/env.d.ts` でグローバルの `JSX` を宣言しない。 */
+  readonly globalJSX?: false;
+  /** ビルドの出力先である。プロジェクトのルートからの相対パスか絶対パスで記述し、デフォルトは `dist` である。 */
+  readonly outDir?: string;
+  /** `true` なら、`vite build` で、要素ごとに自分自身を登録する ES モジュールを出力する。 */
+  readonly library?: true;
+  /**
+   * `'static'` なら、`vite build` ですべてのページを書き出し、サーバーのビルドの出力を削除する。
+   * サーバーが必要なルートとサーバー関数があれば、ビルドのエラーにする。デフォルトは `'server'` である。
+   */
+  readonly output?: Output;
+  /**
+   * 他の Vite プラグインが TSX のソースに変換するファイルの拡張子（`.mdx` など）を列挙する。
+   * 列挙した拡張子のファイルは、`.tsx` のファイルと同じくコンパイルする。列挙した拡張子は、`page`、`layout`、`error`、`not-found` のルートのファイルにも使用できる。
+   * 変換するプラグインは、plugins の配列で rinka より前に配置する。
+   */
+  readonly extensions?: readonly string[];
+}
+
+type Output = "server" | "static";
+```
+
+## RinkaApi
+
+rinka のプラグインが、ほかのプラグインと CLI に公開する API を表す。
+
+```ts
+interface RinkaApi {
+  /** `.rinka/` を生成する。Vite の設定を解決する前に呼び出すと、エラーを投げる。 */
+  readonly prepare: () => void;
+}
+```
+
+## rinkaApi
+
+解決した Vite の設定 `config` に登録された rinka のプラグインの API を返す。登録されていなければ undefined を返す。
+
+```ts
+function rinkaApi(config: ResolvedConfig): RinkaApi | undefined;
+```
+
+## rinka
+
+rinka の Vite プラグインを作成する。`rinka` の実行時のコードを環境ごとに解決し、プロジェクトのモジュールにコンパイラの変換を適用する。
+
+```ts
+function rinka(options?: RinkaOptions): Plugin[];
+```

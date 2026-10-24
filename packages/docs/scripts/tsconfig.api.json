@@ -1,0 +1,7 @@
+{
+  "extends": "@rinka/config/tsconfig.base.json",
+  "compilerOptions": {
+    "types": []
+  },
+  "include": ["../node_modules/rinka/lib/**/*.d.ts"]
+}

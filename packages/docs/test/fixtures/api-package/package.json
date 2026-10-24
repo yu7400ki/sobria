@@ -1,0 +1,21 @@
+{
+  "name": "fixture",
+  "exports": {
+    ".": {
+      "rinka-server": {
+        "types": "./server.d.ts"
+      },
+      "types": "./client.d.ts"
+    },
+    "./tool": {
+      "rinka-client": {
+        "types": "./tool-client.d.ts"
+      },
+      "types": "./tool.d.ts"
+    },
+    "./jsx-runtime": {
+      "types": "./client.d.ts"
+    },
+    "./tsconfig.json": "./tsconfig.json"
+  }
+}

@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "prepare": "panda codegen --config theme/panda.config.ts",
+    "generate": "node scripts/generate-api-reference.ts",
     "dev": "vite",
     "build": "vite build",
     "typecheck": "rinka prepare && pnpm run prepare && tsc -b",
@@ -22,6 +23,7 @@
     "@rinka/config": "workspace:*",
     "@types/node": "catalog:",
     "hono": "catalog:",
+    "oxfmt": "catalog:",
     "shiki": "^4.5.0",
     "typescript": "catalog:",
     "vite": "catalog:",
