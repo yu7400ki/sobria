@@ -147,12 +147,12 @@ const missing = (): never => {
 export const createApp = (({ routes, middleware }: Routes, options: AppOptions = {}): Hono => {
   const app = new Hono();
   const onError = options.onError ?? defaultFailure;
-  /** ルートのファイル `files` が import した CSS の `<link>` を、`options.head` の後に連結したマークアップを返す。 */
+  /** ページとレイアウトのファイル `files` が import した CSS の `<link>` を、`options.head` の後に連結したマークアップを返す。 */
   const headOf = async (files: readonly string[]): Promise<string> => {
     const styles = options.styles && files.length > 0 ? await options.styles(files) : [];
     return `${options.head ?? ""}${styles.map(stylesheetLink).join("")}`;
   };
-  /** エラーのページを、そのレイアウトで包み、`props` を渡して描画する文書の内容を返す。CSS の一覧は、ページとレイアウトのモジュールを読み込んでから求める。 */
+  /** エラーのページを、そのレイアウトで包み、`props` を渡して描画する文書の内容を返す。 */
   const fallbackPage = async (page: Fallback, props: object): Promise<DocumentPage> => {
     const node = await wrap(page.module, page.layouts, props);
     return { node, head: await headOf(filesOf(page.module, page.layouts)) };

@@ -64,9 +64,9 @@ describe("サーバーコンポーネントの CSS", () => {
     expect(headLinks(html)).toEqual([...layoutLinks, "/src/routes/page.css?direct"]);
   });
 
-  it("not-found.tsx と error.tsx のページには、そのページとレイアウトの CSS だけを出力し、投げたページの CSS は出力しない", async () => {
+  it("not-found.tsx と error.tsx のページには、そのページとレイアウトの CSS だけを出力し、notFound() やエラーを投げたページの CSS は出力しない", async () => {
     const responses = [];
-    // 最初のリクエストでエラーのページのモジュールを読み込む場合を確認するため、URL を 1 つずつ取得する
+    // not-found.tsx と error.tsx のモジュールを、最初のリクエストで読み込む場合を確認するため、URL を 1 つずつ取得する
     for (const path of ["/nope", "/gone", "/broken"]) {
       // oxlint-disable-next-line no-await-in-loop
       const response = await fetch(`${origin}${path}`);
@@ -97,7 +97,7 @@ describe("本番のビルドのエラーのページの CSS", () => {
     await rm(outDir, { recursive: true, force: true });
   });
 
-  /** パス `path` のレスポンスのステータスと、`<head>` の `<link>` が指す CSS ファイルの内容を連結した文字列を返す。 */
+  /** パス `path` のレスポンスのステータスと、`<head>` の `<link>` が指す CSS ファイルの内容を連結した文字列の組を返す。 */
   async function linkedCss(path: string): Promise<[number, string]> {
     const response = await app.fetch(new Request(new URL(path, "http://localhost")));
     const links = headLinks(await response.text());
@@ -109,7 +109,7 @@ describe("本番のビルドのエラーのページの CSS", () => {
     return [response.status, css.join("\n")];
   }
 
-  it("not-found.tsx と error.tsx のページには、そのページとレイアウトの CSS だけを出力し、投げたページの CSS は出力しない", async () => {
+  it("not-found.tsx と error.tsx のページには、そのページとレイアウトの CSS だけを出力し、notFound() やエラーを投げたページの CSS は出力しない", async () => {
     for (const path of ["/nope", "/gone"]) {
       // oxlint-disable-next-line no-await-in-loop
       const [status, css] = await linkedCss(path);

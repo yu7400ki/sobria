@@ -79,26 +79,20 @@ export interface DocumentPage {
   readonly head: string;
 }
 
-/** `<head>` に何も加えずに `node` を描画する、文書の内容を返す。 */
+/** `node` を描画し、`<head>` に空の文字列を出力する文書の内容を返す。 */
 const withoutHead = (node: unknown): DocumentPage => ({ node, head: "" });
 
 /** 文書のレスポンスのオプションを表す。エラーのページは、そのページの `<head>` のマークアップとともに返す。 */
-export interface DocumentOptions extends RenderOptions {
-  readonly headers?: Record<string, string>;
-  /** シェルの中で `notFound()` を投げたときに、404 で返すページを返す。 */
-  readonly notFound?: () => Promise<DocumentPage>;
-  /** シェルの中で、どの `<Errored>` も受け止めなかったエラーを受け取り、500 で返すページを返す。 */
-  readonly error?: (error: unknown) => Promise<DocumentPage>;
-}
+export interface DocumentOptions
+  extends
+    Omit<ResponseOptions, keyof FallbackPages<unknown>>,
+    FallbackPages<Promise<DocumentPage>> {}
 
 /**
  * `renderToResponse` と同じ規則で、`page` のノードを描画し、`page` のマークアップを `<head>` の末尾に出力した Response を返す。
- * `notFound` と `error` のページは、そのページのマークアップを `<head>` の末尾に出力する。`page` とエラーのページの Promise が reject した値は、シェルの中で投げた値と同じ規則で扱う。
+ * `notFound` と `error` のページは、そのページのマークアップを `<head>` の末尾に出力する。エラーのページの Promise が reject した値は、シェルの中で投げた値と同じ規則で扱う。
  */
-export function renderDocument(
-  page: DocumentPage | Promise<DocumentPage>,
-  options: DocumentOptions,
-): Promise<Response> {
+export function renderDocument(page: DocumentPage, options: DocumentOptions): Promise<Response> {
   return respond(page, options, 200);
 }
 
@@ -171,14 +165,16 @@ async function refreshed(
   }
 }
 
-/** シェルの中で投げた値に応じて描画する、エラーのページを返す関数を表す。`P` は、エラーのページを表す値の型である。 */
-interface Fallbacks<P> {
+/** シェルの中で `notFound()` やエラーを投げたときに、エラーのページを返す関数の組を表す。`P` は、エラーのページを表す値の型である。 */
+interface FallbackPages<P> {
+  /** シェルの中で `notFound()` を投げたときに、404 で返すページを返す。 */
   readonly notFound?: () => P;
+  /** シェルの中で、どの `<Errored>` も受け止めなかったエラーを受け取り、500 で返すページを返す。 */
   readonly error?: (error: unknown) => P;
 }
 
 /** シェルの中で投げられた値から、レスポンスを作成する。`notFound` と `error` のページは `render` で描画する。 */
-function failure<P, O extends Fallbacks<P>>(
+function failure<P, O extends FallbackPages<P>>(
   error: unknown,
   options: O,
   render: (page: P, options: O, status: number) => Promise<Response>,
