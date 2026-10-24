@@ -1,5 +1,5 @@
 import type { ServerNode } from "./nodes.ts";
-import { parseSegment } from "./route-segments.ts";
+import { fillPattern } from "./route-segments.ts";
 
 /** ページのファイルの形のパスごとに、そのルートのパラメータの名前から値への対応を表す。`declare module "rinka/router"` で拡張できる。 */
 export interface RouteParams {}
@@ -25,7 +25,7 @@ type Params<Route extends keyof RouteParams> = {
   readonly [Name in keyof RouteParams[Route]]: string | number;
 };
 
-/** `Route` のパラメータがあれば、そのパラメータの配列を返す関数を、無ければ `true` を表す。ページと `route.ts` が export する `prerender` の型である。 */
+/** `Route` のパラメータがあれば、そのパラメータの配列を返す関数を、無ければ `true` を表す。 */
 export type Prerender<Route extends keyof RouteParams> = keyof RouteParams[Route] extends never
   ? true
   : () => readonly Params<Route>[] | Promise<readonly Params<Route>[]>;
@@ -50,22 +50,7 @@ export function href<Route extends keyof RouteParams>(
   ...[params, query]: HrefArgs<Route>
 ): string {
   const values: Readonly<Record<string, string | number>> = params ?? {};
-  const path = String(route)
-    .split("/")
-    .map((part) => {
-      const segment = parseSegment(part);
-      switch (segment?.kind) {
-        case "param":
-          return encodeURIComponent(String(values[segment.name]));
-        case "catch-all":
-          return String(values[segment.name]).split("/").map(encodeURIComponent).join("/");
-        case "static":
-        case "group":
-        case undefined:
-          return part;
-      }
-    })
-    .join("/");
+  const path = fillPattern(String(route), values);
   const search = new URLSearchParams(
     query instanceof URLSearchParams
       ? query

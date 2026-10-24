@@ -17,3 +17,36 @@ export function parseSegment(name: string): RouteSegment | undefined {
   if (param !== undefined) return { kind: "param", name: param };
   return name.startsWith("[") || name.startsWith("(") ? undefined : { kind: "static", name };
 }
+
+/**
+ * ファイルの形のパス `pattern` のパラメータとキャッチオールに、`values` の値を埋めた URL のパスを返す。
+ * パラメータの値は URL エンコードし、キャッチオールの値は `/` を区切りとして残す。グループの区切りはそのまま返す。
+ */
+export function fillPattern(
+  pattern: string,
+  values: Readonly<Record<string, string | number>>,
+): string {
+  return pattern
+    .split("/")
+    .map((part) => {
+      const segment = parseSegment(part);
+      switch (segment?.kind) {
+        case "param":
+          return encodeURIComponent(String(values[segment.name]));
+        case "catch-all":
+          return String(values[segment.name]).split("/").map(encodeURIComponent).join("/");
+        case "static":
+        case "group":
+        case undefined:
+          return part;
+      }
+    })
+    .join("/");
+}
+
+/** ファイルの形のパス `pattern` の、パラメータとキャッチオールの名前を返す。 */
+export const patternParams = (pattern: string): string[] =>
+  pattern.split("/").flatMap((part) => {
+    const segment = parseSegment(part);
+    return segment?.kind === "param" || segment?.kind === "catch-all" ? [segment.name] : [];
+  });
