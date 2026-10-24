@@ -1,3 +1,5 @@
+import { relative } from "node:path";
+
 /** import 文と export 文を表す。`source` は読み込む先で、`from` の無い export 文では `null` である。 */
 interface ModuleDeclaration {
   readonly source: { readonly value: string } | null;
@@ -25,14 +27,89 @@ interface CallNode {
 }
 
 interface Context {
+  readonly filename: string;
   report(descriptor: { node: ModuleDeclaration | StringNode | CallNode; message: string }): void;
 }
 
+/**
+ * 文字列のリテラルのうち、パターンと照合する箇所を表す。
+ * - `leading`: 文字列のリテラルの値と、テンプレートリテラルの最初の文字列の部分。読み込む先のリテラルは照合しない
+ * - `contained`: 文字列のリテラルの値と、テンプレートリテラルの文字列の部分を、埋め込みの位置に空白を入れて連結した文字列
+ * - `path-argument`: 識別子で呼び出す `join` と `resolve` の引数の、`leading` と同じ部分
+ */
+type Target = "leading" | "contained" | "path-argument";
+
+/** 定数を定義したファイルの外で、文字列のリテラルに記述させない値を表す。パスはパッケージのルートからの相対パスである。 */
+interface ConstantLiteral {
+  readonly pattern: RegExp;
+  readonly target: Target;
+  readonly definedIn: string;
+  readonly directories: readonly string[];
+  readonly message: string;
+}
+
+const constantLiterals: readonly ConstantLiteral[] = [
+  {
+    pattern: /^@/,
+    target: "leading",
+    definedIn: "src/shared/transfer-keys.ts",
+    directories: ["src/client/", "src/server/", "src/shared/"],
+    message: "値の受け渡しのキーは、src/shared/transfer-keys.ts の定数と関数で記述してください。",
+  },
+  {
+    pattern: /\$rinka/,
+    target: "contained",
+    definedIn: "src/server/bootstrap.ts",
+    directories: ["src/"],
+    message:
+      "起動スクリプトの受け口は、src/server/bootstrap.ts の関数を通して記述し、ほかのファイルの文字列に記述しないでください。",
+  },
+  {
+    pattern: /(?<![\w-])data-(o[a-z](?![\w-])|rinka-)/,
+    target: "contained",
+    definedIn: "src/shared/attributes.ts",
+    directories: ["src/"],
+    message:
+      "rinka が HTML に出力する属性名（data-o に英小文字 1 文字が続く名前と、data-rinka- で始まる名前）は、src/shared/attributes.ts の定数で記述してください。",
+  },
+  {
+    pattern: /\/ob:/,
+    target: "contained",
+    definedIn: "src/shared/attributes.ts",
+    directories: ["src/"],
+    message:
+      "後送りの境界の終わりの目印は、src/shared/attributes.ts の BOUNDARY_END で記述してください。",
+  },
+  {
+    pattern: /\/_rinka\//,
+    target: "contained",
+    definedIn: "src/shared/wire.ts",
+    directories: ["src/"],
+    message: "rinka の URL の接頭辞は、src/shared/wire.ts の internalPrefix で記述してください。",
+  },
+  {
+    pattern: /^\0?rinka\//,
+    target: "leading",
+    definedIn: "src/build/entries.ts",
+    directories: ["src/build/"],
+    message: "rinka の入口の指定子は、src/build/entries.ts の entries で記述してください。",
+  },
+  {
+    pattern: /^(client|server)(\/|$)/,
+    target: "path-argument",
+    definedIn: "src/build/settings.ts",
+    directories: ["src/build/"],
+    message:
+      "ビルドの出力先は、src/build/settings.ts の Settings の clientDir と serverDir から作成してください。",
+  },
+];
+
+/** 検査するファイルの、パッケージのルートからの相対パスを、区切りを `/` にして返す。 */
+const packagePath = ({ filename }: Context): string =>
+  relative(import.meta.dirname, filename).replaceAll("\\", "/");
+
 /** パスを結合する `node:path` の関数の名前である。 */
 const pathJoins = new Set(["join", "resolve"]);
-
-/** ビルドの出力先のディレクトリの名前で始まる文字列である。 */
-const outputDir = /^(client|server)(\/|$)/;
 
 /** MagicString の、挿入する位置の左右を選ぶメソッドの名前である。 */
 const directionalInserts = new Set(["prependLeft", "prependRight", "appendLeft", "appendRight"]);
@@ -66,6 +143,12 @@ const moduleSources = new Set([
 const isModuleSource = ({ parent }: StringNode): boolean =>
   parent !== undefined && moduleSources.has(parent.type);
 
+/** 文字列のリテラルかテンプレートリテラルの、`target` で照合する文字列を返す。 */
+const literalText = (node: StringNode, target: Target): string | undefined => {
+  if (target === "contained") return fullText(node);
+  return isModuleSource(node) ? undefined : leadingText(node);
+};
+
 const wireCodec = /\/wire-codec(\.[jt]s)?$/;
 
 /** rinka のパッケージに固有の lint の規則。 */
@@ -92,66 +175,44 @@ export default {
         };
       },
     },
-    /** `@` で始まる文字列のリテラルと、`@` で始まるテンプレートリテラルを報告する。読み込む先のリテラルは報告しない。 */
-    "no-transfer-key-literal": {
+    /**
+     * `constantLiterals` の各項目について、`directories` の中の、`definedIn` 以外のファイルで、
+     * `target` の箇所が `pattern` に一致する文字列のリテラルとテンプレートリテラルを報告する。
+     */
+    "no-constant-literal": {
       create(context: Context) {
-        const message =
-          "値の受け渡しのキーは、src/shared/transfer-keys.ts の定数と関数で記述してください。";
-        const check = (node: StringNode) => {
-          if (!leadingText(node)?.startsWith("@") || isModuleSource(node)) return;
-          context.report({ node, message });
+        const path = packagePath(context);
+        const applied = constantLiterals.filter(
+          ({ definedIn, directories }) =>
+            path !== definedIn && directories.some((directory) => path.startsWith(directory)),
+        );
+        const check = (node: StringNode, target: Target) => {
+          for (const constant of applied) {
+            if (constant.target !== target) continue;
+            const text = literalText(node, target);
+            if (text === undefined || !constant.pattern.test(text)) continue;
+            context.report({ node, message: constant.message });
+          }
         };
-        return { Literal: check, TemplateLiteral: check };
+        const checkLiteral = (node: StringNode) => {
+          check(node, "leading");
+          check(node, "contained");
+        };
+        return {
+          Literal: checkLiteral,
+          TemplateLiteral: checkLiteral,
+          CallExpression(node: CallNode) {
+            const { type, name } = node.callee;
+            if (type !== "Identifier" || name === undefined || !pathJoins.has(name)) return;
+            for (const argument of node.arguments) check(argument, "path-argument");
+          },
+        };
       },
     },
-    /** `$rinka` を含む、文字列のリテラルとテンプレートリテラルを報告する。 */
-    "no-receiver-literal": {
-      create(context: Context) {
-        const check = (node: StringNode) => {
-          const text = fullText(node);
-          if (text === undefined || !text.includes("$rinka")) return;
-          context.report({
-            node,
-            message:
-              "起動スクリプトの受け口は、src/server/bootstrap.ts の関数を通して記述し、ほかのファイルの文字列に記述しないでください。",
-          });
-        };
-        return { Literal: check, TemplateLiteral: check };
-      },
-    },
-    /** `data-o` に英小文字 1 文字が続く属性名か、`data-rinka-` で始まる属性名を含む、文字列のリテラルとテンプレートリテラルを報告する。 */
-    "no-marker-attribute-literal": {
-      create(context: Context) {
-        const check = (node: StringNode) => {
-          const text = fullText(node);
-          if (text === undefined || !/(?<![\w-])data-(o[a-z](?![\w-])|rinka-)/.test(text)) return;
-          context.report({
-            node,
-            message:
-              "rinka が HTML に出力する属性名（data-o に英小文字 1 文字が続く名前と、data-rinka- で始まる名前）は、src/shared/attributes.ts の定数で記述してください。",
-          });
-        };
-        return { Literal: check, TemplateLiteral: check };
-      },
-    },
-    /** 後送りの境界の終わりの目印 `/ob:` か、rinka の URL の接頭辞 `/_rinka/` を含む文字列のリテラルとテンプレートリテラルを報告する。 */
-    "no-reserved-path-literal": {
-      create(context: Context) {
-        const check = (node: StringNode) => {
-          const text = fullText(node);
-          if (text === undefined || !/\/ob:|\/_rinka\//.test(text)) return;
-          context.report({
-            node,
-            message:
-              "後送りの境界の終わりの目印は src/shared/attributes.ts の BOUNDARY_END で、rinka の URL の接頭辞は src/shared/wire.ts の internalPrefix で記述してください。",
-          });
-        };
-        return { Literal: check, TemplateLiteral: check };
-      },
-    },
-    /** MagicString の、挿入する位置の左右を選ぶメソッドの呼び出しを報告する。 */
+    /** `src/build/ast.ts` の外で、MagicString の、挿入する位置の左右を選ぶメソッドの呼び出しを報告する。 */
     "no-directional-insert": {
       create(context: Context) {
+        if (packagePath(context) === "src/build/ast.ts") return {};
         return {
           CallExpression(node: CallNode) {
             if (node.callee.type !== "MemberExpression") return;
@@ -162,42 +223,6 @@ export default {
               message:
                 "挿入する位置の左右は、src/build/ast.ts の surround、follow、insertInside で選んでください。",
             });
-          },
-        };
-      },
-    },
-    /** `rinka/` か、仮想モジュールの印の `\0` と `rinka/` で始まる文字列のリテラルとテンプレートリテラルを報告する。読み込む先のリテラルは報告しない。 */
-    "no-entry-literal": {
-      create(context: Context) {
-        const check = (node: StringNode) => {
-          const text = leadingText(node)?.replace(/^\0/, "");
-          if (!text?.startsWith("rinka/") || isModuleSource(node)) return;
-          context.report({
-            node,
-            message: "rinka の入口の指定子は、src/build/entries.ts の entries で記述してください。",
-          });
-        };
-        return { Literal: check, TemplateLiteral: check };
-      },
-    },
-    /**
-     * 識別子で呼び出す `join` と `resolve` の引数の文字列のリテラルとテンプレートリテラルのうち、
-     * `client` か `server` の後が `/` か終端のものを報告する。
-     */
-    "no-output-dir-literal": {
-      create(context: Context) {
-        return {
-          CallExpression(node: CallNode) {
-            const { type, name } = node.callee;
-            if (type !== "Identifier" || name === undefined || !pathJoins.has(name)) return;
-            for (const argument of node.arguments) {
-              if (!outputDir.test(leadingText(argument) ?? "")) continue;
-              context.report({
-                node: argument,
-                message:
-                  "ビルドの出力先は、src/build/settings.ts の Settings の clientDir と serverDir から作成してください。",
-              });
-            }
           },
         };
       },

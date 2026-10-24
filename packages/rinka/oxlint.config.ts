@@ -82,18 +82,7 @@ export default defineConfig({
     "unicorn/prefer-node-protocol": "error",
   },
   overrides: [
-    {
-      files: ["src/client/**", "src/server/**", "src/shared/**"],
-      rules: { "rinka/no-transfer-key-literal": "error" },
-    },
-    {
-      files: ["src/**"],
-      rules: {
-        "rinka/no-receiver-literal": "error",
-        "rinka/no-marker-attribute-literal": "error",
-        "rinka/no-reserved-path-literal": "error",
-      },
-    },
+    { files: ["src/**"], rules: { "rinka/no-constant-literal": "error" } },
     {
       files: ["src/shared/**"],
       env: { "shared-node-browser": true },
@@ -130,23 +119,8 @@ export default defineConfig({
         ...restrict(...build, seroval),
         "no-undef": "error",
         "rinka/no-directional-insert": "error",
-        "rinka/no-entry-literal": "error",
-        "rinka/no-output-dir-literal": "error",
       },
     },
-    { files: ["src/build/ast.ts"], rules: { "rinka/no-directional-insert": "off" } },
-    { files: ["src/build/entries.ts"], rules: { "rinka/no-entry-literal": "off" } },
-    { files: ["src/build/settings.ts"], rules: { "rinka/no-output-dir-literal": "off" } },
-    { files: ["src/shared/transfer-keys.ts"], rules: { "rinka/no-transfer-key-literal": "off" } },
-    { files: ["src/server/bootstrap.ts"], rules: { "rinka/no-receiver-literal": "off" } },
-    {
-      files: ["src/shared/attributes.ts"],
-      rules: {
-        "rinka/no-marker-attribute-literal": "off",
-        "rinka/no-reserved-path-literal": "off",
-      },
-    },
-    { files: ["src/shared/wire.ts"], rules: { "rinka/no-reserved-path-literal": "off" } },
     { files: ["test/**"], rules: testRelaxations },
   ],
 });

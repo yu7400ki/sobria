@@ -29,13 +29,8 @@ const rules = new Map([
   ["unicorn(prefer-node-protocol)", "node"],
   ["rinka(no-static-wire-codec)", "wire-codec"],
   ["import(no-cycle)", "cycle"],
-  ["rinka(no-transfer-key-literal)", "key"],
   ["rinka(no-directional-insert)", "insert"],
-  ["rinka(no-entry-literal)", "entry"],
-  ["rinka(no-receiver-literal)", "receiver"],
-  ["rinka(no-marker-attribute-literal)", "marker"],
-  ["rinka(no-output-dir-literal)", "output-dir"],
-  ["rinka(no-reserved-path-literal)", "reserved-path"],
+  ["rinka(no-constant-literal)", "literal"],
 ]);
 
 type Diagnostic = { code: string; labels: { span: { line: number } }[] };
@@ -223,8 +218,8 @@ describe("値の受け渡しのキー", () => {
         'declare module "@solidjs/signals" {}',
       ]),
     ).toEqual([
-      [1, "key"],
-      [2, "key"],
+      [1, "literal"],
+      [2, "literal"],
     ]);
   });
 
@@ -243,9 +238,9 @@ describe("起動スクリプトの受け口の文字列", () => {
         'export const f = (x: string) => "$rinka" + x;',
       ]),
     ).toEqual([
-      [1, "receiver"],
-      [2, "receiver"],
-      [4, "receiver"],
+      [1, "literal"],
+      [2, "literal"],
+      [4, "literal"],
     ]);
   });
 
@@ -267,12 +262,12 @@ describe("rinka が HTML に出力する目印の属性名", () => {
         "export const g = (x: string) => `<p${x}data-rinka-load>`;",
       ]),
     ).toEqual([
-      [1, "marker"],
-      [2, "marker"],
-      [4, "marker"],
-      [5, "marker"],
-      [6, "marker"],
-      [7, "marker"],
+      [1, "literal"],
+      [2, "literal"],
+      [4, "literal"],
+      [5, "literal"],
+      [6, "literal"],
+      [7, "literal"],
     ]);
   });
 
@@ -324,9 +319,9 @@ describe("入口の指定子", () => {
         'export type E = typeof import("rinka/internal");',
       ]),
     ).toEqual([
-      [1, "entry"],
-      [2, "entry"],
-      [4, "entry"],
+      [1, "literal"],
+      [2, "literal"],
+      [4, "literal"],
     ]);
   });
 
@@ -356,8 +351,8 @@ describe("後送りの境界の終わりの目印と、rinka の URL の接頭�
         `export const c = "/rinka/ob";`,
       ]),
     ).toEqual([
-      [1, "reserved-path"],
-      [2, "reserved-path"],
+      [1, "literal"],
+      [2, "literal"],
     ]);
   });
 
@@ -382,9 +377,9 @@ describe("ビルドの出力先", () => {
         'export const h = ["a"].join("client");',
       ]),
     ).toEqual([
-      [2, "output-dir"],
-      [3, "output-dir"],
-      [4, "output-dir"],
+      [2, "literal"],
+      [3, "literal"],
+      [4, "literal"],
     ]);
   });
 
