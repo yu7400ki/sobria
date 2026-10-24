@@ -1,7 +1,6 @@
 {
   "extends": "@rinka/config/tsconfig.base.json",
   "compilerOptions": {
-    "types": ["vite/types/importMeta.d.ts"],
     "paths": {
       "styled-system/*": ["./styled-system/*"]
     }
