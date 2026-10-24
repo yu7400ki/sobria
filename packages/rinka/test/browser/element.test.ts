@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { defineElement, registerElement } from "../../src/client/element.ts";
 import { jsx } from "../../src/client/jsx-runtime.ts";
-import type { Ctx } from "../../src/shared/element.ts";
+import type { Ctx, ElementOptions } from "../../src/shared/element.ts";
 import { reloadEvent } from "../../src/shared/hmr.ts";
 import { memo, signal } from "../../src/shared/signals.ts";
 
@@ -38,7 +38,7 @@ describe("props と属性", () => {
     defineElement(
       tag,
       (props: CounterProps) => jsx("p", { children: () => `${props.label}:${props.count}` }),
-      { props: ["count", "label"] },
+      { props: { count: "unknown", label: "unknown" } },
     );
     const el = document.createElement(tag) as HTMLElement & CounterProps;
     el.label = "n";
@@ -57,14 +57,14 @@ describe("props と属性", () => {
     const el = document.createElement(tag) as HTMLElement & CounterProps;
     el.label = "early";
     defineElement(tag, (props: CounterProps) => jsx("p", { children: () => props.label }), {
-      props: ["label"],
+      props: { label: "unknown" },
     });
     customElements.upgrade(el);
     await connect(el);
     expect(shadow(el)).toBe("<p>early</p>");
   });
 
-  it("属性を types に従って変換し、属性を削除すると undefined にする", async () => {
+  it("属性を props の分類に従って変換し、属性を削除すると undefined にする", async () => {
     const tag = nextTag();
     const seen: unknown[] = [];
     defineElement(
@@ -73,7 +73,7 @@ describe("props と属性", () => {
         const read = () => [props.count, props.on, props.label];
         return jsx("p", { children: () => String(seen.push(read())) });
       },
-      { props: ["count", "on", "label"], types: { count: "number", on: "boolean" } },
+      { props: { count: "number", on: "boolean", label: "unknown" } },
     );
     const el = document.createElement(tag);
     el.setAttribute("count", "3");
@@ -90,10 +90,13 @@ describe("props と属性", () => {
   it("observedAttributes は、関数とオブジェクトの型の props とスロットを除いた props の属性名である", () => {
     const tag = nextTag();
     defineElement(tag, () => null, {
-      props: ["userId", "onSelect", "header", "render", "data"],
-      functionProps: ["onSelect", "render"],
-      slots: ["header"],
-      objectProps: ["data"],
+      props: {
+        userId: "unknown",
+        onSelect: "function",
+        header: "slot",
+        render: "function",
+        data: "object",
+      },
     });
     const ctor = customElements.get(tag) as unknown as { observedAttributes: string[] };
     expect(ctor.observedAttributes).toEqual(["user-id"]);
@@ -101,8 +104,8 @@ describe("props と属性", () => {
 
   it("同じ関数を 2 つのタグで登録しても、それぞれの要素コンポーネントは自分のタグで作成する", () => {
     const [a, b] = [nextTag(), nextTag()];
-    const A = defineElement(a, empty, { props: [] });
-    const B = defineElement(b, empty, { props: [] });
+    const A = defineElement(a, empty, { props: {} });
+    const B = defineElement(b, empty, { props: {} });
     const [elA, elB] = createRoot(() => [jsx(A, {}), jsx(B, {})]) as unknown as Element[];
     expect(elA!.localName).toBe(a);
     expect(elB!.localName).toBe(b);
@@ -116,7 +119,7 @@ describe("関数の props", () => {
     const component = defineElement(
       tag,
       (props: Props) => jsx("button", { onClick: () => props.onLikeClick?.(7) }),
-      { props: ["onLikeClick"], functionProps: ["onLikeClick"] },
+      { props: { onLikeClick: "function" } },
     );
     return { tag, component };
   };
@@ -161,7 +164,7 @@ describe("JSX から使う要素", () => {
     const Counter = defineElement(
       tag,
       (props: CounterProps) => jsx("p", { children: () => props.count }),
-      { props: ["count"] },
+      { props: { count: "unknown" } },
     );
     const [n, setN] = signal(1);
     let evaluated = 0;
@@ -188,7 +191,7 @@ describe("JSX から使う要素", () => {
     const Counter = defineElement(
       tag,
       (props: CounterProps) => jsx("p", { children: () => props.count }),
-      { props: ["count"] },
+      { props: { count: "unknown" } },
     );
     const [n, setN] = signal(1);
     const el = createRoot(() =>
@@ -222,7 +225,7 @@ describe("JSX から使う要素", () => {
         onCleanup(() => cleanups++);
         return jsx("p", { children: () => props.count });
       },
-      { props: ["count"] },
+      { props: { count: "unknown" } },
     );
     const [n, setN] = signal(1);
     const el = jsx(Toast, {
@@ -245,9 +248,7 @@ describe("JSX から使う要素", () => {
     const El = defineElement(
       tag,
       (props: CounterProps) => jsx("p", { children: () => props.count }),
-      {
-        props: ["count"],
-      },
+      { props: { count: "unknown" } },
     );
     const [show, setShow] = signal(false);
     let el: HTMLElement | undefined;
@@ -273,7 +274,7 @@ describe("JSX から使う要素", () => {
         ctx.onMount(() => mounted.push(shadow(ctx.host)));
         return jsx("p", { children: () => `[${props.count}]` });
       },
-      { props: ["count"] },
+      { props: { count: "unknown" } },
     );
     let resolve!: (value: number) => void;
     const el = createRoot(() => {
@@ -293,7 +294,7 @@ describe("JSX から使う要素", () => {
 
   it("props に無い値と key はホストの属性にし、props に無い onX の関数はホストのリスナーにする", () => {
     const tag = nextTag();
-    const Box = defineElement(tag, () => null, { props: [] });
+    const Box = defineElement(tag, () => null, { props: {} });
     const clicks: string[] = [];
     let reads = 0;
     const el = createRoot(() =>
@@ -328,7 +329,7 @@ describe("JSX から使う要素", () => {
         ctx.expose({ open: () => "opened" });
         return null;
       },
-      { props: [] },
+      { props: {} },
     );
     const seen: string[] = [];
     createRoot(() =>
@@ -350,7 +351,7 @@ describe("ctx", () => {
         host = ctx.host;
         return null;
       },
-      { props: [] },
+      { props: {} },
     );
     const el = await connect(document.createElement(tag));
     expect(host).toBe(el);
@@ -365,7 +366,7 @@ describe("ctx", () => {
         ctx.onMount(() => seen.push(shadow(ctx.host)));
         return jsx("p", { children: "x" });
       },
-      { props: [] },
+      { props: {} },
     );
     const el = await connect(document.createElement(tag));
     const other = document.createElement("div");
@@ -384,7 +385,7 @@ describe("ctx", () => {
         ctx.onMount(() => seen.push(ctx.host.isConnected));
         return jsx("p", { children: "x" });
       },
-      { props: [] },
+      { props: {} },
     );
     const el = createRoot(() => jsx(El, {})) as unknown as HTMLElement;
     flush();
@@ -404,7 +405,7 @@ describe("ctx", () => {
         ctx.onMount(() => seen.push(shadow(ctx.host)));
         return jsx("p", { children: () => value() });
       },
-      { props: [] },
+      { props: {} },
     );
     await connect(document.createElement(tag));
     expect(seen).toEqual([]);
@@ -418,7 +419,7 @@ describe("ctx", () => {
 describe("起動と破棄", () => {
   it("effect の中で接続された要素も起動する", async () => {
     const tag = nextTag();
-    defineElement(tag, () => jsx("p", { children: "on" }), { props: [] });
+    defineElement(tag, () => jsx("p", { children: "on" }), { props: {} });
     const [show, setShow] = signal(false);
     let el: Element | undefined;
     createRoot(() =>
@@ -442,7 +443,7 @@ describe("起動と破棄", () => {
         onCleanup(() => cleanups++);
         return null;
       },
-      { props: [] },
+      { props: {} },
     );
     const { el, dispose } = createRoot((d) => ({
       el: jsx(Child, {}) as unknown as HTMLElement,
@@ -465,7 +466,7 @@ describe("起動と破棄", () => {
         runs++;
         return null;
       },
-      { props: [] },
+      { props: {} },
     );
     const { el, dispose } = createRoot((d) => ({
       el: jsx(Child, {}) as unknown as HTMLElement,
@@ -489,7 +490,7 @@ describe("起動と破棄", () => {
         onCleanup(() => cleanups++);
         return null;
       },
-      { props: [] },
+      { props: {} },
     );
     const el = await connect(document.createElement(tag));
     const other = document.createElement("div");
@@ -514,7 +515,7 @@ describe("起動と破棄", () => {
         ctx.onMount(() => seen.push(run));
         return jsx("p", { children: () => value() });
       },
-      { props: [] },
+      { props: {} },
     );
     const el = await connect(document.createElement(tag));
     expect(seen).toEqual([1]);
@@ -536,7 +537,7 @@ describe("起動と破棄", () => {
         runs++;
         return jsx("p", { children: "x" });
       },
-      { props: [] },
+      { props: {} },
     );
     const el = document.createElement(tag);
     document.body.append(el);
@@ -555,7 +556,7 @@ describe("起動と破棄", () => {
   it("破棄した最上位の要素を再び接続すると、props の値を維持したまま 1 回だけ描画し直す", async () => {
     const tag = nextTag();
     defineElement(tag, (props: CounterProps) => jsx("p", { children: () => props.label }), {
-      props: ["label"],
+      props: { label: "unknown" },
     });
     const el = (await connect(document.createElement(tag))) as HTMLElement & CounterProps;
     el.label = "kept";
@@ -579,7 +580,7 @@ describe("起動と破棄", () => {
         ctx.onMount(() => seen.push(run));
         return jsx("p", { children: () => value() });
       },
-      { props: [] },
+      { props: {} },
     );
     const el = await connect(document.createElement(tag));
     el.remove();
@@ -603,7 +604,7 @@ function createHot() {
 describe("開発中の再登録", () => {
   it("同じタグをもう一度登録すると、表示中のインスタンスを、props の値を引き継いで新しい関数で描画する", async () => {
     const tag = nextTag();
-    const options = { props: ["label"] };
+    const options: ElementOptions = { props: { label: "unknown" } };
     defineElement(
       tag,
       (props: CounterProps) => jsx("p", { children: () => `old:${props.label}` }),
@@ -632,7 +633,7 @@ describe("開発中の再登録", () => {
   it("同じタグの要素が入れ子になっていても、すべてのインスタンスを新しい関数で描画する", async () => {
     const tag = nextTag();
     type TreeProps = { depth?: number };
-    const options = { props: ["depth"] };
+    const options: ElementOptions = { props: { depth: "unknown" } };
     const tree = (label: string) => (props: TreeProps) =>
       jsx("p", {
         children: () => [
@@ -654,12 +655,10 @@ describe("開発中の再登録", () => {
 
   it("登録の設定が変わると、関数を置換せずに、ページの再読み込みを求めるイベントを送る", async () => {
     const tag = nextTag();
-    defineElement(tag, () => jsx("p", { children: "old" }), {
-      props: ["label"],
-    });
+    defineElement(tag, () => jsx("p", { children: "old" }), { props: { label: "unknown" } });
     const host = await connect(document.createElement(tag));
     const hot = createHot();
-    registerElement(tag, () => jsx("p", { children: "new" }), { props: ["count"] }, hot);
+    registerElement(tag, () => jsx("p", { children: "new" }), { props: { count: "unknown" } }, hot);
     flush();
     expect(hot.sent).toEqual([reloadEvent]);
     expect(shadow(host)).toBe("<p>old</p>");
@@ -667,7 +666,7 @@ describe("開発中の再登録", () => {
 
   it("import.meta.hot を渡さずに同じタグをもう一度登録すると、エラーにする", () => {
     const tag = nextTag();
-    defineElement(tag, empty, { props: [] });
-    expect(() => defineElement(tag, empty, { props: [] })).toThrow("既に登録されています");
+    defineElement(tag, empty, { props: {} });
+    expect(() => defineElement(tag, empty, { props: {} })).toThrow("既に登録されています");
   });
 });

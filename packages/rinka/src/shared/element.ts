@@ -32,20 +32,27 @@ export interface PropKinds {
 
 /** 要素の設定 `options` から、props の分類を返す。 */
 export function propKinds(options: ElementOptions): PropKinds {
-  const slots = new Set(["children", ...(options.slots ?? [])]);
-  const functions = new Set(options.functionProps);
-  const objects = new Set(options.objectProps);
-  const values = options.props.filter((name) => !slots.has(name));
+  const slots = new Set(["children"]);
+  const values: string[] = [];
+  const functions = new Set<string>();
+  const attributes = new Map<string, AttributeProp>();
+  for (const [name, kind] of Object.entries(options.props)) {
+    if (kind === "slot" || name === "children") {
+      slots.add(name);
+      continue;
+    }
+    values.push(name);
+    if (kind === "function") functions.add(name);
+    else if (kind !== "object") {
+      attributes.set(propToAttribute(name), { name, type: kind === "unknown" ? undefined : kind });
+    }
+  }
   return {
-    names: options.props,
+    names: Object.keys(options.props),
     values,
     slots,
     events: new Set([...functions].filter(isEventProp)),
-    attributes: new Map(
-      values
-        .filter((name) => !functions.has(name) && !objects.has(name))
-        .map((name) => [propToAttribute(name), { name, type: options.types?.[name] }]),
-    ),
+    attributes,
     reflects: new Set(options.form ? Object.keys(formAttributeTypes) : []),
     isReader: (name, value): value is () => unknown => isFunction(value) && !functions.has(name),
   };
@@ -57,18 +64,17 @@ export const formAttributeTypes = {
   disabled: "boolean",
 } as const satisfies Record<string, AttributeType>;
 
+/**
+ * props の分類を表す。
+ * `string`、`number`、`boolean` の props は属性の値をその型に変換して受け取り、`unknown` の props は属性の値を文字列のまま受け取る。
+ * `function` と `object` の props は属性から受け取らない。`slot` の props はスロットになる。
+ */
+export type PropKind = AttributeType | "unknown" | "function" | "object" | "slot";
+
 /** `defineElement` の 3 つ目の引数を表す。 */
 export interface ElementOptions {
-  /** 受け付ける props の名前の一覧。 */
-  readonly props: readonly string[];
-  /** 属性から変換する props の型。記述しない props は、属性の値を文字列のまま受け取る。 */
-  readonly types?: Readonly<Record<string, AttributeType>>;
-  /** Props の型でスロットとして宣言した、`children` 以外の props の名前の一覧。 */
-  readonly slots?: readonly string[];
-  /** Props の型で関数として宣言した props の名前の一覧。 */
-  readonly functionProps?: readonly string[];
-  /** Props の型で関数とスロット以外のオブジェクトとして宣言した props の名前の一覧。属性からは受け取らない。 */
-  readonly objectProps?: readonly string[];
+  /** 受け付ける props の名前ごとの分類。`children` は、表に無いときも、分類にかかわらずスロットになる。 */
+  readonly props: Readonly<Record<string, PropKind>>;
   /** 要素の関数が ctx の `form` を使用し、要素がフォームの部品になるときに `true` である。 */
   readonly form?: true;
 }

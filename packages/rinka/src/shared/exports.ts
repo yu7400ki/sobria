@@ -14,6 +14,6 @@ export {
   type Signal,
   type SignalOptions,
 } from "./signals.ts";
-export type { Ctx, ElementOptions, ElementRef, AttributeType } from "./element.ts";
+export type { Ctx, ElementOptions, ElementRef, AttributeType, PropKind } from "./element.ts";
 export type { Props } from "./prop-names.ts";
 export { ServerFnError } from "./server-fn.ts";

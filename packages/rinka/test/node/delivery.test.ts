@@ -13,7 +13,7 @@ const element = (tag: string, load: DefaultLoad = "load", body: unknown = jsx("p
   defineElement(
     tag,
     () => body,
-    { props: ["children"] },
+    { props: { children: "slot" } },
     { module: `/src/elements/${tag}.tsx`, load },
   );
 
@@ -22,7 +22,7 @@ const chunked = (tag: string) =>
   defineElement(
     tag,
     () => null,
-    { props: [] },
+    { props: {} },
     {
       module: `/assets/${tag}.js`,
       load: "load",
@@ -144,7 +144,7 @@ describe("要素の配信", () => {
   });
 
   it("配信の情報を持たない要素は伝えず、先読みもしない", async () => {
-    const Plain = definePlain("x-plain", () => jsx("p", {}), { props: [] });
+    const Plain = definePlain("x-plain", () => jsx("p", {}), { props: {} });
     const document = await html(jsx(Plain, {}));
     expect(document).not.toContain("$rinka.m(");
     expect(document).not.toContain("modulepreload");

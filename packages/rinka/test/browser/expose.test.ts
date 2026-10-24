@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { defineElement } from "../../src/client/element.ts";
 import { jsx } from "../../src/client/jsx-runtime.ts";
-import type { Ctx } from "../../src/shared/element.ts";
+import type { Ctx, ElementOptions } from "../../src/shared/element.ts";
 import { signal } from "../../src/shared/signals.ts";
 
 let count = 0;
@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 /** `members` を expose する要素を JSX で作成し、ホストを返す。 */
-function mountExposing(members: object, props: readonly string[] = []): HTMLElement {
+function mountExposing(members: object, props: ElementOptions["props"] = {}): HTMLElement {
   const El = defineElement(
     nextTag(),
     (_props: object, ctx: Ctx) => {
@@ -60,7 +60,7 @@ describe("ctx.expose", () => {
     expect(() => mountExposing({ checkValidity: () => true })).toThrow(
       '"checkValidity" は expose で公開できません。',
     );
-    expect(() => mountExposing({ label: "x" }, ["label"])).toThrow(
+    expect(() => mountExposing({ label: "x" }, { label: "unknown" })).toThrow(
       '"label" は expose で公開できません。',
     );
   });

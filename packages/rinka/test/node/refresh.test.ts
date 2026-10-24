@@ -33,9 +33,13 @@ const Card = defineElement(
     return jsx("p", { children: () => props.label });
   },
   {
-    props: ["label", "data", "onPick", "header", "children"],
-    slots: ["header"],
-    functionProps: ["onPick"],
+    props: {
+      label: "unknown",
+      data: "unknown",
+      onPick: "function",
+      header: "slot",
+      children: "slot",
+    },
   },
 );
 
@@ -147,7 +151,7 @@ describe("renderRefresh", () => {
     const Delivered = defineDelivered(
       "x-refresh-delivered",
       () => null,
-      { props: [] },
+      { props: {} },
       { module: "/src/elements/x-refresh-delivered.tsx", load: "idle" },
     );
     const { json } = await refreshOf(jsx(Delivered, {}));

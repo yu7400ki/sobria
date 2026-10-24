@@ -153,7 +153,7 @@ describe("サーバーの出力", () => {
     const Container = defineElement(
       "x-swap-container",
       () => jsx(Loading, { fallback: "wait", children: jsx("slot", {}) }),
-      { props: ["children"] },
+      { props: { children: "slot" } },
     );
     const doc = await render(jsx(Container, { children: jsx(Slow, {}) }));
     const host = doc.querySelector('[data-oh="h1"]');

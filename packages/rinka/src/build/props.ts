@@ -1,13 +1,10 @@
 import type { ESTree } from "vite";
 
-import type { AttributeType, ElementOptions } from "../shared/element.ts";
+import type { ElementOptions, PropKind } from "../shared/element.ts";
 import { checkPropNames } from "../shared/prop-names.ts";
 import { importedNames } from "./ast.ts";
 import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
-
-/** props の分類を表す。`unknown` は、型の記述だけでは属性にできるかどうかが分からない props である。 */
-type Kind = AttributeType | "function" | "slot" | "object" | "unknown";
 
 /**
  * ファイルのトップレベルで宣言した 1 つの型の名前に対応する、type か interface の宣言を表す。
@@ -47,7 +44,7 @@ export function analyzeProps(
 ): ElementOptions {
   const fail: Fail = (message) => new CompileError(`${file}: ${message}`);
   const [param] = fn.params;
-  if (!param) return { props: [] };
+  if (!param) return { props: {} };
   if (param.type !== "Identifier") {
     throw fail(
       "要素の関数の第 1 引数は、props のような 1 つの名前で受け取ってください。分割代入、既定値、残余引数は使用できません。",
@@ -62,32 +59,15 @@ export function analyzeProps(
   const members = propsMembers(annotation, helpersOf(program), fail);
   const errors = checkPropNames([...members.keys()]);
   if (errors.length > 0) throw fail(errors.join("\n"));
-  const types: Record<string, AttributeType> = {};
-  const slots: string[] = [];
-  const functionProps: string[] = [];
-  const objectProps: string[] = [];
-  for (const [name, kind] of members) {
-    if (kind === "slot") {
-      if (name !== "children") slots.push(name);
-    } else if (kind === "function") {
-      functionProps.push(name);
-    } else if (kind === "object") {
-      objectProps.push(name);
-    } else if (kind !== "unknown") {
-      types[name] = kind;
-    }
-  }
   return {
-    props: [...members.keys()],
-    ...(Object.keys(types).length > 0 && { types }),
-    ...(slots.length > 0 && { slots }),
-    ...(functionProps.length > 0 && { functionProps }),
-    ...(objectProps.length > 0 && { objectProps }),
+    props: Object.fromEntries(
+      [...members].map(([name, kind]) => [name, name === "children" ? "slot" : kind]),
+    ),
   };
 }
 
 /** Props の型注釈 `type` が表す型リテラルの、メンバーの名前と分類を返す。 */
-function propsMembers(type: ESTree.TSType, helpers: Helpers, fail: Fail): Map<string, Kind> {
+function propsMembers(type: ESTree.TSType, helpers: Helpers, fail: Fail): Map<string, PropKind> {
   const classifyAll = (members: readonly ESTree.TSSignature[]) =>
     classifyMembers(members, helpers, fail);
   const unwrap = (reference: ESTree.TSTypeReference) => {
@@ -166,8 +146,8 @@ function classifyMembers(
   members: readonly ESTree.TSSignature[],
   helpers: Helpers,
   fail: Fail,
-): Map<string, Kind> {
-  const classified = new Map<string, Kind>();
+): Map<string, PropKind> {
+  const classified = new Map<string, PropKind>();
   for (const member of members) {
     if (member.type !== "TSPropertySignature" && member.type !== "TSMethodSignature") {
       throw fail("Props の型には、プロパティとメソッドだけを宣言してください。");
@@ -188,7 +168,7 @@ function classifyMembers(
 function memberKind(
   member: ESTree.TSPropertySignature | ESTree.TSMethodSignature,
   helpers: Helpers,
-): Kind {
+): PropKind {
   if (member.type === "TSPropertySignature") {
     return classify(member.typeAnnotation?.typeAnnotation, helpers);
   }
@@ -208,7 +188,7 @@ function classify(
   type: ESTree.TSType | undefined,
   helpers: Helpers,
   seen: ReadonlySet<string> = new Set(),
-): Kind {
+): PropKind {
   if (type === undefined) return "unknown";
   if (type.type === "TSStringKeyword") return "string";
   if (type.type === "TSNumberKeyword") return "number";
@@ -243,7 +223,7 @@ function classify(
  * interface は、メンバーが 1 つ以上あり、すべてが呼び出しのシグネチャなら関数に、それ以外はオブジェクトに分類する。
  * type の別名の本体では、別名の型引数の名前を、解決できない名前として扱う。
  */
-function referenceKind(name: string, helpers: Helpers, seen: ReadonlySet<string>): Kind {
+function referenceKind(name: string, helpers: Helpers, seen: ReadonlySet<string>): PropKind {
   if (seen.has(name)) return "unknown";
   const declared = helpers.declared.get(name);
   if (declared?.kind === "interface") {
@@ -282,7 +262,7 @@ const objectTypes: ReadonlySet<string> = new Set([
 ]);
 
 /** リテラル型の分類を返す。 */
-function literalKind(literal: ESTree.TSLiteralType["literal"]): Kind {
+function literalKind(literal: ESTree.TSLiteralType["literal"]): PropKind {
   if (literal.type === "UnaryExpression") {
     const { argument } = literal;
     return literal.operator === "-" &&

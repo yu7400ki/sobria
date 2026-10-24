@@ -42,7 +42,7 @@ function defineAsync(tag: string, site: string, compute: () => Promise<unknown>)
       const value = memo(compute, { site });
       return jsx("p", { children: () => String(value()) });
     },
-    { props: [] },
+    { props: {} },
   );
 }
 
@@ -54,7 +54,7 @@ const defineKeyed = (tag: string, keys: string[]) =>
       for (const key of keys) memo(() => Promise.resolve(1), { key });
       return null;
     },
-    { props: [] },
+    { props: {} },
   );
 describe("memo の値", () => {
   it("キーのある非同期の memo の値を、data-om に列挙して $rinka.d で送る", async () => {
@@ -72,7 +72,7 @@ describe("memo の値", () => {
         const unkeyed = memo(() => Promise.resolve(2));
         return jsx("p", { children: () => sync() + unkeyed() });
       },
-      { props: [] },
+      { props: {} },
     );
     const { html, sent } = await render(jsx(Card, {}));
     expect(html).toContain('<x-tr2 data-oh="h1"><template shadowrootmode="open"><p>3</p>');
@@ -86,7 +86,7 @@ describe("memo の値", () => {
         const value = memo(() => Promise.reject(new Error("e")), { site: "c.tsx:3:1" });
         return jsx(Loading, { fallback: "f", children: jsx("p", { children: () => value() }) });
       },
-      { props: [] },
+      { props: {} },
     );
     vi.spyOn(console, "error").mockImplementation(() => {});
     const { sent } = await render(jsx(Card, {}));
@@ -117,7 +117,7 @@ describe("props の値", () => {
     "x-tr-card",
     (props: { data?: object; onPick?: () => void }) =>
       jsx("p", { children: () => typeof props.data }),
-    { props: ["data", "onPick"], functionProps: ["onPick"] },
+    { props: { data: "unknown", onPick: "function" } },
   );
 
   it("属性にできない props を、@p として $rinka.d で送る", async () => {
@@ -140,7 +140,7 @@ describe("props の値", () => {
     const Outer = defineElement(
       "x-tr-outer",
       () => jsx(Card, { data: { a: 1 }, onPick: () => {} }),
-      { props: [] },
+      { props: {} },
     );
     const { html, sent } = await render(jsx(Outer, {}));
     expect(html).toContain('<x-tr-card data-oh="h2"><template shadowrootmode="open"><p>object</p>');
@@ -150,12 +150,12 @@ describe("props の値", () => {
 
 describe("入れ子の子要素", () => {
   it("前の描画で作成した子要素のノードを再利用しても、前の描画のホストに値を送らない", async () => {
-    const Leaf = defineElement("x-tr-leaf", () => null, { props: [] });
+    const Leaf = defineElement("x-tr-leaf", () => null, { props: {} });
     let cached: unknown;
     const Outer = defineElement(
       "x-tr-outer",
       () => (cached ??= jsx(Leaf, {}, undefined, "o.tsx:1:1")),
-      { props: [] },
+      { props: {} },
     );
     await render(jsx(Outer, {}));
     const second = await render(jsx(Outer, {}));
@@ -167,7 +167,7 @@ describe("入れ子の子要素", () => {
     const Parent = defineElement(
       "x-tr-parent",
       () => [jsx(Child, {}, undefined, "p.tsx:1:1"), jsx(Child, {}, undefined, "p.tsx:1:1")],
-      { props: [] },
+      { props: {} },
     );
     const { html, sent } = await render(jsx(Parent, {}));
     expect(html).toContain('<x-tr-parent data-oh="h1" data-om="@c:p.tsx:1:1#0 @c:p.tsx:1:1#1">');
@@ -215,14 +215,14 @@ describe("開始タグの後に加わったキー", () => {
             jsx(after(10, jsx(Loading, { fallback: "f", children: jsx(after(20, "x"), {}) })), {}),
           ],
         }),
-      { props: [] },
+      { props: {} },
     );
     const { sent } = await render([jsx(Host, {}), holding()]);
     expect(sent).toEqual([]);
   });
 
   it("Errored が捨てた領域の中で後から描画した子要素は、外側のホストに @c:キーを送らない", async () => {
-    const Leaf = defineElement("x-tr-sealed-leaf", () => null, { props: [] });
+    const Leaf = defineElement("x-tr-sealed-leaf", () => null, { props: {} });
     const Host = defineElement(
       "x-tr-sealed-c",
       () => {
@@ -232,21 +232,21 @@ describe("開始タグの後に加わったキー", () => {
           children: [jsx(late, {}), jsx(after(10, leaf), {})],
         });
       },
-      { props: [] },
+      { props: {} },
     );
     const { sent } = await render([jsx(Host, {}), holding()]);
     expect(sent).toEqual([]);
   });
 
   it("後送りにした中身の中で作成した子要素は、外側のホストの @b より前に @c:キーを送る", async () => {
-    const Leaf = defineElement("x-tr-late-leaf", () => null, { props: [] });
+    const Leaf = defineElement("x-tr-late-leaf", () => null, { props: {} });
     const Host = defineElement(
       "x-tr-late-c",
       () => {
         const leaf = jsx(Leaf, {}, undefined, "s.tsx:1:1");
         return jsx(Loading, { fallback: "f", children: jsx(after(10, leaf), {}) });
       },
-      { props: [] },
+      { props: {} },
     );
     const { html, sent } = await render(jsx(Host, {}));
     expect(html).toContain('<template data-os="b2"><x-tr-late-leaf data-oh="h3">');
@@ -257,7 +257,7 @@ describe("開始タグの後に加わったキー", () => {
   });
 
   it("後送りにした <Loading> の中で、中身を出力した <Errored> の中に作成した子要素も、@b より前に @c:キーを送る", async () => {
-    const Leaf = defineElement("x-tr-late-errored-leaf", () => null, { props: [] });
+    const Leaf = defineElement("x-tr-late-errored-leaf", () => null, { props: {} });
     const Host = defineElement(
       "x-tr-late-errored",
       () => {
@@ -267,7 +267,7 @@ describe("開始タグの後に加わったキー", () => {
           children: jsx(Errored, { fallback: "fb", children: jsx(after(10, leaf), {}) }),
         });
       },
-      { props: [] },
+      { props: {} },
     );
     const { sent } = await render(jsx(Host, {}));
     expect(sent).toEqual([
@@ -277,11 +277,11 @@ describe("開始タグの後に加わったキー", () => {
   });
 
   it("後送りにした差し替えの中で作成した子要素も、@b より前に @c:キーを送る", async () => {
-    const Leaf = defineElement("x-tr-late-slot-leaf", () => null, { props: [] });
+    const Leaf = defineElement("x-tr-late-slot-leaf", () => null, { props: {} });
     const Inner = defineElement(
       "x-tr-late-slot-inner",
       () => jsx(Loading, { fallback: "f", children: jsx("slot", {}) }),
-      { props: [] },
+      { props: {} },
     );
     const Host = defineElement(
       "x-tr-late-slot",
@@ -289,7 +289,7 @@ describe("開始タグの後に加わったキー", () => {
         const leaf = jsx(Leaf, {}, undefined, "s.tsx:1:1");
         return jsx(Inner, { children: jsx(after(10, leaf), {}) });
       },
-      { props: [] },
+      { props: {} },
     );
     const { html, sent } = await render(jsx(Host, {}));
     expect(html).toContain('<template data-op="p4"><x-tr-late-slot-leaf data-oh="h5">');
@@ -305,7 +305,7 @@ describe("開始タグの後に加わったキー", () => {
     const Host = defineElement(
       "x-tr-late-outer",
       () => jsx(Loading, { fallback: "f", children: jsx(after(10, jsx(Inner, {})), {}) }),
-      { props: [] },
+      { props: {} },
     );
     const { html, sent } = await render(jsx(Host, {}));
     expect(html).toContain('<x-tr-late-inner data-oh="h3" data-om="i.tsx:1:1#0">');
@@ -323,7 +323,7 @@ describe("開始タグの後に加わったキー", () => {
         memo(() => Promise.resolve(source()), { key: "b" });
         return "x";
       },
-      { props: [] },
+      { props: {} },
     );
     const { sent } = await render([jsx(Host, {}), holding()]);
     expect(sent).toEqual([]);
@@ -346,7 +346,7 @@ describe("開始タグの後に加わったキー", () => {
           );
           return "x";
         },
-        { props: [] },
+        { props: {} },
       );
       const { sent } = await render([jsx(Host, {}), holding()]);
       expect(sent).toEqual([]);
@@ -364,7 +364,7 @@ describe("開始タグの後に加わったキー", () => {
             jsx(after(10, jsx(Loading, { fallback: "f", children: jsx(after(20, "x"), {}) })), {}),
           ],
         }),
-      { props: [] },
+      { props: {} },
     );
     const rejected: unknown[] = [];
     const listener = (reason: unknown) => rejected.push(reason);
@@ -386,7 +386,7 @@ describe("値を送る範囲", () => {
       const value = memo(() => Promise.resolve("v"), { site: "s.tsx:1:1" });
       return jsx("p", { children: () => `${value()} ${typeof props.data}` });
     },
-    { props: ["data"] },
+    { props: { data: "unknown" } },
   );
 
   it("Errored がフォールバックに切り替えた領域の中のホストには、値を送らない", async () => {
@@ -426,7 +426,7 @@ describe("値を送る範囲", () => {
             return "in";
           }, {}),
         }),
-      { props: [] },
+      { props: {} },
     );
     const { html, sent } = await render(
       jsx(Errored, { fallback: "fb", children: [jsx(Waiting, {}), jsx(late, {})] }),
@@ -466,7 +466,7 @@ describe("値を送る範囲", () => {
         const b = memo(() => Promise.resolve(2), { site: "s.tsx:2:1" });
         return [jsx("i", { children: () => a() + b() }), jsx(Inner, {})];
       },
-      { props: [] },
+      { props: {} },
     );
     const { html } = await render(jsx(Outer, {}));
     expect(html).toContain('<x-tr-nest data-oh="h1" data-om="s.tsx:2:1#0 s.tsx:2:1#1">');

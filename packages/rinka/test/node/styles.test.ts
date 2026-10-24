@@ -28,7 +28,7 @@ const ruled = (tag: string, rule: string) =>
       css(sheet(`/src/${tag}.css?direct`, rule));
       return null;
     },
-    { props: [] },
+    { props: {} },
   );
 
 /** 連続する空白を 1 つの空白にする。 */
@@ -52,7 +52,7 @@ describe("SSR の ctx の css", () => {
         `;
         return jsx("p", { children: "x" });
       },
-      { props: [] },
+      { props: {} },
     );
     expect(squash(await renderToString(jsx(Card, {})))).toContain(
       '<template shadowrootmode="open"><style> :host { display: block; } </style><link rel="stylesheet" href="/src/app.css?direct"><style> p { margin: 4px; } </style><p>x</p></template>',
@@ -70,7 +70,7 @@ describe("SSR の ctx の css", () => {
         `;
         return null;
       },
-      { props: [] },
+      { props: {} },
     );
     expect(squash(await renderToString(jsx(Card, {})))).toContain(
       '<style> a::after { content: "<\\/style><\\/STYLE><script>"; } </style>',
@@ -84,7 +84,7 @@ describe("SSR の ctx の css", () => {
         css({} as CSSStyleSheet);
         return null;
       },
-      { props: [] },
+      { props: {} },
     );
     await expect(renderToString(jsx(Card, {}))).rejects.toThrow("with { type: 'css' }");
   });
@@ -102,7 +102,7 @@ describe("@property の規則", () => {
         css(plain);
         return null;
       },
-      { props: [] },
+      { props: {} },
     );
     const html = await document(jsx("main", { children: [jsx(Gap, {}), jsx(Gap, {})] }));
     const head = html.slice(0, html.indexOf("</head>"));
@@ -125,7 +125,7 @@ describe("後送りの内容の @property の規則", () => {
         css(sheet("/src/a.css?direct", shellRule));
         return null;
       },
-      { props: [] },
+      { props: {} },
     );
     const Late = defineElement(
       "x-styled-late",
@@ -134,7 +134,7 @@ describe("後送りの内容の @property の規則", () => {
         css(sheet("/src/b.css?direct", lateRule));
         return null;
       },
-      { props: [] },
+      { props: {} },
     );
     const Slow = async () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -151,7 +151,7 @@ describe("後送りの内容の @property の規則", () => {
 
   it("後送りの境界で使用したシートの規則は、先に出力したほかの境界の内容に出力しない", async () => {
     const rule = '@property --rb { syntax: "*"; inherits: false; }';
-    const Early = defineElement("x-styled-early", () => null, { props: [] });
+    const Early = defineElement("x-styled-early", () => null, { props: {} });
     const Ruled = ruled("x-styled-ruled", rule);
     const html = await document(
       jsx("main", {

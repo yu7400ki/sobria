@@ -66,7 +66,7 @@ describe("SSR したインスタンスの起動", () => {
     const Server = defineServer(
       tag,
       startedView(server),
-      { props: [] },
+      { props: {} },
       {
         module: "data:text/javascript,",
         load: "load",
@@ -75,7 +75,7 @@ describe("SSR したインスタンスの起動", () => {
     await serve(
       server("main", { children: [server(Server, {}), server(Server, { "load:idle": true })] }),
     );
-    defineClient(tag, startedView(client), { props: [] });
+    defineClient(tag, startedView(client), { props: {} });
     await tick();
     const [now, later] = document.querySelectorAll(tag);
     expect(now?.hasAttribute("data-started")).toBe(true);
@@ -93,7 +93,7 @@ describe("SSR したインスタンスの起動", () => {
       `<${tag} data-oh="h1" data-rinka-load="idle"><template shadowrootmode="open"><p>x</p></template></${tag}>`,
     );
     document.body.append(container);
-    defineClient(tag, startedView(client), { props: [] });
+    defineClient(tag, startedView(client), { props: {} });
     await tick();
     expect(document.querySelector(tag)?.hasAttribute("data-started")).toBe(true);
   });
@@ -104,11 +104,11 @@ describe("Shadow DOM の中の子要素", () => {
     const inner = nextTag();
     const outer = nextTag();
     const delivery = { module: "data:text/javascript,", load: "idle" } as const;
-    const InnerServer = defineServer(inner, startedView(server), { props: [] }, delivery);
+    const InnerServer = defineServer(inner, startedView(server), { props: {} }, delivery);
     const OuterServer = defineServer(
       outer,
       () => server("div", { children: server(InnerServer, {}) }),
-      { props: [] },
+      { props: {} },
       { ...delivery, load: "load" },
     );
     await serve(server("main", { children: [server(OuterServer, {}), server(InnerServer, {})] }));
@@ -119,7 +119,7 @@ describe("Shadow DOM の中の子要素", () => {
       asked.push(el.getRootNode() instanceof ShadowRoot ? "shadow" : "light");
       w(el, f);
     });
-    defineClient(inner, startedView(client), { props: [] });
+    defineClient(inner, startedView(client), { props: {} });
     await tick();
     expect(asked).toEqual(["light"]);
   });

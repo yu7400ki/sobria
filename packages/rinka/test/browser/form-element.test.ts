@@ -7,7 +7,7 @@ import { bootstrapSource } from "../../src/server/bootstrap.ts";
 import { defineElement as defineServer } from "../../src/server/element.ts";
 import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
 import { renderToStream } from "../../src/server/response.ts";
-import type { Ctx } from "../../src/shared/element.ts";
+import type { Ctx, ElementOptions } from "../../src/shared/element.ts";
 import type { Receiver } from "../../src/shared/receiver.ts";
 import { memo, signal } from "../../src/shared/signals.ts";
 
@@ -45,7 +45,7 @@ function defineField(setters: ((value: string) => void)[] = []): string {
       form.onRestore((state) => setValue(typeof state === "string" ? state : ""));
       return jsx("button", { type: "button", disabled: () => form.disabled() });
     },
-    { props: [], form: true },
+    { props: {}, form: true },
   );
   return tag;
 }
@@ -88,7 +88,7 @@ describe("フォームの部品", () => {
         form.validity(() => ({ message: "だめです" }));
         return null;
       },
-      { props: [], form: true },
+      { props: {}, form: true },
     );
     await place(`<${custom}></${custom}>`);
     const other = document.querySelector<HTMLElement & { validity: ValidityState }>(custom)!;
@@ -159,7 +159,7 @@ describe("フォームの部品", () => {
         form.value(() => "v");
         return null;
       },
-      { props: ["name", "disabled"], types: { name: "string", disabled: "boolean" }, form: true },
+      { props: { name: "string", disabled: "boolean" }, form: true },
     );
     await place("<form></form>");
     const host = document.createElement(tag) as HTMLElement & { name?: string; disabled?: boolean };
@@ -189,7 +189,7 @@ describe("フォームの部品", () => {
         form.value(() => "v");
         return null;
       },
-      { props: ["name"], types: { name: "number" }, form: true },
+      { props: { name: "number" }, form: true },
     );
     await place("<form></form>");
     const host = document.createElement(tag) as HTMLElement & { name?: number };
@@ -213,7 +213,7 @@ describe("フォームの部品", () => {
         form.value(() => "v");
         return null;
       },
-      { props: ["name", "disabled"], types: { name: "string", disabled: "boolean" }, form: true },
+      { props: { name: "string", disabled: "boolean" }, form: true },
     );
     const [name, setName] = signal("a");
     const [disabled, setDisabled] = signal(false);
@@ -268,7 +268,7 @@ describe("フォームの部品", () => {
         }
         return null;
       },
-      { props: [] },
+      { props: {} },
     );
     await place(`<${tag}></${tag}>`);
     expect(received).toBeInstanceOf(ElementInternals);
@@ -281,7 +281,7 @@ describe("フォームの部品", () => {
 
 /** サーバーとクライアントで同じタグの要素を登録する。 */
 function defineBoth(tag: string, fn: (props: object, ctx: Ctx) => unknown, form = true) {
-  const options = { props: [], ...(form && { form: true as const }) };
+  const options: ElementOptions = { props: {}, ...(form && { form: true as const }) };
   return {
     server: defineServer(tag, fn, options),
     client: () => defineElement(tag, fn, options),
@@ -380,7 +380,7 @@ describe("SSR したフォームの部品の起動", () => {
         internals.ariaValueText = "x";
         return null;
       },
-      { props: [] },
+      { props: {} },
     );
     await serve(serverJsx(server, {}));
     const host = document.querySelector(tag)!;
@@ -396,7 +396,7 @@ describe("SSR したフォームの部品の起動", () => {
         );
         return jsx("p", { children: () => value() });
       },
-      { props: [] },
+      { props: {} },
     );
     await tick();
     flush();

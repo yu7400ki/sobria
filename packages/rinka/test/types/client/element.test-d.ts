@@ -10,7 +10,7 @@ const Dialog = defineElement(
     expose({ open: () => {}, focus: () => {} });
     return null;
   },
-  { props: ["label", "count", "header", "children"], slots: ["header"] },
+  { props: { label: "unknown", count: "unknown", header: "slot", children: "slot" } },
 );
 
 test("ElementRef は、expose で公開したメンバーと props と、HTMLElement のメンバーを持つ", () => {
@@ -37,13 +37,13 @@ test("expose に渡すオブジェクトが Ctx の型を満たさなければ�
       expose({ open: () => {} });
       return null;
     },
-    { props: [] },
+    { props: {} },
   );
 });
 
 test("ElementRef は、Slot 以外の型で宣言した children も持たず、any で宣言した props を持つ", () => {
   const Box = defineElement("type-box", (_props: { value?: any; children?: string }) => null, {
-    props: ["value", "children"],
+    props: { value: "unknown", children: "slot" },
   });
   expectTypeOf<ElementRef<typeof Box>["children"]>().toEqualTypeOf<HTMLCollection>();
   expectTypeOf<ElementRef<typeof Box>>().toHaveProperty("value");
@@ -64,7 +64,7 @@ test("Ctx は、フォームの部品の form と、ElementInternals の interna
 
 test("公開の defineElement は、タグ名、要素の関数、登録の設定の 3 つの引数を受け取る", () => {
   // @ts-expect-error 4 つ目の引数は受け取らない
-  defineElement("type-four-args", () => null, { props: [] }, { send: () => {} });
+  defineElement("type-four-args", () => null, { props: {} }, { send: () => {} });
 });
 
 test("ctx の css は、タグ付きテンプレートと CSSStyleSheet を受け取る", () => {
@@ -81,7 +81,7 @@ test("ctx の css は、タグ付きテンプレートと CSSStyleSheet を受�
       css(":host {}");
       return null;
     },
-    { props: [] },
+    { props: {} },
   );
 });
 

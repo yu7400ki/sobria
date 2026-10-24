@@ -37,15 +37,14 @@ const Failing = async () => {
 
 /** 名前付きのスロット `side` を Shadow DOM の最上位に持つ要素である。 */
 const Side = defineElement("x-side", () => jsx("slot", { name: "side" }), {
-  props: ["side"],
-  slots: ["side"],
+  props: { side: "slot" },
 });
 
 /** Shadow DOM の `<Loading>` の中に、名前の無いスロットを持つ要素である。 */
 const Lazy = defineElement(
   "x-lazy",
   () => jsx(Loading, { fallback: "wait", children: jsx("slot", {}) }),
-  { props: [] },
+  { props: {} },
 );
 
 /** Shadow DOM に `<html>`、`<body>`、`<head>` を持つ要素である。 */
@@ -56,15 +55,13 @@ const Rooted = defineElement(
     jsx("body", { class: "b", children: "b" }),
     jsx("head", { children: "c" }),
   ],
-  { props: [] },
+  { props: {} },
 );
 
 const Titled = defineElement(
   "x-titled",
   () => [title("inner"), jsx("link", { rel: "stylesheet", href: "/x.css" })],
-  {
-    props: [],
-  },
+  { props: {} },
 );
 
 /** <svg> の <title> と、フォールバックに <title> を持つ <Loading> を、Shadow DOM に描画する要素である。 */
@@ -74,7 +71,7 @@ const Graphic = defineElement(
     jsx("svg", { children: title("icon") }),
     jsx(Loading, { fallback: title("wait"), children: jsx(later(10, "done"), {}) }),
   ],
-  { props: [] },
+  { props: {} },
 );
 
 /** <title> と、フォールバックに <title> と <html> を持つ <Loading> を描画するページである。 */
@@ -633,7 +630,7 @@ const navigationLayout = (props: LayoutProps) => [
 const Navigating = defineElement(
   "x-navigating",
   () => jsx(Navigation, { transitions: true, prefetch: "eager" }),
-  { props: [] },
+  { props: {} },
 );
 
 const noPrefetchLayout = (props: LayoutProps) => [

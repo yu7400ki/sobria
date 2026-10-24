@@ -131,7 +131,7 @@ function element(code: string) {
 }
 
 /** 要素のファイルとして `code` を変換し、受け付ける props の名前の一覧を返す。 */
-const props = (code: string) => element(code).element?.options.props;
+const props = (code: string) => Object.keys(element(code).element?.options.props ?? {});
 
 /** 要素のファイルとして `code` を変換する関数を返す。 */
 const fails = (code: string) => () => element(code);
@@ -156,31 +156,21 @@ type Props = {
 };
 export default function X(props: Props) { return <p />; }`);
     expect(info?.options).toEqual({
-      props: [
-        "userId",
-        "compact",
-        "label",
-        "data",
-        "onSelect",
-        "open",
-        "header",
-        "footer",
-        "children",
-        "mode",
-        "size",
-        "mixed",
-        "handler",
-      ],
-      types: {
+      props: {
         userId: "number",
         compact: "boolean",
         label: "string",
+        data: "object",
+        onSelect: "function",
+        open: "function",
+        header: "slot",
+        footer: "slot",
+        children: "slot",
         mode: "string",
         size: "number",
+        mixed: "unknown",
+        handler: "unknown",
       },
-      slots: ["header", "footer"],
-      functionProps: ["onSelect", "open"],
-      objectProps: ["data"],
     });
   });
 
@@ -189,13 +179,11 @@ export default function X(props: Props) { return <p />; }`);
 type Props = { n?: -1 | 1; t?: \`a\`; get g(): string; s?: S; o?: Slot };
 export default function X(props: Props) { return <p />; }`);
     expect(info?.options).toEqual({
-      props: ["n", "t", "g", "s", "o"],
-      types: { n: "number", t: "string", g: "string" },
-      slots: ["s"],
+      props: { n: "number", t: "string", g: "string", s: "slot", o: "unknown" },
     });
   });
 
-  it("型の記述と、同じファイルで宣言した type と interface から、オブジェクトと分かる props を objectProps に列挙する", () => {
+  it("型の記述と、同じファイルで宣言した type と interface から、オブジェクトと分かる props を object に分類する", () => {
     const { element: info } = element(`type Variant = "a" | "b";
 type Handler = () => void;
 type Loop = Loop[] | Loop;
@@ -217,24 +205,21 @@ type Props = {
 };
 export default function X(props: Props) { return <p />; }`);
     expect(info?.options).toEqual({
-      props: [
-        "list",
-        "pair",
-        "map",
-        "any",
-        "both",
-        "user",
-        "record",
-        "variant",
-        "handler",
-        "loop",
-        "imported",
-        "width",
-        "mixed",
-      ],
-      types: { variant: "string" },
-      functionProps: ["handler"],
-      objectProps: ["list", "pair", "map", "any", "both", "user", "record"],
+      props: {
+        list: "object",
+        pair: "object",
+        map: "object",
+        any: "object",
+        both: "object",
+        user: "object",
+        record: "object",
+        variant: "string",
+        handler: "function",
+        loop: "unknown",
+        imported: "unknown",
+        width: "unknown",
+        mixed: "unknown",
+      },
     });
   });
 
@@ -255,9 +240,13 @@ type Props = {
 };
 export default function X(props: Props) { return <p />; }`);
     expect(info?.options).toEqual({
-      props: ["onPick", "label", "when", "box", "onChoose"],
-      functionProps: ["onPick", "onChoose"],
-      objectProps: ["box"],
+      props: {
+        onPick: "function",
+        label: "unknown",
+        when: "unknown",
+        box: "object",
+        onChoose: "function",
+      },
     });
   });
 
@@ -266,7 +255,7 @@ export default function X(props: Props) { return <p />; }`);
 interface H { (x: number): void }
 type Props = { onPick: H };
 export default function X(props: Props) { return <p />; }`);
-    expect(info?.options).toEqual({ props: ["onPick"], functionProps: ["onPick"] });
+    expect(info?.options).toEqual({ props: { onPick: "function" } });
   });
 
   it("同じ名前の interface の宣言を、1 つの Props の型にまとめる", () => {
@@ -323,7 +312,7 @@ export default function X(props: Props) { return <p />; }`);
     expect(code).toContain("function X(props: Props) { return <p />; }");
     expect(code).not.toContain("export default function");
     expect(code).toContain(
-      'export default __rinka_defineElement("app-x", X, {"props":["a","onPick"],"types":{"a":"string"},"functionProps":["onPick"]}, {"module":"/src/elements/x.tsx","load":"load"});',
+      'export default __rinka_defineElement("app-x", X, {"props":{"a":"string","onPick":"function"}}, {"module":"/src/elements/x.tsx","load":"load"});',
     );
   });
 
@@ -374,7 +363,7 @@ export default function X(props: Props) { return <p />; }`);
       element: { tag: "app-x", module: "/src/elements/x.tsx" },
     }).code;
     expect(client).toContain(
-      'export default __rinka_defineElement("app-x", X, {"props":["a"],"types":{"a":"string"}}, import.meta.hot);',
+      'export default __rinka_defineElement("app-x", X, {"props":{"a":"string"}}, import.meta.hot);',
     );
     expect(client).toContain(
       'import { defineElement as __rinka_defineElement } from "rinka/internal";',
@@ -415,7 +404,7 @@ describe("フォームの部品の判別", () => {
     ).toBe(true);
     expect(
       element("export default function X(props: {}, { form }: Ctx) { return null; }").code,
-    ).toContain('{"props":[],"form":true}');
+    ).toContain('{"props":{},"form":true}');
   });
 
   it("form を使用しない要素は、フォームの部品にしない", () => {

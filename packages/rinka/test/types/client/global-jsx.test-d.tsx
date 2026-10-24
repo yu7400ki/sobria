@@ -11,10 +11,7 @@ declare global {
 const Panel = defineElement(
   "type-global-jsx",
   (_props: { body?: JSX.Element; label?: string }) => null,
-  {
-    props: ["body", "label"],
-    slots: ["body"],
-  },
+  { props: { body: "slot", label: "unknown" } },
 );
 
 test("グローバルの JSX.Element で宣言した props は、スロットとして ElementRef から除き、JSX の内容を受け付ける", () => {

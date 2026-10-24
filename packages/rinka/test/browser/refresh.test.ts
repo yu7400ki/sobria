@@ -7,6 +7,7 @@ import { bootstrapSource } from "../../src/server/bootstrap.ts";
 import { defineElement as defineServer } from "../../src/server/element.ts";
 import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
 import { renderRefresh, renderToStream } from "../../src/server/response.ts";
+import type { ElementOptions } from "../../src/shared/element.ts";
 import type { RefreshJson } from "../../src/shared/refresh.ts";
 import { signal } from "../../src/shared/signals.ts";
 
@@ -133,7 +134,7 @@ describe("applyRefresh", () => {
 
   it("ページにある要素は状態を保ったまま新しい props を受け取り、新しく現れた要素は描き直しの props で起動する", async () => {
     const tag = nextTag();
-    const options = { props: ["label", "data"] };
+    const options: ElementOptions = { props: { label: "unknown", data: "unknown" } };
     const element = defineServer(tag, counterView(server), options);
     const page = (...cards: [string, string][]) =>
       server("main", {

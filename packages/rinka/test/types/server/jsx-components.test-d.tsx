@@ -11,8 +11,7 @@ import { expectTypeOf, test } from "vitest";
 
 type DialogProps = { heading?: string; header?: Slot; children?: Slot };
 const Dialog = defineElement("type-jsx-dialog", (_props: DialogProps) => null, {
-  props: ["heading", "header", "children"],
-  slots: ["header"],
+  props: { heading: "unknown", header: "slot", children: "slot" },
 });
 
 const Card = (_props: { title: string }) => null as unknown as ClientNode & ServerNode;

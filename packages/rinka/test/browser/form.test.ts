@@ -234,7 +234,7 @@ describe("JS があるときのフォームの送信", () => {
 
   it("要素のスロットに配置したフォームは、ホストより外側の onSubmit の後に、document で 1 回だけ送信する", async () => {
     const fetch = vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise(() => {}));
-    defineElement("test-form-slot", () => jsx("slot", {}), { props: [] });
+    defineElement("test-form-slot", () => jsx("slot", {}), { props: {} });
     (await placeSlotted()).click();
     expect(fetch).toHaveBeenCalledTimes(1);
     const button = await placeSlotted();
@@ -253,7 +253,7 @@ describe("JS があるときのフォームの送信", () => {
           method: "post",
           children: jsx("button", { name: "b", value: "2", children: "go" }),
         }),
-      { props: [] },
+      { props: {} },
     );
     const host = document.createElement("test-form-host");
     document.body.append(host);

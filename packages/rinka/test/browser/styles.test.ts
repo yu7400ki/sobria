@@ -73,7 +73,7 @@ describe("ctx の css", () => {
         `;
         return null;
       },
-      { props: [] },
+      { props: {} },
     );
     await place(`<${tag}></${tag}>`);
     const sheets = document.querySelector(tag)!.shadowRoot!.adoptedStyleSheets;
@@ -102,7 +102,7 @@ describe("ctx の css", () => {
         `;
         return null;
       },
-      { props: [] },
+      { props: {} },
     );
     await place(`<${tag}></${tag}><${tag}></${tag}>`);
     const [a, b] = [...document.querySelectorAll(tag)].map(
@@ -121,13 +121,13 @@ describe("ctx の css", () => {
         ctx.css(sheet as unknown as CSSStyleSheet);
         return blockHost(props, ctx);
       },
-      { props: [] },
+      { props: {} },
     );
     await serve(serverJsx(server, {}));
     const host = document.querySelector(tag)!;
     expect(host.shadowRoot!.querySelector("style")).not.toBeNull();
     expect(host.shadowRoot!.querySelector("link")).not.toBeNull();
-    defineElement(tag, blockHost, { props: [] });
+    defineElement(tag, blockHost, { props: {} });
     await tick();
     flush();
     await tick();

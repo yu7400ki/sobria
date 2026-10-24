@@ -152,7 +152,7 @@ describe("シェルの中の判定", () => {
     const Frame = defineElement(
       "x-err-frame",
       () => jsx(Loading, { fallback: "f", children: [jsx(slow.Slow, {}), jsx("slot", {})] }),
-      { props: ["children"] },
+      { props: { children: "slot" } },
     );
     vi.spyOn(console, "error").mockImplementation(() => {});
     const caught = renderToResponse(jsx(Frame, { children: slottedErrored(new Error("e")) }));

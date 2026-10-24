@@ -11,8 +11,7 @@ import { expectTypeOf, test } from "vitest";
 
 type DialogProps = { heading?: string; header?: Slot; children?: Slot };
 const Dialog = defineElement("type-jsx-dialog", (_props: DialogProps) => null, {
-  props: ["heading", "header", "children"],
-  slots: ["header"],
+  props: { heading: "unknown", header: "slot", children: "slot" },
 });
 
 function TextField(props: { label: string; ref?: (el: HTMLInputElement) => void }) {
@@ -122,7 +121,7 @@ test("Props の union のどれかのメンバーに ref がある関数は、�
 
 test("要素は、Props の型に記述していない name と disabled を受け付ける", () => {
   const Field = defineElement("type-field", (_props: { label?: string }) => null, {
-    props: ["label"],
+    props: { label: "unknown" },
   });
   void (<Field name="a" disabled label="x" />);
   // @ts-expect-error name は文字列である

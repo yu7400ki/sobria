@@ -97,7 +97,7 @@ describe("要素の中の境界", () => {
         const value = memo(() => promise);
         return jsx(Loading, { fallback: "wait", children: jsx("b", { children: () => value() }) });
       },
-      { props: [] },
+      { props: {} },
     );
     const reading = read(renderToStream(jsx(Card, {})));
     await tick();
@@ -116,7 +116,7 @@ describe("要素の中の境界", () => {
     const Container = defineElement(
       "x-container",
       () => jsx(Loading, { fallback: "wait", children: jsx("slot", {}) }),
-      { props: ["children"] },
+      { props: { children: "slot" } },
     );
     const Child = defineElement(
       "x-child",
@@ -124,7 +124,7 @@ describe("要素の中の境界", () => {
         const value = memo(() => promise);
         return jsx("i", { children: () => value() });
       },
-      { props: [] },
+      { props: {} },
     );
     const reading = read(renderToStream(jsx(Container, { children: jsx(Child, {}) })));
     await tick();
@@ -145,7 +145,7 @@ describe("スロットの内容の保留中のタグ", () => {
     const Container = defineElement(
       "x-wrap",
       () => jsx(Loading, { fallback: "wait", children: jsx("slot", {}) }),
-      { props: ["children"] },
+      { props: { children: "slot" } },
     );
     const value = createRoot(() => memo(() => promise));
     const reading = read(
@@ -176,7 +176,7 @@ function failing(error: unknown = new Error("e")) {
 describe("境界を待つホスト", () => {
   it("保留中でない境界は、ホストに待たせない", async () => {
     const Now = defineElement("x-now", () => jsx(Loading, { fallback: "f", children: "now" }), {
-      props: [],
+      props: {},
     });
     const html = (await read(renderToStream(jsx(Now, {})))).join("");
     expect(html).toContain(
@@ -193,7 +193,7 @@ describe("境界を待つホスト", () => {
         const value = memo(() => promise);
         return () => value() && jsx(Loading, { fallback: "f", children: jsx(slow.Slow, {}) });
       },
-      { props: [] },
+      { props: {} },
     );
     const reading = read(renderToStream(jsx(Later, {})));
     await tick();
@@ -216,7 +216,7 @@ describe("境界を待つホスト", () => {
           },
           children: "now",
         }),
-      { props: [] },
+      { props: {} },
     );
     const html = (await read(renderToStream(jsx(Unused, {})))).join("");
     expect(html).toContain('<x-unused data-oh="h1"><template shadowrootmode="open">now</template>');
@@ -229,7 +229,7 @@ describe("境界を待つホスト", () => {
     const Nested = defineElement(
       "x-nested",
       () => jsx(Loading, { fallback: "o", children: jsx(outer.Slow, {}) }),
-      { props: [] },
+      { props: {} },
     );
     const reading = read(renderToStream(jsx(Nested, {})));
     await tick();
@@ -252,7 +252,7 @@ describe("境界を待つホスト", () => {
     const Broken = defineElement(
       "x-broken",
       () => jsx(Loading, { fallback: "f", children: jsx(Fail, {}) }),
-      { props: [] },
+      { props: {} },
     );
     const reading = read(renderToStream(jsx(Broken, {})));
     await tick();
@@ -341,7 +341,7 @@ describe("境界の失敗と順序", () => {
     const Container = defineElement(
       "x-catch",
       () => jsx(Loading, { fallback: "wait", children: jsx("slot", {}) }),
-      { props: ["children"] },
+      { props: { children: "slot" } },
     );
     const reading = read(
       renderToStream(
@@ -357,11 +357,11 @@ describe("境界の失敗と順序", () => {
 
   it("内側の要素の Light DOM に渡した <slot> も、外側の要素の境界に登録する", async () => {
     const slow = deferred("late");
-    const Inner = defineElement("x-inner", () => jsx("slot", {}), { props: ["children"] });
+    const Inner = defineElement("x-inner", () => jsx("slot", {}), { props: { children: "slot" } });
     const Outer = defineElement(
       "x-outer",
       () => jsx(Loading, { fallback: "wait", children: jsx(Inner, { children: jsx("slot", {}) }) }),
-      { props: ["children"] },
+      { props: { children: "slot" } },
     );
     const stream = renderToStream(jsx(Outer, { children: jsx(slow.Slow, {}) }));
     const reader = stream.getReader();
@@ -382,7 +382,7 @@ describe("境界の失敗と順序", () => {
 
 describe("blocking と起動スクリプト", () => {
   it("blocking でも、要素があれば起動スクリプトを出力する", async () => {
-    const Plain = defineElement("x-plain", () => "p", { props: [] });
+    const Plain = defineElement("x-plain", () => "p", { props: {} });
     const html = (await read(renderToStream(jsx(Plain, {}), { blocking: true }))).join("");
     expect(html).toContain("window.$rinka");
   });
@@ -422,7 +422,7 @@ describe("出力の順序", () => {
     const Card = defineElement(
       "x-caught",
       () => jsx(Loading, { fallback: "f", children: jsx(slow.Slow, {}) }),
-      { props: [] },
+      { props: {} },
     );
     const reading = read(
       renderToStream(
@@ -452,7 +452,7 @@ describe("スロットの内容の中の境界", () => {
     const Frame = defineElement(
       "x-frame",
       () => jsx(Loading, { fallback: "f", children: [jsx(Fail, {}), jsx("slot", {})] }),
-      { props: ["children"] },
+      { props: { children: "slot" } },
     );
     const reading = read(
       renderToStream(

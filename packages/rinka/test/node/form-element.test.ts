@@ -20,7 +20,7 @@ const field = (tag: string, value: () => unknown) =>
       form.value(value as () => string);
       return jsx("button", { disabled: () => form.disabled() });
     },
-    { props: [], form: true },
+    { props: {}, form: true },
   );
 
 /** `value` に解決する非同期の memo を返す。 */
@@ -47,7 +47,7 @@ describe("SSR の ARIA 属性", () => {
       internals.ariaLabel = null;
       return null;
     },
-    { props: [] },
+    { props: {} },
   );
 
   it("internals に設定した role と aria* を、ホストの属性として出力し、名前を data-rinka-aria に列挙する", async () => {
@@ -63,7 +63,7 @@ describe("SSR の ARIA 属性", () => {
         internals.ariaLabel = "内側";
         return null;
       },
-      { props: [] },
+      { props: {} },
     );
     expect(await renderToString(jsx(Named, { "aria-label": undefined }))).toContain(
       'aria-label="内側" data-rinka-aria="aria-label"',
@@ -148,7 +148,7 @@ describe("フォームの部品の SSR", () => {
 
   it("<fieldset disabled> は、要素のスロットの内容と、入れ子の <fieldset> の中の部品を無効にし、最初の <legend> の中の部品は無効にしない", async () => {
     const Field = field("x-field-h", () => "a");
-    const Wrap = defineElement("x-wrap", () => jsx("slot", {}), { props: [] });
+    const Wrap = defineElement("x-wrap", () => jsx("slot", {}), { props: {} });
     const slotted = await renderToString(
       jsx("fieldset", {
         disabled: true,
@@ -179,7 +179,7 @@ describe("フォームの部品の SSR", () => {
         form.value(() => value());
         return jsx("button", { disabled: () => form.disabled() });
       },
-      { props: [], form: true },
+      { props: {}, form: true },
     );
     const Page = () => {
       const off = later(true);
@@ -212,7 +212,7 @@ describe("フォームの部品の SSR", () => {
         value = "後";
         return null;
       },
-      { props: [], form: true },
+      { props: {}, form: true },
     );
     expect(await renderToString(jsx(Field, { name: "n" }))).toContain('value="後"');
   });
@@ -226,7 +226,7 @@ describe("フォームの部品の SSR", () => {
 
   it("要素の Shadow DOM の中は、外側の <fieldset disabled> で無効にしない", async () => {
     const Field = field("x-field-g", () => "a");
-    const Wrapper = defineElement("x-wrapper", () => jsx(Field, { name: "n" }), { props: [] });
+    const Wrapper = defineElement("x-wrapper", () => jsx(Field, { name: "n" }), { props: {} });
     const html = await renderToString(
       jsx("fieldset", { disabled: true, children: jsx(Wrapper, {}) }),
     );
@@ -246,7 +246,7 @@ describe("フォームの部品の SSR", () => {
             call(form);
             return null;
           },
-          { props: [] },
+          { props: {} },
         );
         return expect(renderToString(jsx(Plain, {}))).rejects.toThrow(
           "フォームの部品として登録されていない",
@@ -327,7 +327,7 @@ describe("<label for> の補完", () => {
       await promise;
       return label({ id: "content" });
     };
-    const Wrap = defineElement("x-wrap-loading", () => jsx("slot", {}), { props: [] });
+    const Wrap = defineElement("x-wrap-loading", () => jsx("slot", {}), { props: {} });
     const loading = () =>
       jsx(Loading, {
         fallback: jsx("div", {
@@ -336,7 +336,7 @@ describe("<label for> の補完", () => {
         children: jsx(Slow, {}),
       });
     const Card = defineElement("x-card-loading", () => [jsx(Field, { id: "f" }), loading()], {
-      props: [],
+      props: {},
     });
     const stream = renderToStream(
       jsx("main", { children: [jsx(Field, { id: "f" }), loading(), jsx(Card, {})] }),
@@ -356,7 +356,7 @@ describe("<label for> の補完", () => {
       return null;
     };
     const Card = defineElement("x-card-fallback", () => [label({}), jsx(Field, { id: "f" })], {
-      props: [],
+      props: {},
     });
     const stream = renderToStream(
       jsx("main", { children: jsx(Loading, { fallback: jsx(Card, {}), children: jsx(Slow, {}) }) }),
@@ -369,7 +369,7 @@ describe("<label for> の補完", () => {
 
   it("<label> とホストが同じ tree scope にあるときだけ指す", async () => {
     const Card = defineElement("x-card-label", () => [label({}), jsx(Field, { id: "f" })], {
-      props: [],
+      props: {},
     });
     const html = await renderToString([label({ id: "outer" }), jsx(Card, {}), jsx(Card, {})]);
     expect(html).toContain('<x-labelled data-oh="h2" id="f" aria-labelledby="rinka-l1">');

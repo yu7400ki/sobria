@@ -25,7 +25,7 @@ function defineCard(showHeader: () => boolean = () => true) {
       jsxs("section", {
         children: [() => (showHeader() ? jsx("slot", { name: "header" }) : null), jsx("slot", {})],
       }),
-    { props: ["header", "children"], slots: ["header"] },
+    { props: { header: "slot", children: "slot" } },
   );
 }
 
@@ -78,7 +78,7 @@ function defineChild() {
       runs.count++;
       return jsx("i", { children: "child" });
     },
-    { props: [] },
+    { props: {} },
   );
   return { Child, runs };
 }
@@ -149,7 +149,7 @@ describe("スロットの owner", () => {
         onCleanup(() => cleanups++);
         return null;
       },
-      { props: [] },
+      { props: {} },
     );
     const [show, setShow] = signal(true);
     const Card = defineCard(show);
@@ -227,8 +227,8 @@ describe("スロットの owner", () => {
 
   it("スロットに配置した子要素の Shadow DOM の中で作成した要素は、外側のスロットを待たずに起動する", () => {
     const { Child: Grandchild, runs } = defineChild();
-    const Child = defineElement(nextTag(), () => jsx(Grandchild, {}), { props: [] });
-    const Inner = defineElement(nextTag(), () => null, { props: ["children"] });
+    const Child = defineElement(nextTag(), () => jsx(Grandchild, {}), { props: {} });
+    const Inner = defineElement(nextTag(), () => null, { props: { children: "slot" } });
     const Outer = defineElement(
       nextTag(),
       () =>
@@ -237,7 +237,7 @@ describe("スロットの owner", () => {
             return jsx("slot", {});
           },
         }),
-      { props: ["children"] },
+      { props: { children: "slot" } },
     );
     createRoot(() =>
       jsx(Outer, {
@@ -259,7 +259,7 @@ describe("スロットの owner", () => {
         version();
         return jsx("slot", {});
       },
-      { props: ["children"] },
+      { props: { children: "slot" } },
     );
     createRoot(() =>
       jsx(Card, {

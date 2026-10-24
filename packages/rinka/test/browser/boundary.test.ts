@@ -28,7 +28,7 @@ function definePending() {
       const value = memo(() => promise);
       return jsx("i", { children: () => value() });
     },
-    { props: [] },
+    { props: {} },
   );
   return { Pending, resolve };
 }
@@ -44,7 +44,7 @@ const defineCard = () =>
           return jsx("slot", {});
         },
       }),
-    { props: ["children"] },
+    { props: { children: "slot" } },
   );
 
 describe("Loading と Errored", () => {
@@ -111,7 +111,7 @@ describe("境界を探す規則", () => {
             return jsx(Pending, {});
           },
         }),
-      { props: [] },
+      { props: {} },
     );
     const el = createRoot(() => jsx(Parent, {})) as unknown as HTMLElement;
     document.body.append(el);
@@ -156,7 +156,7 @@ function defineThrowing(broken: () => boolean) {
           return "ok";
         },
       }),
-    { props: [] },
+    { props: {} },
   );
 }
 
@@ -170,7 +170,7 @@ function defineCounting() {
       onCleanup(() => counts.cleanups++);
       return jsx("i", { children: "ok" });
     },
-    { props: [] },
+    { props: {} },
   );
   return { Counting, counts };
 }
@@ -186,7 +186,7 @@ const defineGuard = (show: () => boolean = () => true, fallback = "failed") =>
           return () => (show() ? jsx("slot", {}) : null);
         },
       }),
-    { props: ["children"] },
+    { props: { children: "slot" } },
   );
 
 const tagOf = (component: { readonly [elementInfo]: { readonly tag: string } }) =>
@@ -274,7 +274,7 @@ describe("owner の無い場所で作成した要素の境界", () => {
     const Host = defineElement(
       nextTag(),
       () => () => (show() ? [jsx("slot", { name: "a" }), jsx("slot", { name: "b" })] : null),
-      { props: ["a", "b"], slots: ["a", "b"] },
+      { props: { a: "slot", b: "slot" } },
     );
     const { Counting, counts } = defineCounting();
     const [h, c] = [Host, Counting].map(tagOf);
@@ -308,7 +308,7 @@ describe("owner の無い場所で作成した要素の境界", () => {
   });
 
   it("起動した要素の Shadow DOM に DOM の API で追加した要素は、最上位の要素として、値が解決するまで何も描画しない", async () => {
-    const Host = defineElement(nextTag(), () => jsx("div", {}), { props: [] });
+    const Host = defineElement(nextTag(), () => jsx("div", {}), { props: {} });
     const { Pending, resolve } = definePending();
     const host = jsx(Host, {}) as unknown as HTMLElement;
     document.body.append(host);
@@ -334,7 +334,7 @@ describe("owner の無い場所で作成した要素の境界", () => {
         const value = memo(() => promise);
         return jsx("p", { children: ["[", () => value(), "]"] });
       },
-      { props: [] },
+      { props: {} },
     );
     const el = jsx(Top, {}) as unknown as HTMLElement;
     document.body.append(el);

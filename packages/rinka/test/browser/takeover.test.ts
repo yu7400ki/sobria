@@ -81,11 +81,11 @@ describe("値の引き継ぎ", () => {
       return Promise.resolve("ann");
     };
     const scripts = await serve(
-      server(defineServer(tag, viewWith(server, "", "t:1", fetch), { props: [] }), {}),
+      server(defineServer(tag, viewWith(server, "", "t:1", fetch), { props: {} }), {}),
     );
     scripts.forEach(run);
     fetched = 0;
-    defineClient(tag, viewWith(client, "", "t:1", fetch), { props: [] });
+    defineClient(tag, viewWith(client, "", "t:1", fetch), { props: {} });
     await tick();
     expect(html(document.querySelector(tag)?.shadowRoot)).toBe("<p> ann</p>");
     expect(fetched).toBe(0);
@@ -104,9 +104,9 @@ describe("値の引き継ぎ", () => {
       );
       return h("p", { children: () => value() });
     };
-    const scripts = await serve(server(defineServer(tag, view(server), { props: [] }), {}));
+    const scripts = await serve(server(defineServer(tag, view(server), { props: {} }), {}));
     scripts.forEach(run);
-    defineClient(tag, view(client), { props: [] });
+    defineClient(tag, view(client), { props: {} });
     await tick();
     const host = document.querySelector(tag);
     expect(html(host?.shadowRoot)).toBe("<p>v0</p>");
@@ -133,10 +133,10 @@ describe("値の引き継ぎ", () => {
         const direct = memo(fetch, { site: "t:11" });
         return [first, h("p", { children: () => direct() })];
       };
-      const scripts = await serve(server(defineServer(tag, view(server), { props: [] }), {}));
+      const scripts = await serve(server(defineServer(tag, view(server), { props: {} }), {}));
       scripts.forEach(run);
       fetched = 0;
-      defineClient(tag, view(client), { props: [] });
+      defineClient(tag, view(client), { props: {} });
       await tick();
       expect(html(document.querySelector(tag)?.shadowRoot)).toBe(`${expected}<p>direct</p>`);
       expect(fetched).toBe(0);
@@ -146,9 +146,9 @@ describe("値の引き継ぎ", () => {
   it("data-om の値がすべて届くまで起動しない", async () => {
     const tag = nextTag();
     const scripts = await serve(
-      server(defineServer(tag, viewWith(server, "server", "t:2", fetchAnn), { props: [] }), {}),
+      server(defineServer(tag, viewWith(server, "server", "t:2", fetchAnn), { props: {} }), {}),
     );
-    defineClient(tag, viewWith(client, "client", "t:2", fetchAnn), { props: [] });
+    defineClient(tag, viewWith(client, "client", "t:2", fetchAnn), { props: {} });
     await tick();
     const host = document.querySelector(tag);
     expect(html(host?.shadowRoot)).toBe("<p>server ann</p>");
@@ -161,7 +161,7 @@ describe("値の引き継ぎ", () => {
     const tag = nextTag();
     await serve(
       server(
-        defineServer(tag, () => server("p", { children: "ssr" }), { props: [] }),
+        defineServer(tag, () => server("p", { children: "ssr" }), { props: {} }),
         {},
       ),
     );
@@ -172,7 +172,7 @@ describe("値の引き継ぎ", () => {
         const value = memo(() => promise);
         return client("p", { children: () => value() });
       },
-      { props: [] },
+      { props: {} },
     );
     await tick();
     const host = document.querySelector(tag);
@@ -193,7 +193,7 @@ describe("値の引き継ぎ", () => {
             const view = viewWith(server, "", "t:3", () => Promise.reject(new Error("e")));
             return server(ServerLoading, { fallback: "", children: () => view() });
           },
-          { props: [] },
+          { props: {} },
         ),
         {},
       ),
@@ -206,7 +206,7 @@ describe("値の引き継ぎ", () => {
         fetched++;
         return Promise.resolve("again");
       }),
-      { props: [] },
+      { props: {} },
     );
     await tick();
     await tick();
@@ -218,10 +218,10 @@ describe("値の引き継ぎ", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const tag = nextTag();
     const scripts = await serve(
-      server(defineServer(tag, viewWith(server, "", "t:4", fetchAnn), { props: [] }), {}),
+      server(defineServer(tag, viewWith(server, "", "t:4", fetchAnn), { props: {} }), {}),
     );
     scripts.forEach(run);
-    defineClient(tag, viewWith(client, "", "t:other", fetchAnn), { props: [] });
+    defineClient(tag, viewWith(client, "", "t:other", fetchAnn), { props: {} });
     await tick();
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]?.[0])).toContain("t:4#0");
@@ -230,10 +230,12 @@ describe("値の引き継ぎ", () => {
   it("属性にできない props を、引き継いでプロパティに設定する", async () => {
     const tag = nextTag();
     const scripts = await serve(
-      server(defineServer(tag, dataView(server), { props: ["data"] }), { data: { name: "ann" } }),
+      server(defineServer(tag, dataView(server), { props: { data: "unknown" } }), {
+        data: { name: "ann" },
+      }),
     );
     scripts.forEach(run);
-    defineClient(tag, dataView(client), { props: ["data"] });
+    defineClient(tag, dataView(client), { props: { data: "unknown" } });
     await tick();
     const host = document.querySelector(tag) as (HTMLElement & { data?: unknown }) | null;
     expect(html(host?.shadowRoot)).toBe("<p>ann</p>");
@@ -246,22 +248,22 @@ describe("Shadow DOM の中の子要素", () => {
     const parentTag = nextTag();
     const childTag = nextTag();
     const childServer = defineServer(childTag, viewWith(server, "server", "t:5", fetchAnn), {
-      props: [],
+      props: {},
     });
     const scripts = await serve(
       server(
-        defineServer(parentTag, () => server(childServer, {}), { props: [] }),
+        defineServer(parentTag, () => server(childServer, {}), { props: {} }),
         {},
       ),
     );
     const childClient = defineClient(childTag, viewWith(client, "client", "t:5", fetchAnn), {
-      props: [],
+      props: {},
     });
     await tick();
     const ssrChild = document.querySelector(parentTag)?.shadowRoot?.querySelector(childTag);
     expect(html(ssrChild?.shadowRoot)).toBe("<p>server ann</p>");
     scripts.forEach(run);
-    defineClient(parentTag, () => client(childClient, {}), { props: [] });
+    defineClient(parentTag, () => client(childClient, {}), { props: {} });
     await tick();
     await tick();
     const child = document.querySelector(parentTag)?.shadowRoot?.querySelector(childTag);
@@ -275,11 +277,11 @@ describe("Shadow DOM の中の子要素（親の描画が保留中か、起動�
     const parentTag = nextTag();
     const childTag = nextTag();
     const childServer = defineServer(childTag, viewWith(server, "", "t:9", fetchAnn), {
-      props: [],
+      props: {},
     });
     const scripts = await serve(
       server(
-        defineServer(parentTag, () => server(childServer, {}), { props: [] }),
+        defineServer(parentTag, () => server(childServer, {}), { props: {} }),
         {},
       ),
     );
@@ -290,7 +292,7 @@ describe("Shadow DOM の中の子要素（親の描画が保留中か、起動�
         rendered++;
         return client("p", { children: "child" });
       },
-      { props: [] },
+      { props: {} },
     );
     const { promise, resolve } = Promise.withResolvers<string>();
     defineClient(
@@ -299,7 +301,7 @@ describe("Shadow DOM の中の子要素（親の描画が保留中か、起動�
         const pending = memo(() => promise);
         return [client("i", { children: () => pending() }), client(childClient, {})];
       },
-      { props: [] },
+      { props: {} },
     );
     await tick();
     scripts.forEach(run);
@@ -314,7 +316,7 @@ describe("Shadow DOM の中の子要素（親の描画が保留中か、起動�
     const childTag = nextTag();
     await serve(
       server(
-        defineServer(parentTag, () => server("p", { children: "ssr" }), { props: [] }),
+        defineServer(parentTag, () => server("p", { children: "ssr" }), { props: {} }),
         {},
       ),
     );
@@ -325,7 +327,7 @@ describe("Shadow DOM の中の子要素（親の描画が保留中か、起動�
         rendered++;
         return null;
       },
-      { props: [] },
+      { props: {} },
     );
     const { promise, resolve } = Promise.withResolvers<string>();
     defineClient(
@@ -334,7 +336,7 @@ describe("Shadow DOM の中の子要素（親の描画が保留中か、起動�
         const pending = memo(() => promise);
         return client("p", { children: () => pending() });
       },
-      { props: [] },
+      { props: {} },
     );
     await tick();
     const host = document.querySelector(parentTag);
@@ -354,7 +356,7 @@ describe("Shadow DOM の中の子要素（親の描画が保留中か、起動�
   it("最初の描画が保留中のまま起動し直した要素は、サーバーの値を引き継がずに計算する", async () => {
     const tag = nextTag();
     const scripts = await serve(
-      server(defineServer(tag, viewWith(server, "", "t:20", fetchAnn), { props: [] }), {}),
+      server(defineServer(tag, viewWith(server, "", "t:20", fetchAnn), { props: {} }), {}),
     );
     scripts.forEach(run);
     let fetched = 0;
@@ -370,7 +372,7 @@ describe("Shadow DOM の中の子要素（親の描画が保留中か、起動�
         const pending = memo(() => promise);
         return client("p", { children: () => `${value()} ${pending()}` });
       },
-      { props: [] },
+      { props: {} },
     );
     await tick();
     const host = document.querySelector(tag);
@@ -395,17 +397,17 @@ describe("入れ子の子要素の引き継ぎ", () => {
       if (!isSeeding()) fetched++;
       return Promise.resolve("ann");
     };
-    const childServer = defineServer(childTag, viewWith(server, "", "t:7", fetch), { props: [] });
+    const childServer = defineServer(childTag, viewWith(server, "", "t:7", fetch), { props: {} });
     const scripts = await serve(
       server(
-        defineServer(parentTag, () => server(childServer, {}, undefined, "p:1"), { props: [] }),
+        defineServer(parentTag, () => server(childServer, {}, undefined, "p:1"), { props: {} }),
         {},
       ),
     );
     scripts.forEach(run);
     fetched = 0;
-    const childClient = defineClient(childTag, viewWith(client, "", "t:7", fetch), { props: [] });
-    defineClient(parentTag, () => client(childClient, {}, undefined, "p:1"), { props: [] });
+    const childClient = defineClient(childTag, viewWith(client, "", "t:7", fetch), { props: {} });
+    defineClient(parentTag, () => client(childClient, {}, undefined, "p:1"), { props: {} });
     await tick();
     const child = document.querySelector(parentTag)?.shadowRoot?.querySelector(childTag);
     expect(html(child?.shadowRoot)).toBe("<p> ann</p>");
@@ -416,11 +418,11 @@ describe("入れ子の子要素の引き継ぎ", () => {
     const parentTag = nextTag();
     const childTag = nextTag();
     const childServer = defineServer(childTag, viewWith(server, "", "t:8", fetchAnn), {
-      props: [],
+      props: {},
     });
     const scripts = await serve(
       server(
-        defineServer(parentTag, () => server(childServer, {}, undefined, "p:2"), { props: [] }),
+        defineServer(parentTag, () => server(childServer, {}, undefined, "p:2"), { props: {} }),
         {},
       ),
     );
@@ -428,9 +430,9 @@ describe("入れ子の子要素の引き継ぎ", () => {
     const rest = scripts.filter((script) => !own.includes(script));
     own.forEach(run);
     const childClient = defineClient(childTag, viewWith(client, "client", "t:8", fetchAnn), {
-      props: [],
+      props: {},
     });
-    defineClient(parentTag, () => client(childClient, {}, undefined, "p:2"), { props: [] });
+    defineClient(parentTag, () => client(childClient, {}, undefined, "p:2"), { props: {} });
     await tick();
     const ssrChild = document.querySelector(parentTag)?.shadowRoot?.querySelector(childTag);
     expect(html(ssrChild?.shadowRoot)).toBe("<p> ann</p>");
@@ -445,20 +447,20 @@ describe("入れ子の子要素の引き継ぎ", () => {
     const parentTag = nextTag();
     const childTag = nextTag();
     const childServer = defineServer(childTag, viewWith(server, "", "t:12", fetchAnn), {
-      props: [],
+      props: {},
     });
     const scripts = await serve(
       server(
-        defineServer(parentTag, () => server(childServer, {}, undefined, "p:4"), { props: [] }),
+        defineServer(parentTag, () => server(childServer, {}, undefined, "p:4"), { props: {} }),
         {},
       ),
     );
     const mapping = scripts.filter((script) => script.includes("@c:"));
     const childValues = scripts.filter((script) => script.startsWith('$rinka.d("h2"'));
     const childClient = defineClient(childTag, viewWith(client, "client", "t:12", fetchAnn), {
-      props: [],
+      props: {},
     });
-    defineClient(parentTag, () => client(childClient, {}, undefined, "p:4"), { props: [] });
+    defineClient(parentTag, () => client(childClient, {}, undefined, "p:4"), { props: {} });
     await tick();
     mapping.forEach(run);
     await tick();

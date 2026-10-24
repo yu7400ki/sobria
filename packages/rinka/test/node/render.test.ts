@@ -112,7 +112,15 @@ type CardProps = {
 const Card = defineElement(
   "x-card",
   (props: CardProps) => jsx("p", { children: () => props.label }),
-  { props: ["label", "count", "data", "header", "children"], slots: ["header"] },
+  {
+    props: {
+      label: "unknown",
+      count: "unknown",
+      data: "unknown",
+      header: "slot",
+      children: "slot",
+    },
+  },
 );
 
 describe("要素の SSR", () => {
@@ -155,7 +163,7 @@ describe("要素の SSR", () => {
         const name = memo(() => Promise.resolve("ann"));
         return jsx("b", { title: () => name(), children: () => name() });
       },
-      { props: [] },
+      { props: {} },
     );
     expect(await renderToString(jsx(User, {}))).toBe(
       '<x-user data-oh="h1"><template shadowrootmode="open"><b title="ann">ann</b></template></x-user>',
@@ -163,7 +171,7 @@ describe("要素の SSR", () => {
   });
 
   it("要素の中の要素は、それぞれの ID のホストとして出力する", async () => {
-    const Outer = defineElement("x-outer", () => jsx(Card, { label: "in" }), { props: [] });
+    const Outer = defineElement("x-outer", () => jsx(Card, { label: "in" }), { props: {} });
     expect(await renderToString(jsx(Outer, {}))).toBe(
       '<x-outer data-oh="h1"><template shadowrootmode="open"><x-card data-oh="h2" label="in"><template shadowrootmode="open"><p>in</p></template></x-card></template></x-outer>',
     );
@@ -177,7 +185,7 @@ describe("要素の props とホストの属性", () => {
       jsx("p", {
         children: () => `${props.onSale ? "sale" : "normal"} ${typeof props.onPick} ${props.label}`,
       }),
-    { props: ["onSale", "onPick", "label"], functionProps: ["onPick"] },
+    { props: { onSale: "unknown", onPick: "function", label: "unknown" } },
   );
 
   it("ホストに渡した onX の関数は、呼び出さずに出力しない", async () => {
@@ -210,7 +218,7 @@ describe("要素の props とホストの属性", () => {
           },
         });
       },
-      { props: [] },
+      { props: {} },
     );
     expect(await renderToString(jsx(Outer, {}))).toBe(
       '<x-outer-pending data-oh="h1"><template shadowrootmode="open"><x-card data-oh="h2" label="ann"><template shadowrootmode="open"><p>ann</p></template></x-card></template></x-outer-pending>',
@@ -245,7 +253,7 @@ describe("要素の props とホストの属性", () => {
       );
       expect(html).toBe("failed: sync");
       await expect(renderToString([jsx(Async, {}), jsx(Sync, {})])).rejects.toThrow("sync");
-      const Boom = defineElement("x-boom", () => jsx(Sync, {}), { props: ["label"] });
+      const Boom = defineElement("x-boom", () => jsx(Sync, {}), { props: { label: "unknown" } });
       const Pending = defineElement(
         "x-pending-host",
         () => {
@@ -256,7 +264,7 @@ describe("要素の props とホストの属性", () => {
             },
           });
         },
-        { props: [] },
+        { props: {} },
       );
       expect(await renderToString(jsx(Errored, { fallback, children: jsx(Pending, {}) }))).toBe(
         "failed: sync",
@@ -279,7 +287,7 @@ describe("要素の外のイベントハンドラー", () => {
   const Clicker = defineElement(
     "x-clicker",
     () => jsx("button", { onClick: () => {}, children: "in" }),
-    { props: [] },
+    { props: {} },
   );
 
   it("要素の外のネイティブのタグに渡したイベントハンドラーは、開発時に警告し、要素の中では警告しない", async () => {
