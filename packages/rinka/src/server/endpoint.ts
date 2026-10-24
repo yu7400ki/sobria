@@ -11,6 +11,7 @@ import {
 import { rpcPrefix, rpcQuery, wireFormat, wireHeader, type RedirectJson } from "../shared/wire.ts";
 import { classify, isSafeLocation } from "./errors.ts";
 import { formDataToInput } from "./form-data.ts";
+import { handledMethod } from "./request.ts";
 import { definitionOf, runChain, SchemaError, type Definition } from "./server-fn.ts";
 import { fromRpcInput, toRpcBody } from "./wire.ts";
 
@@ -120,10 +121,6 @@ type Outcome =
 
 /** handler の結果の分類の名前である。 */
 export type OutcomeKind = Outcome["kind"];
-
-/** リクエスト `c` のメソッドを、HEAD を GET として扱って返す。 */
-export const handledMethod = (c: Context): string =>
-  c.req.method === "HEAD" ? "GET" : c.req.method;
 
 /** サーバー関数のエンドポイントへのリクエストの種類である。`form` はフォームの送信で、`rpc` はそれ以外である。 */
 type RequestKind = "rpc" | "form";

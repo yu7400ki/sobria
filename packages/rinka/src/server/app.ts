@@ -16,10 +16,11 @@ import {
 } from "../shared/routes.ts";
 import { isBot } from "./bots.ts";
 import { runInRequest, withContextHeaders } from "./context.ts";
-import { formRedirects, handledMethod, serverFnMiddleware, type Failure } from "./endpoint.ts";
+import { formRedirects, serverFnMiddleware, type Failure } from "./endpoint.ts";
 import { notFound } from "./errors.ts";
 import { stylesheetLink } from "./html.ts";
 import { jsx } from "./jsx-runtime.ts";
+import { handledMethod } from "./request.ts";
 import { renderDocument, renderRefresh } from "./response.ts";
 import { withDepth } from "./tree.ts";
 
