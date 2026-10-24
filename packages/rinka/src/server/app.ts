@@ -213,12 +213,20 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   const serverFns = serverFnMiddleware(options, failures);
   const rinka =
     middleware === undefined ? serverFns : every(root(lazy(middleware), failures), serverFns);
-  app.use(async (c, next) => {
-    if (prerenderKindOf(c.env) === "not-found") throw notFound();
-    await next();
-  });
   app.use(formRedirects);
-  app.use((c, next) => runInRequest(c, () => rinka(c, next)));
+  app.use((c, next) =>
+    runInRequest(c, () =>
+      rinka(
+        c,
+        prerenderKindOf(c.env) === "not-found"
+          ? async () => {
+              // 404.html の書き出しのリクエストでは、ルートのミドルウェアの後で not-found.tsx を描画する
+              c.res = await fail(c, notFound());
+            }
+          : next,
+      ),
+    ),
+  );
   for (const route of routes) register(app, route, respond, options.prerendered === true);
   app.notFound((c) => respond(c, jsx(missing, {}), {}, {}));
   return app;

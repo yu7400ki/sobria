@@ -106,7 +106,7 @@ describe("output: 'static'", () => {
     expect(existsSync(join(outDir, "server"))).toBe(false);
   }, 60_000);
 
-  it("ルートのキャッチオールのページがあっても、not-found.tsx を 404.html に保存する", async () => {
+  it("ルートのキャッチオールのページがあっても、ルートの middleware.ts を実行してから描画した not-found.tsx を 404.html に保存する", async () => {
     const copy = await copyFixture();
     await addFile(copy, "routes/[...slug]/page.tsx", [
       'export const prerender = () => [{ slug: "x/y" }];',
@@ -114,12 +114,24 @@ describe("output: 'static'", () => {
       "  return <h1>all</h1>;",
       "}",
     ]);
+    await addFile(copy, "routes/middleware.ts", [
+      "export default async (c, next) => {",
+      '  c.set("who", "mw");',
+      "  await next();",
+      "};",
+    ]);
+    await addFile(copy, "routes/layout.tsx", [
+      'import { getContext } from "rinka/server";',
+      "export default function Layout(props) {",
+      '  return <main data-who={String(getContext()?.get("who"))}>{props.children}</main>;',
+      "}",
+    ]);
     await buildFixture(copy, join(copy, "dist"), { output: "static" });
     expect(await readFile(join(copy, "dist/client/x/y/index.html"), "utf8")).toContain(
       "<h1>all</h1>",
     );
     expect(await readFile(join(copy, "dist/client/404.html"), "utf8")).toContain(
-      "<h1>missing</h1>",
+      '<main data-who="mw"><h1>missing</h1></main>',
     );
   }, 60_000);
 
