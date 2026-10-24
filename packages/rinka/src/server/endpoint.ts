@@ -11,7 +11,6 @@ import {
 } from "../shared/server-fn.ts";
 import {
   internalPrefix,
-  isRedirectJson,
   rpcPrefix,
   rpcQuery,
   wireFormat,
@@ -227,17 +226,18 @@ function unreachable(value: never): never {
 export type FetchPage = (c: Context, request: Request) => Response | Promise<Response>;
 
 /**
- * JS から呼び出したサーバー関数のレスポンスを、クライアントが反映する形にする Hono のミドルウェアを返す。対象は、RPC と、`x-rinka-page` を持つフォームの送信である。
- * 3xx で安全な `Location` を持つレスポンスは、`Location` の値を持つ `{ redirect }` の 200 の JSON に置換する。
- * GET 以外のリクエストで、`x-rinka-page` の URL が有効で、2xx の `{ ok }` か `{ s }` のとき、または `{ redirect }` の移動先（相対 URL は `x-rinka-page` の URL のオリジンで解決する）が hash を除いてその URL と一致するときは、`fetchPage` でそのページを描き直し、描き直しの JSON を `page` に含める。
+ * JS から呼び出したサーバー関数のレスポンスを、クライアントが反映する形にする Hono のミドルウェアを返す。対象は、`callerOf` が呼び出し元を返すリクエストである。
+ * 3xx で安全な `Location` を持つレスポンスは、`Location` の値を持つ `{ redirect }` の 200 の JSON に置換し、移動先（相対 URL は呼び出し元のページの URL のオリジンで解決する）が hash を除いて呼び出し元のページと一致するときは、そのページの描き直しを含める。
+ * それ以外のレスポンスは、呼び出し元のページがあり、`x-rinka-wire: rpc` を持つ 2xx（`{ ok }` か `{ s }`）のときに、ステータスを保って描き直しを含める。
+ * 描き直しは `fetchPage` で作成し、描き直しの JSON を `page` に含める。描き直しのレスポンスが JSON として読めなければ、`page` を含めない。
  * 描き直しのサブリクエストの `Cookie` は、サーバー関数のレスポンスの `Set-Cookie` を反映した値にし、描き直しのレスポンスの `Set-Cookie` はレスポンスに追加する。
- * 描き直しのレスポンスが JSON として読めなければ、`page` を含めない。
  */
 export function callerResponses(fetchPage: FetchPage): MiddlewareHandler {
   return async (c, next) => {
     await next();
     const caller = callerOf(c);
     if (caller === undefined) return;
+    const { page } = caller;
     const location = c.res.headers.get("location");
     if (
       location !== null &&
@@ -245,9 +245,11 @@ export function callerResponses(fetchPage: FetchPage): MiddlewareHandler {
       c.res.status < 400 &&
       isSafeLocation(location)
     ) {
-      replaceJson(c, { redirect: location } satisfies RedirectJson, c.res.headers, 200);
+      const body = { redirect: location } satisfies RedirectJson;
+      const same = page !== undefined && sameDocument(locationOf(location, c, page), page);
+      await replaceWithPage(c, body, same ? page : undefined, fetchPage, 200);
+      return;
     }
-    const { page } = caller;
     if (page === undefined || !c.res.ok || c.res.headers.get(wireHeader) !== wireFormat.rpc) {
       return;
     }
@@ -255,15 +257,31 @@ export function callerResponses(fetchPage: FetchPage): MiddlewareHandler {
       .clone()
       .json()
       .catch(() => undefined);
-    if (!isPlainObject(body) || !refreshes(c, body, page)) return;
-    const response = await fetchPage(c, pageRequest(c, page));
-    if (!(response.headers.get("content-type")?.startsWith("application/json") ?? false)) return;
-    const refreshed: unknown = await response.json().catch(() => undefined);
-    if (refreshed === undefined) return;
-    const headers = new Headers(c.res.headers);
-    for (const cookie of response.headers.getSetCookie()) headers.append("set-cookie", cookie);
-    replaceJson(c, { ...body, page: refreshed }, headers, c.res.status);
+    if (isPlainObject(body)) await replaceWithPage(c, body, page, fetchPage, c.res.status);
   };
+}
+
+/**
+ * `c` のレスポンスを、ステータスが `status` の `body` の JSON に置換する。
+ * `page` があれば、`fetchPage` でそのページを描き直し、描き直しの JSON を `page` に含め、描き直しのレスポンスの `Set-Cookie` を追加する。
+ */
+async function replaceWithPage(
+  c: Context,
+  body: object,
+  page: URL | undefined,
+  fetchPage: FetchPage,
+  status: number,
+): Promise<void> {
+  const response = page === undefined ? undefined : await fetchPage(c, pageRequest(c, page));
+  const json = response?.headers.get("content-type")?.startsWith("application/json") ?? false;
+  const refreshed: unknown = json ? await response?.json().catch(() => undefined) : undefined;
+  const headers = new Headers(c.res.headers);
+  if (response === undefined || refreshed === undefined) {
+    replaceJson(c, body, headers, status);
+    return;
+  }
+  for (const cookie of response.headers.getSetCookie()) headers.append("set-cookie", cookie);
+  replaceJson(c, { ...body, page: refreshed }, headers, status);
 }
 
 /** JS からサーバー関数を呼び出したリクエストの呼び出し元を表す。`page` は、描き直す呼び出し元のページの URL である。 */
@@ -285,12 +303,6 @@ export function callerOf(c: Context): Caller | undefined {
   const url = new URL(value);
   const local = url.host === new URL(c.req.url).host && !url.pathname.startsWith(internalPrefix);
   return { page: local ? url : undefined };
-}
-
-/** リクエスト `c` のレスポンスの本文 `body` に、ページ `page` の描き直しを含めるかどうかを返す。 */
-function refreshes(c: Context, body: object, page: URL): boolean {
-  if (isRedirectJson(body)) return sameDocument(locationOf(body.redirect, c, page), page);
-  return "ok" in body || "s" in body;
 }
 
 /** `a` と `b` が、hash を除いて同じ URL かどうかを返す。 */
