@@ -140,14 +140,11 @@ export default defineMiddleware(async (c, next) => {
 });
 ```
 
-適用する範囲は、ファイルの位置で異なります。
-
-- `src/routes/middleware.ts` は、サーバー関数の呼び出しとフォームの送信を含む、すべてのリクエストに適用します
-- ほかのディレクトリの `middleware.ts` は、その配下のページと `route.ts` と、配下の `not-found.tsx` を存在しない URL に返すときにも適用します。サーバー関数の呼び出しには適用しません
+この `middleware.ts` は、`/admin` の配下のページに適用します。ファイルの位置ごとの適用する範囲は、[`middleware`](/reference/files#middleware) に記述しています。
 
 ミドルウェアが Response を返すと、ページの代わりにその Response を返します。`redirect()` を投げるとリダイレクトのレスポンスになり、`notFound()` を投げると `not-found.tsx` を 404 で返します。ミドルウェアが `c.set` で設定した値を、ページで参照する方法は [ページとデータ](/guide/pages-and-data) で説明します。
 
-ミドルウェアか `route.ts` が `notFound()` を投げたときは、存在しない URL のときと異なり、`not-found.tsx` のディレクトリの `middleware.ts` を実行せずに `not-found.tsx` を描画します。そのため、`not-found.tsx` を包むレイアウトは、ディレクトリの `middleware.ts` が設定する値が無くても描画できるように記述します。
+ミドルウェアか `route.ts` が `notFound()` を投げたときは、`not-found.tsx` のディレクトリの `middleware.ts` を実行しません（[`middleware`](/reference/files#middleware)）。そのため、`not-found.tsx` を包むレイアウトは、ディレクトリの `middleware.ts` が設定する値が無くても描画できるように記述します。
 
 ## not-found と error のページ
 
@@ -176,13 +173,9 @@ export default function ErrorPage(props: { error: unknown }) {
 
 どちらのページも、ページと同じく `params` と `url` を props で受け取り、ルートからそのファイルのディレクトリまでのレイアウトで包まれます。`error.tsx` を使用したときは、投げられた値をサーバーのログに出力します。
 
-使用するファイルは、次の規則で選択します。
+`not-found.tsx` と `error.tsx` は、ディレクトリごとに配置できます。例えば、存在しない URL の `/users/x/y` には、`src/routes/users/not-found.tsx` があればそれを使用します。使用するファイルを選択する規則と、ファイルが無いときのレスポンスは、[`not-found` と `error`](/reference/files#not-found-と-error) に記述しています。
 
-- ページが投げた `notFound()` とエラーには、ページのディレクトリか、その祖先のディレクトリのうち、最も近いディレクトリのファイルを使用します
-- 存在しない URL には、URL の先頭から区切りが一致するディレクトリのうち、最も深いディレクトリの `not-found.tsx` を使用します。例えば `/users/x/y` には、`src/routes/users/not-found.tsx` があればそれを使用します
-- 該当するファイルが無いときは、404 では `Not Found` のテキストを返します。500 では、本番は `Internal Server Error` のテキストを返し、開発中は Vite のエラーのオーバーレイを表示する HTML を返します
-
-`error.tsx` は、フォームの送信先のサーバー関数が失敗したときにも使用します。このリクエストには、ルートの `middleware.ts` だけを適用し、`error.tsx` のディレクトリの `middleware.ts` を実行しません。そのため、`error.tsx` を包むレイアウトは、ディレクトリの `middleware.ts` が設定する値が無くても描画できるように記述します。
+`error.tsx` は、フォームの送信先のサーバー関数が失敗したときにも使用します。このときは、`error.tsx` のディレクトリの `middleware.ts` を実行しません（[`middleware`](/reference/files#middleware)）。そのため、`error.tsx` を包むレイアウトは、ディレクトリの `middleware.ts` が設定する値が無くても描画できるように記述します。
 
 ## `<head>` への出力
 

@@ -97,7 +97,7 @@ export default function SearchBox() {
 
 `<Errored>` は、内側で投げられたエラーと、非同期の memo の失敗を捕捉して、`fallback` を表示します。`fallback` に関数を渡すと、エラーと、内側を作り直す `retry` を引数に受け取ります。
 
-サーバーで描画するときは、`<Loading>` の内側を後から送ることがあります。後から送る内側の失敗を捕捉するのは、その `<Loading>` の内側にある `<Errored>` だけなので、次の例のように `<Errored>` を `<Loading>` の内側に配置します。要素の JSX に記述した `<Errored>` も、ページの `<Errored>` と同じく、サーバーでシェルの中のエラーを捕捉すると、レスポンスのステータスは 500 になります（[ページとデータ](/guide/pages-and-data)）。
+サーバーで描画するときは、`<Loading>` の内側を後から送信することがあります。後から送信する内側の失敗を捕捉するには、次の例のように `<Errored>` を `<Loading>` の内側に配置します。サーバーで描画するときに `<Errored>` が捕捉する範囲と、レスポンスのステータスは、[ページとデータ](/guide/pages-and-data#errored) に記述しています。
 
 ```tsx
 // src/elements/user-card.tsx

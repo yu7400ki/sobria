@@ -48,27 +48,13 @@ props は `props.label` のように読みます。読み取りは追跡され�
 
 ### 属性で受け取る props
 
-型が `string`、`number`、`boolean` の props は、属性でも受け取ります。サーバーで描画した HTML では、これらの props は属性として出力されます。`"small" | "large"` のように、同じ種類のリテラルの合併型も、その種類の型として扱います。
+型が `string`、`number`、`boolean` の props は、属性でも受け取ります。属性の値は、Props の型に変換します。Props の型ごとの受け取り方と変換の規則は [props の型と受け取り方](/reference/jsx#props-の型と受け取り方) に、属性の名前の決まり方は [props の名前と属性の名前](/reference/jsx#props-の名前と属性の名前) に記述しています。
 
-属性の値は、Props の型に従って変換します。
-
-| props の型 | 属性の値から変換した値                                     |
-| ---------- | ---------------------------------------------------------- |
-| `string`   | 属性の値の文字列                                           |
-| `number`   | 属性の値を `Number` で変換した数値                         |
-| `boolean`  | 属性の値が `false` の文字列なら `false`、それ以外は `true` |
-
-属性を削除すると、props の値は `undefined` になります。`string | number` のように種類を 1 つに決められない型と、別のファイルから import した型の props は、属性の値を文字列のまま受け取ります。関数、配列、オブジェクトの型の props は、プロパティでだけ受け取ります。
-
-ページから boolean の props に `false` を渡すと、サーバーで描画した HTML には属性が出力されません。このとき、サーバーで要素の関数を実行するときは props が `false` で、ブラウザで要素が起動した後は props が `undefined` になります。そのため、`props.open ?? true` のようなデフォルトの値を記述すると、サーバーとブラウザで値が異なります。boolean の props には、省略したときに `false` として扱える名前を付けます。例えば、省略したときに開いた状態で表示するなら、`open` の代わりに `collapsed` を props にします。
-
-関数とオブジェクトの props の型は、型リテラルか、同じファイルで宣言した type や interface で記述します。別のファイルから import した型で宣言した props は、関数の props として扱われません。この props に関数を渡すと、要素が受け取る props の値は、その関数を呼び出した戻り値になります。これらの props は、名前が `on` と大文字で始まっても、イベントになりません。
-
-属性名は、props の名前を kebab-case にした名前です。例えば、`userId` の属性名は `user-id`、`imageURL` の属性名は `image-url` です。
+ページから boolean の props に `false` を渡すと、サーバーで描画するときの props の値は `false` で、ブラウザで要素が起動した後の props の値は `undefined` になります（[サーバーコンポーネントから渡す値](/reference/jsx#サーバーコンポーネントから渡す値)）。そのため、`props.open ?? true` のようなデフォルトの値を記述すると、サーバーとブラウザで値が異なります。boolean の props には、省略したときに `false` として扱える名前を付けます。例えば、省略したときに開いた状態で表示するなら、`open` の代わりに `collapsed` を props にします。
 
 ### props にできない名前
 
-`title`、`id`、`class`、`hidden` のように、HTML の要素で意味を持つ名前は、props の名前にできません。props はホストの属性とプロパティにもなるので、ブラウザの動作と衝突するからです。`HTMLElement` のプロパティとメソッドの名前（`remove`、`focus` など）も使用できません。`ariaLabel` や `dataSource` のように、`aria` か `data` の後に大文字が続く名前も使用できません。これらの名前を Props の型に記述すると、ビルドのエラーになります。エラーのメッセージには、名前が使用できない理由と、代わりの名前の例が表示されます。`userId` と `userID` のように、kebab-case にすると同じ属性名になる 2 つの名前も、ビルドのエラーになります。
+`title`、`id`、`class`、`hidden` のように、HTML の要素で意味を持つ名前は、props の名前にできません。使用できない名前の一覧は、[props にできない名前](/reference/jsx#props-にできない名前) に記述しています。
 
 Props の型を `Props<T>` で包むと、使用できない名前をエディタで型エラーとして確認できます。
 
@@ -83,7 +69,7 @@ type CardProps = Props<{
 }>;
 ```
 
-要素の Props の型には、`ref` と `key` という名前と、`load:` で始まる名前を記述できません。これらの名前は rinka が使用します。`load:` で始まる名前は、要素を起動するタイミングを指定します（[読み込みと値の受け渡し](/guide/loading)）。
+`ref`、`key`、`load:*` は rinka が使用する props なので、要素の Props の型に記述できません（[Props の型に記述しなくても受け付ける props](/reference/jsx#props-の型に記述しなくても受け付ける-props)）。`load:*` は、要素を起動するタイミングを指定します（[読み込みと値の受け渡し](/guide/loading)）。
 
 ### ホストの属性
 
@@ -94,11 +80,11 @@ Props の型に無い属性（`id`、`class`、`aria-*`、`data-*` など）を�
 <Stepper label="数" id="stepper" class="wide" />
 ```
 
-要素の中の JSX では、Props の型に無い DOM の標準のイベントの名前（`onClick` など）に関数を渡すと、ホストのイベントリスナーになります。イベント名は、`on` の後の部分を小文字にした名前です。Props の型に無く、DOM の標準のイベントにも無い名前（`onLikeClick` など）を要素のタグに記述すると、型エラーになります。ページの JSX では、Props の型に無い `onClick` は型エラーになります。
+要素の中の JSX では、Props の型に無い `onClick` のような DOM の標準のイベントの名前に関数を渡すと、ホストのイベントリスナーになります。ホストに記述できる属性とイベントの名前は、[Props の型に記述しなくても受け付ける props](/reference/jsx#props-の型に記述しなくても受け付ける-props) に記述しています。
 
 ### サーバーから渡す値
 
-ページから要素に渡した props は、HTML に埋め込んでブラウザに送信します。ページから関数の props に渡せるのは、サーバー関数だけです（[サーバー関数](/guide/server-functions)）。
+ページから要素に渡した props は、HTML に埋め込んでブラウザに送信します。送信できる値と、送信できずにエラーになる値は、[サーバーコンポーネントから渡す値](/reference/jsx#サーバーコンポーネントから渡す値) に記述しています。
 
 ## イベント
 
@@ -124,7 +110,7 @@ export default function LikeButton(props: Props) {
 }
 ```
 
-イベント名は、`on` の後の部分を kebab-case にした名前です。例えば、`onLike` のイベント名は `like`、`onLikeClick` のイベント名は `like-click` です。イベントの `detail` は、props を呼んだときの最初の引数です。イベントは Shadow DOM の外までバブリングします。
+`onLike` のイベント名は `like` で、イベントの `detail` は props を呼んだときの最初の引数です。イベント名の決まり方と、JSX で関数を渡したときの動作は、[関数の props とイベント](/reference/jsx#関数の-props-とイベント) に記述しています。
 
 ```ts
 // rinka を使用しないページの JS
@@ -133,7 +119,7 @@ document.querySelector("rinka-like-button").addEventListener("like", (e) => {
 });
 ```
 
-JSX で `onLike` に関数を渡すと、要素はその関数を呼び、イベントは発行しません。要素の側では、関数が渡されたかどうかを判別できません。`onLike` の型は省略可能なので、`props.onLike?.(next)` のように呼び出します。
+`onLike` の型は省略可能なので、要素では `props.onLike?.(next)` のように呼び出します。
 
 ## children とスロット
 
@@ -345,19 +331,7 @@ export default function Badge(props: { label: string; children?: JSX.Element }) 
 
 ## タグ名
 
-タグ名は、接頭辞と、`src/elements/` からのファイルのパスから決定します。接頭辞のデフォルトは `rinka` です。
-
-| ファイル                            | タグ名                    |
-| ----------------------------------- | ------------------------- |
-| `src/elements/like-button.tsx`      | `rinka-like-button`       |
-| `src/elements/forms/DatePicker.tsx` | `rinka-forms-date-picker` |
-| `src/elements/forms/index.tsx`      | `rinka-forms`             |
-
-ディレクトリの名前もタグ名に含め、パスの区切りを `-` で連結します。ファイル名の camelCase と PascalCase は kebab-case に変換します。`index` のファイルは、ディレクトリの名前になります。次のファイルはビルドのエラーになります。
-
-- `src/elements/` の直下の `index` のファイル
-- 英数字、`-`、`_` 以外の文字を名前に含むファイル
-- 別のファイルと同じタグ名になるファイル（`forms/date-picker.tsx` と `forms-date-picker.tsx` など）
+タグ名は、接頭辞と、`src/elements/` からのファイルのパスから決定します。例えば、`src/elements/forms/DatePicker.tsx` のタグ名は `rinka-forms-date-picker` です。タグ名の決まり方と、ビルドのエラーになるファイルは、[タグ名](/reference/files#タグ名) に記述しています。
 
 接頭辞と、要素を配置するディレクトリは、Vite プラグインの `prefix` と `elementsDir` で変更できます。
 

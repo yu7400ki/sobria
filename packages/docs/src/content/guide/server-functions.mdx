@@ -231,7 +231,7 @@ export const deletePost = defineServerFn({ input: z.number() })(auth, async (c, 
 
 ミドルウェアが `next()` を呼び出さずに Response を返すと、handler を実行せずに、その Response を返します。`basicAuth()` のような Hono のミドルウェアも、そのまま列挙できます。
 
-ルートの `src/routes/middleware.ts` は、サーバー関数のリクエストにも適用します。`src/routes/` の配下のディレクトリにある `middleware.ts` は、サーバー関数には適用しません。例えば、`src/routes/admin/middleware.ts` で保護しているページが呼び出すサーバー関数にも、サーバー関数のミドルウェアで認可を設定してください。
+`src/routes/` の配下のディレクトリにある `middleware.ts` は、サーバー関数には適用しません（[`middleware`](/reference/files#middleware)）。例えば、`src/routes/admin/middleware.ts` で保護しているページが呼び出すサーバー関数にも、サーバー関数のミドルウェアで認可を設定してください。
 
 ## 別のオリジンからのリクエスト
 

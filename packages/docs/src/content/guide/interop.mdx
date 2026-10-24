@@ -6,7 +6,7 @@ rinka の要素は Web 標準の Custom Element なので、rinka のアプリ�
 
 ## タグとして使用する
 
-外部からは、要素をタグとして使用します。タグ名の決まり方は、[要素](/guide/elements) の「タグ名」の節で説明します。例えば、Vite プラグインの設定を `prefix: "acme"` にすると、`src/elements/counter.tsx` の要素のタグは `<acme-counter>` になります。
+外部からは、要素をタグとして使用します。タグ名の決まり方は、[タグ名](/reference/files#タグ名) に記述しています。例えば、Vite プラグインの設定を `prefix: "acme"` にすると、`src/elements/counter.tsx` の要素のタグは `<acme-counter>` になります。
 
 次の要素を例にします。
 
@@ -22,9 +22,9 @@ export default function Counter(props: Props) {
 }
 ```
 
-要素は、Props の型で宣言した props のうち、スロットを除くすべての props について、同じ名前のプロパティを持ちます。プロパティに値を設定すると、要素はその値を props として受け取ります。`string`、`number`、`boolean` の props は、属性でも受け取ります。
+要素のプロパティに値を設定すると、要素はその値を props として受け取ります。props をプロパティと属性のどちらで受け取るかは、[props の型と受け取り方](/reference/jsx#props-の型と受け取り方) に記述しています。
 
-名前が `onX` の形の関数の props に使用する側が関数を渡していなければ、要素は、その props を呼んだときに `CustomEvent` を発行します。イベント名は、`on` の後の部分をハイフンで区切った小文字の名前です。`onLikeClick` のイベント名は `like-click` で、イベントの `detail` は props を呼んだときの最初の引数です。
+名前が `onX` の形の関数の props に使用する側が関数を渡していなければ、要素は、その props を呼んだときに `CustomEvent` を発行します。例えば、`onLikeClick` のイベント名は `like-click` で、イベントの `detail` は props を呼んだときの最初の引数です。イベント名の決まり方は、[関数の props とイベント](/reference/jsx#関数の-props-とイベント) に記述しています。
 
 ```js
 const counter = document.querySelector("acme-counter");
