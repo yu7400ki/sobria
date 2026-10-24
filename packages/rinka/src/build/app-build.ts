@@ -89,6 +89,7 @@ export function appBuild({ options, settings }: SceneContext): {
                   [SERVER_ENTRY_NAME]: file === undefined ? entries.app : join(root, file),
                   ...(scope !== undefined && { [PRERENDER_ENTRY_NAME]: entries.prerender }),
                 },
+                output: { entryFileNames: "[name].js" },
               },
             },
           },
@@ -127,6 +128,11 @@ export function appBuild({ options, settings }: SceneContext): {
       id === virtualId(entries.prerender) && scope !== undefined ? prerenderModule(scope) : null,
     generateBundle(_output, bundle) {
       embedRouteStyles(bundle, settings().root);
+      this.emitFile({
+        type: "asset",
+        fileName: "package.json",
+        source: `${JSON.stringify({ type: "module" })}\n`,
+      });
     },
     writeBundle(_output, bundle) {
       const { clientDir, serverDir } = settings();

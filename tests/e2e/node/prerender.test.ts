@@ -41,7 +41,6 @@ describe("登録した拡張子のページの書き出し", () => {
   it("prerender を export するページを書き出し、export しないページはサーバーのエントリーが描画する", async () => {
     const project = await temporary();
     const files = {
-      "package.json": JSON.stringify({ type: "module" }),
       "src/routes/layout.page":
         "@page\nexport default function Layout(props: { children?: unknown }) { return <main>{props.children}</main>; }\n",
       "src/routes/page.page":
@@ -71,7 +70,6 @@ describe("登録した拡張子のページの書き出し", () => {
   it("書き出す URL が無ければ、ビルドの中でサーバーのエントリーを読み込まない", async () => {
     const project = await temporary();
     const files = {
-      "package.json": JSON.stringify({ type: "module" }),
       "src/server.ts":
         'import app from "rinka/app";\nReflect.set(globalThis, "rinkaEntryLoaded", true);\nexport default app;\n',
       "src/routes/page.page": "@page\nexport default function Page() { return <h1>home</h1>; }\n",
@@ -85,6 +83,36 @@ describe("登録した拡張子のページの書き出し", () => {
     await buildFixture(project, join(project, "dist"), { extensions: [".page"] }, [pagePlugin]);
     expect(Reflect.get(globalThis, "rinkaEntryLoaded")).toBeUndefined();
     expect(existsSync(join(project, "dist/client/index.html"))).toBe(false);
+  }, 60_000);
+});
+
+describe("type が commonjs のアプリのビルド", () => {
+  it("サーバーのエントリーを entry.js にし、ES モジュールとして読み込めるようにする", async () => {
+    const project = await temporary();
+    const files = {
+      "package.json": JSON.stringify({ type: "commonjs" }),
+      "src/routes/page.tsx":
+        "export const prerender = true;\nexport default function Page() { return <h1>home</h1>; }\n",
+      "src/routes/dynamic/page.tsx":
+        "export default function Dynamic() { return <h1>dynamic</h1>; }\n",
+    };
+    await Promise.all(
+      Object.entries(files).map(async ([file, source]) => {
+        await mkdir(dirname(join(project, file)), { recursive: true });
+        await writeFile(join(project, file), source);
+      }),
+    );
+    const outDir = join(project, "dist");
+    await buildFixture(project, outDir);
+    expect(await readFile(join(outDir, "client/index.html"), "utf8")).toContain("<h1>home</h1>");
+    expect(JSON.parse(await readFile(join(outDir, "server/package.json"), "utf8"))).toEqual({
+      type: "module",
+    });
+    const module = (await import(pathToFileURL(join(outDir, "server/entry.js")).href)) as {
+      default: App;
+    };
+    const response = await module.default.fetch(new Request("http://localhost/dynamic"));
+    expect(await response.text()).toContain("<h1>dynamic</h1>");
   }, 60_000);
 });
 
