@@ -61,7 +61,7 @@ const isCssType = ({ key, value }: ESTree.ImportAttribute): boolean =>
   (key.type === "Identifier" ? key.name : key.value) === "type" && value.value === "css";
 
 /** `?inline` の指定子 `inline` の CSS から作成したシートを default export し、CSS が更新されたら同じシートを差し替える、クライアントのシートのモジュールのコードを返す。 */
-export function clientSheetModule(inline: string): string {
+function clientSheetModule(inline: string): string {
   const specifier = JSON.stringify(inline);
   return `${importInternal("client", "createSheet", "updateSheet")}
 import css from ${specifier};
@@ -76,7 +76,7 @@ export default sheet;
 }
 
 /** `?inline` の指定子 `inline` の CSS と、`<link>` に出力する URL `href` から作成したシートの情報を default export する、サーバーのシートのモジュールのコードを返す。 */
-export function serverSheetModule(inline: string, href: string): string {
+function serverSheetModule(inline: string, href: string): string {
   return `${importInternal("server", "serverSheet")}
 import css from ${JSON.stringify(inline)};
 export default serverSheet(${JSON.stringify(href)}, css);
@@ -84,7 +84,7 @@ export default serverSheet(${JSON.stringify(href)}, css);
 }
 
 /** ライブラリのビルドで、`?inline` の指定子 `inline` の CSS から作成したシートを default export する、クライアントのシートのモジュールのコードを返す。 */
-export function librarySheetModule(inline: string): string {
+function librarySheetModule(inline: string): string {
   return `${importInternal("client", "createSheet")}
 import css from ${JSON.stringify(inline)};
 export default createSheet(css);
@@ -92,7 +92,7 @@ export default createSheet(css);
 }
 
 /** 本番のビルドで、`?url` の指定子 `url` の CSS を fetch して作成したシートを default export する、クライアントのシートのモジュールのコードを返す。 */
-export function clientBuildSheetModule(url: string): string {
+function clientBuildSheetModule(url: string): string {
   return `${importInternal("client", "loadSheet")}
 import url from ${JSON.stringify(url)};
 export default await loadSheet(url);
@@ -100,7 +100,7 @@ export default await loadSheet(url);
 }
 
 /** 本番のビルドで、`?url` の指定子 `url` の URL と、`?inline` の指定子 `inline` の CSS から作成したシートの情報を default export する、サーバーのシートのモジュールのコードを返す。 */
-export function serverBuildSheetModule(url: string, inline: string): string {
+function serverBuildSheetModule(url: string, inline: string): string {
   return `${importInternal("server", "serverSheet")}
 import href from ${JSON.stringify(url)};
 import css from ${JSON.stringify(inline)};

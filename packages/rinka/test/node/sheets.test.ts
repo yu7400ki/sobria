@@ -2,12 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { CompileError, transformSource } from "../../src/build/compiler.ts";
 import { devPath, directUrl } from "../../src/build/paths.ts";
-import {
-  clientBuildSheetModule,
-  clientSheetModule,
-  serverBuildSheetModule,
-  serverSheetModule,
-} from "../../src/build/sheets.ts";
+import { sheetModule } from "../../src/build/sheets.ts";
 import { serverSheet, sheetInfo } from "../../src/server/styles.ts";
 
 /** `.ts` のモジュール `src/lib/a.ts` として `code` を変換したコードを返す。 */
@@ -46,7 +41,7 @@ describe("with { type: 'css' } の書き換え", () => {
 
 describe("シートのモジュール", () => {
   it("クライアントのモジュールは、?inline の CSS からシートを作成して default export し、?inline の更新で同じシートを差し替える", () => {
-    const code = clientSheetModule("/src/a b.css?inline");
+    const code = sheetModule("/src/a b.css", "serve", true);
     expect(code).toContain('import { createSheet, updateSheet } from "rinka/internal";');
     expect(code).toContain('import css from "/src/a b.css?inline";');
     expect(code).toContain("const sheet = createSheet(css);");
@@ -56,7 +51,7 @@ describe("シートのモジュール", () => {
   });
 
   it("サーバーのモジュールは、<link> の URL と ?inline の CSS からシートの情報を作成して default export する", () => {
-    const code = serverSheetModule("/src/a.css?inline", "/src/a.css?direct");
+    const code = sheetModule("/src/a.css", "serve", false);
     expect(code).toContain('import { serverSheet } from "rinka/internal";');
     expect(code).toContain('export default serverSheet("/src/a.css?direct", css);');
     expect(code).not.toContain("rinka.sheet");
@@ -65,17 +60,27 @@ describe("シートのモジュール", () => {
 
 describe("本番のシートのモジュール", () => {
   it("クライアントのモジュールは、?url の CSS を fetch して作成したシートを default export する", () => {
-    const code = clientBuildSheetModule("/src/a.css?url");
+    const code = sheetModule("/src/a.css", "app", true);
     expect(code).toContain('import { loadSheet } from "rinka/internal";');
     expect(code).toContain('import url from "/src/a.css?url";');
     expect(code).toContain("export default await loadSheet(url);");
   });
 
   it("サーバーのモジュールは、?url の URL と ?inline の CSS からシートの情報を作成する", () => {
-    const code = serverBuildSheetModule("/src/a.css?url", "/src/a.css?inline");
+    const code = sheetModule("/src/a.css", "app", false);
     expect(code).toContain('import href from "/src/a.css?url";');
     expect(code).toContain('import css from "/src/a.css?inline";');
     expect(code).toContain("export default serverSheet(href, css);");
+  });
+});
+
+describe("ライブラリのビルドのシートのモジュール", () => {
+  it("?inline の CSS から作成したシートを default export し、HMR のコードを含まない", () => {
+    const code = sheetModule("/src/a.css", "library", true);
+    expect(code).toContain(`import { createSheet } from "rinka/internal";`);
+    expect(code).toContain(`import css from "/src/a.css?inline";`);
+    expect(code).toContain("export default createSheet(css);");
+    expect(code).not.toContain("import.meta.hot");
   });
 });
 
