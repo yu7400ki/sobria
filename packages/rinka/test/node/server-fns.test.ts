@@ -40,6 +40,8 @@ describe("サーバー関数を定義できるファイル", () => {
       "src/.server/b.ts":
         'import { defineServerFn } from "rinka/server";\nexport const b = defineServerFn(() => 1);\n',
       "src/lib/plain.ts": "export const defineServerFn = 1;\n",
+      "src/lib/middleware.ts":
+        'import { defineMiddleware } from "rinka/server";\n// defineServerFn\nexport const m = defineMiddleware(async (_c, next) => next());\n',
       "test/c.ts":
         'import { defineServerFn } from "rinka/server";\nexport const c = defineServerFn(() => 1);\n',
     };

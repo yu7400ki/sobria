@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { extname, join, posix } from "node:path";
 
-import { langs } from "./ast.ts";
-import { transformSource } from "./compiler.ts";
+import { langs, parseModule } from "./ast.ts";
 import { relativePath } from "./paths.ts";
+import { findDefinitions } from "./server-fn-transform.ts";
 
 /** サーバー関数を定義できるファイルを置く、アプリのルートからの相対パスのディレクトリである。 */
 const SERVER_FN_DIR = "src";
@@ -36,8 +36,9 @@ export function serverFnModules(root: string): string[] {
       const code = readFileSync(path, "utf8");
       if (!code.includes("defineServerFn")) continue;
       const lang = langs[extname(file)]!;
-      const { serverFns } = transformSource(code, { id: path, file, lang, client: false });
-      if (serverFns.length > 0) modules.push(file);
+      const program = parseModule(code, { id: path, file, lang });
+      const definitions = findDefinitions(program, file, file);
+      if (definitions.some((definition) => definition.kind === "serverFn")) modules.push(file);
     }
   };
   const start = join(root, SERVER_FN_DIR);
