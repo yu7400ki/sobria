@@ -3,6 +3,8 @@ import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { getRequestListener } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
+import { Hono } from "hono";
 import type { Environment, Plugin, RunnableDevEnvironment } from "vite";
 
 import { reloadEvent } from "../shared/hmr.ts";
@@ -59,11 +61,23 @@ export function serve({ settings, writeTypes }: ServeContext): Plugin {
         : null,
     configurePreviewServer(server) {
       return () => {
-        const entry = pathToFileURL(join(settings().serverDir, `${SERVER_ENTRY_NAME}.js`)).href;
-        server.middlewares.use(
+        const { serverDir, clientDir } = settings();
+        const entry = pathToFileURL(join(serverDir, `${SERVER_ENTRY_NAME}.js`)).href;
+        // 本番の Node のサーバーと同じく、書き出したページをサーバーのエントリーより先に返す
+        const statics = new Hono().use(serveStatic({ root: clientDir }));
+        const load = async (): Promise<ServerModule> => {
           // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-          entryMiddleware(() => import(entry) as Promise<ServerModule>, { forwardErrors: false }),
-        );
+          const { default: app } = (await import(entry)) as ServerModule;
+          return {
+            default: {
+              fetch: async (request) => {
+                const found = await statics.fetch(request);
+                return found.status === 404 ? app.fetch(request) : found;
+              },
+            },
+          };
+        };
+        server.middlewares.use(entryMiddleware(load, { forwardErrors: false }));
       };
     },
     resolveId: (id) => (id.startsWith(STYLES) ? id : null),

@@ -4,10 +4,17 @@ import { join } from "node:path";
 import type { Plugin } from "vite";
 
 import { embedRouteStyles, moveServerAssets } from "./build-styles.ts";
-import { entries, serverImports } from "./entries.ts";
+import { entries, serverImports, virtualId } from "./entries.ts";
 import { serverEntry } from "./entry.ts";
 import { readClientAssets, type ClientAssets } from "./manifest.ts";
 import { packageOf } from "./package.ts";
+import {
+  PRERENDER_ENTRY_NAME,
+  prerenderModule,
+  prerenderFiles,
+  writePrerendered,
+  type PrerenderScope,
+} from "./prerender.ts";
 import {
   SERVER_ENTRY_NAME,
   isClient,
@@ -27,6 +34,8 @@ export function appBuild({ options, settings }: SceneContext): {
 } {
   /** クライアントのビルドの manifest から作成した関数である。 */
   let clientAssets: ClientAssets | undefined;
+  /** 書き出すルートの範囲である。書き出すルートが無ければ `undefined` である。 */
+  let scope: PrerenderScope | undefined;
   const elementAssets: ClientAssets = (file) => {
     if (clientAssets === undefined) {
       throw new Error(
@@ -44,6 +53,8 @@ export function appBuild({ options, settings }: SceneContext): {
     config: () => {
       const { root, clientDir, serverDir, elements } = settings();
       const file = serverEntry(root);
+      const files = prerenderFiles(root);
+      scope = files.size > 0 ? files : undefined;
       return {
         environments: {
           client: {
@@ -63,7 +74,10 @@ export function appBuild({ options, settings }: SceneContext): {
               outDir: serverDir,
               emitAssets: true,
               rolldownOptions: {
-                input: { [SERVER_ENTRY_NAME]: file === undefined ? entries.app : join(root, file) },
+                input: {
+                  [SERVER_ENTRY_NAME]: file === undefined ? entries.app : join(root, file),
+                  ...(scope !== undefined && { [PRERENDER_ENTRY_NAME]: entries.prerender }),
+                },
               },
             },
           },
@@ -72,6 +86,8 @@ export function appBuild({ options, settings }: SceneContext): {
           buildApp: async (builder) => {
             await builder.build(builder.environments.client!);
             await builder.build(builder.environments.ssr!);
+            const { clientDir: client, serverDir: server } = settings();
+            if (scope !== undefined) await writePrerendered(server, client);
           },
         },
       };
@@ -87,6 +103,9 @@ export function appBuild({ options, settings }: SceneContext): {
     buildStart() {
       clientAssets = readClientAssets(settings().clientDir);
     },
+    resolveId: (id) => (id === entries.prerender ? virtualId(id) : null),
+    load: (id) =>
+      id === virtualId(entries.prerender) && scope !== undefined ? prerenderModule(scope) : null,
     generateBundle(_output, bundle) {
       embedRouteStyles(bundle, settings().root);
     },

@@ -1,6 +1,6 @@
 import type { UserConfig } from "vite";
 
-/** rinka の入口の指定子である。`routes`、`app`、`styles`、`noElements` はプラグインが作成する仮想モジュールである。 */
+/** rinka の入口の指定子である。`routes`、`app`、`prerender`、`styles`、`noElements` はプラグインが作成する仮想モジュールである。 */
 export const entries = {
   main: "rinka",
   jsxRuntime: "rinka/jsx-runtime",
@@ -8,6 +8,7 @@ export const entries = {
   server: "rinka/server",
   routes: "rinka/routes",
   app: "rinka/app",
+  prerender: "rinka/prerender",
   styles: "rinka/styles",
   noElements: "rinka/no-elements",
   router: "rinka/router",
@@ -25,6 +26,7 @@ export const internalNames = {
     "devErrorResponse",
     "defineElement",
     "serverFnModule",
+    "prerenderTargets",
   ],
 } as const;
 
