@@ -634,7 +634,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   private navigation(props: NavigationProps, ctx: WalkCtx, out: Chunk[]): void {
     if (!this.hoists) return;
     const { head } = ctx;
-    if (head !== "all" && head !== "auto") {
+    if (!inShell(head)) {
       this.warnOutside("Navigation", head, "反映しません");
       return;
     }
