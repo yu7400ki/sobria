@@ -1,4 +1,4 @@
-import { cssText, isTemplate, propertiesOf, type ElementCss } from "../shared/styles.ts";
+import { cssText, isTemplate, type ElementCss } from "../shared/styles.ts";
 
 /** 埋め込む値の無いタグ付きテンプレートから作成したシートを、テンプレートごとに保持する。 */
 const templateSheets = new WeakMap<TemplateStringsArray, CSSStyleSheet>();
@@ -23,34 +23,20 @@ function templateSheet(
   return sheet;
 }
 
-/** ドキュメントに登録した `@property` の規則の組である。 */
-const registered = new Set<string>();
-
-/** URL `url` の CSS を取得してシートを作成し、CSS の `@property` の規則をドキュメントに登録する。 */
+/** URL `url` の CSS を取得してシートを作成する。 */
 export async function loadSheet(url: string): Promise<CSSStyleSheet> {
   const response = await fetch(url);
   return createSheet(await response.text());
 }
 
-/** Vite が処理した CSS `css` からシートを作成し、CSS の `@property` の規則をドキュメントに登録する。 */
+/** Vite が処理した CSS `css` からシートを作成する。 */
 export function createSheet(css: string): CSSStyleSheet {
   const sheet = new CSSStyleSheet();
   updateSheet(sheet, css);
   return sheet;
 }
 
-/** シート `sheet` の中身を CSS `css` に差し替え、CSS の `@property` の規則をドキュメントに登録する。 */
+/** シート `sheet` の中身を CSS `css` に差し替える。 */
 export function updateSheet(sheet: CSSStyleSheet, css: string): void {
-  registerProperties(css);
   sheet.replaceSync(css);
-}
-
-/** CSS `css` に含まれる `@property` の規則を、ドキュメントのシートとして登録する。同じ CSS から抽出した規則の組は、1 回だけ登録する。 */
-function registerProperties(css: string): void {
-  const properties = propertiesOf(css);
-  if (properties === "" || registered.has(properties)) return;
-  registered.add(properties);
-  const sheet = new CSSStyleSheet();
-  sheet.replaceSync(properties);
-  document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
 }

@@ -140,20 +140,10 @@ describe("ctx の css", () => {
 });
 
 describe("クライアントのシート", () => {
-  it("createSheet と updateSheet は、CSS をシートにし、@property の規則をドキュメントに登録する", () => {
-    const sheet = createSheet(
-      '.a { color: red; }\n@property --created { syntax: "<length>"; inherits: false; initial-value: 1px; }',
-    );
-    expect([...sheet.cssRules].map((rule) => rule.cssText)).toContain(".a { color: red; }");
-    updateSheet(
-      sheet,
-      '.b { color: blue; }\n@property --updated { syntax: "<length>"; inherits: false; initial-value: 2px; }',
-    );
-    expect(sheet.cssRules[0]!.cssText).toBe(".b { color: blue; }");
-    const registered = document.adoptedStyleSheets.flatMap((adopted) =>
-      [...adopted.cssRules].map((rule) => rule.cssText),
-    );
-    expect(registered.some((text) => text.includes("--created"))).toBe(true);
-    expect(registered.some((text) => text.includes("--updated"))).toBe(true);
+  it("createSheet と updateSheet は、CSS をシートにする", () => {
+    const sheet = createSheet(".a { color: red; }");
+    expect([...sheet.cssRules].map((rule) => rule.cssText)).toEqual([".a { color: red; }"]);
+    updateSheet(sheet, ".b { color: blue; }");
+    expect([...sheet.cssRules].map((rule) => rule.cssText)).toEqual([".b { color: blue; }"]);
   });
 });
