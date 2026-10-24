@@ -98,4 +98,57 @@ describe("toTsx", () => {
   it("小文字で始まるタグは、HTML として解析されるのでエラーにする", async () => {
     await expect(tsx("<aside>a</aside>")).rejects.toThrow("大文字で始まるコンポーネント");
   });
+
+  it("コードブロックより後のノードのエラーは、色付けのエラーより先に投げる", async () => {
+    await expect(tsx("```foo\nx\n```\n\n<aside>a</aside>")).rejects.toThrow("HTML として解析");
+  });
+
+  it("番号を付けた ID が別の見出しの ID と同じなら、番号を進める", async () => {
+    const code = await tsx("## a\n\n## a-1\n\n## a");
+    expect(code).toContain('<h2 id={"a-1"}>{"a-1"}</h2><h2 id={"a-2"}>{"a"}</h2>');
+  });
+
+  it("ID にできる文字の無い見出しには、section の ID を付ける", async () => {
+    expect(await body("## !!!\n\n## ???")).toBe(
+      '<h2 id={"section"}>{"!!!"}</h2><h2 id={"section-1"}>{"???"}</h2>',
+    );
+  });
+
+  it("見出しの画像の alt を ID と目次に含め、前後の空白を除く", async () => {
+    expect(await tsx("## ![図](/a.png) 説明 ")).toContain(
+      'export const toc = [{"depth":2,"id":"図-説明","text":"図 説明"}];',
+    );
+  });
+
+  it("チェックの無いタスクのチェックボックスには、checked を付けない", async () => {
+    expect(await body("- [ ] a")).toBe(
+      '<ul><li><input type="checkbox" disabled />{" "}{"a"}</li></ul>',
+    );
+  });
+
+  it("空けたリストのタスクのチェックボックスは、最初の段落の中に置く", async () => {
+    expect(await body("- [ ] a\n\n- [x] b")).toBe(
+      '<ul><li><p><input type="checkbox" disabled />{" "}{"a"}</p></li><li><p><input type="checkbox" checked disabled />{" "}{"b"}</p></li></ul>',
+    );
+  });
+
+  it("揃え方を指定しない列には、style を付けない", async () => {
+    expect(await body("| a | b |\n|---|:-:|\n| 1 | 2 |")).toBe(
+      '<table><thead><tr><th>{"a"}</th><th style={"text-align: center"}>{"b"}</th></tr></thead><tbody><tr><td>{"1"}</td><td style={"text-align: center"}>{"2"}</td></tr></tbody></table>',
+    );
+  });
+
+  it("複数のコードブロックを、記述した順に色付けの結果に置き換える", async () => {
+    const code = await body("```ts\na\n```\n\n```js\nb\n```");
+    expect(code.indexOf('code={"a"} lang={"ts"}')).toBeGreaterThan(-1);
+    expect(code.indexOf('code={"b"} lang={"js"}')).toBeGreaterThan(code.indexOf('code={"a"}'));
+  });
+
+  it("参照形式のリンクを、定義の URL へのリンクにする", async () => {
+    expect(await body("[a][b]\n\n[b]: /x")).toBe('<p><a href={"/x"}>{"a"}</a></p>');
+  });
+
+  it("ESM の export default は、エラーにする", async () => {
+    await expect(tsx("export default 1")).rejects.toThrow("export default");
+  });
 });

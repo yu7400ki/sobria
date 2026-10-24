@@ -2,11 +2,26 @@
 title: 見本
 ---
 
-import { label } from "./label.ts";
+import { label, Note, rest } from "./label.ts";
 
 ## 見出し
 
-本文の **強調** {label}
+本文の **強調** {label}  
+改行 ![図](/a.png "画像")
+
+<Note title="注記" {...rest} open>
+  中身
+</Note>
+
+| a   | b   |
+| :-- | --- |
+| 1   | 2   |
+
+3. 三
+4. 四
+
+- [ ] 未完了
+- [x] 完了
 
 ```ts
 const a = 1;
