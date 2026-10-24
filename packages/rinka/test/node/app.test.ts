@@ -9,6 +9,7 @@ import { notFound, redirect } from "../../src/server/errors.ts";
 import { createApp, registerServerFn } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
+import { prerenderEnv } from "../../src/shared/prerender.ts";
 import type {
   Fallback,
   Fallbacks,
@@ -233,6 +234,15 @@ describe("createApp のページ", () => {
       await request(routes, "/?blocking=0", { headers: { "user-agent": "Googlebot/2.1" } }),
     );
     expect(bot).toContain("<p>wait</p>");
+  });
+
+  it("書き出しのリクエストには、setBlockingRender の値にかかわらず、すべての <Loading> の中身を待った HTML を返す", async () => {
+    const app = createApp({ routes: [pageRoute("/", view, [], [choose])] });
+    const html = await bodyOf(
+      await app.fetch(new Request("http://localhost/?blocking=0"), { [prerenderEnv]: true }),
+    );
+    expect(html).toContain("<p>done</p>");
+    expect(html).not.toContain("$rinka");
   });
 });
 

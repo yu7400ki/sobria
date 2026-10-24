@@ -1,6 +1,7 @@
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { every } from "hono/combine";
 
+import { isPrerenderEnv } from "../shared/prerender.ts";
 import { REFRESH_HEADER } from "../shared/refresh.ts";
 import {
   routeMethods,
@@ -155,7 +156,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     const head = `${options.head ?? ""}${styles.map(stylesheetLink).join("")}`;
     const response = await renderDocument(node, {
       ...pages,
-      blocking: blockingRenderOf(c) ?? isBot(c.req.header("user-agent")),
+      blocking: isPrerenderEnv(c.env) || (blockingRenderOf(c) ?? isBot(c.req.header("user-agent"))),
       ...(head !== "" && { head }),
     });
     return withContextHeaders(c, response);
@@ -166,7 +167,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
    * `redirect()` と `HTTPException` は、そのレスポンスを返す。`notFound()` は、URL に一致する `not-found.tsx` のページを 404 で返す。そのほかの値は `onError` に渡す。
    */
   const fail = async (
-    c: Pick<Context, "req" | "newResponse">,
+    c: Pick<Context, "req" | "newResponse" | "env">,
     error: unknown,
   ): Promise<Response> => {
     const thrown = classify(error);
@@ -221,7 +222,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
  * `fallbacks` の `not-found.tsx` と `error.tsx` には、`props` を渡す。
  */
 type Respond = (
-  c: Pick<Context, "req" | "newResponse">,
+  c: Pick<Context, "req" | "newResponse" | "env">,
   node: unknown,
   fallbacks: Fallbacks,
   props: object,
