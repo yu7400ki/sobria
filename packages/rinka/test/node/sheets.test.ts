@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CompileError, transformSource } from "../../src/build/compiler.ts";
 import { devPath, directUrl } from "../../src/build/paths.ts";
 import { sheetModule } from "../../src/build/sheets.ts";
-import { serverSheet, sheetInfo } from "../../src/server/styles.ts";
+import { serverSheet, sheetHref } from "../../src/server/styles.ts";
 
 /** `.ts` のモジュール `src/lib/a.ts` として `code` を変換したコードを返す。 */
 const transform = (code: string, client: boolean) =>
@@ -96,6 +96,6 @@ describe("開発サーバーのパスと URL", () => {
 
 describe("サーバーのシート", () => {
   it("<link> に出力する URL を、シートの情報に持つ", () => {
-    expect(Reflect.get(serverSheet("/a.css?direct"), sheetInfo)).toEqual({ href: "/a.css?direct" });
+    expect(Reflect.get(serverSheet("/a.css?direct"), sheetHref)).toBe("/a.css?direct");
   });
 });

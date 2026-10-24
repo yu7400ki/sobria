@@ -1,22 +1,17 @@
 import { cssText, isTemplate, type ElementCss } from "../shared/styles.ts";
 import { stylesheetLink } from "./html.ts";
 
-/** サーバーで ctx の `css` に渡すシートが、`<link>` に出力する情報を持つプロパティのキーである。 */
-export const sheetInfo = Symbol.for("rinka.sheet");
-
-/** サーバーのシートが持つ、`<link>` に出力する CSS の URL である。 */
-export interface SheetInfo {
-  readonly href: string;
-}
+/** サーバーで ctx の `css` に渡すシートが、`<link>` に出力する CSS の URL を持つプロパティのキーである。 */
+export const sheetHref = Symbol.for("rinka.sheet");
 
 /** サーバーで ctx の `css` に渡すシートを表す。 */
 export interface ServerSheet {
-  readonly [sheetInfo]: SheetInfo;
+  readonly [sheetHref]: string;
 }
 
 /** `<link>` に出力する URL `href` から、サーバーで ctx の `css` に渡すシートを作成する。 */
 export function serverSheet(href: string): ServerSheet {
-  return { [sheetInfo]: { href } };
+  return { [sheetHref]: href };
 }
 
 /**
@@ -29,7 +24,7 @@ export function elementCss(styles: string[]): ElementCss {
       styles.push(styleTag(cssText(input, values)));
       return;
     }
-    styles.push(stylesheetLink(sheetOf(input).href));
+    styles.push(stylesheetLink(hrefOf(input)));
   };
 }
 
@@ -37,16 +32,15 @@ export function elementCss(styles: string[]): ElementCss {
 const styleTag = (css: string): string =>
   `<style>${css.replaceAll(/<\/(style)/gi, "<\\/$1")}</style>`;
 
-/** サーバーのシート `sheet` の情報を返す。Vite プラグインが生成したシートでなければ、エラーを投げる。 */
-function sheetOf(sheet: CSSStyleSheet): SheetInfo {
-  const info: unknown = Reflect.get(sheet, sheetInfo);
-  if (info === undefined) {
+/** サーバーのシート `sheet` の、`<link>` に出力する CSS の URL を返す。Vite プラグインが生成したシートでなければ、エラーを投げる。 */
+function hrefOf(sheet: CSSStyleSheet): string {
+  const href: unknown = Reflect.get(sheet, sheetHref);
+  if (typeof href !== "string") {
     throw new Error(
       "[rinka] サーバーで css に渡せるシートは、with { type: 'css' } で import した CSS だけです。",
     );
   }
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-  return info as SheetInfo;
+  return href;
 }
 
 /** ルートのファイルごとの CSS の URL の一覧から、ページのルートのファイルの CSS の URL を、同じ URL を 1 回だけ含めて返す関数を作成する。 */
