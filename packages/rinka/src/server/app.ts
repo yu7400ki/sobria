@@ -1,7 +1,7 @@
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { every } from "hono/combine";
 
-import { prerenderKindOf } from "../shared/prerender.ts";
+import { prerenderKindOf, type Output } from "../shared/prerender.ts";
 import { REFRESH_HEADER } from "../shared/refresh.ts";
 import {
   routeMethods,
@@ -227,7 +227,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
       ),
     ),
   );
-  for (const route of routes) register(app, route, respond, options.prerendered === true);
+  for (const route of routes) register(app, route, respond, options.output ?? "server");
   app.notFound((c) => respond(c, jsx(missing, {}), {}, {}));
   return app;
 }) satisfies CreateApp;
@@ -246,17 +246,17 @@ type Respond = (
 
 /**
  * `route` を、ディレクトリのミドルウェアの後に `app` に登録する。
- * `prerendered` が真なら、パラメータのあるページのリクエストのパラメータが、そのページの `prerender` が返すパラメータに無いときに、`notFound()` を投げる。
+ * `output` が `static` なら、パラメータのあるページのリクエストのパラメータが、そのページの `prerender` が返すパラメータに無いときに、`notFound()` を投げる。
  */
-function register(app: Hono, route: Route, respond: Respond, prerendered: boolean): void {
+function register(app: Hono, route: Route, respond: Respond, output: Output): void {
   const directory = every(...route.middlewares.map(lazy));
   switch (route.kind) {
     case "page":
       app.get(route.path, directory, async (c) => {
-        if (prerendered) {
+        if (output === "static") {
           const list = await prerenderParams(route);
           const params: Readonly<Record<string, string>> = c.req.param();
-          const listed = list?.some((values) =>
+          const listed = list?.some(({ values }) =>
             Object.entries(values).every(([name, value]) => params[name] === value),
           );
           if (listed === false) throw notFound();

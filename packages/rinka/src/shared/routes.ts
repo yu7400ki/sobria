@@ -1,5 +1,7 @@
 import type { Handler, MiddlewareHandler } from "hono";
 
+import type { Output } from "./prerender.ts";
+
 /** ルートのファイルの種類を表す。 */
 export type RouteKind = "page" | "route" | "not-found";
 
@@ -9,8 +11,11 @@ export const routeMethods = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 /** `route.ts` が export できる HTTP メソッドを表す。 */
 export type RouteMethod = (typeof routeMethods)[number];
 
-/** モジュールを読み込み、その default export を返す関数を表す。`file` は、Vite プラグインが作成したルートの表で、モジュールのファイルのプロジェクトのルートからのパスである。 */
-export type Load<T> = (() => Promise<{ readonly default: T }>) & { readonly file: string };
+/** モジュールを読み込む関数を表す。`file` は、Vite プラグインが作成したルートの表で、モジュールのファイルのプロジェクトのルートからのパスである。 */
+export type Loader<T> = (() => Promise<T>) & { readonly file: string };
+
+/** モジュールを読み込み、その default export を返す関数を表す。 */
+export type Load<T> = Loader<{ readonly default: T }>;
 
 /** ページ、レイアウト、エラーのページのコンポーネントを表す。 */
 export type RouteComponent = (props: never) => unknown;
@@ -29,7 +34,7 @@ export type RouteFiles = Files<unknown, unknown, unknown>;
 export type LoadedFiles = Files<
   Load<RouteComponent>,
   Load<MiddlewareHandler>,
-  (() => Promise<Partial<Readonly<Record<RouteMethod, Handler>>>>) & { readonly file: string }
+  Loader<Partial<Readonly<Record<RouteMethod, Handler>>>>
 >;
 
 /** エラーのページと、外側から順に列挙した、そのディレクトリのレイアウトを表す。 */
@@ -139,8 +144,8 @@ export interface AppOptions {
   readonly trustedOrigins?: readonly string[];
   /** サーバー関数のリクエストごとに ID を受け取り、その ID のサーバー関数の定義を読み込めたら真を返す。偽を返した ID のリクエストには 404 を返す。 */
   readonly loadServerFn?: (id: string) => Promise<boolean>;
-  /** `true` なら、パラメータのあるページのリクエストのパラメータが、そのページの `prerender` が返すパラメータに無いときに、`notFound()` と同じ 404 を返す。 */
-  readonly prerendered?: true;
+  /** `static` なら、パラメータのあるページのリクエストのパラメータが、そのページの `prerender` が返すパラメータに無いときに、`notFound()` と同じ 404 を返す。 */
+  readonly output?: Output;
 }
 
 /** ルートの表から、各ページを描画するアプリを作成する関数を表す。 */

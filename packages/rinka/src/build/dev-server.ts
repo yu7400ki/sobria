@@ -32,11 +32,7 @@ const VITE_CLIENT = '<script type="module" src="/@vite/client"></script>';
  * 開発中の `rinka/app` のコードを返す。アプリは、Vite のクライアントを読み込み、
  * サーバーコンポーネントの CSS の一覧を `rinka/styles` から読み込み、エラーを Vite のエラーのオーバーレイで表示する。
  */
-export const devAppModule = ({
-  serverFns,
-  trustedOrigins,
-  prerendered,
-}: AppModuleOptions & { readonly prerendered: boolean }): string =>
+export const devAppModule = ({ serverFns, trustedOrigins, output }: AppModuleOptions): string =>
   appCode(
     ["createApp", "serverFnLoader", "devErrorResponse"],
     [
@@ -44,7 +40,7 @@ export const devAppModule = ({
       `  styles: async (files) => (await import(${JSON.stringify(STYLES_URL)} + encodeURIComponent(JSON.stringify(files)))).default,`,
       "  onError: devErrorResponse,",
       `  loadServerFn: ${serverFnLoaderCode(serverFns)},`,
-      ...(prerendered ? ["  prerendered: true,"] : []),
+      ...(output === "static" ? ['  output: "static",'] : []),
     ],
     trustedOrigins,
   );

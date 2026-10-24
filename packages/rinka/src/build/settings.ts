@@ -2,6 +2,7 @@ import { join, resolve } from "node:path";
 
 import { normalizePath, type EnvironmentOptions } from "vite";
 
+import type { Output } from "../shared/prerender.ts";
 import { scanElements, type ElementFile, type ElementSource } from "./elements.ts";
 import { findLibraries, type Library } from "./libraries.ts";
 
@@ -23,7 +24,7 @@ export interface RinkaOptions {
    * `'static'` なら、`vite build --app` ですべてのページを書き出し、サーバーのビルドの出力を削除する。
    * サーバーが必要なルートとサーバー関数があれば、ビルドのエラーにする。デフォルトは `'server'` である。
    */
-  readonly output?: "server" | "static";
+  readonly output?: Output;
 }
 
 /** 要素のタグ名の接頭辞のデフォルト値である。 */
@@ -49,6 +50,8 @@ export interface Settings {
   readonly clientDir: string;
   /** アプリのサーバーのビルドの出力先である。 */
   readonly serverDir: string;
+  /** プラグインの設定の `output` に、デフォルト値を補った値である。 */
+  readonly output: Output;
   readonly scene: Scene;
   /** TSX のソースの形のライブラリである。 */
   readonly libraries: readonly Library[];
@@ -79,6 +82,7 @@ export function settingsOf(
     elementsDir,
     clientDir: options.library ? outDir : join(outDir, "client"),
     serverDir: join(outDir, "server"),
+    output: options.output ?? "server",
     scene: sceneOf(command, options),
     libraries,
     sources,

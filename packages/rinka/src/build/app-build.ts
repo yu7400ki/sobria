@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import type { Plugin } from "vite";
 
+import type { PrerenderScope } from "../shared/prerender.ts";
 import { embedRouteStyles, moveServerAssets } from "./build-styles.ts";
 import { entries, serverImports, virtualId } from "./entries.ts";
 import { serverEntry } from "./entry.ts";
@@ -13,7 +14,6 @@ import {
   prerenderModule,
   prerenderFiles,
   writePrerendered,
-  type PrerenderScope,
 } from "./prerender.ts";
 import { serverFnModules } from "./server-fns.ts";
 import {
@@ -54,17 +54,17 @@ export function appBuild({ options, settings }: SceneContext): {
     config: () => {
       const { root, clientDir, serverDir, elements } = settings();
       const file = serverEntry(root);
-      if (options.output === "static") {
+      if (settings().output === "static") {
         const serverFns = serverFnModules(root);
         if (serverFns.length > 0) {
           throw new Error(
             `[rinka] output: 'static' のアプリでは、サーバー関数を定義できません。サーバー関数を定義したファイル: ${serverFns.join("、")}`,
           );
         }
-        scope = "all";
+        scope = { output: "static" };
       } else {
         const files = prerenderFiles(root);
-        scope = files.size > 0 ? files : undefined;
+        scope = files.length > 0 ? { output: "server", files } : undefined;
       }
       return {
         environments: {
@@ -99,7 +99,7 @@ export function appBuild({ options, settings }: SceneContext): {
             await builder.build(builder.environments.ssr!);
             const { clientDir: client, serverDir: server } = settings();
             if (scope !== undefined) {
-              await writePrerendered(server, client, options.output === "static");
+              await writePrerendered(server, client, scope.output);
             }
           },
         },

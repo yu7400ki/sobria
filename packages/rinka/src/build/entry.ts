@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import type { Output } from "../shared/prerender.ts";
 import { entries, importInternal, type internalNames } from "./entries.ts";
 
 /** `rinka/app` の中で、ビルドの最後にルートのファイルごとの CSS の一覧に置き換える文字列である。 */
@@ -20,6 +21,8 @@ export interface AppModuleOptions {
   readonly serverFns: ReadonlyMap<string, string>;
   /** 別のサイトからでも受け付けるオリジンである。 */
   readonly trustedOrigins: readonly string[];
+  /** プラグインの設定の `output` である。開発中の `rinka/app` だけが参照する。 */
+  readonly output: Output;
 }
 
 /** `serverFns` のモジュールを読み込む `serverFnLoader` の呼び出しの式を返す。 */
@@ -53,7 +56,10 @@ export function appCode(
 }
 
 /** 本番のビルドの `rinka/app` のコードを返す。ルートのファイルごとの CSS の一覧は、ビルドの最後に埋め込む。 */
-export const buildAppModule = ({ serverFns, trustedOrigins }: AppModuleOptions): string =>
+export const buildAppModule = ({
+  serverFns,
+  trustedOrigins,
+}: Omit<AppModuleOptions, "output">): string =>
   appCode(
     ["createApp", "routeStyles", "serverFnLoader"],
     [

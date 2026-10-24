@@ -28,7 +28,7 @@ const table = (...routes: Route[]): Routes => ({ routes });
 
 /** `route` だけの表の書き出しが、`file` を含むエラーになることを確認する。 */
 const rejects = async (route: Route, file: string) =>
-  expect(prerenderTargets(table(route), "all")).rejects.toThrow(file);
+  expect(prerenderTargets(table(route), { output: "static" })).rejects.toThrow(file);
 
 /** パラメータ `values` を返す `/users/[id]` のページの行を返す。 */
 const user = (values: unknown[]) => pageRow("/users/[id]", { prerender: () => values });
@@ -45,12 +45,15 @@ describe("prerenderTargets", () => {
       routeRow("/feed.xml", { GET: () => "", POST: () => "", prerender: true }),
       pageRow("/skipped"),
     );
-    const scope = new Set([
-      "src/routes/about/page.tsx",
-      "src/routes/posts/[slug]/page.tsx",
-      "src/routes/docs/[...path]/page.tsx",
-      "src/routes/feed.xml/route.ts",
-    ]);
+    const scope = {
+      output: "server",
+      files: [
+        "src/routes/about/page.tsx",
+        "src/routes/posts/[slug]/page.tsx",
+        "src/routes/docs/[...path]/page.tsx",
+        "src/routes/feed.xml/route.ts",
+      ],
+    } as const;
     expect(await prerenderTargets(routes, scope)).toEqual([
       { kind: "page", file: "src/routes/about/page.tsx", urls: ["/about"] },
       {
@@ -98,9 +101,9 @@ describe("prerenderTargets", () => {
       ...["a/../b", "a//b", "/a", "", "a/b?c"].map(async (path) =>
         rejects(docs(path), "src/routes/docs/[...path]/page.tsx"),
       ),
-      expect(prerenderTargets(table(user([{ id: 1 }, { id: "1" }])), "all")).rejects.toThrow(
-        "/users/1 のパラメータを 2 回返しました",
-      ),
+      expect(
+        prerenderTargets(table(user([{ id: 1 }, { id: "1" }])), { output: "static" }),
+      ).rejects.toThrow("/users/1 のパラメータを 2 回返しました"),
     ]);
   });
 
@@ -110,7 +113,7 @@ describe("prerenderTargets", () => {
       pageRow("/posts/[slug]", { prerender: () => [{ slug: "a" }] }),
       routeRow("/robots.txt", { GET: () => "" }),
     );
-    expect(await prerenderTargets(routes, "all")).toEqual([
+    expect(await prerenderTargets(routes, { output: "static" })).toEqual([
       { kind: "page", file: "src/routes/page.tsx", urls: ["/"] },
       { kind: "page", file: "src/routes/posts/[slug]/page.tsx", urls: ["/posts/a"] },
       { kind: "route", file: "src/routes/robots.txt/route.ts", urls: ["/robots.txt"] },

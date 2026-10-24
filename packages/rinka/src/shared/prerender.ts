@@ -1,3 +1,18 @@
+/** Vite プラグインの設定 `output` の値である。`static` はサーバーを置かないアプリで、`server` はサーバーを置くアプリである。 */
+export type Output = "server" | "static";
+
+/** 書き出すルートの範囲を表す。`static` はすべてのルートで、`server` は `files` のモジュールのルートである。 */
+export type PrerenderScope =
+  | { readonly output: "static" }
+  | { readonly output: "server"; readonly files: readonly string[] };
+
+/** 書き出す URL を、ページか `route.ts` の行ごとに表す。`file` は行のモジュールのファイルである。 */
+export interface PrerenderTarget {
+  readonly kind: "page" | "route";
+  readonly file: string;
+  readonly urls: readonly string[];
+}
+
 /** 書き出しのリクエストで、サーバーのエントリーの `fetch` の 2 つ目の引数（Hono の env）が、書き出しの種類を値に持つキーである。 */
 export const prerenderEnv: unique symbol = Symbol.for("rinka.prerender");
 
