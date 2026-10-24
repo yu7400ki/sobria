@@ -130,6 +130,11 @@ const session: MiddlewareHandler = async (c, next) => {
   await next();
 };
 
+/** `/login` への `redirect()` を投げるミドルウェアである。 */
+const guard: MiddlewareHandler = async () => {
+  throw redirect("/login");
+};
+
 /** 401 の Response を返すミドルウェアである。 */
 const deny: MiddlewareHandler = async (c) => c.text("denied", 401);
 
@@ -941,5 +946,44 @@ describe("アプリの onError", () => {
     expect(response.status).toBe(401);
     expect(await response.text()).toBe("denied");
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("route.ts とディレクトリの middleware.ts が投げた redirect() と notFound() は、onError を呼ばずに、移動と not-found.tsx の 404 にする", async () => {
+    const onError = vi.fn(handled);
+    const routes: Routes = {
+      routes: [
+        apiRoute("/api/moved", {
+          GET: () => {
+            throw redirect("/api/new", 307);
+          },
+        }),
+        apiRoute("/api/gone", {
+          GET: () => {
+            throw notFound();
+          },
+        }),
+        pageRoute("/admin", page("admin"), [], [guard]),
+        apiRoute("/api/broken", {
+          GET: () => {
+            throw new Error("broken");
+          },
+        }),
+        notFoundRoute("/", fallbackOf(fallback("missing"))),
+      ],
+    };
+    const app = createApp(routes, { onError });
+    const fetch = (path: string) =>
+      Promise.resolve(app.fetch(new Request(`http://localhost${path}`)));
+    const [moved, gone, admin, broken] = await Promise.all([
+      fetch("/api/moved"),
+      fetch("/api/gone"),
+      fetch("/admin"),
+      fetch("/api/broken"),
+    ]);
+    expect([moved.status, moved.headers.get("location")]).toEqual([307, "/api/new"]);
+    expect([gone.status, await bodyOf(gone)]).toEqual([404, "<h1>missing /api/gone</h1>"]);
+    expect([admin.status, admin.headers.get("location")]).toEqual([303, "/login"]);
+    expect(broken.status).toBe(503);
+    expect(onError).toHaveBeenCalledTimes(1);
   });
 });

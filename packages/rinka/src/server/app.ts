@@ -1,6 +1,5 @@
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { every } from "hono/combine";
-import { HTTPException } from "hono/http-exception";
 
 import { REFRESH_HEADER } from "../shared/refresh.ts";
 import {
@@ -17,7 +16,7 @@ import {
 import { isBot } from "./bots.ts";
 import { blockingRenderOf, runInRequest, withContextHeaders } from "./context.ts";
 import { formRedirects, serverFnMiddleware, type Failure } from "./endpoint.ts";
-import { notFound } from "./errors.ts";
+import { classify, notFound } from "./errors.ts";
 import { stylesheetLink } from "./html.ts";
 import { jsx } from "./jsx-runtime.ts";
 import { handledMethod } from "./request.ts";
@@ -99,10 +98,6 @@ const missing = (): never => {
 export const createApp = (({ routes, middleware }: Routes, options: AppOptions = {}): Hono => {
   const app = new Hono();
   const onError = options.onError ?? defaultFailure;
-  /** `HTTPException` はそのレスポンスにし、それ以外のエラーは `onError` に渡す。 */
-  const handle = (error: unknown): Response =>
-    error instanceof HTTPException ? error.getResponse() : onError(error);
-  app.onError((c) => withContextHeaders(c, handle(c.error)));
   const respond: Respond = async (
     c,
     node,
@@ -133,12 +128,38 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     return withContextHeaders(c, response);
   };
   const find = finder(routes);
+  /**
+   * ミドルウェア、`route.ts`、サーバー関数が投げた値から、リクエスト `c` のレスポンスを作成する。
+   * `redirect()` は移動にし、`notFound()` は URL に一致する `not-found.tsx` のページを 404 で返し、Response はそのまま返す。そのほかの値は `onError` に渡す。
+   */
+  const fail = async (
+    c: Pick<Context, "req" | "newResponse">,
+    error: unknown,
+  ): Promise<Response> => {
+    const thrown = classify(error);
+    switch (thrown.kind) {
+      case "redirect":
+      case "moved":
+      case "response":
+        return thrown.response;
+      case "notFound": {
+        const url = new URL(c.req.url);
+        const found = await find(url);
+        const fallbacks = found?.route.notFound ? { notFound: found.route.notFound } : {};
+        return respond(c, jsx(missing, {}), fallbacks, { params: found?.params ?? {}, url });
+      }
+      case "schema":
+      case "error":
+        return onError(error);
+    }
+  };
+  app.onError(async (c) => withContextHeaders(c, await fail(c, c.error)));
   const formFailure: Failure = async (c, error) => {
     const referer = c.req.header("referer");
     const url = referer !== undefined && URL.canParse(referer) ? new URL(referer) : undefined;
-    if (url === undefined || url.host !== new URL(c.req.url).host) return handle(error);
+    if (url === undefined || url.host !== new URL(c.req.url).host) return fail(c, error);
     const found = await find(url);
-    if (found?.route.error === undefined) return handle(error);
+    if (found?.route.error === undefined) return fail(c, error);
     return respond(
       c,
       jsx(throwing(error), {}),
@@ -150,7 +171,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     );
   };
   const serverFns = serverFnMiddleware(options, {
-    rpc: (_c, error) => handle(error),
+    rpc: fail,
     form: formFailure,
   });
   const rinka = middleware === undefined ? serverFns : every(lazy(middleware), serverFns);
