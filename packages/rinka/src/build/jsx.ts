@@ -13,7 +13,7 @@ import {
   type ModuleSource,
   type Node,
 } from "./ast.ts";
-import type { Transformed } from "./compiler.ts";
+import type { Transformed } from "./ast.ts";
 import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 

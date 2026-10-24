@@ -1,7 +1,7 @@
-import { MagicString, type SourceMap } from "magic-string";
+import { MagicString } from "magic-string";
 
 import type { ElementInfo } from "../shared/element.ts";
-import { parseModule, type ModuleSource, type Node } from "./ast.ts";
+import { parseModule, type ModuleSource, type Node, type Transformed } from "./ast.ts";
 import { registerElement, type ElementTarget } from "./element-transform.ts";
 import { importInternalAs } from "./entries.ts";
 import { STOP_IF_SEEDING, stopAwaits } from "./seeding.ts";
@@ -24,12 +24,6 @@ export interface SourceOptions extends ModuleSource {
   readonly element?: ElementTarget;
   /** サーバー関数の ID のモジュールの部分である。省略すると `file` を使用する。 */
   readonly fnModule?: string;
-}
-
-/** 変換したコードと、元のコードへのソースマップを表す。 */
-export interface Transformed {
-  readonly code: string;
-  readonly map: SourceMap;
 }
 
 /** 元のソースを変換した結果を表す。 */

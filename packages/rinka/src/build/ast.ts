@@ -1,4 +1,4 @@
-import type { MagicString } from "magic-string";
+import type { MagicString, SourceMap } from "magic-string";
 import { parseSync, type ESTree } from "vite";
 
 import { CompileError } from "./errors.ts";
@@ -294,4 +294,10 @@ export function forEachReference(
     }
   };
   walkNode(root, undefined, "");
+}
+
+/** 変換したコードと、元のコードへのソースマップを表す。 */
+export interface Transformed {
+  readonly code: string;
+  readonly map: SourceMap;
 }
