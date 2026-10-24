@@ -221,4 +221,27 @@ describe("書き出しの失敗", () => {
       "/missing/gone を書き出すと、ステータスが 404 になりました。",
     );
   }, 60_000);
+
+  it("output: 'static' で、404.html を取得するリクエストのレスポンスが 404 でなければ、ステータスを含むビルドのエラーにする", async () => {
+    const copy = await copyFixture();
+    await addFile(copy, "routes/middleware.ts", [
+      'import { redirect } from "rinka/server";',
+      "export default async (c, next) => {",
+      '  if (c.req.path.startsWith("/_rinka/")) throw redirect("/");',
+      "  await next();",
+      "};",
+    ]);
+    await expect(buildFixture(copy, join(copy, "dist"), { output: "static" })).rejects.toThrow(
+      "ステータスが 303 になりました。",
+    );
+  }, 60_000);
+
+  it("output: 'static' で、public/404.html があれば、ファイルの名前を含むビルドのエラーにする", async () => {
+    const copy = await copyFixture();
+    await mkdir(join(copy, "public"), { recursive: true });
+    await writeFile(join(copy, "public/404.html"), "<h1>custom</h1>");
+    await expect(buildFixture(copy, join(copy, "dist"), { output: "static" })).rejects.toThrow(
+      "404.html",
+    );
+  }, 60_000);
 });

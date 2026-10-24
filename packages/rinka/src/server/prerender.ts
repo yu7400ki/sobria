@@ -1,6 +1,7 @@
 import type { Output, PrerenderScope, PrerenderTarget } from "../shared/prerender.ts";
 import { fillPattern, parseSegment } from "../shared/route-segments.ts";
 import { routeMethods, type Route, type Routes } from "../shared/routes.ts";
+import { internalPrefix } from "../shared/wire.ts";
 
 /** 書き出す URL の区切りに含められない文字である。`encodeURIComponent` がエンコードし `decodeURI` がデコードしない文字、`%`、Windows のファイル名に使用できない文字である。 */
 const UNSAFE = '/\\;,?:@&=+$#<>"|*%'.split("");
@@ -13,7 +14,7 @@ type Page = Extract<Route, { readonly kind: "page" }>;
 
 /**
  * ルートの表 `routes` のページと `route.ts` の行のうち、`scope` に含まれるものから、書き出す URL を返す。
- * `output` が `static` の `scope` はすべての行を含み、`server` の `scope` は `files` のモジュールの行だけを含む。
+ * `output` が `static` の `scope` はすべての行を含み、`server` の `scope` は `files` のモジュールの行だけを含む。`static` では、最後に `404.html` の対象を加える。
  * `static` では、`prerender` の無いページはパラメータが無ければ書き出し、`prerender` の無い `route.ts` はパラメータが無ければ書き出す。
  * `prerender` の値が行の形に合わないとき、URL にできないパラメータの値と、重複した URL があるとき、`route.ts` の URL の最後の区切りに拡張子が無いとき、
  * `static` で、パラメータのあるページに `prerender` が無いときと、`route.ts` が `GET` 以外のメソッドを export するときは、エラーを投げる。
@@ -29,12 +30,17 @@ export async function prerenderTargets(
       : [],
   );
   const targets = await Promise.all(
-    rows.map(async (route) => {
+    rows.map(async (route): Promise<PrerenderTarget[]> => {
       const urls = await urlsOf(route, scope.output);
       return urls === undefined ? [] : [{ kind: route.kind, file: route.module.file, urls }];
     }),
   );
-  return targets.flat();
+  return [
+    ...targets.flat(),
+    ...(scope.output === "static"
+      ? [{ kind: "not-found", urls: [`${internalPrefix}not-found`] } as const]
+      : []),
+  ];
 }
 
 /** 行 `route` の書き出す URL を返す。書き出さない行には `undefined` を返す。`output` が `static` なら、`prerender` の無い行も書き出す。 */

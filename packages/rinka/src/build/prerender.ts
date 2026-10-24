@@ -1,16 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import type { ESTree } from "vite";
 
-import {
-  prerenderEnv,
-  type Output,
-  type PrerenderKind,
-  type PrerenderScope,
-  type PrerenderTarget,
-} from "../shared/prerender.ts";
+import { prerenderEnv, type PrerenderScope, type PrerenderTarget } from "../shared/prerender.ts";
 import { langs, moduleExportName, parseModule } from "./ast.ts";
 import { entries, importInternal } from "./entries.ts";
 import { ROUTES_DIR, scanRoutes } from "./routes.ts";
@@ -18,9 +12,6 @@ import { SERVER_ENTRY_NAME } from "./settings.ts";
 
 /** サーバーのビルドで、書き出す URL を返すモジュールの入力の名前である。出力のファイルの名前は、この名前に `.js` を付けたものになる。 */
 export const PRERENDER_ENTRY_NAME = "prerender";
-
-/** `404.html` に保存する 404 のページを取得する URL のパスである。 */
-const MISSING_PATH = "/__rinka/not-found";
 
 /** `program` が、名前 `name` を export するかどうかを返す。`export *` は調べない。 */
 function exportsName(program: ESTree.Program, name: string): boolean {
@@ -66,7 +57,7 @@ export const prerenderModule = (scope: PrerenderScope): string =>
   ].join("\n");
 
 /** URL のパス `pathname` のレスポンスを保存するファイルの、`clientDir` からのパスを返す。ページは `index.html` に保存する。`clientDir` の外を指すときは、エラーを投げる。 */
-function fileOf(clientDir: string, pathname: string, kind: PrerenderTarget["kind"]): string {
+function fileOf(clientDir: string, pathname: string, kind: "page" | "route"): string {
   const parts = pathname
     .split("/")
     .filter((part) => part !== "")
@@ -84,16 +75,15 @@ function fileOf(clientDir: string, pathname: string, kind: PrerenderTarget["kind
   return file;
 }
 
+/** 書き出しの対象の種類ごとの、期待するステータスである。 */
+const expectedStatus = { page: 200, route: 200, "not-found": 404 } as const;
+
 /**
  * サーバーの出力先 `serverDir` のサーバーのエントリーと書き出すモジュールを読み込み、書き出す各 URL のレスポンスの本文を、クライアントの出力先 `clientDir` に保存する。
- * 保存した後で、書き出すモジュールを削除する。200 以外のレスポンスと、既にあるファイルと重なる URL は、エラーにする。
- * `output` が `static` なら、存在しない URL のレスポンスが 404 のときに、その本文を `404.html` に保存し、最後に `serverDir` を削除する。
+ * ページは `<パス>/index.html` に、`route.ts` は URL のパスのとおりに、`404.html` の対象は `404.html` に保存する。
+ * 対象の種類ごとに期待するステータスと異なるレスポンスと、既にあるファイルと重なる保存先は、エラーにする。
  */
-export async function writePrerendered(
-  serverDir: string,
-  clientDir: string,
-  output: Output,
-): Promise<void> {
+export async function writePrerendered(serverDir: string, clientDir: string): Promise<void> {
   const load = async (name: string): Promise<unknown> =>
     import(pathToFileURL(join(serverDir, `${name}.js`)).href);
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
@@ -106,20 +96,24 @@ export async function writePrerendered(
   const targets = (await load(PRERENDER_ENTRY_NAME)) as {
     readonly default: () => Promise<readonly PrerenderTarget[]>;
   };
-  /** URL のパス `url` を、書き出しのリクエストとしてサーバーのエントリーで描画する。 */
-  const render = async (url: string, kind: PrerenderKind = "page") =>
-    entry.default.fetch(new Request(new URL(url, "http://localhost")), { [prerenderEnv]: kind });
-  for (const { kind, urls } of await targets.default()) {
-    for (const url of urls) {
+  for (const target of await targets.default()) {
+    for (const url of target.urls) {
       // 書き出しの順序とエラーを決定的にするため、URL を 1 つずつ取得する
       // oxlint-disable-next-line no-await-in-loop
-      const response = await render(url);
-      if (response.status !== 200) {
+      const response = await entry.default.fetch(new Request(new URL(url, "http://localhost")), {
+        [prerenderEnv]: target.kind,
+      });
+      const expected = expectedStatus[target.kind];
+      const source = target.kind === "not-found" ? "404.html" : target.file;
+      if (response.status !== expected) {
         throw new Error(
-          `[rinka] ${url} を書き出すと、ステータスが ${response.status} になりました。書き出す URL は、200 のレスポンスを返す必要があります。`,
+          `[rinka] ${url} を書き出すと、ステータスが ${response.status} になりました。${source} の書き出しのレスポンスは、${expected} である必要があります。`,
         );
       }
-      const file = fileOf(clientDir, new URL(url, "http://localhost").pathname, kind);
+      const file =
+        target.kind === "not-found"
+          ? join(clientDir, "404.html")
+          : fileOf(clientDir, new URL(url, "http://localhost").pathname, target.kind);
       if (existsSync(file)) {
         throw new Error(`[rinka] ${url} を書き出すファイル ${file} は、既にあります。`);
       }
@@ -127,17 +121,5 @@ export async function writePrerendered(
       // oxlint-disable-next-line no-await-in-loop
       writeFileSync(file, new Uint8Array(await response.arrayBuffer()));
     }
-  }
-  if (output === "static") {
-    const missing = await render(MISSING_PATH, "not-found");
-    const file = join(clientDir, "404.html");
-    if (missing.status === 404 && !existsSync(file)) {
-      writeFileSync(file, new Uint8Array(await missing.arrayBuffer()));
-    }
-    rmSync(serverDir, { recursive: true, force: true });
-    return;
-  }
-  for (const suffix of [".js", ".js.map"]) {
-    rmSync(join(serverDir, `${PRERENDER_ENTRY_NAME}${suffix}`), { force: true });
   }
 }

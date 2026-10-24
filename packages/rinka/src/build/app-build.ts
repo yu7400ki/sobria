@@ -98,8 +98,14 @@ export function appBuild({ options, settings }: SceneContext): {
             await builder.build(builder.environments.client!);
             await builder.build(builder.environments.ssr!);
             const { clientDir: client, serverDir: server } = settings();
-            if (scope !== undefined) {
-              await writePrerendered(server, client, scope.output);
+            if (scope === undefined) return;
+            await writePrerendered(server, client);
+            if (scope.output === "static") {
+              rmSync(server, { recursive: true, force: true });
+              return;
+            }
+            for (const suffix of [".js", ".js.map"]) {
+              rmSync(join(server, `${PRERENDER_ENTRY_NAME}${suffix}`), { force: true });
             }
           },
         },

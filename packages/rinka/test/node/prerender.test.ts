@@ -107,7 +107,7 @@ describe("prerenderTargets", () => {
     ]);
   });
 
-  it("scope が all なら、prerender の無いパラメータの無いページと GET だけの route.ts も返し、サーバーが必要な行はエラーにする", async () => {
+  it("output が static なら、prerender の無いパラメータの無いページと GET だけの route.ts も返し、サーバーが必要な行はエラーにし、最後に 404.html の対象を加える", async () => {
     const routes = table(
       pageRow("/"),
       pageRow("/posts/[slug]", { prerender: () => [{ slug: "a" }] }),
@@ -117,6 +117,7 @@ describe("prerenderTargets", () => {
       { kind: "page", file: "src/routes/page.tsx", urls: ["/"] },
       { kind: "page", file: "src/routes/posts/[slug]/page.tsx", urls: ["/posts/a"] },
       { kind: "route", file: "src/routes/robots.txt/route.ts", urls: ["/robots.txt"] },
+      { kind: "not-found", urls: ["/_rinka/not-found"] },
     ]);
     await Promise.all([
       rejects(pageRow("/users/[id]"), "src/routes/users/[id]/page.tsx"),
