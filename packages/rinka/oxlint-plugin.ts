@@ -81,6 +81,14 @@ const constantLiterals: readonly ConstantLiteral[] = [
       "後送りの境界の終わりの目印は、src/shared/attributes.ts の BOUNDARY_END で記述してください。",
   },
   {
+    pattern: /x-rinka-page/,
+    target: "contained",
+    definedIn: "src/shared/refresh.ts",
+    directories: ["src/"],
+    message:
+      "呼び出したページの URL のヘッダーの名前は、src/shared/refresh.ts の PAGE_HEADER で記述してください。サーバーでは、src/server/endpoint.ts の callerOf で呼び出し元を判定してください。",
+  },
+  {
     pattern: /\/_rinka\//,
     target: "contained",
     definedIn: "src/shared/wire.ts",

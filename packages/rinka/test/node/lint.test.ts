@@ -349,6 +349,22 @@ describe("src/ のディレクトリ", () => {
   });
 });
 
+describe("呼び出したページの URL のヘッダーの名前", () => {
+  it("src/ の中の、x-rinka-page を含む文字列のリテラルとテンプレートリテラルを報告し、src/shared/refresh.ts の定義は報告しない", () => {
+    expect(
+      reports("src/server/header-use.ts", [
+        `export const a = "x-rinka-page";`,
+        "export const b = `x-rinka-page`;",
+        `export const c = "x-rinka-refresh";`,
+      ]),
+    ).toEqual([
+      [1, "literal"],
+      [2, "literal"],
+    ]);
+    expect(reports("src/shared/refresh.ts", [`export const a = "x-rinka-page";`])).toEqual([]);
+  });
+});
+
 describe("後送りの境界の終わりの目印と、rinka の URL の接頭辞", () => {
   it("src/ の中の、/ob: か /_rinka/ を含む文字列のリテラルとテンプレートリテラルを報告する", () => {
     expect(
