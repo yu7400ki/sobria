@@ -33,6 +33,10 @@ export const nav: readonly NavSection[] = [
       "reference/api/router",
       "reference/api/vite",
       "reference/api/app",
+      "reference/jsx",
+      "reference/files",
+      "reference/cli",
+      "reference/glossary",
     ],
   },
 ];
