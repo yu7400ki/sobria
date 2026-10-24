@@ -103,7 +103,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
 
   /**
    * モジュールの ID を、クエリの無いプロジェクトかライブラリのファイルなら、ルートからの相対パスと言語にする。
-   * 登録した拡張子のファイルの言語は `tsx` にする。ライブラリのファイルのルートからの相対パスは、`../` で始まることがある。
+   * ライブラリのファイルのルートからの相対パスは、`../` で始まることがある。
    */
   const projectFile = (id: string): ProjectFile | undefined => {
     if (id.includes("?") || id.startsWith("\0")) return undefined;

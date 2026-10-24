@@ -184,7 +184,7 @@ function rowOf({
 }
 
 /**
- * プロジェクトのルート `root` の `ROUTES_DIR` のディレクトリを走査し、走査した行の列と、ルートのミドルウェアを返す。
+ * プロジェクトのルート `root` にある `ROUTES_DIR` のディレクトリを走査し、走査した行の列と、ルートのミドルウェアを返す。
  * `page`、`layout`、`not-found`、`error` は、登録した拡張子 `extensions` のファイルも対象にする。
  * 2 つのページか `route` が同じ URL に対応するときは、エラーを投げる。同じディレクトリにページと `route` を置いたときも、このエラーになる。
  * 同じ URL に対応し、グループを含めたディレクトリの深さが同じ 2 つの `not-found` があるときも、エラーを投げる。
@@ -293,7 +293,7 @@ function scan(
 }
 
 /**
- * プロジェクトのルート `root` の `ROUTES_DIR` のディレクトリを、登録した拡張子 `extensions` のファイルも含めて走査し、ルートの表を返す。
+ * プロジェクトのルート `root` にある `ROUTES_DIR` のディレクトリを、登録した拡張子 `extensions` のファイルも含めて走査し、ルートの表を返す。
  * ルートは、同じ位置では静的な区切り、動的な区切り、キャッチオールの順に並ぶ。ルートのファイルの配置が不正なら、エラーを投げる。
  */
 export function scanRoutes(root: string, extensions: readonly string[]): Routes<PathFiles> {
@@ -305,7 +305,7 @@ export function scanRoutes(root: string, extensions: readonly string[]): Routes<
 }
 
 /**
- * プロジェクトのルート `root` の `ROUTES_DIR` の、登録した拡張子 `extensions` のものを含むページごとに、グループを除いたファイルの形のパスと、パラメータとキャッチオールの名前を返す。
+ * プロジェクトのルート `root` にある `ROUTES_DIR` の、登録した拡張子 `extensions` のものを含むページごとに、グループを除いたファイルの形のパスと、パラメータとキャッチオールの名前を返す。
  * ルートのファイルの配置が不正なら、エラーを投げる。
  */
 export function scanPages(
@@ -336,7 +336,7 @@ const toCode = (value: unknown): string =>
 /** ファイル `file` を、モジュールを読み込む関数に置き換える目印の文字列にする。 */
 const toImport = (file: string): string => `${importMarker}${file}`;
 
-/** プロジェクトのルート `root` の `ROUTES_DIR` を、登録した拡張子 `extensions` のファイルも含めて走査し、ファイルごとにモジュールを読み込む関数を持つルートの表を export するモジュールのコードを返す。 */
+/** プロジェクトのルート `root` にある `ROUTES_DIR` を、登録した拡張子 `extensions` のファイルも含めて走査し、ファイルごとにモジュールを読み込む関数を持つルートの表を export するモジュールのコードを返す。 */
 export function routesModule(root: string, extensions: readonly string[]): string {
   const { routes, middleware } = mapRouteFiles(scanRoutes(root, extensions), {
     component: toImport,

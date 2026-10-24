@@ -38,7 +38,8 @@ export function prerenderFiles(root: string, extensions: readonly string[]): str
     if (route.kind === "not-found") continue;
     const path = join(root, route.module);
     const source = sourceLangOf(path, extensions);
-    if (!source) continue;
+    if (!source)
+      throw new Error(`[rinka] ${route.module} は、変換できない拡張子のルートのファイルです。`);
     if (source.registered) {
       files.push(route.module);
       continue;
