@@ -117,7 +117,7 @@ async function endpoint(
   );
 }
 
-/** リクエストの種類が `kind` のリクエスト `c` で投げられた値 `error` から、レスポンスを作成する。 */
+/** リクエストの種類が `kind` のリクエスト `c` で投げられた値 `error` から、レスポンスを作成する。`redirect()` は、リクエストの種類にかかわらず 303 にする。 */
 function respondThrown(
   c: Context,
   kind: RequestKind,
@@ -128,7 +128,7 @@ function respondThrown(
   const thrown = classify(error);
   switch (thrown.kind) {
     case "redirect":
-      return respond(c, { kind: "redirect", location: thrown.location }, fail);
+      return c.redirect(thrown.location, 303);
     case "moved":
     case "response":
       return thrown.response;
@@ -143,7 +143,6 @@ function respondThrown(
 /** handler の戻り値と、handler が投げた値のうち、レスポンスの形をリクエストの種類で決めるものを表す。 */
 type Outcome =
   | { readonly kind: "value"; readonly value: unknown }
-  | { readonly kind: "redirect"; readonly location: string }
   | { readonly kind: "notFound" }
   | { readonly kind: "schema"; readonly issues: SchemaError["issues"] }
   | { readonly kind: "error"; readonly error: unknown };
@@ -188,8 +187,6 @@ const responders = {
       switch (outcome.kind) {
         case "value":
           return rpc(c, toRpcBody(outcome.value));
-        case "redirect":
-          return rpc(c, { redirect: outcome.location } satisfies RedirectJson, 200);
         case "notFound":
           return rpc(c, null, 404);
         case "schema":
@@ -208,8 +205,6 @@ const responders = {
       switch (outcome.kind) {
         case "value":
           return c.redirect(callerOf(c)?.page?.href ?? c.req.header("referer") ?? "/", 303);
-        case "redirect":
-          return c.redirect(outcome.location, 303);
         case "notFound":
           return c.text(rejectionText[404], 404);
         case "schema":
