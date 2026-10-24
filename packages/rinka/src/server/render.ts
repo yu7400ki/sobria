@@ -617,7 +617,6 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       this.nativeTag(tag, props, key, ctx, out);
       return;
     }
-    if (ctx.owner === null) warnHandlers(tag, props);
     const id = ++this.seq;
     const headTagKey = this.settle(ctx, (tracked) =>
       headKey(tag, (name) => this.value(props[name], ctx, tracked)),

@@ -312,6 +312,17 @@ describe("要素の外のイベントハンドラー", () => {
     ]);
   });
 
+  it("<head> に移動するタグに渡したイベントハンドラーは、1 回だけ警告する", async () => {
+    vi.stubEnv("DEV", true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await (
+      await renderToResponse(jsx("link", { rel: "icon", href: "/a", onLoad: () => {} }))
+    ).text();
+    expect(warn.mock.calls).toEqual([
+      ["[rinka] 要素の外の <link> に渡した onLoad は、ブラウザで実行されません。"],
+    ]);
+  });
+
   it("開発時でなければ警告しない", async () => {
     vi.stubEnv("DEV", false);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
