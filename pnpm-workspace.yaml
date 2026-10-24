@@ -19,5 +19,6 @@ catalog:
   vitest: ^5.0.5
 
 allowBuilds:
+  "@parcel/watcher": false
   esbuild: false
   workerd: false

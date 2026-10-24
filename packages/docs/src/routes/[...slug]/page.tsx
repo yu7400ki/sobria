@@ -1,4 +1,3 @@
-/// <reference types="vite/types/importMeta.d.ts" />
 import type { ServerNode } from "rinka";
 import type { PageProps, Prerender } from "rinka/router";
 import { notFound } from "rinka/server";

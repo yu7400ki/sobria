@@ -15,7 +15,7 @@ export interface TocItem {
   readonly text: string;
 }
 
-/** mdast と hast のノードのうち、TSX に変換するときに参照する欄である。 */
+/** mdast と hast のノードの型のうち、TSX に変換するときに参照する欄だけを持つものである。 */
 interface Node {
   readonly type: string;
   readonly value?: string | null;

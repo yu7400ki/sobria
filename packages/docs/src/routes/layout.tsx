@@ -1,3 +1,4 @@
+import "../styles.css";
 import type { LayoutProps } from "rinka/router";
 
 export default function Layout(props: LayoutProps) {

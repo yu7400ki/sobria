@@ -3,9 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prepare": "panda codegen",
     "dev": "vite",
-    "build": "rinka prepare && vite build --app",
-    "typecheck": "rinka prepare && tsc -b",
+    "build": "vite build --app",
+    "typecheck": "rinka prepare && panda codegen && tsc -b",
     "test": "vitest run"
   },
   "dependencies": {
@@ -13,6 +14,11 @@
   },
   "devDependencies": {
     "@ox-content/napi": "^3.4.0",
+    "@pandacss/dev": "^2.4.0",
+    "@pandacss/eslint-plugin": "^2.4.0",
+    "@pandacss/preset-base": "^2.4.0",
+    "@pandacss/preset-panda": "^2.4.0",
+    "@pandacss/vite": "^2.4.0",
     "@rinka/config": "workspace:*",
     "@types/node": "catalog:",
     "hono": "catalog:",

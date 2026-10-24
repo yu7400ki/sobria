@@ -157,3 +157,6 @@ vite.config.ts.timestamp-*
 /tests/e2e/.rinka-tmp-*/
 /tests/fixture-library/types/
 .rinka/
+
+# Panda CSS が生成するファイル
+/packages/docs/styled-system/
