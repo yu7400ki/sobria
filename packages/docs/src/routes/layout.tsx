@@ -2,7 +2,7 @@ import "../styles.css";
 import { href, type LayoutProps } from "rinka/router";
 
 import Header from "../components/header.tsx";
-import { firstSlug } from "../lib/content.ts";
+import { firstPage } from "./content.ts";
 
 export default function Layout(props: LayoutProps) {
   return (
@@ -12,7 +12,7 @@ export default function Layout(props: LayoutProps) {
         <title>rinka</title>
       </head>
       <body>
-        <Header docsHref={href("/[...slug]", { slug: firstSlug })} />
+        <Header homeHref={href("/")} docsHref={firstPage.href} />
         {props.children}
       </body>
     </html>

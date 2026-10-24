@@ -1,7 +1,7 @@
 import { css } from "styled-system/css";
 
 /** 前後のページへのリンクである。 */
-export interface PagerLink {
+interface PagerLink {
   readonly href: string;
   readonly title: string;
 }

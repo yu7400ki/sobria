@@ -6,7 +6,7 @@
     "prepare": "panda codegen --config theme/panda.config.ts",
     "dev": "vite",
     "build": "vite build --app",
-    "typecheck": "rinka prepare && panda codegen --config theme/panda.config.ts && tsc -b",
+    "typecheck": "rinka prepare && pnpm run prepare && tsc -b",
     "test": "vitest run"
   },
   "dependencies": {

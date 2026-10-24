@@ -1,7 +1,7 @@
 import { css } from "styled-system/css";
 
-/** サイトの上部のナビゲーションを描画する。`docsHref` は、ドキュメントの最初のページの URL である。 */
-export default function Header(props: { docsHref: string }) {
+/** サイトの上部のナビゲーションを描画する。`homeHref` はトップページの URL、`docsHref` はドキュメントの最初のページの URL である。 */
+export default function Header(props: { homeHref: string; docsHref: string }) {
   return (
     <header
       class={css({
@@ -14,7 +14,7 @@ export default function Header(props: { docsHref: string }) {
         borderColor: "border",
       })}
     >
-      <a href="/" class={css({ fontWeight: "semibold", fontSize: "lg" })}>
+      <a href={props.homeHref} class={css({ fontWeight: "semibold", fontSize: "lg" })}>
         rinka
       </a>
       <nav>

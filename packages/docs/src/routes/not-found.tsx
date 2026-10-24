@@ -1,3 +1,4 @@
+import { href } from "rinka/router";
 import { css } from "styled-system/css";
 
 export default function NotFound() {
@@ -6,7 +7,7 @@ export default function NotFound() {
       <title>ページが見つかりません | rinka</title>
       <h1 class={css({ fontSize: "3xl", fontWeight: "bold" })}>ページが見つかりません</h1>
       <a
-        href="/"
+        href={href("/")}
         class={css({
           display: "inline-block",
           mt: "8",

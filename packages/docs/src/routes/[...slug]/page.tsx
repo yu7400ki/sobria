@@ -1,37 +1,22 @@
-import { href, type PageProps, type Prerender } from "rinka/router";
+import type { PageProps, Prerender } from "rinka/router";
 import { notFound } from "rinka/server";
 import { css } from "styled-system/css";
 
 import Pager from "../../components/pager.tsx";
 import Sidebar from "../../components/sidebar.tsx";
 import Toc from "../../components/toc.tsx";
-import { loadContent, loadSections, slugs } from "../../lib/content.ts";
+import { pages, sections } from "../content.ts";
 
-export const prerender: Prerender<"/[...slug]"> = () => slugs.map((slug) => ({ slug }));
+export const prerender: Prerender<"/[...slug]"> = () => pages.map(({ slug }) => ({ slug }));
 
-/** 本文 `page` へのリンクを返す。 */
-const linkOf = (page: { slug: string; title: string }) => ({
-  href: href("/[...slug]", { slug: page.slug }),
-  title: page.title,
-});
-
-export default async function Page({ params }: PageProps<"/[...slug]">) {
-  const content = await loadContent(params.slug);
-  if (content === undefined) throw notFound();
-  const { Body, title, toc } = content;
-  const loaded = await loadSections();
-  const sections = loaded.map((section) => ({
-    title: section.title,
-    links: section.pages.map((page) => ({
-      ...linkOf(page),
-      current: page.slug === params.slug,
-    })),
-  }));
-  const pages = loaded.flatMap((section) => section.pages);
+export default function Page({ params }: PageProps<"/[...slug]">) {
   const index = pages.findIndex((page) => page.slug === params.slug);
+  const page = pages[index];
+  if (page === undefined) throw notFound();
+  const { Body, title, toc } = page;
   const prev = pages[index - 1];
   const next = pages[index + 1];
-  const sidebar = <Sidebar sections={sections} />;
+  const sidebar = <Sidebar sections={sections} currentHref={page.href} />;
   return (
     <div
       class={css({
@@ -63,7 +48,7 @@ export default async function Page({ params }: PageProps<"/[...slug]">) {
         <article class="markdown">
           <Body />
         </article>
-        <Pager prev={prev && linkOf(prev)} next={next && linkOf(next)} />
+        <Pager prev={prev} next={next} />
       </main>
       <aside class={css({ display: { base: "none", xl: "block" } })}>
         {toc.length > 0 && (

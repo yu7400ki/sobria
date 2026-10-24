@@ -1,6 +1,11 @@
 import { css } from "styled-system/css";
 
-import type { TocItem } from "../lib/content.ts";
+/** 目次の項目である。`id` は見出しの ID である。 */
+export interface TocItem {
+  readonly depth: 2 | 3;
+  readonly id: string;
+  readonly text: string;
+}
 
 /** ページ内の見出しへのリンクを列挙する。深さ 3 の見出しは字下げする。 */
 export default function Toc(props: { items: readonly TocItem[] }) {
