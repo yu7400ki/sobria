@@ -1,0 +1,8 @@
+{
+  "name": "tagged",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts"
+    }
+  }
+}

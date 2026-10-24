@@ -299,8 +299,8 @@ class ServerFnError extends Error {
 
 ## effect
 
-- ブラウザ：`read` が読み取った値が変化するたびに、`read` の戻り値を `apply` に渡して呼ぶ。`read` が非同期の memo を読むときは、memo が解決してから `apply` を呼ぶ。`apply` が返した後始末の関数は、次に `apply` を呼ぶ前と、effect を破棄するときに呼ばれる。
-- サーバー：何も実行せずに戻る。
+- 要素のファイル：`read` が読み取った値が変化するたびに、`read` の戻り値を `apply` に渡して呼ぶ。`read` が非同期の memo を読むときは、memo が解決してから `apply` を呼ぶ。`apply` が返した後始末の関数は、次に `apply` を呼ぶ前と、effect を破棄するときに呼ばれる。
+- サーバーのファイル：何も実行せずに戻る。
 
 ```ts
 const effect: Effect;
@@ -308,11 +308,11 @@ const effect: Effect;
 
 ## Errored
 
-- ブラウザ：内側で投げられたエラーを受け止めて、`fallback` を表示する。`fallback` に関数を渡すと、その関数はエラーと、内側を作り直す `retry` を受け取る。
-- サーバー：内側で投げられたエラーを受け止めて、`fallback` を出力する。`fallback` に関数を渡すと、その関数はエラーを受け取る。シェルの中で受け止めたときのレスポンスのステータスは、`status` で指定する。
+- 要素のファイル：内側で投げられたエラーを受け止めて、`fallback` を表示する。`fallback` に関数を渡すと、その関数はエラーと、内側を作り直す `retry` を受け取る。
+- サーバーのファイル：内側で投げられたエラーを受け止めて、`fallback` を出力する。`fallback` に関数を渡すと、その関数はエラーを受け取る。シェルの中で受け止めたときのレスポンスのステータスは、`status` で指定する。
 
 ```ts
-// ブラウザ
+// 要素のファイル
 function Errored(props: {
   fallback: Child | ((error: unknown, retry: () => void) => Child);
   children?: Child;
@@ -329,7 +329,7 @@ type Child =
   | readonly Child[]
   | (() => Child);
 
-// サーバー
+// サーバーのファイル
 function Errored(props: {
   fallback: Exclude<ServerChild, Function> | ((error: unknown) => ServerChild);
   children?: unknown;
@@ -351,11 +351,11 @@ type ServerChild =
 
 ## Loading
 
-- ブラウザ：内側の非同期の値が初めて解決するまで、`fallback` を表示する。
-- サーバー：内側が保留中であれば、`fallback` を先に送り、中身を後から送る。
+- 要素のファイル：内側の非同期の値が初めて解決するまで、`fallback` を表示する。
+- サーバーのファイル：内側が保留中であれば、`fallback` を先に送り、中身を後から送る。
 
 ```ts
-// ブラウザ
+// 要素のファイル
 function Loading(props: { fallback?: Child; children?: Child }): ClientNode;
 
 type Child =
@@ -369,17 +369,17 @@ type Child =
   | readonly Child[]
   | (() => Child);
 
-// サーバー
+// サーバーのファイル
 function Loading(props: { fallback?: unknown; children?: unknown }): ServerNode;
 ```
 
 ## Navigation
 
-- ブラウザ：何も描画しない。
-- サーバー：ページの遷移の設定を、文書の `<head>` に出力する。
+- 要素のファイル：何も描画しない。
+- サーバーのファイル：ページの遷移の設定を、文書の `<head>` に出力する。
 
 ```ts
-// ブラウザ
+// 要素のファイル
 function Navigation(_props: NavigationProps): ClientNode;
 
 interface NavigationProps {
@@ -389,17 +389,17 @@ interface NavigationProps {
   readonly prefetch?: "conservative" | "moderate" | "eager" | false;
 }
 
-// サーバー
+// サーバーのファイル
 function Navigation(props: NavigationProps): ServerNode;
 ```
 
 ## defineElement
 
-- ブラウザ：`fn` を要素として、`tag` の名前で Custom Element に登録し、JSX で使用する要素コンポーネントを返す。登録済みの `tag` を登録するとエラーにする。
-- サーバー：`fn` を、`tag` の名前の要素として、サーバーで描画できるようにする。
+- 要素のファイル：`fn` を要素として、`tag` の名前で Custom Element に登録し、JSX で使用する要素コンポーネントを返す。登録済みの `tag` を登録するとエラーにする。
+- サーバーのファイル：`fn` を、`tag` の名前の要素として、サーバーで描画できるようにする。
 
 ```ts
-// ブラウザ
+// 要素のファイル
 function defineElement<P, M extends object = object>(
   tag: string,
   fn: ElementFn<P, M>,
@@ -412,7 +412,7 @@ type ElementComponent<P, M extends object = object> = ((props: P, ctx: Ctx<M>) =
   readonly [elementInfo]: ElementInfo;
 };
 
-// サーバー
+// サーバーのファイル
 function defineElement<P, M extends object = object>(
   tag: string,
   fn: (props: P, ctx: Ctx<M>) => unknown,
@@ -422,8 +422,8 @@ function defineElement<P, M extends object = object>(
 
 ## refreshPage
 
-- ブラウザ：現在の URL をサーバーで描き直して、ページに反映する。レスポンスがリダイレクトのときと、描き直しの JSON でないときは、ページを読み込み直す。レスポンスが届く前に、後に始まった描き直しを反映していたら、このレスポンスは反映しない。
-- サーバー：エラーで reject する Promise を返す。
+- 要素のファイル：現在の URL をサーバーで描き直して、ページに反映する。レスポンスがリダイレクトのときと、描き直しの JSON でないときは、ページを読み込み直す。レスポンスが届く前に、後に始まった描き直しを反映していたら、このレスポンスは反映しない。
+- サーバーのファイル：エラーで reject する Promise を返す。
 
 ```ts
 const refreshPage: RefreshPage;

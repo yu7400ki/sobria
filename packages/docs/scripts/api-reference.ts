@@ -14,13 +14,13 @@ import { API, type Checker, type Symbol, SymbolFlags } from "typescript/unstable
 
 const root = resolve(import.meta.dirname, "..");
 
-/** 型定義を使用する環境である。 */
-type Side = "ブラウザ" | "サーバー";
+/** 型定義を適用するファイルの種類である。要素のファイルは、サーバーで描画するときも要素の型定義で型を検査する。 */
+type Side = "要素のファイル" | "サーバーのファイル";
 
-/** package.json の exports の条件のうち、型定義を使用する環境を表すものである。 */
+/** package.json の exports の条件のうち、型定義を適用するファイルの種類を表すものである。 */
 const conditionSides: Readonly<Record<string, Side>> = {
-  "rinka-server": "サーバー",
-  "rinka-client": "ブラウザ",
+  "rinka-server": "サーバーのファイル",
+  "rinka-client": "要素のファイル",
 };
 
 /** API のページを作成しないエントリーポイントである。JSX の型は、手で記述するリファレンスのページで扱う。 */
@@ -63,12 +63,14 @@ function sourcesOf(subpath: string, value: unknown): Source[] {
     if (side === undefined) throw new Error(`${subpath} の条件 ${condition} の環境が不明です。`);
     return typeof nested.types === "string" ? [{ side, path: nested.types }] : [];
   });
-  const sides = new Set(conditional.map((source) => source.side));
-  const side: Side | undefined = sides.has("サーバー")
-    ? "ブラウザ"
-    : sides.has("ブラウザ")
-      ? "サーバー"
-      : undefined;
+  if (conditional.length > 1) throw new Error(`${subpath} の条件が 2 つ以上あります。`);
+  // 条件が無い型定義は、条件の環境と異なる種類のファイルに適用する。
+  const side: Side | undefined =
+    conditional[0]?.side === "サーバーのファイル"
+      ? "要素のファイル"
+      : conditional[0]?.side === "要素のファイル"
+        ? "サーバーのファイル"
+        : undefined;
   return [{ side, path: value.types }, ...conditional];
 }
 
@@ -243,6 +245,12 @@ class Reader {
     const from = this.externalModule(symbol);
     if (from !== undefined) return { kind: "external", name: symbol.name, from };
     const target = this.resolve(symbol);
+    const tags = this.checker.getJsDocTagsOfSymbol(target).map((tag) => tag.name);
+    if (tags.length > 0) {
+      throw new Error(
+        `${symbol.name} のドキュメントコメントのタグ ${tags.join("、")} は、リファレンスに出力できません。`,
+      );
+    }
     const declarations = target.declarations
       .map((handle) => handle.resolve())
       .filter((node) => node !== undefined);
@@ -361,6 +369,9 @@ export function referenceSources(packageDir: string, tsconfig: string): Record<s
   }
 }
 
+/** API のリファレンスの MDX を出力する、パッケージからの相対パスのディレクトリである。 */
+export const apiReferenceDir = "src/content/reference/api";
+
 /** リポジトリの oxfmt の設定のファイルを読み込む。 */
 const readOxfmtrc = (): Oxfmtrc & { $schema?: string } =>
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
@@ -377,7 +388,7 @@ export async function apiReferenceSources(): Promise<Record<string, string>> {
   );
   const formatted = await Promise.all(
     Object.entries(sources).map(async ([slug, content]) => {
-      const path = `src/content/reference/api/${slug}.mdx`;
+      const path = `${apiReferenceDir}/${slug}.mdx`;
       const { code, errors } = await format(path, content, options);
       if (errors.length > 0) throw new Error(`${path} を整形できません: ${errors[0]?.message}`);
       return [path, code] as const;

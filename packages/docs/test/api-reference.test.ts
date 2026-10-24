@@ -1,9 +1,14 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { apiReferenceSources, entriesOf, referenceSources } from "../scripts/api-reference.ts";
+import {
+  apiReferenceDir,
+  apiReferenceSources,
+  entriesOf,
+  referenceSources,
+} from "../scripts/api-reference.ts";
 
 /** 型定義とドキュメントコメントの書き方を一通り含む、見本のパッケージのディレクトリである。 */
 const fixture = resolve(import.meta.dirname, "fixtures/api-package");
@@ -26,13 +31,13 @@ describe("API のリファレンスの生成", () => {
 
   it("環境で説明が異なる export は、環境ごとの説明を併記し、同じ宣言は 1 回だけ出力する", () => {
     expect(section("fixture", "differ")).toBe(
-      "## differ\n\n- ブラウザ：ブラウザで実行する。\n- サーバー：何も実行せずに戻る。\n\n```ts\nconst differ: () => void;\n```\n\n",
+      "## differ\n\n- 要素のファイル：ブラウザで実行する。\n- サーバーのファイル：何も実行せずに戻る。\n\n```ts\nconst differ: () => void;\n```\n\n",
     );
   });
 
   it("一部の環境にだけある export は、説明と宣言に環境を明記する", () => {
     expect(section("fixture", "onlyClient")).toBe(
-      "## onlyClient\n\n- ブラウザ：ブラウザにだけある値である。\n\n```ts\n// ブラウザ\nconst onlyClient: number;\n```\n\n",
+      "## onlyClient\n\n- 要素のファイル：ブラウザにだけある値である。\n\n```ts\n// 要素のファイル\nconst onlyClient: number;\n```\n\n",
     );
   });
 
@@ -66,11 +71,31 @@ describe("API のリファレンスの生成", () => {
   it("オーバーロードは、宣言ごとのドキュメントコメントを段落にする", () => {
     expect(section("tool", "overload")).toContain("1 つ目の形である。\n\n2 つ目の形である。");
   });
+
+  it("リファレンスに出力できないタグを付与した export があれば、エラーにする", () => {
+    const tagged = resolve(import.meta.dirname, "fixtures/api-tagged");
+    expect(() => referenceSources(tagged, resolve(tagged, "tsconfig.json"))).toThrow(
+      "old のドキュメントコメントのタグ deprecated は、リファレンスに出力できません。",
+    );
+  });
+
+  it("エントリーポイントに環境の条件が 2 つ以上あれば、エラーにする", () => {
+    expect(() => entriesOf(resolve(import.meta.dirname, "fixtures/api-dual"))).toThrow(
+      ". の条件が 2 つ以上あります。",
+    );
+  });
 });
 
 describe("API のリファレンス", () => {
-  it("コミットしたファイルは、rinka の型定義から生成した内容と一致する", async () => {
-    for (const [path, content] of Object.entries(await apiReferenceSources())) {
+  it("コミットしたファイルは、rinka の型定義から生成したファイルの一覧と内容に一致する", async () => {
+    const sources = await apiReferenceSources();
+    expect(
+      readdirSync(resolve(import.meta.dirname, "..", apiReferenceDir))
+        .map((file) => `${apiReferenceDir}/${file}`)
+        .toSorted(),
+      "生成しないファイルがあるので、pnpm --filter @rinka/docs generate を実行してください。",
+    ).toEqual(Object.keys(sources).toSorted());
+    for (const [path, content] of Object.entries(sources)) {
       expect(
         readFileSync(resolve(import.meta.dirname, "..", path), "utf8"),
         `${path} が古いので、pnpm --filter @rinka/docs generate を実行してください。`,
