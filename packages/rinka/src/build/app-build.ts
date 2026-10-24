@@ -63,7 +63,7 @@ export function appBuild({ options, settings }: SceneContext): {
         }
         scope = { output: "static" };
       } else {
-        const files = prerenderFiles(root);
+        const files = prerenderFiles(root, settings().extensions);
         scope = files.length > 0 ? { output: "server", files } : undefined;
       }
       return {

@@ -141,7 +141,10 @@ export function serve({ settings, writeTypes }: ServeContext): Plugin {
         }
       };
       const onFile = (path: string): void => {
-        if (inside(routesDir, path) !== undefined && isRouteFile(basename(path))) {
+        if (
+          inside(routesDir, path) !== undefined &&
+          isRouteFile(basename(path), settings().extensions)
+        ) {
           invalidate(entries.routes);
         }
         if (isPrepareInput(root, elementsDir, path)) rewriteTypes();

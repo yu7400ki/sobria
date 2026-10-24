@@ -25,31 +25,40 @@ export const ROUTES_DIR = "src/routes";
 /** ルートの表に関わるファイルの、拡張子を除いた名前である。 */
 type RouteFileName = "page" | "layout" | "not-found" | "error" | "route" | "middleware";
 
-/** ルートの表に関わるファイルの、拡張子を除いた名前ごとの、使用できる拡張子である。 */
-const routeFileExtensions: Readonly<Record<RouteFileName, readonly string[]>> = {
-  page: [".tsx"],
-  layout: [".tsx"],
-  "not-found": [".tsx"],
-  error: [".tsx"],
-  route: [".ts"],
-  middleware: [".ts"],
+/** ルートの表に関わるファイルの、拡張子を除いた名前ごとの、JSX を返すファイルかどうかである。 */
+const returnsJsx: Readonly<Record<RouteFileName, boolean>> = {
+  page: true,
+  layout: true,
+  "not-found": true,
+  error: true,
+  route: false,
+  middleware: false,
 };
+
+/** `jsx` なら JSX を返すルートのファイルに、そうでなければそれ以外のルートのファイルに使用できる拡張子を返す。JSX を返すファイルには、登録した拡張子 `extensions` も使用できる。 */
+const extensionsOf = (jsx: boolean, extensions: readonly string[]): readonly string[] =>
+  jsx ? [".tsx", ...extensions] : [".ts"];
 
 /** ディレクトリにあれば表の行になるファイルの種類である。種類の名前は、拡張子を除いたファイルの名前と同じである。 */
 const rowKinds: readonly RouteKind[] = ["page", "route", "not-found"];
 
-/** ファイルの名前 `file` が、ルートの表に関わるファイルの名前かどうかを返す。 */
-export function isRouteFile(file: string): boolean {
-  return Object.entries(routeFileExtensions).some(([name, extensions]) =>
-    extensions.some((extension) => file === name + extension),
+/** ファイルの名前 `file` が、登録した拡張子 `extensions` のもとで、ルートの表に関わるファイルの名前かどうかを返す。 */
+export function isRouteFile(file: string, extensions: readonly string[]): boolean {
+  return Object.entries(returnsJsx).some(([name, jsx]) =>
+    extensionsOf(jsx, extensions).some((extension) => file === name + extension),
   );
 }
 
-/** ファイルの名前の集合 `files` から、拡張子を除いた名前が `name` のルートのファイルの名前を返す。 */
-function routeFileIn(files: ReadonlySet<string>, name: RouteFileName): string | undefined {
-  return routeFileExtensions[name]
+/** ファイルの名前の集合 `files` から、登録した拡張子 `extensions` のもとで、拡張子を除いた名前が `name` のルートのファイルの名前を、名前の順に返す。 */
+function routeFilesIn(
+  files: ReadonlySet<string>,
+  name: RouteFileName,
+  extensions: readonly string[],
+): string[] {
+  return extensionsOf(returnsJsx[name], extensions)
     .map((extension) => name + extension)
-    .find((file) => files.has(file));
+    .filter((file) => files.has(file))
+    .toSorted();
 }
 
 /** ディレクトリの名前を区切りにする。`[` か `(` で始まり、動的な区切り、キャッチオール、グループのどれの形でもない名前は、`file` を示すエラーにする。 */
@@ -176,13 +185,15 @@ function rowOf({
 
 /**
  * プロジェクトのルート `root` からの相対パス `dir` のディレクトリを走査し、走査した行の列と、ルートのミドルウェアを返す。
- * 2 つの `page.tsx` か `route.ts` が同じ URL に対応するときは、エラーを投げる。同じディレクトリに `page.tsx` と `route.ts` を置いたときも、このエラーになる。
- * 同じ URL に対応し、グループを含めたディレクトリの深さが同じ 2 つの `not-found.tsx` があるときも、エラーを投げる。
- * キャッチオールのディレクトリの配下のディレクトリにルートのファイルがあるときも、エラーを投げる。
+ * `page`、`layout`、`not-found`、`error` は、登録した拡張子 `extensions` のファイルも対象にする。
+ * 2 つのページか `route` が同じ URL に対応するときは、エラーを投げる。同じディレクトリにページと `route` を置いたときも、このエラーになる。
+ * 同じ URL に対応し、グループを含めたディレクトリの深さが同じ 2 つの `not-found` があるときも、エラーを投げる。
+ * キャッチオールのディレクトリの配下のディレクトリにルートのファイルがあるときと、同じディレクトリに拡張子を除いた名前が同じルートのファイルが 2 つ以上あるときも、エラーを投げる。
  */
 function scan(
   root: string,
   dir: string,
+  extensions: readonly string[],
 ): { readonly scanned: readonly Scanned[]; readonly middleware: string | undefined } {
   const scanned: Scanned[] = [];
   let middleware: string | undefined;
@@ -201,8 +212,15 @@ function scan(
     );
     const files = new Set(entries.filter((entry) => entry.isFile()).map((entry) => entry.name));
     const fileNamed = (name: RouteFileName): string | undefined => {
-      const found = routeFileIn(files, name);
-      return found === undefined ? undefined : fileOf(join(current, found));
+      const found = routeFilesIn(files, name, extensions).map((file) =>
+        fileOf(join(current, file)),
+      );
+      if (found.length > 1) {
+        throw new Error(
+          `${found.join(" と ")} は、同じ種類のルートのファイルです。1 つだけにしてください。`,
+        );
+      }
+      return found[0];
     };
     const layout = fileNamed("layout");
     const layouts = layout === undefined ? outerLayouts : [...outerLayouts, layout];
@@ -276,23 +294,31 @@ function scan(
 }
 
 /**
- * プロジェクトのルート `root` からの相対パス `dir` のディレクトリを走査し、ルートの表を返す。
+ * プロジェクトのルート `root` からの相対パス `dir` のディレクトリを、登録した拡張子 `extensions` のファイルも含めて走査し、ルートの表を返す。
  * ルートは、同じ位置では静的な区切り、動的な区切り、キャッチオールの順に並ぶ。ルートのファイルの配置が不正なら、エラーを投げる。
  */
-export function scanRoutes(root: string, dir: string): Routes<PathFiles> {
-  const { scanned, middleware } = scan(root, dir);
+export function scanRoutes(
+  root: string,
+  dir: string,
+  extensions: readonly string[],
+): Routes<PathFiles> {
+  const { scanned, middleware } = scan(root, dir, extensions);
   return {
     routes: scanned.toSorted(compareRoutes).map(({ route }) => route),
     ...(middleware !== undefined && { middleware }),
   };
 }
 
-/** `root` からの相対パス `dir` のページごとに、グループを除いたファイルの形のパスと、パラメータとキャッチオールの名前を返す。ルートのファイルの配置が不正なら、エラーを投げる。 */
+/**
+ * `root` からの相対パス `dir` の、登録した拡張子 `extensions` のものを含むページごとに、グループを除いたファイルの形のパスと、パラメータとキャッチオールの名前を返す。
+ * ルートのファイルの配置が不正なら、エラーを投げる。
+ */
 export function scanPages(
   root: string,
   dir: string,
+  extensions: readonly string[],
 ): { readonly path: string; readonly params: readonly string[] }[] {
-  return scan(root, dir)
+  return scan(root, dir, extensions)
     .scanned.flatMap(({ route, segments }) => (route.kind === "page" ? [{ route, segments }] : []))
     .map(({ route, segments }) => ({
       path: route.pattern,
@@ -316,9 +342,9 @@ const toCode = (value: unknown): string =>
 /** ファイル `file` を、モジュールを読み込む関数に置き換える目印の文字列にする。 */
 const toImport = (file: string): string => `${importMarker}${file}`;
 
-/** `root` からの相対パス `dir` を走査し、ファイルごとにモジュールを読み込む関数を持つルートの表を export するモジュールのコードを返す。 */
-export function routesModule(root: string, dir: string): string {
-  const { routes, middleware } = mapRouteFiles(scanRoutes(root, dir), {
+/** `root` からの相対パス `dir` を、登録した拡張子 `extensions` のファイルも含めて走査し、ファイルごとにモジュールを読み込む関数を持つルートの表を export するモジュールのコードを返す。 */
+export function routesModule(root: string, dir: string, extensions: readonly string[]): string {
+  const { routes, middleware } = mapRouteFiles(scanRoutes(root, dir, extensions), {
     component: toImport,
     middleware: toImport,
     handlers: toImport,

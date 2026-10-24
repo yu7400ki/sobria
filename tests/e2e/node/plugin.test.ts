@@ -13,7 +13,7 @@ import {
   type ViteDevServer,
   mergeConfig,
 } from "vite";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createDevServer, originOf, type RinkaSetup } from "../dev-server.ts";
 
@@ -323,6 +323,35 @@ describe("登録した拡張子のファイル", () => {
       { options },
     );
   });
+
+  it("登録した拡張子のページとレイアウトを描画し、開発中に追加したページをルートの表に加える", async () => {
+    await withProject(
+      {
+        "src/routes/layout.page":
+          "@page\nexport default function Layout(props: { children?: unknown }) { return <main>{props.children}</main>; }\n",
+        "src/routes/page.page": "@page\nexport default function Page() { return <h1>home</h1>; }\n",
+        // ページを追加するディレクトリを先に作成し、ファイルの追加だけでルートの表を作り直すことを確認する
+        "src/routes/added/part.ts": "export const part = 1;\n",
+      },
+      async (dev) => {
+        await dev.listen();
+        const text = async (path: string) => (await fetch(originOf(dev) + path)).text();
+        expect(await text("/")).toContain("<main><h1>home</h1></main>");
+        await addFile(
+          dev,
+          "src/routes/added/page.page",
+          "@page\nexport default function Added() { return <p>added</p>; }\n",
+        );
+        await vi.waitFor(async () => expect(await text("/added")).toContain("<p>added</p>"), {
+          timeout: 10_000,
+          interval: 200,
+        });
+        expect(await prepared(dev, "routes.d.ts")).toContain('"/added"');
+      },
+      { server: { middlewareMode: false, port: 0 } },
+      { options, before: [pagePlugin()] },
+    );
+  }, 30_000);
 
   it("登録した拡張子のファイルでサーバー関数を定義すると、エラーにする", async () => {
     await withProject(

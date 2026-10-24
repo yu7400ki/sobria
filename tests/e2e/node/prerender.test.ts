@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { rinka } from "rinka/vite";
-import { createServer, preview } from "vite";
+import { createServer, preview, type Plugin } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { originOf } from "../dev-server.ts";
@@ -28,6 +28,64 @@ async function temporary(): Promise<string> {
 
 afterAll(async () => {
   await Promise.all(temporaries.map((dir) => rm(dir, { recursive: true, force: true })));
+});
+
+describe("登録した拡張子のページの書き出し", () => {
+  /** 拡張子が `.page` のファイルの先頭の行 `@page` を取り除いて、TSX のソースにするテスト用のプラグインである。 */
+  const pagePlugin: Plugin = {
+    name: "test:page",
+    enforce: "pre",
+    transform: (code, id) => (id.endsWith(".page") ? code.replace(/^@page\n/, "") : null),
+  };
+
+  it("prerender を export するページを書き出し、export しないページはサーバーのエントリーが描画する", async () => {
+    const project = await temporary();
+    const files = {
+      "package.json": JSON.stringify({ type: "module" }),
+      "src/routes/layout.page":
+        "@page\nexport default function Layout(props: { children?: unknown }) { return <main>{props.children}</main>; }\n",
+      "src/routes/page.page":
+        "@page\nexport const prerender = true;\nexport default function Page() { return <h1>home</h1>; }\n",
+      "src/routes/dynamic/page.page":
+        "@page\nexport default function Dynamic() { return <h1>dynamic</h1>; }\n",
+    };
+    await Promise.all(
+      Object.entries(files).map(async ([file, source]) => {
+        await mkdir(dirname(join(project, file)), { recursive: true });
+        await writeFile(join(project, file), source);
+      }),
+    );
+    const outDir = join(project, "dist");
+    await buildFixture(project, outDir, { extensions: [".page"] }, [pagePlugin]);
+    expect(await readFile(join(outDir, "client/index.html"), "utf8")).toContain(
+      "<main><h1>home</h1></main>",
+    );
+    expect(existsSync(join(outDir, "client/dynamic"))).toBe(false);
+    const module = (await import(pathToFileURL(join(outDir, "server/entry.js")).href)) as {
+      default: App;
+    };
+    const response = await module.default.fetch(new Request("http://localhost/dynamic"));
+    expect(await response.text()).toContain("<main><h1>dynamic</h1></main>");
+  }, 60_000);
+
+  it("書き出す URL が無ければ、ビルドの中でサーバーのエントリーを読み込まない", async () => {
+    const project = await temporary();
+    const files = {
+      "package.json": JSON.stringify({ type: "module" }),
+      "src/server.ts":
+        'import app from "rinka/app";\nReflect.set(globalThis, "rinkaEntryLoaded", true);\nexport default app;\n',
+      "src/routes/page.page": "@page\nexport default function Page() { return <h1>home</h1>; }\n",
+    };
+    await Promise.all(
+      Object.entries(files).map(async ([file, source]) => {
+        await mkdir(dirname(join(project, file)), { recursive: true });
+        await writeFile(join(project, file), source);
+      }),
+    );
+    await buildFixture(project, join(project, "dist"), { extensions: [".page"] }, [pagePlugin]);
+    expect(Reflect.get(globalThis, "rinkaEntryLoaded")).toBeUndefined();
+    expect(existsSync(join(project, "dist/client/index.html"))).toBe(false);
+  }, 60_000);
 });
 
 describe("prerender を export するページと route.ts の書き出し", () => {

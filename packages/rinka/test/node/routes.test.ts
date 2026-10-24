@@ -30,7 +30,9 @@ function project(files: readonly string[]): string {
   return root;
 }
 
-const scan = (files: readonly string[]) => scanRoutes(project(files), "src/routes");
+/** `files` を配置したプロジェクトを、登録した拡張子 `extensions` で走査する。 */
+const scan = (files: readonly string[], extensions: readonly string[] = []) =>
+  scanRoutes(project(files), "src/routes", extensions);
 
 /** 行のモジュールのファイルを返す。`not-found.tsx` の行では、その `not-found.tsx` のファイルを返す。 */
 const moduleOf = (route: Route<PathFiles>): string =>
@@ -154,7 +156,7 @@ describe("scanRoutes", () => {
   });
 
   it("ルートのディレクトリが無ければ、空の表を返す", () => {
-    expect(scanRoutes(project([]), "src/routes")).toEqual({ routes: [] });
+    expect(scanRoutes(project([]), "src/routes", [])).toEqual({ routes: [] });
   });
 
   it("同じディレクトリに page.tsx と route.ts があれば、エラーを投げる", () => {
@@ -205,6 +207,42 @@ describe("scanRoutes が拒否する構成", () => {
     );
     expect(scan(["docs/[...slug]/page.tsx", "docs/[...slug]/parts/toc.tsx"]).routes).toHaveLength(
       1,
+    );
+  });
+});
+
+describe("登録した拡張子のルートのファイル", () => {
+  it("page、layout、error、not-found には登録した拡張子を使用でき、route と middleware には使用できない", () => {
+    const files = [
+      "layout.page",
+      "page.page",
+      "error.page",
+      "not-found.page",
+      "middleware.page",
+      "users/page.tsx",
+      "api/route.page",
+    ];
+    const table = scan(files, [".page"]);
+    expect(table.middleware).toBeUndefined();
+    expect(table.routes.map(moduleOf)).toEqual([
+      "src/routes/page.page",
+      "src/routes/users/page.tsx",
+      "src/routes/not-found.page",
+    ]);
+    expect(table.routes[0]).toMatchObject({
+      layouts: ["src/routes/layout.page"],
+      notFound: { module: "src/routes/not-found.page" },
+      error: { module: "src/routes/error.page" },
+    });
+    expect(scan(files).routes.map(moduleOf)).toEqual(["src/routes/users/page.tsx"]);
+  });
+
+  it("同じディレクトリに、拡張子を除いた名前が同じルートのファイルが 2 つあると、エラーにする", () => {
+    expect(() => scan(["page.tsx", "page.page"], [".page"])).toThrow(
+      "src/routes/page.page と src/routes/page.tsx",
+    );
+    expect(() => scan(["users/layout.page", "users/layout.tsx"], [".page"])).toThrow(
+      "src/routes/users/layout.page と src/routes/users/layout.tsx",
     );
   });
 });
@@ -300,7 +338,7 @@ describe("routesModule", () => {
       "users/[id]/page.tsx",
       "api/route.ts",
     ]);
-    const code = routesModule(root, "src/routes");
+    const code = routesModule(root, "src/routes", []);
     // oxlint-disable-next-line typescript/no-implied-eval
     const evaluate = new Function(
       `${code.replaceAll("export const ", "const ")}\nreturn { routes, middleware };`,
@@ -312,6 +350,6 @@ describe("routesModule", () => {
         middleware: importedFile,
         handlers: importedFile,
       }),
-    ).toEqual(scanRoutes(root, "src/routes"));
+    ).toEqual(scanRoutes(root, "src/routes", []));
   });
 });

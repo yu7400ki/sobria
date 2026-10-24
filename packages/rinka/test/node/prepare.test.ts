@@ -16,6 +16,7 @@ const prepare = (options: { prefix?: string; globalJSX?: boolean; root?: string 
     root: options.root ?? root,
     prefix: options.prefix ?? "app",
     elementsDir: join(options.root ?? root, "src/elements"),
+    extensions: [],
     globalJSX: options.globalJSX ?? true,
   });
 

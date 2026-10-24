@@ -35,6 +35,8 @@ export interface PrepareOptions {
   readonly prefix: string;
   /** 要素のディレクトリの絶対パスである。 */
   readonly elementsDir: string;
+  /** プラグインの設定の `extensions` に登録した拡張子である。 */
+  readonly extensions: readonly string[];
   /** 真なら、`env.d.ts` でグローバルの `JSX.Element` を宣言する。 */
   readonly globalJSX: boolean;
 }
@@ -87,7 +89,7 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
       2,
     )}\n`;
   return new Map([
-    ["routes.d.ts", routesDeclaration(root)],
+    ["routes.d.ts", routesDeclaration(root, options.extensions)],
     ["env.d.ts", envDeclaration(options.globalJSX)],
     [
       "elements.d.ts",
@@ -121,10 +123,10 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
   ]);
 }
 
-/** アプリのルート `root` のページから、`RouteParams` を拡張する型宣言を返す。 */
-function routesDeclaration(root: string): string {
+/** アプリのルート `root` の、登録した拡張子 `extensions` のものを含むページから、`RouteParams` を拡張する型宣言を返す。 */
+function routesDeclaration(root: string, extensions: readonly string[]): string {
   const lines: string[] = [];
-  for (const { path, params } of scanPages(root, ROUTES_DIR)) {
+  for (const { path, params } of scanPages(root, ROUTES_DIR, extensions)) {
     const type =
       params.length === 0 ? "{}" : `{ ${params.map((name) => `${name}: string`).join("; ")} }`;
     lines.push(`    ${JSON.stringify(path)}: ${type};\n`);

@@ -28,12 +28,19 @@ function exportsName(program: ESTree.Program, name: string): boolean {
   });
 }
 
-/** プロジェクトのルート `root` のページと `route.ts` のうち、`prerender` を export するもののファイルを返す。 */
-export function prerenderFiles(root: string): string[] {
+/**
+ * プロジェクトのルート `root` のページと `route.ts` のうち、`prerender` を export するもののファイルを返す。
+ * 登録した拡張子 `extensions` のページは、`prerender` を export するかにかかわらず返す。
+ */
+export function prerenderFiles(root: string, extensions: readonly string[]): string[] {
   const files: string[] = [];
-  for (const route of scanRoutes(root, ROUTES_DIR).routes) {
+  for (const route of scanRoutes(root, ROUTES_DIR, extensions).routes) {
     if (route.kind === "not-found") continue;
     const path = join(root, route.module);
+    if (extensions.includes(extname(path))) {
+      files.push(route.module);
+      continue;
+    }
     const code = readFileSync(path, "utf8");
     if (!code.includes("prerender")) continue;
     const program = parseModule(code, {
@@ -79,7 +86,7 @@ function fileOf(clientDir: string, pathname: string, kind: "page" | "route"): st
 const expectedStatus = { page: 200, route: 200, "not-found": 404 } as const;
 
 /**
- * サーバーの出力先 `serverDir` のサーバーのエントリーと書き出すモジュールを読み込み、書き出す各 URL のレスポンスの本文を、クライアントの出力先 `clientDir` に保存する。
+ * サーバーの出力先 `serverDir` の書き出すモジュールを読み込み、書き出す URL があれば、サーバーのエントリーを読み込んで、各 URL のレスポンスの本文をクライアントの出力先 `clientDir` に保存する。
  * ページは `<パス>/index.html` に、`route.ts` は URL のパスのとおりに、`404.html` の対象は `404.html` に保存する。
  * 対象の種類ごとに期待するステータスと異なるレスポンスと、既にあるファイルと重なる保存先は、エラーにする。
  */
@@ -87,16 +94,18 @@ export async function writePrerendered(serverDir: string, clientDir: string): Pr
   const load = async (name: string): Promise<unknown> =>
     import(pathToFileURL(join(serverDir, `${name}.js`)).href);
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  const prerender = (await load(PRERENDER_ENTRY_NAME)) as {
+    readonly default: () => Promise<readonly PrerenderTarget[]>;
+  };
+  const targets = await prerender.default();
+  if (targets.every((target) => target.urls.length === 0)) return;
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   const entry = (await load(SERVER_ENTRY_NAME)) as {
     readonly default: {
       readonly fetch: (request: Request, env: object) => Response | Promise<Response>;
     };
   };
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-  const targets = (await load(PRERENDER_ENTRY_NAME)) as {
-    readonly default: () => Promise<readonly PrerenderTarget[]>;
-  };
-  for (const target of await targets.default()) {
+  for (const target of targets) {
     for (const url of target.urls) {
       // 書き出しの順序とエラーを決定的にするため、URL を 1 つずつ取得する
       // oxlint-disable-next-line no-await-in-loop
