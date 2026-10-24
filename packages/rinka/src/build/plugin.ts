@@ -171,7 +171,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         if (id === APP) {
           const serverFns = new Map(serverFnModules(root).map((file) => [fnModuleOf(file), file]));
           return scene === "serve"
-            ? devAppModule({ serverFns, trustedOrigins })
+            ? devAppModule({ serverFns, trustedOrigins, prerendered: options.output === "static" })
             : buildAppModule({ serverFns, trustedOrigins });
         }
         const sheet = sheetPath(id);

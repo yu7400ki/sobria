@@ -26,6 +26,7 @@ import {
 import { classify, notFound } from "./errors.ts";
 import { stylesheetLink } from "./html.ts";
 import { jsx } from "./jsx-runtime.ts";
+import { prerenderTargets } from "./prerender.ts";
 import { handledMethod } from "./request.ts";
 import { renderDocument, renderRefresh } from "./response.ts";
 import { withDepth } from "./tree.ts";
@@ -212,7 +213,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     middleware === undefined ? serverFns : every(root(lazy(middleware), failures), serverFns);
   app.use(formRedirects);
   app.use((c, next) => runInRequest(c, () => rinka(c, next)));
-  for (const route of routes) register(app, route, respond);
+  for (const route of routes) register(app, route, respond, options.prerendered === true);
   app.notFound((c) => respond(c, jsx(missing, {}), {}, {}));
   return app;
 }) satisfies CreateApp;
@@ -229,12 +230,19 @@ type Respond = (
   files?: readonly string[],
 ) => Promise<Response>;
 
-/** `route` を、ディレクトリのミドルウェアの後に `app` に登録する。 */
-function register(app: Hono, route: Route, respond: Respond): void {
+/**
+ * `route` を、ディレクトリのミドルウェアの後に `app` に登録する。
+ * `prerendered` が真なら、ページのリクエストの URL が、そのページの `prerender` が返す URL に無いときに、`notFound()` を投げる。
+ */
+function register(app: Hono, route: Route, respond: Respond, prerendered: boolean): void {
   const directory = every(...route.middlewares.map(lazy));
   switch (route.kind) {
     case "page":
       app.get(route.path, directory, async (c) => {
+        if (prerendered) {
+          const [target] = await prerenderTargets({ routes: [route] }, "all");
+          if (!target?.urls.includes(new URL(c.req.url).pathname)) throw notFound();
+        }
         const props = propsOf(c);
         return respond(
           c,

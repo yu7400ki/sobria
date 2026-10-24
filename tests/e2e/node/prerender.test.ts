@@ -5,9 +5,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { rinka } from "rinka/vite";
-import { preview } from "vite";
+import { createServer, preview } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { originOf } from "../dev-server.ts";
 import { buildFixture } from "./production.ts";
 
 /** ビルドするテスト用のアプリのルートである。 */
@@ -126,6 +127,33 @@ describe("output: 'static'", () => {
     await expect(buildFixture(copy, join(copy, "dist"), { output: "static" })).rejects.toThrow(
       "src/routes/users/[id]/page.tsx",
     );
+  }, 60_000);
+
+  it("開発サーバーは、prerender が返していないパラメータの URL に 404 を返す", async () => {
+    const server = await createServer({
+      root,
+      configFile: false,
+      logLevel: "error",
+      server: { hmr: false, port: 0 },
+      cacheDir: join(await temporary(), "vite"),
+      plugins: [rinka({ prefix: "app", output: "static" })],
+    });
+    await server.listen();
+    try {
+      const origin = originOf(server);
+      const listed = await fetch(`${origin}/posts/hello`);
+      expect([listed.status, await listed.text()]).toEqual([
+        200,
+        expect.stringContaining("<h1>post hello</h1>"),
+      ]);
+      const unlisted = await fetch(`${origin}/posts/other`);
+      expect([unlisted.status, await unlisted.text()]).toEqual([
+        404,
+        expect.stringContaining("<h1>missing</h1>"),
+      ]);
+    } finally {
+      await server.close();
+    }
   }, 60_000);
 });
 

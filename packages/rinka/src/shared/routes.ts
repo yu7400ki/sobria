@@ -139,6 +139,8 @@ export interface AppOptions {
   readonly trustedOrigins?: readonly string[];
   /** サーバー関数のリクエストごとに ID を受け取り、その ID のサーバー関数の定義を読み込めたら真を返す。偽を返した ID のリクエストには 404 を返す。 */
   readonly loadServerFn?: (id: string) => Promise<boolean>;
+  /** `true` なら、ページのリクエストの URL が、そのページの `prerender` が返す URL に無いときに、`notFound()` と同じ 404 を返す。 */
+  readonly prerendered?: true;
 }
 
 /** ルートの表から、各ページを描画するアプリを作成する関数を表す。 */
