@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import type { ESTree } from "vite";
 
 import { prerenderEnv, type PrerenderScope, type PrerenderTarget } from "../shared/prerender.ts";
-import { langs, moduleExportName, parseModule } from "./ast.ts";
+import { moduleExportName, parseModule, sourceLangOf } from "./ast.ts";
 import { entries, importInternal } from "./entries.ts";
 import { ROUTES_DIR, scanRoutes } from "./routes.ts";
 import { SERVER_ENTRY_NAME } from "./settings.ts";
@@ -37,17 +37,15 @@ export function prerenderFiles(root: string, extensions: readonly string[]): str
   for (const route of scanRoutes(root, ROUTES_DIR, extensions).routes) {
     if (route.kind === "not-found") continue;
     const path = join(root, route.module);
-    if (extensions.includes(extname(path))) {
+    const source = sourceLangOf(path, extensions);
+    if (!source) continue;
+    if (source.registered) {
       files.push(route.module);
       continue;
     }
     const code = readFileSync(path, "utf8");
     if (!code.includes("prerender")) continue;
-    const program = parseModule(code, {
-      id: path,
-      file: route.module,
-      lang: langs[extname(path)]!,
-    });
+    const program = parseModule(code, { id: path, file: route.module, lang: source.lang });
     if (exportsName(program, "prerender")) files.push(route.module);
   }
   return files;

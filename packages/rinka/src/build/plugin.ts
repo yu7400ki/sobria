@@ -1,10 +1,9 @@
-import { extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { transformWithOxc, type Plugin, type ResolvedConfig } from "vite";
 
 import { appBuild } from "./app-build.ts";
-import { langs, type Lang } from "./ast.ts";
+import { sourceLangOf, type SourceLang } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
 import { devAppModule, serve } from "./dev-server.ts";
 import { sourceTag } from "./elements.ts";
@@ -56,15 +55,12 @@ const APP = virtualId(entries.app);
 /** 要素が無いアプリの、クライアントのビルドの入口にする仮想モジュールの ID である。 */
 const NO_ELEMENTS = virtualId(entries.noElements);
 
-/** 変換するプロジェクトのファイルの、モジュールのパス、ルートからの相対パス、言語を表す。 */
-interface ProjectFile {
+/** 変換するプロジェクトのファイルの、モジュールのパス、ルートからの相対パス、言語、登録した拡張子のファイルかどうかを表す。 */
+interface ProjectFile extends SourceLang {
   readonly path: string;
   readonly file: string;
-  readonly lang: Lang;
   /** ライブラリのファイルなら真である。 */
   readonly library: boolean;
-  /** プラグインの設定の `extensions` に登録した拡張子のファイルなら真である。 */
-  readonly registered: boolean;
 }
 
 /**
@@ -112,10 +108,8 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   const projectFile = (id: string): ProjectFile | undefined => {
     if (id.includes("?") || id.startsWith("\0")) return undefined;
     const { root, sources } = current();
-    const extension = extname(id);
-    const registered = extensions.includes(extension);
-    const lang = registered ? "tsx" : langs[extension];
-    if (!lang) return undefined;
+    const source = sourceLangOf(id, extensions);
+    if (!source) return undefined;
     const owner = sources.find(({ dir }) => {
       const inner = inside(dir, id);
       return inner !== undefined && !inner.split("/").includes("node_modules");
@@ -124,9 +118,8 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
     return {
       path: id,
       file: relativePath(root, id),
-      lang,
+      ...source,
       library: owner.dir !== root,
-      registered,
     };
   };
 

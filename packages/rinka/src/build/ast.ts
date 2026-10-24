@@ -1,3 +1,5 @@
+import { extname } from "node:path";
+
 import type { MagicString, SourceMap } from "magic-string";
 import { parseSync, type ESTree } from "vite";
 
@@ -13,6 +15,23 @@ export const langs: Readonly<Record<string, Lang>> = {
   ".js": "js",
   ".jsx": "jsx",
 };
+
+/** ファイルを変換する言語と、プラグインの設定の `extensions` に登録した拡張子のファイルかどうかを表す。 */
+export interface SourceLang {
+  readonly lang: Lang;
+  readonly registered: boolean;
+}
+
+/**
+ * ファイル `file` を変換する言語と、登録した拡張子 `extensions` のファイルかどうかを返す。
+ * 登録した拡張子のファイルの言語は `tsx` である。変換しない拡張子のファイルには `undefined` を返す。
+ */
+export function sourceLangOf(file: string, extensions: readonly string[]): SourceLang | undefined {
+  const extension = extname(file);
+  if (extensions.includes(extension)) return { lang: "tsx", registered: true };
+  const lang = langs[extension];
+  return lang === undefined ? undefined : { lang, registered: false };
+}
 
 /** oxc のパーサーが返す AST のノードを表す。 */
 export type Node = ESTree.Node;
