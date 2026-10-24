@@ -31,26 +31,20 @@ export type Definition =
   | {
       readonly kind: "serverFn";
       readonly name: string;
-      /** `<ファイル>#<名前>` の形式の ID である。 */
-      readonly id: string;
       readonly init: ESTree.Expression;
       readonly method: ServerFnMethod;
     }
   | { readonly kind: "middleware"; readonly name: string; readonly init: ESTree.Expression };
 
-/** 定義 `definitions` のうち、サーバー関数の ID を返す。 */
-export const serverFnIds = (definitions: readonly Definition[]): string[] =>
-  definitions.flatMap((definition) => (definition.kind === "serverFn" ? [definition.id] : []));
+/** 定義 `definitions` のうち、サーバー関数の名前を返す。 */
+export const serverFnNames = (definitions: readonly Definition[]): string[] =>
+  definitions.flatMap((definition) => (definition.kind === "serverFn" ? [definition.name] : []));
 
 /**
  * `rinka/server` から import した `defineServerFn` と `defineMiddleware` で初期化したトップレベルの const を、ソースの順に返す。
  * `defineServerFn` をそれ以外の位置で使用するか、サーバー関数のメソッドを静的に読み取れないか、`rinka/server` を名前を指定せずに import すると、ビルドのエラーにする。
  */
-export function findDefinitions(
-  program: ESTree.Program,
-  file: string,
-  fnModule: string,
-): Definition[] {
+export function findDefinitions(program: ESTree.Program, file: string): Definition[] {
   for (const statement of program.body) {
     if (statement.type !== "ImportDeclaration" || statement.source.value !== entries.server)
       continue;
@@ -84,7 +78,6 @@ export function findDefinitions(
       definitions.push({
         kind: "serverFn",
         name: id.name,
-        id: serverFnId(fnModule, id.name),
         init,
         method: methodOf(options, file, id.name),
       });
@@ -144,7 +137,8 @@ export function registerServerFns(
   for (const definition of definitions) {
     if (definition.kind !== "serverFn") continue;
     registered = true;
-    surround(output, definition.init, `${REGISTER}(${JSON.stringify(definition.id)}, `, ")");
+    const id = serverFnId(fnModule, definition.name);
+    surround(output, definition.init, `${REGISTER}(${JSON.stringify(id)}, `, ")");
   }
   if (registered) {
     output.prepend(`const ${REGISTER} = ${SERVER_FN_MODULE}(${JSON.stringify(fnModule)});\n`);
@@ -175,7 +169,7 @@ function helpersOf(program: ESTree.Program): Helper[] {
 }
 
 /**
- * サーバー関数の定義の式を、RPC の関数を作成する呼び出しに、ミドルウェアの定義の式を `undefined` に置換する。
+ * サーバー関数の定義の式を、ID のモジュールの部分が `fnModule` の RPC の関数を作成する呼び出しに、ミドルウェアの定義の式を `undefined` に置換する。
  * 置換で使用されなくなった、トップレベルの関数と関数で初期化した const を除去し、使用されなくなった import の指定子を除去する。
  * 指定子が残らない import の文は、文ごと除去する。
  */
@@ -184,6 +178,7 @@ export function replaceDefinitions(
   output: MagicString,
   code: string,
   definitions: readonly Definition[],
+  fnModule: string,
 ): void {
   if (definitions.length === 0) return;
   const helpers = helpersOf(program);
@@ -227,7 +222,7 @@ export function replaceDefinitions(
     output.overwrite(
       init.start,
       init.end,
-      `${SERVER_FN}(${JSON.stringify(definition.id)}, ${JSON.stringify(definition.method)})`,
+      `${SERVER_FN}(${JSON.stringify(serverFnId(fnModule, definition.name))}, ${JSON.stringify(definition.method)})`,
     );
   }
   for (const statement of program.body) {

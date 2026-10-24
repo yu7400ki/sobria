@@ -1,6 +1,7 @@
 import { MagicString } from "magic-string";
 
 import type { ElementInfo } from "../shared/element.ts";
+import { serverFnId } from "../shared/server-fn.ts";
 import { parseModule, type ModuleSource, type Node, type Transformed } from "./ast.ts";
 import { registerElement, type ElementTarget } from "./element-transform.ts";
 import { importInternalAs } from "./entries.ts";
@@ -9,7 +10,7 @@ import {
   findDefinitions,
   registerServerFns,
   replaceDefinitions,
-  serverFnIds,
+  serverFnNames,
 } from "./server-fn-transform.ts";
 import { rewriteSheetImports } from "./sheets.ts";
 import { addElementSites, addMemoSites } from "./sites.ts";
@@ -45,7 +46,7 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
   const program = parseModule(code, options);
   const output = new MagicString(code);
   const fnModule = options.fnModule ?? options.file;
-  const definitions = findDefinitions(program, options.file, fnModule);
+  const definitions = findDefinitions(program, options.file);
   const replaced = new Set<Node>(
     options.client ? definitions.map((definition) => definition.init) : [],
   );
@@ -59,7 +60,7 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
     if (stopAwaits(program, output, replaced)) {
       output.prepend(importInternalAs("client", "stopIfSeeding", STOP_IF_SEEDING));
     }
-    replaceDefinitions(program, output, code, definitions);
+    replaceDefinitions(program, output, code, definitions, fnModule);
   } else {
     registerServerFns(output, definitions, fnModule);
   }
@@ -67,6 +68,6 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
     code: output.toString(),
     map: output.generateMap({ hires: true, source: options.id, includeContent: true }),
     element,
-    serverFns: serverFnIds(definitions),
+    serverFns: serverFnNames(definitions).map((name) => serverFnId(fnModule, name)),
   };
 }
