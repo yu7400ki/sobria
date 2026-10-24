@@ -1,0 +1,21 @@
+{
+  "name": "@rinka/docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "rinka prepare && vite build --app",
+    "typecheck": "rinka prepare && tsc -b"
+  },
+  "dependencies": {
+    "rinka": "workspace:*"
+  },
+  "devDependencies": {
+    "@ox-content/napi": "^3.4.0",
+    "@rinka/config": "workspace:*",
+    "@types/node": "catalog:",
+    "hono": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

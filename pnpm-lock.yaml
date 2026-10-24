@@ -76,6 +76,31 @@ importers:
         specifier: 'catalog:'
         version: 7.0.2
 
+  packages/docs:
+    dependencies:
+      rinka:
+        specifier: workspace:*
+        version: link:../rinka
+    devDependencies:
+      '@ox-content/napi':
+        specifier: ^3.4.0
+        version: 3.4.0
+      '@rinka/config':
+        specifier: workspace:*
+        version: link:../config
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.6.5
+      hono:
+        specifier: 'catalog:'
+        version: 5.0.0-rc.1
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vite:
+        specifier: 'catalog:'
+        version: 8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)
+
   packages/rinka:
     dependencies:
       '@hono/node-server':
@@ -888,6 +913,48 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.9':
     resolution: {integrity: sha512-3Belt6tdc8bPgAtbcmdtNJlirVoTmEb5e2gC94PnkwEW9jI6CAHUeoG85tjWP5WquqfavoMtMwiG4P926ZKKuQ==}
+
+  '@ox-content/binding-darwin-arm64@3.4.0':
+    resolution: {integrity: sha512-OHktOj7zm8dvgwYPZ2A3XkRsE+lQXcxIt0dRbyQNFCmimVKu6GQLJ4d8ejecTUwnJif7MhJKrpxPJitxgWpdDw==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@ox-content/binding-darwin-x64@3.4.0':
+    resolution: {integrity: sha512-6pCcbN7lETeSVq+oxGZ+hLcNrWs0E6JlLml01YMDbvx/V7EdbRQXjGDK2Taa6h0eYM31/RRwwU4CSn5crjYx7A==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@ox-content/binding-linux-arm64-gnu@3.4.0':
+    resolution: {integrity: sha512-omsC9LyyvMQXUQXMA6zvbDXwPw7YY/cn45EEW5VL5tUDVGnH+4DL0wxHqmnPx8oyrRbiCLS4i35XJ/QN1TsWRw==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@ox-content/binding-linux-arm64-musl@3.4.0':
+    resolution: {integrity: sha512-vXLcZeCLnifMooC5pz0ssCDzIWrDFwMbI4dGjgaMD9t9bAPDxNgQjEF6TuesvV8skXvToOeLRzBVFO8P0HK6Zg==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@ox-content/binding-linux-x64-gnu@3.4.0':
+    resolution: {integrity: sha512-nzsOieLwvK+qg8ooYBPVKoOnRrbxexQuRSqHryc7HWdLAyrIvdaQHs/HzfqYJLmFuP882+o/ZtjkjjW8JvbR9g==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@ox-content/binding-linux-x64-musl@3.4.0':
+    resolution: {integrity: sha512-P1JQQrye2zDxmIueP2++krRWRKKOtUgdQGEmyVMvu2FG4HREViKLC+TJgY6qdwY6vNMo9DRxXjDhmLjtayvn7A==}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@ox-content/binding-win32-x64-msvc@3.4.0':
+    resolution: {integrity: sha512-y5IqHv3A10BNngtfCSIT8Ti+XJBEwlzBhRdI7jyKgFEnMzXSAtn7ZIMfgIw9+HiB3E4qZuVJlIocvfYIgR2LsA==}
+    cpu: [x64]
+    os: [win32]
+
+  '@ox-content/napi@3.4.0':
+    resolution: {integrity: sha512-/uFtEBTk26N64BlXRDdHFCp6vjuzruAf70haXTdy91C8osBnpZHRmTxZu4h7cerGf4tXQ59Z5iSeGjD3vFw4rg==}
 
   '@oxc-project/types@0.154.0':
     resolution: {integrity: sha512-KYOUGQFlLWR+s4QMV2Q9ko38TZm7EdO87Qm7rvZLqk/webse/cDjtyxKhg/47l0byCbs/k46LT8qc4PKjAikzA==}
@@ -2685,6 +2752,37 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
+
+  '@ox-content/binding-darwin-arm64@3.4.0':
+    optional: true
+
+  '@ox-content/binding-darwin-x64@3.4.0':
+    optional: true
+
+  '@ox-content/binding-linux-arm64-gnu@3.4.0':
+    optional: true
+
+  '@ox-content/binding-linux-arm64-musl@3.4.0':
+    optional: true
+
+  '@ox-content/binding-linux-x64-gnu@3.4.0':
+    optional: true
+
+  '@ox-content/binding-linux-x64-musl@3.4.0':
+    optional: true
+
+  '@ox-content/binding-win32-x64-msvc@3.4.0':
+    optional: true
+
+  '@ox-content/napi@3.4.0':
+    optionalDependencies:
+      '@ox-content/binding-darwin-arm64': 3.4.0
+      '@ox-content/binding-darwin-x64': 3.4.0
+      '@ox-content/binding-linux-arm64-gnu': 3.4.0
+      '@ox-content/binding-linux-arm64-musl': 3.4.0
+      '@ox-content/binding-linux-x64-gnu': 3.4.0
+      '@ox-content/binding-linux-x64-musl': 3.4.0
+      '@ox-content/binding-win32-x64-msvc': 3.4.0
 
   '@oxc-project/types@0.154.0': {}
 
