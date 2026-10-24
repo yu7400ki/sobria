@@ -239,6 +239,35 @@ describe("output: 'static'", () => {
     );
   }, 60_000);
 
+  it("404.html の <head> に、not-found.tsx とレイアウトが import した CSS の <link> を出力する", async () => {
+    const copy = await copyFixture();
+    await addFile(copy, "routes/layout.css", [".layout-style { color: rgb(1, 2, 3); }"]);
+    await addFile(copy, "routes/not-found.css", [".not-found-style { color: rgb(4, 5, 6); }"]);
+    await addFile(copy, "routes/layout.tsx", [
+      'import "./layout.css";',
+      "export default function Layout(props) {",
+      "  return <main>{props.children}</main>;",
+      "}",
+    ]);
+    await addFile(copy, "routes/not-found.tsx", [
+      'import "./not-found.css";',
+      "export default function Missing() {",
+      "  return <h1>missing</h1>;",
+      "}",
+    ]);
+    await buildFixture(copy, join(copy, "dist"), { output: "static" });
+    const html = await readFile(join(copy, "dist/client/404.html"), "utf8");
+    const links = [
+      ...html.slice(0, html.indexOf("</head>")).matchAll(/<link rel="stylesheet" href="([^"]+)">/g),
+    ].map((match) => match[1]!);
+    expect(links.every((link) => /^\/assets\/[^/]+\.css$/.test(link))).toBe(true);
+    const css = (
+      await Promise.all(links.map((link) => readFile(join(copy, "dist/client", link), "utf8")))
+    ).join("\n");
+    expect(css).toContain(".layout-style");
+    expect(css).toContain(".not-found-style");
+  }, 60_000);
+
   it("サーバー関数を定義したファイルがあれば、ファイルの名前を含むビルドのエラーにする", async () => {
     const copy = await copyFixture();
     await addFile(copy, "lib/fns.ts", [

@@ -29,7 +29,7 @@ import { stylesheetLink } from "./html.ts";
 import { jsx } from "./jsx-runtime.ts";
 import { prerenderParams } from "./prerender.ts";
 import { handledMethod } from "./request.ts";
-import { renderDocument, renderRefresh } from "./response.ts";
+import { renderDocument, renderRefresh, type DocumentPage } from "./response.ts";
 import { withDepth } from "./tree.ts";
 
 /** エラーを記録して、素のテキストの 500 にする。 */
@@ -93,6 +93,10 @@ async function wrap(
   );
 }
 
+/** ページ `page` と、外側から順に並んだ `layouts` のファイルを、外側から順に返す。 */
+const filesOf = (page: Load<RouteComponent>, layouts: readonly Load<RouteComponent>[]): string[] =>
+  [...layouts, page].map((load) => load.file);
+
 /** エラーのページを、そのレイアウトで包み、`props` を渡して描画するノードを返す。 */
 const fallbackNode = (page: Fallback, props: object): unknown =>
   jsx(() => wrap(page.module, page.layouts, props), {});
@@ -143,6 +147,16 @@ const missing = (): never => {
 export const createApp = (({ routes, middleware }: Routes, options: AppOptions = {}): Hono => {
   const app = new Hono();
   const onError = options.onError ?? defaultFailure;
+  /** ルートのファイル `files` が import した CSS の `<link>` を、`options.head` の後に連結したマークアップを返す。 */
+  const headOf = async (files: readonly string[]): Promise<string> => {
+    const styles = options.styles && files.length > 0 ? await options.styles(files) : [];
+    return `${options.head ?? ""}${styles.map(stylesheetLink).join("")}`;
+  };
+  /** エラーのページを、そのレイアウトで包み、`props` を渡して描画する文書の内容を返す。CSS の一覧は、ページとレイアウトのモジュールを読み込んでから求める。 */
+  const fallbackPage = async (page: Fallback, props: object): Promise<DocumentPage> => {
+    const node = await wrap(page.module, page.layouts, props);
+    return { node, head: await headOf(filesOf(page.module, page.layouts)) };
+  };
   const respond: Respond = async (
     c,
     node,
@@ -150,28 +164,31 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     props,
     { files = [], refresh = c.req.header(REFRESH_HEADER) === "1" } = {},
   ) => {
-    const pages = {
-      headers: { vary: REFRESH_HEADER },
-      ...(missingPage && { notFound: () => fallbackNode(missingPage, props) }),
-      ...(errorPage && {
-        error: (error: unknown) => {
-          console.error(error);
-          return fallbackNode(errorPage, { ...props, error });
-        },
-      }),
+    const headers = { vary: REFRESH_HEADER };
+    /** `error.tsx` に渡す props を返す。投げられた値 `error` は記録する。 */
+    const errorProps = (error: unknown): object => {
+      console.error(error);
+      return { ...props, error };
     };
     if (refresh) {
-      return withContextHeaders(c, await renderRefresh(node, pages));
+      const response = await renderRefresh(node, {
+        headers,
+        ...(missingPage && { notFound: () => fallbackNode(missingPage, props) }),
+        ...(errorPage && { error: (error: unknown) => fallbackNode(errorPage, errorProps(error)) }),
+      });
+      return withContextHeaders(c, response);
     }
-    const styles = options.styles && files.length > 0 ? await options.styles(files) : [];
-    const head = `${options.head ?? ""}${styles.map(stylesheetLink).join("")}`;
-    const response = await renderDocument(node, {
-      ...pages,
-      blocking:
-        prerenderKindOf(c.env) !== undefined ||
-        (blockingRenderOf(c) ?? isBot(c.req.header("user-agent"))),
-      ...(head !== "" && { head }),
-    });
+    const response = await renderDocument(
+      { node, head: await headOf(files) },
+      {
+        headers,
+        ...(missingPage && { notFound: () => fallbackPage(missingPage, props) }),
+        ...(errorPage && { error: (error: unknown) => fallbackPage(errorPage, errorProps(error)) }),
+        blocking:
+          prerenderKindOf(c.env) !== undefined ||
+          (blockingRenderOf(c) ?? isBot(c.req.header("user-agent"))),
+      },
+    );
     return withContextHeaders(c, response);
   };
   const find = finder(routes);
@@ -278,7 +295,7 @@ function register(app: Hono, route: Route, respond: Respond, output: Output): vo
         }
         const props = propsOf(c);
         return respond(c, await wrap(route.module, route.layouts, props), route, props, {
-          files: [...route.layouts, route.module].map((load) => load.file),
+          files: filesOf(route.module, route.layouts),
         });
       });
       return;

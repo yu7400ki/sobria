@@ -58,23 +58,56 @@ export interface ResponseOptions extends RenderOptions {
  * どの `<Errored>` も受け止めなかったエラーは、`error` のページを 500 で返し、ページが無ければ reject する。
  * `notFound` のページの描画で投げたエラーには `error` のページを使用する。`error` のページの描画で投げた値は、ページを使用せずに、`redirect()` と `notFound()` と Response を同じ規則で扱い、それ以外では reject する。
  */
-export function renderToResponse(node: unknown, options: ResponseOptions = {}): Promise<Response> {
-  return respond(node, options, 200);
+export function renderToResponse(
+  node: unknown,
+  { notFound, error, ...options }: ResponseOptions = {},
+): Promise<Response> {
+  return respond(
+    withoutHead(node),
+    {
+      ...options,
+      ...(notFound && { notFound: () => Promise.resolve(withoutHead(notFound())) }),
+      ...(error && { error: (thrown: unknown) => Promise.resolve(withoutHead(error(thrown))) }),
+    },
+    200,
+  );
 }
 
-/** `<head>` に出力するマークアップを加えた、レスポンスのオプションを表す。 */
-export interface DocumentOptions extends ResponseOptions {
-  /** 文書の `<head>` の末尾に出力するマークアップである。 */
-  readonly head?: string;
+/** 文書として描画するノードと、文書の `<head>` の末尾に出力するマークアップを表す。 */
+export interface DocumentPage {
+  readonly node: unknown;
+  readonly head: string;
 }
 
-/** `renderToResponse` と同じ規則で、`options.head` を `<head>` の末尾に出力した Response を返す。 */
-export function renderDocument(node: unknown, options: DocumentOptions): Promise<Response> {
-  return respond(node, options, 200);
+/** `<head>` に何も加えずに `node` を描画する、文書の内容を返す。 */
+const withoutHead = (node: unknown): DocumentPage => ({ node, head: "" });
+
+/** 文書のレスポンスのオプションを表す。エラーのページは、そのページの `<head>` のマークアップとともに返す。 */
+export interface DocumentOptions extends RenderOptions {
+  readonly headers?: Record<string, string>;
+  /** シェルの中で `notFound()` を投げたときに、404 で返すページを返す。 */
+  readonly notFound?: () => Promise<DocumentPage>;
+  /** シェルの中で、どの `<Errored>` も受け止めなかったエラーを受け取り、500 で返すページを返す。 */
+  readonly error?: (error: unknown) => Promise<DocumentPage>;
 }
 
-/** `node` を描画した Response を返す。ステータスは、`status` と、シェルの中の `<Errored>` が決めたステータスのうち大きいほうである。 */
-async function respond(node: unknown, options: DocumentOptions, status: number): Promise<Response> {
+/**
+ * `renderToResponse` と同じ規則で、`page` のノードを描画し、`page` のマークアップを `<head>` の末尾に出力した Response を返す。
+ * `notFound` と `error` のページは、そのページのマークアップを `<head>` の末尾に出力する。`page` とエラーのページの Promise が reject した値は、シェルの中で投げた値と同じ規則で扱う。
+ */
+export function renderDocument(
+  page: DocumentPage | Promise<DocumentPage>,
+  options: DocumentOptions,
+): Promise<Response> {
+  return respond(page, options, 200);
+}
+
+/** `page` を描画した Response を返す。ステータスは、`status` と、シェルの中の `<Errored>` が決めたステータスのうち大きいほうである。 */
+async function respond(
+  page: DocumentPage | Promise<DocumentPage>,
+  options: DocumentOptions,
+  status: number,
+): Promise<Response> {
   const encoder = new TextEncoder();
   let controller!: ReadableStreamDefaultController<Uint8Array>;
   const body = new ReadableStream<Uint8Array>({
@@ -88,13 +121,16 @@ async function respond(node: unknown, options: DocumentOptions, status: number):
     blocking: options.blocking ?? false,
   });
   let shell: string;
+  let head: string;
   try {
+    const { node, head: markup } = await page;
+    head = markup;
     shell = await renderer.shell(asNode(node));
   } catch (error) {
     renderer.dispose();
     return failure(error, options, respond);
   }
-  renderer.finish(shell, options.head ?? "").then(
+  renderer.finish(shell, head).then(
     () => controller.close(),
     (error: unknown) => controller.error(error),
   );
@@ -135,11 +171,17 @@ async function refreshed(
   }
 }
 
+/** シェルの中で投げた値に応じて描画する、エラーのページを返す関数を表す。`P` は、エラーのページを表す値の型である。 */
+interface Fallbacks<P> {
+  readonly notFound?: () => P;
+  readonly error?: (error: unknown) => P;
+}
+
 /** シェルの中で投げられた値から、レスポンスを作成する。`notFound` と `error` のページは `render` で描画する。 */
-function failure<O extends ResponseOptions>(
+function failure<P, O extends Fallbacks<P>>(
   error: unknown,
   options: O,
-  render: (node: unknown, options: O, status: number) => Promise<Response>,
+  render: (page: P, options: O, status: number) => Promise<Response>,
 ): Response | Promise<Response> {
   const thrown = classify(error);
   switch (thrown.kind) {
