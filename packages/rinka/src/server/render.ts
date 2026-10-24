@@ -62,7 +62,7 @@ import {
   type Hoisted,
 } from "./document-head.ts";
 import { classify } from "./errors.ts";
-import { HostRecord, hostIds, serverHost } from "./host-record.ts";
+import { HostRecord, hostIds } from "./host-record.ts";
 import { attribute, checkAttributeName, escapeAttribute, escapeText } from "./html.ts";
 import { Labels } from "./labels.ts";
 import {
@@ -72,14 +72,49 @@ import {
   type DeferredFlush,
   type Delivered,
   type Flush,
-  type Patch,
   type ShellFlush,
-  type Target,
 } from "./out.ts";
 import { scriptJson } from "./script.ts";
 import { elementCss, propertiesStyle, type SheetInfo } from "./styles.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
 import { toScript } from "./wire.ts";
+
+/**
+ * 描画の種類を表す。`fragment` は `renderToString` の描画で、文書の骨組みに何も移動しない。
+ * `document` は文書を出力する描画で、`write` は出力する文字列を受け取る。`blocking` なら、すべての境界を待って、フォールバックと差し替えを出力しない。
+ * `refresh` は `refreshPage()` の描き直しで、要素を実行せずに、Shadow DOM の中身を持たないホストを出力する。
+ * `fragment` と `refresh` は、すべての境界を待ち、文字列を書き込まない。
+ */
+export type Target =
+  | { readonly kind: "fragment" }
+  | {
+      readonly kind: "document";
+      readonly write: (text: string) => void;
+      readonly blocking: boolean;
+    }
+  | { readonly kind: "refresh" };
+
+/** 境界の差し替えを表す。 */
+interface Patch {
+  readonly id: string;
+  /** 目印を含む Shadow DOM のホストを、外側から順に列挙する。 */
+  readonly path: readonly HostRecord[];
+  readonly html: Promise<string>;
+  /** 差し替えの中身を出力する位置である。 */
+  readonly out: Out;
+}
+
+/** サーバーの描画で、`ctx.host` の代わりに渡す値である。プロパティを参照すると、エラーを投げる。 */
+const serverHost = new Proxy(
+  {},
+  {
+    get() {
+      throw new Error(
+        "サーバーで描画している間は、ctx.host を使用できません。onMount か effect の中で使用してください。",
+      );
+    },
+  },
+);
 
 /**
  * 出力の単位を表す。文字列、穴、投げられた値、`<Loading>` の位置、`<Errored>` の領域、スロットの内容、要素のホストのいずれかである。

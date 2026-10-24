@@ -77,15 +77,3 @@ export class HostRecord {
 
 /** ホストの列を、ホストの ID の列にする。 */
 export const hostIds = (path: readonly HostRecord[]): string[] => path.map((host) => host.id);
-
-/** サーバーの描画で、`ctx.host` の代わりに渡す値である。プロパティを参照すると、エラーを投げる。 */
-export const serverHost = new Proxy(
-  {},
-  {
-    get() {
-      throw new Error(
-        "サーバーで描画している間は、ctx.host を使用できません。onMount か effect の中で使用してください。",
-      );
-    },
-  },
-);

@@ -1,37 +1,11 @@
 import type { Delivery } from "../shared/element.ts";
-import type { HostRecord } from "./host-record.ts";
 import type { SheetInfo } from "./styles.ts";
-
-/**
- * 描画の種類を表す。`fragment` は `renderToString` の描画で、文書の骨組みに何も移動しない。
- * `document` は文書を出力する描画で、`write` は出力する文字列を受け取る。`blocking` なら、すべての境界を待って、フォールバックと差し替えを出力しない。
- * `refresh` は `refreshPage()` の描き直しで、要素を実行せずに、Shadow DOM の中身を持たないホストを出力する。
- * `fragment` と `refresh` は、すべての境界を待ち、文字列を書き込まない。
- */
-export type Target =
-  | { readonly kind: "fragment" }
-  | {
-      readonly kind: "document";
-      readonly write: (text: string) => void;
-      readonly blocking: boolean;
-    }
-  | { readonly kind: "refresh" };
 
 /** 起動スクリプトに伝える要素を表す。`immediate` は、すぐ起動するインスタンスが 1 つでもあれば真である。 */
 export interface Delivered {
   readonly tag: string;
   readonly delivery: Delivery;
   readonly immediate: boolean;
-}
-
-/** 境界の差し替えを表す。 */
-export interface Patch {
-  readonly id: string;
-  /** 目印を含む Shadow DOM のホストを、外側から順に列挙する。 */
-  readonly path: readonly HostRecord[];
-  readonly html: Promise<string>;
-  /** 差し替えの中身を出力する位置である。 */
-  readonly out: Out;
 }
 
 /** 出力を送るチャンクを表す。シェルか、後送りの境界の中身である。 */

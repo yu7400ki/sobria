@@ -6,7 +6,7 @@ import { escapeAttribute } from "./html.ts";
  * 文書を出力する描画で、特別に扱うタグの扱いを表す。
  * `head` は `<head>` に移動するタグ、`html` と `body` は属性を文書の同じタグの開始タグに移動して子だけを描画するタグ、`transparent` は子だけを描画するタグである。
  */
-export type DocumentTag = "head" | "html" | "body" | "transparent";
+type DocumentTag = "head" | "html" | "body" | "transparent";
 
 /** 文書を出力する描画で、特別に扱うタグと、その扱いである。 */
 export const documentTags: ReadonlyMap<string, DocumentTag> = new Map([
@@ -68,10 +68,7 @@ export type Hoisted =
     };
 
 /** `<Navigation>` に指定した props を、名前ごとに表す。 */
-export type NavigationValues = ReadonlyMap<
-  keyof NavigationProps,
-  NavigationProps[keyof NavigationProps]
->;
+type NavigationValues = ReadonlyMap<keyof NavigationProps, NavigationProps[keyof NavigationProps]>;
 
 /** 属性の名前ごとの値を表す。`null` は、属性を出力しないことを表す。 */
 export type Attributes = ReadonlyMap<string, string | null>;
