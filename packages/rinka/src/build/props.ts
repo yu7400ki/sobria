@@ -15,8 +15,8 @@ interface Helpers {
   readonly props: ReadonlySet<string>;
   /** `Slot` の名前である。 */
   readonly slot: ReadonlySet<string>;
-  /** ファイルのトップレベルで宣言した type と interface の名前ごとの、型の記述か、宣言だけで決まる分類である。 */
-  readonly declared: ReadonlyMap<string, ESTree.TSType | Kind>;
+  /** ファイルのトップレベルで宣言した type と interface の名前ごとの、type の宣言か、interface の分類である。 */
+  readonly declared: ReadonlyMap<string, ESTree.TSTypeAliasDeclaration | Kind>;
 }
 
 /** 解析できない理由を受け取り、ビルドのエラーを返す関数を表す。 */
@@ -115,11 +115,11 @@ function propsMembers(
 /** `rinka` から import した `Props` と `Slot` の、ファイルの中の名前と、ファイルで宣言した type と interface を返す。 */
 function helpersOf(program: ESTree.Program): Helpers {
   const names = importedNames(program, entries.main);
-  const declared = new Map<string, ESTree.TSType | Kind>();
+  const declared = new Map<string, ESTree.TSTypeAliasDeclaration | Kind>();
   for (const declaration of declarations(program)) {
     const { name } = declaration.id;
     if (declaration.type === "TSTypeAliasDeclaration") {
-      declared.set(name, declaration.typeParameters ? "unknown" : declaration.typeAnnotation);
+      declared.set(name, declaration);
       continue;
     }
     const callable =
@@ -229,12 +229,17 @@ function classify(
   return objectTypes.has(type.type) ? "object" : "unknown";
 }
 
-/** 同じファイルで宣言した type と interface と、値がオブジェクトになる組み込みの型の名前 `name` の分類を返す。 */
+/**
+ * 同じファイルで宣言した type と interface と、値がオブジェクトになる組み込みの型の名前 `name` の分類を返す。
+ * type の別名の本体では、別名の型引数の名前を、解決できない名前として扱う。
+ */
 function referenceKind(name: string, helpers: Helpers, seen: ReadonlySet<string>): Kind {
+  if (seen.has(name)) return "unknown";
   const declared = helpers.declared.get(name);
   if (typeof declared === "string") return declared;
   if (declared !== undefined) {
-    return seen.has(name) ? "unknown" : classify(declared, helpers, new Set([...seen, name]));
+    const params = declared.typeParameters?.params.map((param) => param.name.name) ?? [];
+    return classify(declared.typeAnnotation, helpers, new Set([...seen, name, ...params]));
   }
   return objectReferences.has(name) ? "object" : "unknown";
 }

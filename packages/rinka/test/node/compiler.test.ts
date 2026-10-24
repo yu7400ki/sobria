@@ -238,14 +238,27 @@ export default function X(props: Props) { return <p />; }`);
     });
   });
 
-  it("呼び出しのシグネチャだけを持つ interface は関数に、型引数を持つ type の別名は不明に分類する", () => {
+  it("呼び出しのシグネチャだけを持つ interface は関数に分類し、type の別名の型引数は解決できない名前として扱う", () => {
     const { element: info } = element(`type Item = { a: 1 };
 type Id<Item> = Item;
+type Maybe<Date> = Date | undefined;
+type Box<T> = { value: T };
+type Pick<T> = (value: T) => void;
 interface Handler { (x: number): void }
 interface Handler { (x: string): void }
-type Props = { onPick: Handler; label: Id<string> };
+type Props = {
+  onPick: Handler;
+  label: Id<string>;
+  when: Maybe<string>;
+  box: Box<number>;
+  onChoose: Pick<string>;
+};
 export default function X(props: Props) { return <p />; }`);
-    expect(info?.options).toEqual({ props: ["onPick", "label"], functionProps: ["onPick"] });
+    expect(info?.options).toEqual({
+      props: ["onPick", "label", "when", "box", "onChoose"],
+      functionProps: ["onPick", "onChoose"],
+      objectProps: ["box"],
+    });
   });
 
   it("同じ名前の interface の宣言を、1 つの Props の型にまとめる", () => {
