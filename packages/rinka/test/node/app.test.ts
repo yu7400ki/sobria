@@ -59,6 +59,10 @@ const page =
   ({ params, url }: { readonly params: Record<string, string>; readonly url: URL }) =>
     jsx("p", { children: `${label} ${JSON.stringify(params)} ${url.search}` });
 
+/** Hono のパス `path` を、ファイルの形のパスにする。 */
+const patternOf = (path: string): string =>
+  path.replaceAll(/:(w+){.+}/g, "[...$1]").replaceAll(/:(w+)/g, "[$1]");
+
 /** ページの行を返す。 */
 function pageRoute(
   path: string,
@@ -70,6 +74,7 @@ function pageRoute(
   return {
     kind: "page",
     path,
+    pattern: patternOf(path),
     module: loadOf(component),
     layouts: layouts.map((value) => loadOf(value)),
     middlewares: middlewares.map((value) => loadOf(value)),
@@ -111,6 +116,7 @@ function apiRoute(
   return {
     kind: "route",
     path,
+    pattern: patternOf(path),
     module: async () => handlers,
     middlewares: middlewares.map((value) => loadOf(value)),
   };

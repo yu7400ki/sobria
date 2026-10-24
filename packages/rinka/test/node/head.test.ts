@@ -344,6 +344,7 @@ async function headOfPage(
   const route: Route = {
     kind: "page",
     path: "/",
+    pattern: "/",
     module: loadOf<RouteComponent>(page),
     layouts: layouts.map((component) => loadOf(component)),
     middlewares: [],
@@ -445,6 +446,7 @@ async function documentOfPage(
   const route: Route = {
     kind: "page",
     path: "/",
+    pattern: "/",
     module: loadOf<RouteComponent>(page),
     layouts: layouts.map((component) => loadOf(component)),
     middlewares: [],

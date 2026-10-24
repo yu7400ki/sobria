@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import type { ServerNode } from "rinka";
-import { href, type LayoutProps, type PageProps } from "rinka/router";
+import { href, type LayoutProps, type PageProps, type Prerender } from "rinka/router";
 import { defineHandler, getContext, setBlockingRender } from "rinka/server";
 import { describe, expectTypeOf, it } from "vitest";
 
@@ -40,6 +40,14 @@ describe("rinka/router", () => {
     const either = "/users/[id]" as "/" | "/users/[id]";
     // @ts-expect-error ルートがユニオンだと、パラメータが必要かどうかが決まらない
     href(either);
+  });
+
+  it("Prerender は、パラメータの無いルートでは true、パラメータのあるルートではパラメータの配列を返す関数である", () => {
+    expectTypeOf<Prerender<"/">>().toEqualTypeOf<true>();
+    type Users = { readonly id: string | number };
+    expectTypeOf<Prerender<"/users/[id]">>().toEqualTypeOf<
+      () => readonly Users[] | Promise<readonly Users[]>
+    >();
   });
 });
 

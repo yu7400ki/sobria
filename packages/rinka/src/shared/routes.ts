@@ -55,6 +55,8 @@ export type Route<F extends RouteFiles = LoadedFiles> = {
 } & (
   | ({
       readonly kind: "page";
+      /** グループを除いたファイルの形のパス（`/users/[id]`）である。 */
+      readonly pattern: string;
       readonly module: F["component"];
       readonly layouts: readonly F["component"][];
     } & Fallbacks<F>)
@@ -63,7 +65,12 @@ export type Route<F extends RouteFiles = LoadedFiles> = {
       /** この行の `not-found.tsx` と、そのディレクトリのレイアウトである。 */
       readonly notFound: Fallback<F>;
     } & Pick<Fallbacks<F>, "error">)
-  | { readonly kind: "route"; readonly module: F["handlers"] }
+  | {
+      readonly kind: "route";
+      /** グループを除いたファイルの形のパス（`/api/users`）である。 */
+      readonly pattern: string;
+      readonly module: F["handlers"];
+    }
 );
 
 /** ルートの表を表す。`middleware` は、ルートのディレクトリの `middleware.ts` である。 */

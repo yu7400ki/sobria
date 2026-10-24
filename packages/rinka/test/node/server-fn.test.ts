@@ -29,6 +29,7 @@ function requestPage(page: () => unknown, init?: RequestInit): Promise<Response>
       {
         kind: "page",
         path: "/posts",
+        pattern: "/posts",
         module: loadOf(page, "src/routes/page.tsx"),
         layouts: [],
         middlewares: [],

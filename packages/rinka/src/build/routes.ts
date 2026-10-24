@@ -138,6 +138,7 @@ function compareRoutes(a: Scanned, b: Scanned): number {
 function rowOf({
   kind,
   path,
+  pattern,
   module,
   layouts,
   middlewares,
@@ -145,6 +146,7 @@ function rowOf({
 }: {
   readonly kind: RouteKind;
   readonly path: string;
+  readonly pattern: string;
   readonly module: string;
   readonly layouts: readonly string[];
   readonly middlewares: readonly string[];
@@ -152,11 +154,11 @@ function rowOf({
 }): ScannedRoute {
   switch (kind) {
     case "page":
-      return { kind, path, module, layouts, middlewares, ...fallbacks };
+      return { kind, path, pattern, module, layouts, middlewares, ...fallbacks };
     case "not-found":
       return { kind, path, middlewares, ...fallbacks, notFound: { module, layouts } };
     case "route":
-      return { kind, path, module, middlewares };
+      return { kind, path, pattern, module, middlewares };
   }
 }
 
@@ -212,7 +214,15 @@ function scan(
         );
       }
       const path = honoPath(segments, kind);
-      const route = rowOf({ kind, path, module: file, layouts, middlewares, fallbacks });
+      const route = rowOf({
+        kind,
+        path,
+        pattern: filePath(segments),
+        module: file,
+        layouts,
+        middlewares,
+        fallbacks,
+      });
       scanned.push({ route, segments, depth });
     }
     for (const entry of entries) {

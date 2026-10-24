@@ -25,6 +25,11 @@ type Params<Route extends keyof RouteParams> = {
   readonly [Name in keyof RouteParams[Route]]: string | number;
 };
 
+/** `Route` のパラメータがあれば、そのパラメータの配列を返す関数を、無ければ `true` を表す。ページと `route.ts` が export する `prerender` の型である。 */
+export type Prerender<Route extends keyof RouteParams> = keyof RouteParams[Route] extends never
+  ? true
+  : () => readonly Params<Route>[] | Promise<readonly Params<Route>[]>;
+
 /** `T` が 2 つ以上の型のユニオンかどうかを表す。 */
 type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;
 
