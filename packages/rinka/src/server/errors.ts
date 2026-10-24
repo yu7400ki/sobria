@@ -5,12 +5,17 @@ import { SchemaError } from "./server-fn.ts";
 /** リダイレクトのステータスを表す。 */
 export type RedirectStatus = 301 | 302 | 303 | 307 | 308;
 
-/** `redirect()` が返す値を表す。 */
+/** `location` への移動を表す。`location` が相対 URL でも http や https の URL でもなければ、作成するときにエラーを投げる。 */
 export class Redirect extends Error {
   constructor(
     readonly location: string,
     readonly status: RedirectStatus,
   ) {
+    if (!isSafeLocation(location)) {
+      throw new Error(
+        `redirect() の移動先 ${JSON.stringify(location)} には、相対 URL か、http か https の URL を指定してください。`,
+      );
+    }
     super(`${location} にリダイレクトします。`);
     this.name = "Redirect";
   }
@@ -45,14 +50,8 @@ export function isSafeLocation(location: string): boolean {
  * `location` への移動を表す値を返す。返した値をシェルの中で投げると、`status` のリダイレクトのレスポンスになり、シェルの後で投げると、ブラウザで移動させる。
  * `location` には、相対 URL か、http か https の URL を指定する。それ以外のスキームを指定すると、エラーを投げる。
  */
-export function redirect(location: string, status: RedirectStatus = 303): Redirect {
-  if (!isSafeLocation(location)) {
-    throw new Error(
-      `redirect() の移動先 ${JSON.stringify(location)} には、相対 URL か、http か https の URL を指定してください。`,
-    );
-  }
-  return new Redirect(location, status);
-}
+export const redirect = (location: string, status: RedirectStatus = 303): Redirect =>
+  new Redirect(location, status);
 
 /** ページが見つからないことを表す値を返す。返した値をシェルの中で投げると、404 のレスポンスになる。シェルの後では、`<Errored>` が受け止める。 */
 export const notFound = (): NotFound => new NotFound();
@@ -60,14 +59,17 @@ export const notFound = (): NotFound => new NotFound();
 /** ページの描画とサーバー関数のエンドポイントで、投げられた値の種類を表す。 */
 export type Thrown =
   | {
-      /** `Redirect` か、`location` のヘッダーを持つ 3xx の Response である。`safe` は、移動先が `isSafeLocation` の規則に合うかどうかである。 */
+      /** `Redirect` である。移動先は常に `isSafeLocation` の規則に合う。`response` は、移動を表すレスポンスである。 */
       readonly kind: "redirect";
       readonly location: string;
-      readonly safe: boolean;
-      /** 移動を表すレスポンスである。3xx の Response なら、その Response である。 */
       readonly response: Response;
-      /** `redirect()` が返した値なら真である。偽なら、サーバー関数のエンドポイントで Response をそのまま返す。 */
-      readonly explicit: boolean;
+    }
+  | {
+      /** `location` のヘッダーを持つ 3xx の Response である。`safe` は、移動先が `isSafeLocation` の規則に合うかどうかである。 */
+      readonly kind: "moved";
+      readonly location: string;
+      readonly safe: boolean;
+      readonly response: Response;
     }
   | { readonly kind: "notFound" }
   | { readonly kind: "response"; readonly response: Response }
@@ -82,9 +84,7 @@ export function classify(error: unknown): Thrown {
     return {
       kind: "redirect",
       location,
-      safe: isSafeLocation(location),
       response: new Response(null, { status, headers: { location } }),
-      explicit: true,
     };
   }
   if (error instanceof NotFound) return { kind: "notFound" };
@@ -92,11 +92,5 @@ export function classify(error: unknown): Thrown {
   if (!(error instanceof Response)) return { kind: "error" };
   const location = error.status >= 300 && error.status < 400 ? error.headers.get("location") : null;
   if (location === null) return { kind: "response", response: error };
-  return {
-    kind: "redirect",
-    location,
-    safe: isSafeLocation(location),
-    response: error,
-    explicit: false,
-  };
+  return { kind: "moved", location, safe: isSafeLocation(location), response: error };
 }

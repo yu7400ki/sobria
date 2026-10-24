@@ -1036,6 +1036,8 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
           const thrown = classify(error);
           switch (thrown.kind) {
             case "redirect":
+              throw error;
+            case "moved":
               if (flush.kind === "shell" || thrown.safe) throw error;
               break;
             case "notFound":
@@ -1091,13 +1093,13 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
           );
         } catch (error) {
           const thrown = classify(error);
-          if (thrown.kind === "redirect" && thrown.safe) {
+          if (thrown.kind === "redirect" || (thrown.kind === "moved" && thrown.safe)) {
             this.write(
               `<script>location.replace(${scriptJson(thrown.location)})</script><meta http-equiv="refresh" content="0;url=${escapeAttribute(thrown.location)}">`,
             );
           } else {
             console.error(
-              thrown.kind === "redirect"
+              thrown.kind === "moved"
                 ? `[rinka] 移動先 ${JSON.stringify(thrown.location)} は、相対 URL でも http や https の URL でもないので、移動させずにフォールバックのまま残します。`
                 : "[rinka] シェルを送った後に、<Loading> の中身の描画に失敗しました。フォールバックのまま残します。",
               error,

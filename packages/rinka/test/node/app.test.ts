@@ -329,6 +329,7 @@ describe("x-rinka-refresh: 1 のフォームの送信のリダイレクト", () 
     handed: "src/app-test.ts#handed",
     guarded: "src/app-test.ts#guarded",
     flashing: "src/app-test.ts#flashing",
+    scripted: "src/app-test.ts#scripted",
   };
   registerServerFn(
     ids.saved,
@@ -358,6 +359,10 @@ describe("x-rinka-refresh: 1 のフォームの送信のリダイレクト", () 
       setCookie(c, "flash", "1");
       return c.redirect("/form", 303);
     }),
+  );
+  registerServerFn(
+    ids.scripted,
+    defineServerFn((c) => c.redirect("javascript:alert(1)", 302)),
   );
   const routes: Routes = {
     middleware: loadOf(loginGate),
@@ -404,6 +409,14 @@ describe("x-rinka-refresh: 1 のフォームの送信のリダイレクト", () 
       [200, null, "rpc", { redirect: "https://auth.example.com/login" }],
       [200, null, "rpc", { redirect: "/login" }],
       [200, null, "rpc", { redirect: "https://auth.example.com/login" }],
+    ]);
+  });
+
+  it("移動先が相対 URL でも http や https の URL でもないリダイレクトは、JSON にせずにそのまま返す", async () => {
+    const response = await submit(ids.scripted);
+    expect([response.status, response.headers.get("location")]).toEqual([
+      302,
+      "javascript:alert(1)",
     ]);
   });
 

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
-import { NotFound, notFound, redirect } from "../../src/server/errors.ts";
+import { NotFound, notFound, Redirect, redirect } from "../../src/server/errors.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToResponse } from "../../src/server/response.ts";
 import { readText } from "./stream-order.ts";
@@ -188,6 +188,10 @@ describe("シェルの中の判定", () => {
     expect(() => redirect(" java	script:alert(1)")).toThrow("相対 URL か");
     expect(redirect("https://example.com/").location).toBe("https://example.com/");
     expect(redirect("/a?b=c:d").location).toBe("/a?b=c:d");
+  });
+
+  it("Redirect を直接作成しても、相対 URL と http と https 以外の移動先をエラーにする", () => {
+    expect(() => new Redirect("javascript:alert(1)", 303)).toThrow("相対 URL か");
   });
 });
 

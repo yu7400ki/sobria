@@ -9,7 +9,7 @@ import {
   type ServerFnRef,
 } from "../shared/server-fn.ts";
 import { rpcPrefix, rpcQuery, wireFormat, wireHeader, type RedirectJson } from "../shared/wire.ts";
-import { classify } from "./errors.ts";
+import { classify, isSafeLocation } from "./errors.ts";
 import { formDataToInput } from "./form-data.ts";
 import { definitionOf, runChain, SchemaError, type Definition } from "./server-fn.ts";
 import { fromRpcInput, toRpcBody } from "./wire.ts";
@@ -96,9 +96,8 @@ async function endpoint(
       const thrown = classify(error);
       switch (thrown.kind) {
         case "redirect":
-          return thrown.explicit
-            ? responder.respond(c, { kind: "redirect", location: thrown.location }, fail)
-            : thrown.response;
+          return responder.respond(c, { kind: "redirect", location: thrown.location }, fail);
+        case "moved":
         case "response":
           return thrown.response;
         case "notFound":
@@ -212,6 +211,7 @@ export const formRedirects: MiddlewareHandler = async (c, next) => {
     c.req.header(REFRESH_HEADER) === "1";
   const location = c.res.headers.get("location");
   if (!requested || location === null || c.res.status < 300 || c.res.status >= 400) return;
+  if (!isSafeLocation(location)) return;
   const headers = new Headers(c.res.headers);
   headers.delete("location");
   headers.delete("content-length");

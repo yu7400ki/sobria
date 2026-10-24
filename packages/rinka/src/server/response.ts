@@ -144,7 +144,7 @@ function failure<O extends ResponseOptions>(
   const thrown = classify(error);
   switch (thrown.kind) {
     case "redirect":
-      return thrown.response;
+    case "moved":
     case "response":
       return thrown.response;
     case "notFound": {
