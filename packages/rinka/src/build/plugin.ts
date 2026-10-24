@@ -101,12 +101,12 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
     const lang = langs[extname(id)];
     if (!lang || id.includes("?") || id.startsWith("\0")) return undefined;
     const { root, sources } = current();
-    const owner = sources.findIndex(({ dir }) => {
+    const owner = sources.find(({ dir }) => {
       const inner = inside(dir, id);
       return inner !== undefined && !inner.split("/").includes("node_modules");
     });
-    if (owner === -1) return undefined;
-    return { path: id, file: relativePath(root, id), lang, library: owner > 0 };
+    if (!owner) return undefined;
+    return { path: id, file: relativePath(root, id), lang, library: owner.dir !== root };
   };
 
   return [
