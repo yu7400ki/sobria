@@ -8,6 +8,9 @@ export interface PrerenderTarget {
   readonly urls: readonly string[];
 }
 
+/** 書き出す URL の区切りに含められない文字である。`encodeURIComponent` がエンコードし `decodeURI` がデコードしない文字と、Windows のファイル名に使用できない文字である。 */
+const UNSAFE = '/\\;,?:@&=+$#<>"|*'.split("");
+
 /** ページと `route.ts` の行を表す。 */
 type Target = Extract<Route, { readonly kind: "page" | "route" }>;
 
@@ -93,7 +96,13 @@ async function urlsOf(route: Target, all: boolean): Promise<string[] | undefined
         typeof text === "string" ? (kind === "catch-all" ? text.split("/") : [text]) : [];
       if (
         parts.length === 0 ||
-        parts.some((part) => part === "" || part === "." || part === ".." || part.includes("/"))
+        parts.some(
+          (part) =>
+            part === "" ||
+            part === "." ||
+            part === ".." ||
+            UNSAFE.some((char) => part.includes(char)),
+        )
       ) {
         return undefined;
       }
@@ -102,7 +111,7 @@ async function urlsOf(route: Target, all: boolean): Promise<string[] | undefined
     const extra = Object.keys(values).find((name) => !names.includes(name));
     if (entries.includes(undefined) || extra !== undefined) {
       throw new Error(
-        `${file}: prerender の関数が返した ${index + 1} 番目のパラメータは、${names.join("、")} の値を、URL の区切りにできる文字列か数で持ち、ほかの名前を持たないようにしてください。空の文字列、「.」、「..」は区切りにできません。`,
+        `${file}: prerender の関数が返した ${index + 1} 番目のパラメータは、${names.join("、")} の値を、URL の区切りにできる文字列か数で持ち、ほかの名前を持たないようにしてください。空の文字列、「.」、「..」と、${UNSAFE.join(" ")} のどれかを含む文字列は、区切りにできません。`,
       );
     }
     return fillPattern(pattern, Object.fromEntries(entries.filter((entry) => entry !== undefined)));

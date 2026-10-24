@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, extname, join, relative, resolve, sep } from "node:path";
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import type { ESTree } from "vite";
@@ -78,6 +78,8 @@ function fileOf(clientDir: string, pathname: string, kind: Target["kind"]): stri
   const inside = relative(resolve(clientDir), file);
   if (
     parts.some((part) => part === "." || part === ".." || /[/\\]/.test(part)) ||
+    isAbsolute(inside) ||
+    inside === ".." ||
     inside.startsWith(`..${sep}`)
   ) {
     throw new Error(`[rinka] ${pathname} は、書き出しの出力先の外を指します。`);
@@ -138,5 +140,7 @@ export async function writePrerendered(
     rmSync(serverDir, { recursive: true, force: true });
     return;
   }
-  rmSync(join(serverDir, `${PRERENDER_ENTRY_NAME}.js`), { force: true });
+  for (const suffix of [".js", ".js.map"]) {
+    rmSync(join(serverDir, `${PRERENDER_ENTRY_NAME}${suffix}`), { force: true });
+  }
 }

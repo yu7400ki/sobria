@@ -91,9 +91,11 @@ describe("prerenderTargets", () => {
         [{ id: "." }],
         [{ id: ".." }],
         [{ id: "a/b" }],
+        [{ id: "c++" }],
+        [{ id: "C:" }],
         [null],
       ].map(async (values) => rejects(user(values), "src/routes/users/[id]/page.tsx")),
-      ...["a/../b", "a//b", "/a", ""].map(async (path) =>
+      ...["a/../b", "a//b", "/a", "", "a/b?c"].map(async (path) =>
         rejects(docs(path), "src/routes/docs/[...path]/page.tsx"),
       ),
       expect(prerenderTargets(table(user([{ id: 1 }, { id: "1" }])), "all")).rejects.toThrow(
