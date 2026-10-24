@@ -69,6 +69,7 @@ interface ProjectFile {
 export function rinka(options: RinkaOptions = {}): Plugin[] {
   const trustedOrigins = options.trustedOrigins ?? [];
   for (const origin of trustedOrigins) checkOrigin(origin);
+  checkExtensions(options.extensions ?? []);
   /** `config` で求めたプラグインの設定である。 */
   let settings: Settings | undefined;
   /** プラグインの設定を返す。`config` のフックより前に呼び出すと、エラーを投げる。 */
@@ -224,6 +225,43 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
     build.plugin,
     libraryBuild({ options, settings: current }),
   ];
+}
+
+/** rinka や Vite が拡張子で扱いを決める、`extensions` に登録できない拡張子である。 */
+const reservedExtensions: ReadonlySet<string> = new Set([
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mts",
+  ".cts",
+  ".mjs",
+  ".cjs",
+  ".json",
+  ".css",
+]);
+
+/**
+ * `extensions` に、`.` の後に英数字だけが続く形でない拡張子、`reservedExtensions` の拡張子、重複した拡張子があれば、エラーを投げる。
+ */
+function checkExtensions(extensions: readonly string[]): void {
+  for (const [index, extension] of extensions.entries()) {
+    if (!/^\.[a-z0-9]+$/i.test(extension)) {
+      throw new Error(
+        `extensions の ${JSON.stringify(extension)} は、".mdx" のように、ドットの後に英数字だけが続く形で記述してください。`,
+      );
+    }
+    if (reservedExtensions.has(extension)) {
+      throw new Error(
+        `extensions の ${JSON.stringify(extension)} は、rinka か Vite が扱う拡張子なので登録できません。`,
+      );
+    }
+    if (extensions.indexOf(extension) !== index) {
+      throw new Error(
+        `extensions に ${JSON.stringify(extension)} が重複しています。1 回だけ記述してください。`,
+      );
+    }
+  }
 }
 
 /** `origin` が、スキーム、ホスト、ポートだけのオリジンでなければ、エラーを投げる。 */

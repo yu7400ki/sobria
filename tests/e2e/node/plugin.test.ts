@@ -78,6 +78,24 @@ describe("Vite プラグイン", () => {
     }
   });
 
+  it("extensions に、登録できない拡張子を記述するとエラーにする", () => {
+    expect(() => rinka({ extensions: [".mdx", ".page"] })).not.toThrow();
+    for (const extensions of [
+      ["mdx"],
+      ["."],
+      [".page.md"],
+      [".m-dx"],
+      [".tsx"],
+      [".js"],
+      [".mts"],
+      [".json"],
+      [".css"],
+      [".mdx", ".mdx"],
+    ]) {
+      expect(() => rinka({ extensions })).toThrow("extensions");
+    }
+  });
+
   it("rinka のプラグインを 2 回登録すると、エラーで停止する", async () => {
     // createDevServer が 1 つ目の rinka のプラグインを登録する
     await expect(

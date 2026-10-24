@@ -25,6 +25,12 @@ export interface RinkaOptions {
    * サーバーが必要なルートとサーバー関数があれば、ビルドのエラーにする。デフォルトは `'server'` である。
    */
   readonly output?: Output;
+  /**
+   * 他の Vite プラグインが TSX のソースに変換するファイルの拡張子（`.mdx` など）を列挙する。
+   * 列挙した拡張子のファイルは、`.tsx` のファイルと同じくコンパイルする。列挙した拡張子は、`page`、`layout`、`error`、`not-found` のルートのファイルにも使用できる。
+   * 変換するプラグインは、plugins の配列で rinka より前に配置する。
+   */
+  readonly extensions?: readonly string[];
 }
 
 /** 要素のタグ名の接頭辞のデフォルト値である。 */
@@ -59,6 +65,8 @@ export interface Settings {
   readonly sources: readonly ElementSource[];
   /** 設定を求めた時点の、`sources` の要素のファイルである。 */
   readonly elements: readonly ElementFile[];
+  /** プラグインの設定の `extensions` に、デフォルト値の空の配列を補った値である。 */
+  readonly extensions: readonly string[];
 }
 
 /**
@@ -87,6 +95,7 @@ export function settingsOf(
     libraries,
     sources,
     elements: scanElements(sources),
+    extensions: options.extensions ?? [],
   };
 }
 
