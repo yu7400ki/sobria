@@ -1,0 +1,195 @@
+---
+title: ページとデータ
+---
+
+## サーバーコンポーネント
+
+ページ、レイアウトと、それらが使用するコンポーネントのうち要素でないものは、サーバーコンポーネントです。サーバーコンポーネントは、リクエストごとにサーバーで 1 回だけ実行し、その結果を HTML にします。ブラウザには、サーバーコンポーネントのコードを送信しません。
+
+サーバーコンポーネントは、ブラウザで実行しないので、Signal とイベントハンドラーを使用しません。利用者の操作に応じて表示を変更する部分は、[要素](/guide/elements) にします。
+
+## データを取得する
+
+サーバーコンポーネントを async 関数にすると、必要なデータを直接 `await` で取得できます。データベースへの接続や API のキーは、サーバーにだけ存在し、ブラウザには届きません。
+
+```tsx
+// src/routes/posts/page.tsx
+import { listPosts } from "../../lib/posts.ts";
+
+export default async function Posts() {
+  const posts = await listPosts();
+  return (
+    <ul>
+      {posts.map((post) => (
+        <li>
+          <a href={`/posts/${post.slug}`}>{post.title}</a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+ページでないサーバーコンポーネントも、async 関数にできます。データを使用するコンポーネントが自分でデータを取得すれば、ページから props で渡す必要はありません。
+
+```tsx
+// src/routes/posts/[slug]/comments.tsx
+import { listComments } from "../../../lib/comments.ts";
+
+export async function Comments(props: { slug: string }) {
+  const comments = await listComments(props.slug);
+  return (
+    <ul>
+      {comments.map((comment) => (
+        <li>{comment.body}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+ページでないサーバーコンポーネントも、`src/routes/` の中に配置します。特別な名前でないファイルはルートにならないので、ページと同じディレクトリに配置できます。`src/routes/` と `src/elements/` の外にあるコンポーネントは、ページと要素の両方で使用する共通のコンポーネントとして型を検査します。共通のコンポーネントには、HTML のタグとほかの共通のコンポーネントだけを記述でき、`<Loading>` や `<Errored>` を記述すると型エラーになります。
+
+### リクエストの値を読む
+
+ページとレイアウトは、props の `url` でリクエストの URL を受け取ります。Cookie とヘッダーは、`getContext()` が返す Hono の Context で参照します。ミドルウェアが `c.set` で設定した値も、同じ Context で参照します。`getContext()` は、リクエストの外（テストで直接描画したときなど）では `undefined` を返します。
+
+```tsx
+// src/routes/dashboard/page.tsx
+import { getCookie } from "hono/cookie";
+import { getContext, redirect } from "rinka/server";
+
+export default function Dashboard() {
+  const c = getContext();
+  const session = c && getCookie(c, "session");
+  if (!session) throw redirect("/login");
+  return <h1>ダッシュボード</h1>;
+}
+```
+
+`c.set` で設定する値に型を付ける方法は、[Hono との連携](/guide/hono) で説明します。
+
+## ストリーミング
+
+ページのうち `<Loading>` の外側の部分を、シェルと呼びます。rinka は、シェルの `await` がすべて終わるまで、レスポンスの送信を開始しません。一方、`<Loading>` の内側の部分は後から送信できます。中身の `await` が終わっていなければ、rinka は先にフォールバックを送信し、中身が揃った時点で、フォールバックを中身に差し替えます。
+
+時間のかかるデータや、無くてもページが成り立つ部分は、`<Loading>` で囲みます。
+
+```tsx
+// src/routes/posts/[slug]/page.tsx
+import { Errored, Loading } from "rinka";
+import type { PageProps } from "rinka/router";
+import { notFound } from "rinka/server";
+
+import { Comments } from "./comments.tsx";
+import { findPost } from "../../../lib/posts.ts";
+
+export default async function PostPage({ params }: PageProps<"/posts/[slug]">) {
+  const post = await findPost(params.slug);
+  if (!post) throw notFound();
+  return (
+    <article>
+      <title>{post.title}</title>
+      <h1>{post.title}</h1>
+      <Loading fallback={<p>コメントを読み込んでいます</p>}>
+        <Errored status={200} fallback={<p>コメントを読み込めませんでした</p>}>
+          <Comments slug={post.slug} />
+        </Errored>
+      </Loading>
+    </article>
+  );
+}
+```
+
+このページは、記事を取得した時点で、タイトルとフォールバックを送信します。コメントは、取得が終わった時点で送信します。`<Loading>` の中身がシェルの完成までに揃っていれば、フォールバックを送信せずに、中身をその場に出力します。このときの中身は、シェルの中として扱います。そのため、`<Errored>`、`redirect()`、`notFound()` の扱いと、レスポンスのステータスは、シェルの中と同じになります。
+
+`<Loading>` の内側を差し替えるには、ブラウザで JS が動作する必要があります。JS が無い環境では、フォールバックが残ります。JS が無くても表示する内容は、`<Loading>` で囲まずにシェルに配置してください。
+
+シェルを送信した後は、レスポンスのステータスとヘッダーを変更できません。ページが存在するかどうかや、利用者に権限があるかどうかのように、ステータスを決める判断は、シェルの中でデータを `await` してから決定します。`<Loading>` の内側に記述した `<title>` と `<meta>` も、`<head>` に移動しません。
+
+## `<Errored>`
+
+`<Errored>` は、内側で投げられたエラーを受け止めて、`fallback` を表示します。async のコンポーネントの失敗も受け止めます。`fallback` に関数を渡すと、その関数は投げられた値を受け取ります。
+
+サーバーコンポーネントの `<Errored>` には、再試行の関数がありません。再試行させるときは、ページを読み込み直すリンクを配置します。
+
+`<Errored>` がシェルの中でエラーを受け止めると、レスポンスのステータスは 500 になります。補助的な部分の失敗で、ページとしては正常に表示できるときは、`status={200}` のようにステータスを指定します。シェルの中で、どの `<Errored>` も受け止めなかったエラーには、[`error.tsx`](/guide/routing) を 500 で返します。
+
+シェルを送信した後に失敗した部分を受け止めるのは、その `<Loading>` の内側にある `<Errored>` だけです。上のページの例のように、`<Errored>` を `<Loading>` の内側に配置します。`<Loading>` の外側の `<Errored>` は、`<Loading>` の内側の失敗を受け止めません。どの `<Errored>` も受け止めなかったときは、フォールバックが残り、サーバーのログにエラーを出力します。
+
+## `redirect()` と `notFound()`
+
+`rinka/server` の `redirect()` と `notFound()` は、戻り値を `throw` で投げて使用します。
+
+```tsx
+// src/routes/users/[id]/page.tsx
+import type { PageProps } from "rinka/router";
+import { notFound } from "rinka/server";
+
+export default function User({ params }: PageProps<"/users/[id]">) {
+  if (!/^\d+$/.test(params.id)) throw notFound();
+  return <h1>ユーザー {params.id}</h1>;
+}
+```
+
+シェルの中で投げると、レスポンスのステータスが決まります。
+
+| 投げた値                     | レスポンス                                                 |
+| ---------------------------- | ---------------------------------------------------------- |
+| `redirect(location)`         | 303 のリダイレクト                                         |
+| `redirect(location, status)` | `status`（301、302、303、307、308 のどれか）のリダイレクト |
+| `notFound()`                 | 最も近い `not-found.tsx` を 404 で返す                     |
+
+シェルの中で投げた `redirect()`、`notFound()`、Response、Hono の `HTTPException` を、`<Errored>` は受け止めません。`redirect()` の移動先には、相対 URL か、http か https の URL を指定します。それ以外のスキームの URL を指定すると、`redirect()` がエラーを投げます。
+
+シェルを送信した後に中身が揃った `<Loading>` の内側で投げたときは、ステータスを送信した後なので、次のように扱います。
+
+- `redirect()`：ブラウザで移動先のページに移動させます。JS が無い環境でも移動します
+- `notFound()`：その部分の失敗として扱い、`<Loading>` の内側の `<Errored>` が受け止めます。ステータスは 200 のままで、ページに `<meta name="robots" content="noindex">` を追加します
+
+`<Errored>` の `fallback` で `notFound()` を区別するときは、受け取った値が `NotFound` のインスタンスかどうかを確認します。
+
+```tsx
+// src/routes/posts/[slug]/safe-comments.tsx
+import { Errored, Loading } from "rinka";
+import { NotFound } from "rinka/server";
+
+import { Comments } from "./comments.tsx";
+
+export function SafeComments(props: { slug: string }) {
+  return (
+    <Loading fallback={<p>コメントを読み込んでいます</p>}>
+      <Errored
+        status={200}
+        fallback={(error) =>
+          error instanceof NotFound ? <p>コメントはありません</p> : <p>読み込めませんでした</p>
+        }
+      >
+        <Comments slug={props.slug} />
+      </Errored>
+    </Loading>
+  );
+}
+```
+
+`Comments` の取得がシェルの完成より後に完了したときは、`notFound()` を `<Errored>` が受け止めます。シェルの完成より先に完了したときは、`<Loading>` の中身がシェルの中になるので、`notFound()` を `<Errored>` は受け止めず、ページ全体が 404 になります。
+
+## bot と blocking の描画
+
+検索エンジンのクローラーやリンクのプレビューを作成するサービスは、JS を実行しないことがあります。rinka は、User-Agent が bot の一覧に一致するリクエストには、すべての `<Loading>` の中身を待ってから、フォールバックと差し替えのスクリプトを含まない HTML を返します。この描画を、blocking の描画と呼びます。
+
+blocking の描画では、`<Loading>` の内側もシェルとして扱います。そのため、`<Loading>` の内側の `notFound()` は 404 になり、`<Loading>` の内側の `<Errored>` がエラーを受け止めると 500 になります。bot に 500 を返したくない部分では、`<Errored>` に `status` を指定します。
+
+ミドルウェアで `setBlockingRender(c, value)` を呼ぶと、リクエストごとに blocking の描画にするかどうかを指定できます。指定した値は、User-Agent による判定より優先します。例えば次のミドルウェアは、クエリに `blocking` があるリクエストを blocking の描画にします。
+
+```ts
+// src/routes/middleware.ts
+import { defineMiddleware, setBlockingRender } from "rinka/server";
+
+export default defineMiddleware(async (c, next) => {
+  if (c.req.query("blocking") !== undefined) setBlockingRender(c, true);
+  await next();
+});
+```
+
+bot の一覧による判定は、`rinka/server` の `isBot(userAgent)` でも実行できます。blocking の描画のレスポンスに、rinka は `Vary: User-Agent` を付与しません。HTML を共有のキャッシュに保存するアプリは、ミドルウェアで `Vary` を付与してください。

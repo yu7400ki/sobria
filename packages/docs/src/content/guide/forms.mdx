@@ -1,0 +1,312 @@
+---
+title: フォーム
+---
+
+## サーバー関数を送信先にする
+
+`<form>` の `action` に POST の[サーバー関数](/guide/server-functions)を渡すと、そのフォームはサーバー関数に送信されます。フィールドの値は、サーバー関数の `input` になります。
+
+```ts
+// src/lib/posts.ts
+import { defineServerFn } from "rinka/server";
+import { z } from "zod";
+
+import { db } from "./db.ts";
+
+export const addPost = defineServerFn({
+  input: z.object({ title: z.string().min(1) }),
+})(async (c, { input }) => {
+  db.posts.insert(input.title);
+  return null;
+});
+```
+
+```tsx
+// src/routes/page.tsx
+import { db } from "../lib/db.ts";
+import { addPost } from "../lib/posts.ts";
+
+export default function Page() {
+  return (
+    <main>
+      <ul>
+        {db.posts.list().map((post) => (
+          <li>{post.title}</li>
+        ))}
+      </ul>
+      <form action={addPost}>
+        <input name="title" />
+        <button>投稿する</button>
+      </form>
+    </main>
+  );
+}
+```
+
+rinka は、フォームの `method` を `post` に、`enctype` を `multipart/form-data` にします。`<input type="file">` のファイルは、handler で File として受け取れます。
+
+## JS が無いときの送信
+
+JS が無いときは、ブラウザの通常の送信になります。handler の結果に応じて、次のレスポンスを返します。
+
+| handler の結果                                | レスポンス                                         |
+| --------------------------------------------- | -------------------------------------------------- |
+| 値を返した                                    | 送信したページ（Referer）への 303 のリダイレクト   |
+| `redirect()` を投げた                         | その URL への 303 のリダイレクト                   |
+| Response を返したか、`HTTPException` を投げた | その Response                                      |
+| `notFound()` を投げた                         | 404                                                |
+| `input` のスキーマの検証に失敗した            | 422 の `{ issues }`。ブラウザは JSON を表示します  |
+| それ以外の例外を投げた                        | 送信したページに最も近い `error.tsx` を 500 で表示 |
+
+handler が例外を投げたときに `error.tsx` が無ければ、500 を返します。本番のサーバーは `Internal Server Error` のテキストを返し、開発サーバーはエラーの画面を返します。
+
+Referer を送信しない設定（`Referrer-Policy: no-referrer`）のページでは、handler が値を返したときのリダイレクト先が `/` になります。
+
+## JS があるときの送信
+
+ページに[要素](/guide/elements)が 1 つでもあれば、rinka はフォームを fetch で送信します。送信する内容とサーバー関数の実行は、JS が無いときと同じです。
+
+- 送信の結果、移動先が現在のページなら、フォームを初期値に戻し、ページを描き直した結果を反映します。URL とスクロールの位置は変化せず、フォームの部品でない要素の状態も保持されます
+- 移動先が別のページなら、そのページに移動します
+- handler が例外を投げて 500 になったときは、`error.tsx` があれば、URL を変更せずに、ページを `error.tsx` に差し替えます
+- `error.tsx` が無いときの 500、スキーマの検証に失敗した 422、handler が返した独自の Response のどれかを受け取ったときは、ページを変更せずに、レスポンスをコンソールに記録します
+
+要素の無いページでは、JS が無いときと同じく、ブラウザの通常の送信になります。
+
+送信中は、フォームに `aria-busy="true"` が付与されます。送信中のフォームを再び送信しても、2 回目の送信は無視します。送信中の見た目は CSS で指定します。例えば、送信中のボタンを薄く表示するには、次のように記述します。
+
+```css
+form[aria-busy="true"] button {
+  opacity: 0.5;
+}
+```
+
+`onSubmit` は、rinka の送信より先に実行します。`onSubmit` の中で `e.preventDefault()` を呼び出すと、rinka は送信しません。
+
+## FormData の名前の構造
+
+フィールドの名前に `.` や `[]` を含めると、`input` はネストしたオブジェクトや配列になります。
+
+| 名前               | `input` の構造                     |
+| ------------------ | ---------------------------------- |
+| `address.city`     | オブジェクト                       |
+| `items[0].name`    | オブジェクトの配列                 |
+| `tags[]`           | フィールドごとに要素を追加する配列 |
+| 同じ名前の繰り返し | 配列                               |
+
+値は文字列のまま渡します。数として扱う値は、スキーマで変換します。
+
+```ts
+// src/lib/orders.ts
+import { defineServerFn } from "rinka/server";
+import { z } from "zod";
+
+const orderSchema = z.object({
+  address: z.object({ city: z.string(), zip: z.string() }),
+  items: z.array(z.object({ name: z.string(), count: z.coerce.number().int().min(1) })),
+  tags: z.array(z.string()).default([]),
+});
+
+export const placeOrder = defineServerFn({ input: orderSchema })(async (c, { input }) => {
+  console.log(input.items[0]?.count);
+  return null;
+});
+```
+
+```tsx
+// src/routes/order/page.tsx
+import { placeOrder } from "../../lib/orders.ts";
+
+export default function Page() {
+  return (
+    <form action={placeOrder}>
+      <input name="address.city" />
+      <input name="address.zip" />
+      <input name="items[0].name" />
+      <input name="items[0].count" type="number" />
+      <input name="items[1].name" />
+      <input name="items[1].count" type="number" />
+      <label>
+        <input type="checkbox" name="tags[]" value="gift" /> 贈り物
+      </label>
+      <label>
+        <input type="checkbox" name="tags[]" value="express" /> 速達
+      </label>
+      <button>注文する</button>
+    </form>
+  );
+}
+```
+
+チェックボックスを 1 つも選択しないと、`tags` のフィールドは送信されません。
+
+添字が、それより前のフィールドで作成した配列の長さより大きいフィールドは破棄します。例えば、`items[0]` が無いフォームの `items[1].name` は破棄します。1 つの名前には、`tags` と `tags[]` のどちらか 1 つの形だけを使用してください。
+
+## 失敗を表示する
+
+`input` のスキーマの検証に失敗したときの 422 は、利用者に表示する画面になりません。利用者に表示する検証のエラーは、handler の中で検証して、送信したページに渡します。次の例では、handler がエラーと入力した値を Cookie に保存し、送信したページへのリクエストで、その Cookie を 1 回だけ読み取ります。このような Cookie を flash の Cookie と呼びます。
+
+```ts
+// src/lib/flash.ts
+import type { Context } from "hono";
+import { setCookie } from "hono/cookie";
+
+export type Flash = { errors: Record<string, string>; values: Record<string, string> };
+
+declare module "hono" {
+  interface ContextVariableMap {
+    flash: Flash | undefined;
+  }
+}
+
+export function setFlash(c: Context, flash: Flash) {
+  setCookie(c, "flash", JSON.stringify(flash), { path: "/", httpOnly: true, sameSite: "Lax" });
+}
+```
+
+```ts
+// src/lib/users.ts
+import { defineServerFn, redirect } from "rinka/server";
+import { z } from "zod";
+
+import { setFlash } from "./flash.ts";
+
+const taken = new Set(["admin"]);
+
+export const signup = defineServerFn({
+  input: z.object({ name: z.string() }),
+})(async (c, { input }) => {
+  if (input.name === "") {
+    setFlash(c, { errors: { name: "名前を入力してください" }, values: input });
+    throw redirect("/signup");
+  }
+  if (taken.has(input.name)) {
+    setFlash(c, { errors: { name: "この名前は使用されています" }, values: input });
+    throw redirect("/signup");
+  }
+  taken.add(input.name);
+  throw redirect("/");
+});
+```
+
+ルートの `middleware.ts` で、GET のリクエストの Cookie を読み取って `c.set` します。ページの描画中に設定したヘッダーはページのレスポンスに含まれないので、Cookie は同じミドルウェアの `await next()` の後で削除します。
+
+```ts
+// src/routes/middleware.ts
+import { deleteCookie, getCookie } from "hono/cookie";
+import { defineMiddleware } from "rinka/server";
+
+import type { Flash } from "../lib/flash.ts";
+
+export default defineMiddleware(async (c, next) => {
+  const flash = c.req.method === "GET" ? getCookie(c, "flash") : undefined;
+  c.set("flash", flash === undefined ? undefined : (JSON.parse(flash) as Flash));
+  await next();
+  if (flash !== undefined) deleteCookie(c, "flash", { path: "/" });
+});
+```
+
+ページでは、`getContext()` で値を読み取ります。
+
+```tsx
+// src/routes/signup/page.tsx
+import { getContext } from "rinka/server";
+
+import { signup } from "../../lib/users.ts";
+
+export default function Page() {
+  const flash = getContext()?.get("flash");
+  return (
+    <form action={signup}>
+      <label for="name">名前</label>
+      <input
+        id="name"
+        name="name"
+        value={flash?.values.name ?? ""}
+        aria-invalid={flash?.errors.name !== undefined}
+      />
+      {flash?.errors.name && <p>{flash.errors.name}</p>}
+      <button>登録する</button>
+    </form>
+  );
+}
+```
+
+JS があるときも、同じコードで動作します。handler が現在のページにリダイレクトすると、rinka は、handler が設定した Cookie を使用してページを描き直し、その結果をサーバー関数のレスポンスに含めて返します。
+
+## フォームの部品になる要素
+
+要素の関数が ctx の `form` を使用すると、その要素は `<input>` と同じくフォームの部品になります。`<form>` の中に配置すると、`name` 属性に指定した名前で値を送信します。
+
+```tsx
+// src/elements/rating.tsx
+import { signal, type Ctx } from "rinka";
+
+type Props = { required?: boolean; max?: number };
+
+export default function Rating(props: Props, { form, internals }: Ctx) {
+  const [value, setValue] = signal(0);
+
+  internals.role = "radiogroup";
+  form.value(() => String(value()));
+  form.validity(() =>
+    props.required && value() === 0
+      ? { valueMissing: true, message: "評価を選んでください" }
+      : null,
+  );
+  form.onReset(() => setValue(0));
+  form.onRestore((state) => setValue(Number(state) || 0));
+
+  const stars = Array.from({ length: props.max ?? 5 }, (_, i) => i + 1);
+  return (
+    <div>
+      {stars.map((n) => (
+        <button
+          type="button"
+          role="radio"
+          aria-checked={value() === n}
+          aria-label={`${n} / ${stars.length}`}
+          disabled={form.disabled()}
+          onClick={() => setValue(n)}
+        >
+          {value() >= n ? "★" : "☆"}
+        </button>
+      ))}
+    </div>
+  );
+}
+```
+
+```tsx
+// src/routes/review/page.tsx
+import Rating from "../../elements/rating.tsx";
+import { submitReview } from "../../lib/reviews.ts";
+
+export default function Page() {
+  return (
+    <form action={submitReview}>
+      <label for="score">評価</label>
+      <Rating id="score" name="score" required />
+      <button>送信する</button>
+    </form>
+  );
+}
+```
+
+| 関数            | 振る舞い                                                                                                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `value(fn)`     | `fn` が返した文字列を、送信する値にします。`null` と `undefined` を返すと、値を送信しません                                                                                     |
+| `validity(fn)`  | `fn` が `null` を返すと有効にし、オブジェクトを返すと、`message` の文言で無効にします。返すオブジェクトに `valueMissing: true` のような制約を含めると、無効の種類を指定できます |
+| `onReset(fn)`   | フォームが初期値に戻されたときに、`fn` を呼び出します                                                                                                                           |
+| `onRestore(fn)` | 戻る操作やオートフィルでブラウザが値を復元したときに、復元した値を渡して `fn` を呼び出します                                                                                    |
+| `disabled()`    | 要素の `disabled` か、外側の `<fieldset disabled>` で無効になっていれば `true` を返します                                                                                       |
+
+`value` と `validity` に渡した関数は、読み取った Signal が変化するたびに実行し直します。`validity` で無効にした要素があると、ブラウザは送信を中止して、`message` の文言を表示します。`internals` は、要素の `ElementInternals` です。
+
+フォームの部品になった要素は、Props の型に記述しなくても `name` と `disabled` を受け付けます。`<label for>` でラベルを関連付けたり、`checkValidity()` を呼び出したりする操作も、`<input>` と同じく使用できます。
+
+要素が起動する前と JS が無いときも、要素の値は送信されます。ただし、送信される値はサーバーで描画した時点の値で、`validity` の検証も実行しません。値は、サーバー関数の `input` のスキーマでも検証してください。
+
+`form` は、要素の関数の第 2 引数の分割代入（`{ form }`）、`ctx.form`、`const { form } = ctx` のどれかの形で参照します。`ctx` を別の関数に渡して、その中で `form` を参照すると、ビルドのエラーになります。
+
+Vite プラグインを使用せずに `defineElement` で要素を登録するときは、3 つ目の引数の `ElementOptions` に `form: true` を指定します。`defineElement` の引数は [API のリファレンス](/reference/api/rinka) を参照してください。

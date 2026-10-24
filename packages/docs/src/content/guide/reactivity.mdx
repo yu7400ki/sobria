@@ -1,0 +1,188 @@
+---
+title: リアクティビティ
+---
+
+要素の状態は Signal で保持します。Signal の値が変化すると、rinka はその値を読み取っている箇所だけを更新します。要素の関数を実行し直すことはありません。
+
+## signal
+
+`signal` は、読み取りの関数と書き込みの関数の組を返します。値は `count()` のように関数を呼び出して読みます。書き込みの関数には、新しい値か、直前の値から新しい値を返す関数を渡します。
+
+```tsx
+// src/elements/counter.tsx
+import { memo, signal } from "rinka";
+
+export default function Counter() {
+  const [count, setCount] = signal(0);
+  const doubled = memo(() => count() * 2);
+  return (
+    <button onClick={() => setCount((c) => c + 1)}>
+      {count()} の 2 倍は {doubled()}
+    </button>
+  );
+}
+```
+
+書き込んだ値は、すぐには読み取りに反映されません。例えば、`setCount(1)` の直後に `count()` を読むと、書き込む前の値を返します。書き込みはまとめて反映され、イベントハンドラーの処理が終わった後には、`count()` が新しい値を返します。書き込んだ値をその後の処理でも使用するときは、変数に保持します。
+
+```tsx
+// src/elements/like-button.tsx
+const like = () => {
+  const next = count() + 1;
+  setCount(next);
+  props.onLike?.(next);
+};
+```
+
+## memo
+
+`memo` は、ほかの Signal や memo から計算する値を作成します。読み取った値が変化したときだけ計算し直します。
+
+memo の関数は Promise を返してもかまいません。この章では、Promise を返す memo を非同期の memo と呼びます。サーバーのデータを取得するときは、memo の中で [サーバー関数](/guide/server-functions) を呼び出します。
+
+```tsx
+// src/elements/user-name.tsx
+import { Loading, memo } from "rinka";
+
+import { getUser } from "../lib/users.ts";
+
+export default function UserName(props: { userId: number }) {
+  const user = memo(() => getUser(props.userId));
+  return (
+    <Loading fallback={<p>読み込み中</p>}>
+      <p>{user().name}</p>
+    </Loading>
+  );
+}
+```
+
+`getUser` は、ユーザーを返すサーバー関数です。`props.userId` が変化すると、memo は新しいユーザーを取得します。
+
+## effect
+
+`effect(read, apply)` は、`read` が読み取った値が変化するたびに、`read` の戻り値を `apply` に渡して呼びます。DOM の外への書き込みや、タイマーの設定のように、表示の更新以外の処理に使用します。
+
+```tsx
+// src/elements/search-box.tsx
+import { effect, signal } from "rinka";
+
+export default function SearchBox() {
+  const [query, setQuery] = signal("");
+  effect(
+    () => query(),
+    (value) => {
+      const timer = setTimeout(() => console.log("検索", value), 300);
+      return () => clearTimeout(timer);
+    },
+  );
+  return <input value={query()} onInput={(e) => setQuery(e.currentTarget.value)} />;
+}
+```
+
+- `apply` の中で読み取った値は追跡しません。`apply` を呼び直すきっかけになるのは、`read` が読み取った値だけです
+- `apply` が関数を返すと、rinka はその関数を、次に `apply` を呼ぶ前と、要素を破棄するときに呼びます
+- `read` が非同期の memo を読むときは、memo が新しい値に解決してから `apply` を呼びます
+
+## 非同期の値を待つ
+
+### Loading
+
+非同期の memo を、値が解決する前に読み取ると、最も近い `<Loading>` が `fallback` を表示します。内側の値がすべて解決すると、`fallback` を内側の内容に置換します。
+
+`fallback` を表示するのは、初めて値を取得するときだけです。一度内側を表示した後に memo が値を取得し直すときは、取得が終わるまで古い内容を表示し続けます。
+
+`<Loading>` は、子の要素の非同期の値も待ちます。そのため、複数の要素を 1 つの `<Loading>` で囲むと、1 つの `fallback` でまとめて待てます。どこにも `<Loading>` が無い要素は、値が解決するまで何も表示しません。
+
+### Errored
+
+`<Errored>` は、内側で投げられたエラーと、非同期の memo の失敗を捕捉して、`fallback` を表示します。`fallback` に関数を渡すと、エラーと、内側を作り直す `retry` を引数に受け取ります。
+
+サーバーで描画するときは、`<Loading>` の内側を後から送ることがあります。後から送る内側の失敗を捕捉するのは、その `<Loading>` の内側にある `<Errored>` だけなので、次の例のように `<Errored>` を `<Loading>` の内側に配置します。要素の JSX に記述した `<Errored>` も、ページの `<Errored>` と同じく、サーバーでシェルの中のエラーを捕捉すると、レスポンスのステータスは 500 になります（[ページとデータ](/guide/pages-and-data)）。
+
+```tsx
+// src/elements/user-card.tsx
+import { Errored, Loading, isPending, memo, refresh, signal } from "rinka";
+
+import { getUser } from "../lib/users.ts";
+
+export default function UserCard(props: { userId: number }) {
+  const [id, setId] = signal(props.userId);
+  const user = memo(() => getUser(id()));
+  return (
+    <>
+      <Loading fallback={<p>読み込み中</p>}>
+        <Errored fallback={(error, retry) => <button onClick={retry}>再試行</button>}>
+          <h2 class={{ stale: isPending(user) }}>{user().name}</h2>
+        </Errored>
+      </Loading>
+      <button onClick={() => setId(id() + 1)}>次のユーザー</button>
+      <button onClick={() => void refresh(user)}>再読み込み</button>
+    </>
+  );
+}
+```
+
+### isPending
+
+`isPending(memo)` は、一度解決した memo が、読み取った値の変化によって値を取得し直している間、`true` を返します。上の例では、`次のユーザー` のボタンを押してから新しいユーザーが届くまで、見出しに `stale` のクラスが付きます。初めて取得している間は `<Loading>` が `fallback` を表示するので、`isPending` は 2 回目以降の取得を表示に反映するときに使用します。
+
+### refresh
+
+`refresh(memo)` は、読み取った値が変化していなくても、memo の値を取得し直します。戻り値は、取得し直した値が解決したときに解決する Promise です。`refresh` で取得し直している間は、`isPending` は `false` を返します。
+
+ページ全体をサーバーで描き直すときは、`refreshPage()` を使用します（[サーバー関数](/guide/server-functions)）。
+
+## action と楽観的更新
+
+`action` は、書き込みの処理を 1 つのまとまりとして実行する関数を作成します。`optimistic` は、action の中で書き込むとすぐに表示に反映され、action が終わると元の値に戻る Signal を作成します。この 2 つを組み合わせると、サーバーのレスポンスを待たずに、操作の結果を先に表示できます。
+
+```tsx
+// src/elements/like-count.tsx
+import { action, memo, optimistic, refresh } from "rinka";
+
+import { getUser, like } from "../lib/users.ts";
+
+export default function LikeCount(props: { userId: number }) {
+  const user = memo(() => getUser(props.userId));
+  const [likes, setLikes] = optimistic(() => user().likes);
+  const send = action(async () => {
+    setLikes(likes() + 1);
+    await like(props.userId, { refresh: false });
+    await refresh(user);
+  });
+  return (
+    <button disabled={send.pending()} onClick={() => void send()}>
+      いいね {likes()}
+    </button>
+  );
+}
+```
+
+ボタンを押すと、`likes` はすぐに 1 増えます。`like` はいいねを保存するサーバー関数です。GET 以外のサーバー関数を呼び出すと、rinka は呼び出し元のページを描き直します。いいねの数は要素の memo が取得し直すので、`{ refresh: false }` を指定して、ページの描き直しを省略します（[サーバー関数](/guide/server-functions)）。action が `refresh(user)` を待っている間は、`likes` は書き込んだ値を保持します。action が終わると、`likes` は `user().likes` の値に戻ります。取得し直した `user().likes` は書き込んだ値と同じなので、表示される数は変化しません。
+
+- `send.pending()` は、action を実行している間、`true` を返します
+- action が失敗したときも、`optimistic` の値は元に戻ります
+- 同時に呼び出した action は、すべてが終わったときに一緒に終わります。例えば、`send` を続けて 2 回呼び出すと、表示は 2 増え、両方の action が終わるまでその値を保持します
+
+action の中の普通の Signal への書き込みは、async 関数の最初の `await` より前に実行したものだけが、action が終わるまで保留されます。`await` の後の書き込みは、すぐに反映されます。`await` の後の書き込みも保留するときは、async 関数の代わりに generator 関数を渡し、Promise を `yield` で待ちます。
+
+```tsx
+// src/elements/like-count.tsx
+const send = action(function* () {
+  setLikes(likes() + 1);
+  yield like(props.userId, { refresh: false });
+  yield refresh(user);
+});
+```
+
+## サーバーで描画するときの振る舞い
+
+要素の関数はサーバーでも実行し、その結果を HTML として送信します。サーバーで実行するときは、次のように振る舞います。
+
+- `signal` と `memo` は、初期の値を計算して保持します
+- `effect` と `ctx.onMount` に渡した関数は実行しません。ブラウザで要素が起動したときに初めて実行します
+- 非同期の memo は、サーバーで値を取得します。取得した値はページに埋め込んで送信し、ブラウザで要素が起動したときの memo の値になります。ブラウザは、埋め込まれた値を使用して、同じデータを取得し直しません。サーバーで失敗した memo のように、例外としてブラウザで値を取得し直す memo もあります。その条件は [読み込みと値の受け渡し](/guide/loading) で説明します
+
+非同期の memo の中では、`fetch` を直接呼び出さずに、サーバー関数を呼び出します。ブラウザで要素が起動するときは、依存する値を記録するために memo の関数を 1 回実行します。この実行では、サーバー関数は通信しません。`fetch` を直接呼び出すと、この実行でも通信するので、同じデータを 2 回取得します。
+
+サーバーで値が解決するまでの待ち方と、`<Loading>` の内容を後から送る仕組みは、[ページとデータ](/guide/pages-and-data) で説明します。

@@ -1,0 +1,158 @@
+---
+title: スタイル
+---
+
+スタイルを指定する方法は、適用する先によって異なります。要素の Shadow DOM の中には `ctx.css` でスタイルを適用し、ページにはサーバーコンポーネントが import した CSS を適用します。ページの CSS は要素の中に届かず、要素の CSS はページに影響しません。
+
+## 要素のスタイル
+
+要素の関数は、2 番目の引数で受け取る ctx の `css` で、スタイルを指定します。
+
+```tsx
+// src/elements/user-card.tsx
+import type { Ctx } from "rinka";
+
+export default function UserCard(props: { name: string }, { css }: Ctx) {
+  css`
+    :host {
+      display: block;
+    }
+    .name {
+      font-weight: bold;
+    }
+  `;
+  return <p class="name">{props.name}</p>;
+}
+```
+
+`css` は、要素の関数の本体で呼び出します。複数回呼び出すと、呼び出した順に適用します。サーバーで描画した HTML にもスタイルが含まれるので、要素の JS が届く前から同じ見た目で表示されます。
+
+`css` のタグ付きテンプレートに埋め込んだ値は、`css` を呼び出した時点の値に固定されます。状態によって見た目を変更するときは、`class` や `style` の属性を使用します。
+
+## CSS ファイルを要素に読み込む
+
+CSS ファイルを `with { type: "css" }` を付けて import すると、`CSSStyleSheet` として受け取れます。このシートを `css` に渡します。
+
+```css
+/* src/styles/card.css */
+.card {
+  border: 1px solid #ccc;
+  padding: 8px;
+}
+```
+
+```tsx
+// src/elements/card.tsx
+import type { Ctx } from "rinka";
+
+import sheet from "../styles/card.css" with { type: "css" };
+
+export default function Card(props: { heading: string }, { css }: Ctx) {
+  css(sheet);
+  return <h2 class="card">{props.heading}</h2>;
+}
+```
+
+同じ CSS ファイルを複数の要素で import すると、すべての要素が同じシートを共有します。
+
+`css` に渡せるシートは、`with { type: "css" }` で import したものだけです。`new CSSStyleSheet()` で作成したシートを渡すと、サーバーで描画するときにエラーになります。動的な `import()` で `type: "css"` を指定すると、ビルドのエラーになります。
+
+## 複数の要素でスタイルを共有する
+
+Tailwind CSS のように、ページ全体で使用する 1 つの CSS を生成するツールがあります。生成した CSS をページに読み込んでも、例えば `p-4` のようなクラスは要素の中に適用されません。Shadow DOM が、外側の CSS の規則を遮断するからです。ただし、CSS 変数は Shadow DOM の中にも継承されます。例えば、`:root` で定義した `--brand-color` は、要素の中でも `var(--brand-color)` で参照できます。
+
+生成した CSS を要素の中に適用するには、要素のファイルでその CSS を `with { type: "css" }` を付けて import します。同じ CSS をレイアウトから普通の import で読み込むと、ページにも適用されます。
+
+```ts
+// vite.config.ts
+import tailwindcss from "@tailwindcss/vite";
+import { rinka } from "rinka/vite";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [rinka(), tailwindcss()],
+});
+```
+
+```css
+/* src/styles/app.css */
+@import "tailwindcss";
+```
+
+```tsx
+// src/routes/layout.tsx
+import type { LayoutProps } from "rinka/router";
+
+import "../styles/app.css";
+
+export default function Layout(props: LayoutProps) {
+  return <main class="p-4">{props.children}</main>;
+}
+```
+
+```tsx
+// src/elements/badge.tsx
+import type { Ctx } from "rinka";
+
+import tw from "../styles/app.css" with { type: "css" };
+
+export default function Badge(props: { label: string }, { css }: Ctx) {
+  css(tw);
+  return <span class="rounded bg-blue-600 px-2 text-white">{props.label}</span>;
+}
+```
+
+多くの要素で同じ CSS を import するときは、モジュールで再エクスポートすると、import の記述を短縮できます。再エクスポートの文にも `with { type: "css" }` を記述し、再エクスポートしたモジュールを import する文には記述しません。
+
+```ts
+// src/styles/shared.ts
+export { default } from "./app.css" with { type: "css" };
+```
+
+```tsx
+// src/elements/badge.tsx
+import tw from "../styles/shared.ts";
+```
+
+### `@property` を含む CSS
+
+要素のシートに記述した `@property` の規則は、ブラウザに登録されません。`@property` は文書の全体に対して登録する規則だからです。Tailwind CSS は、影や変形などのユーティリティに `@property` を使用します。要素で Tailwind CSS を使用するときは、上の例のように、同じ CSS をレイアウトでも読み込みます。
+
+## ページとレイアウトの CSS
+
+サーバーコンポーネントでは、Vite のアプリと同じく CSS を import します。
+
+```tsx
+// src/routes/layout.tsx
+import type { LayoutProps } from "rinka/router";
+
+import "../styles/global.css";
+
+export default function Layout(props: LayoutProps) {
+  return <main>{props.children}</main>;
+}
+```
+
+```tsx
+// src/routes/about/page.tsx
+import "./about.css";
+
+export default function Page() {
+  return <h1 class="title">rinka について</h1>;
+}
+```
+
+レイアウト、ページ、それらが import するモジュールが読み込んだ CSS を、rinka はページの `<head>` に `<link rel="stylesheet">` として出力します。外側のレイアウトの CSS から順に出力し、ページの CSS を最後に出力します。同じ CSS は 1 回だけ出力します。
+
+## エラーのページの CSS
+
+`not-found.tsx` と `error.tsx` のページを表示するときは、そのページと、そのページを囲むレイアウトの CSS を出力します。`notFound()` を投げたページや、エラーを投げたページ自身が import した CSS は出力しません。
+
+```tsx
+// src/routes/not-found.tsx
+import "./not-found.css";
+
+export default function NotFound() {
+  return <h1 class="missing">ページが見つかりません</h1>;
+}
+```

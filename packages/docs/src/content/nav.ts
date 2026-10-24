@@ -9,4 +9,20 @@ export const nav: readonly NavSection[] = [
     title: "はじめに",
     slugs: ["introduction/what-is-rinka", "introduction/quick-start", "introduction/tutorial"],
   },
+  {
+    title: "ガイド",
+    slugs: [
+      "guide/routing",
+      "guide/pages-and-data",
+      "guide/elements",
+      "guide/reactivity",
+      "guide/loading",
+      "guide/server-functions",
+      "guide/forms",
+      "guide/styling",
+      "guide/hono",
+      "guide/deploy",
+      "guide/interop",
+    ],
+  },
 ];

@@ -1,0 +1,170 @@
+---
+title: Hono との連携
+---
+
+rinka のアプリは Hono のアプリです。`rinka/app` は、`src/routes/` のルートとサーバー関数から構築した Hono のアプリを default export します。このアプリを自分の Hono のアプリにマウントすると、Hono のミドルウェアとルートを rinka のページと組み合わせられます。
+
+## サーバーのエントリー
+
+マウントは `src/server.ts` に記述します。`src/server.ts` は、`fetch` を持つ値を default export するモジュールです。
+
+```ts
+// src/server.ts
+/// <reference types="node" />
+
+import { fileURLToPath } from "node:url";
+
+import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
+import { Hono } from "hono";
+import { logger } from "hono/logger";
+import app from "rinka/app";
+
+const server = new Hono();
+server.use(logger());
+if (import.meta.main) {
+  server.use(serveStatic({ root: fileURLToPath(new URL("../client", import.meta.url)) }));
+}
+server.get("/health", (c) => c.text("ok"));
+server.route("/", app);
+
+if (import.meta.main) serve({ fetch: server.fetch, port: Number(process.env.PORT ?? 3000) });
+
+export default server;
+```
+
+`server.route("/", app)` より前に `server.use()` で登録したミドルウェアは、rinka のページ、`route.ts`、サーバー関数のすべてのリクエストに適用されます。`server.get()` で追加したルートは、rinka のルートと並んで応答します。同じパスでは、`server.route()` より前に登録したルートが応答します。
+
+開発サーバー、`vite build` で出力したサーバー、`vite preview` は、どれも `src/server.ts` の `fetch` にリクエストを渡します。そのため、`src/server.ts` に追加したミドルウェアとルートは、開発と本番で同じように動作します。`src/server.ts` を作成しなければ、`rinka/app` をそのままサーバーのエントリーにします。静的ファイルの配信とサーバーの起動は、[デプロイ](/guide/deploy)で説明します。
+
+## ルートのミドルウェア
+
+`src/routes/` の `middleware.ts` は、Hono のミドルウェアを `defineMiddleware` で定義して default export します。
+
+```ts
+// src/routes/admin/middleware.ts
+import { defineMiddleware } from "rinka/server";
+
+export default defineMiddleware(async (c, next) => {
+  if (!c.get("user")) return c.text("Unauthorized", 401);
+  await next();
+});
+```
+
+ミドルウェアを適用する範囲は、ファイルを配置したディレクトリで決まります。
+
+| ファイル                             | 適用するリクエスト                                         |
+| ------------------------------------ | ---------------------------------------------------------- |
+| `src/routes/middleware.ts`           | ページ、`route.ts`、サーバー関数を含む、すべてのリクエスト |
+| ほかのディレクトリの `middleware.ts` | そのディレクトリの配下のページと `route.ts`                |
+
+ディレクトリの `middleware.ts` は、サーバー関数には適用されません。サーバー関数の認可は、後の「サーバー関数にミドルウェアを付ける」の方法で、関数ごとに記述します。ディレクトリの構成は[ルーティング](/guide/routing)で説明します。
+
+## コンテキスト変数の型
+
+アプリ全体で共有する変数は、ルートの `middleware.ts` で `c.set()` に渡します。変数の型は、Hono の `ContextVariableMap` を拡張して宣言します。
+
+`src/routes/` のファイルと、`src/lib/` などのそれ以外のファイルは、別々の TypeScript のプロジェクトで検査します。そのため、型の宣言は `src/lib/` などのモジュールに記述し、そのモジュールをルートの `middleware.ts` から import します。`src/routes/middleware.ts` の中に宣言を記述すると、`src/lib/` で定義したサーバー関数からは型を参照できません。
+
+```ts
+// src/lib/session.ts
+import type { Context } from "hono";
+import { getSignedCookie } from "hono/cookie";
+
+import { sessionSecret } from "./secret.ts";
+
+declare module "hono" {
+  interface ContextVariableMap {
+    user: string | null;
+  }
+}
+
+export async function readUser(c: Context): Promise<string | null> {
+  return (await getSignedCookie(c, sessionSecret, "user")) || null;
+}
+```
+
+```ts
+// src/routes/middleware.ts
+import { defineMiddleware } from "rinka/server";
+
+import { readUser } from "../lib/session.ts";
+
+export default defineMiddleware(async (c, next) => {
+  c.set("user", await readUser(c));
+  await next();
+});
+```
+
+`readUser` は、Hono の `setSignedCookie` で署名した Cookie `user` の値を、署名を検証してから返します。`sessionSecret` は、署名の鍵を環境変数などから読み込むアプリの値です。
+
+`route.ts` とサーバー関数の handler では、`c.get("user")` の型が `string | null` になります。
+
+## ページから Context を参照する
+
+ページ、レイアウト、サーバーコンポーネントは、`getContext()` で処理中のリクエストの Hono の Context を取得します。リクエストの外では、`getContext()` は `undefined` を返します。
+
+```tsx
+// src/routes/page.tsx
+import { getContext } from "rinka/server";
+
+export default function Page() {
+  const user = getContext()?.get("user");
+  return <h1>{user ? `${user} さん` : "ゲスト"}</h1>;
+}
+```
+
+## API ルートの handler
+
+`route.ts` には、HTTP のメソッド名で Hono の handler を export します。`rinka/server` の `defineHandler` は、Hono の `hono/factory` の `defineHandler` と同じものです。オプションに `param`、`query`、`header`、`cookie`、`form`、`json` のスキーマを指定すると、handler を実行する前に値を検証します。スキーマには、Standard Schema に対応したライブラリ（例では Zod）を使用できます。
+
+```ts
+// src/routes/api/greet/route.ts
+import { defineHandler } from "rinka/server";
+import { z } from "zod";
+
+export const GET = defineHandler({ query: z.object({ name: z.string() }) })((c, { query }) => ({
+  message: `こんにちは、${query.name} さん`,
+  user: c.get("user"),
+}));
+```
+
+handler が返したオブジェクトは JSON のレスポンスになります。検証に失敗すると、次の本文を持つ、ステータスが 400 のレスポンスを返します。
+
+```json
+{
+  "error": "Validation failed",
+  "issues": [
+    {
+      "slot": "query",
+      "issues": [
+        { "message": "Invalid input: expected string, received undefined", "path": "name" }
+      ]
+    }
+  ]
+}
+```
+
+`defineHandler` のオプションと戻り値の変換は、[Hono のドキュメント](https://hono.dev/docs/helpers/factory#definehandler)を参照してください。`route.ts` を配置する場所は[ルーティング](/guide/routing)で説明します。
+
+## サーバー関数にミドルウェアを付ける
+
+`defineServerFn` には、handler の前に Hono のミドルウェアを列挙できます。`defineMiddleware` の型引数に `Variables` を指定すると、ミドルウェアが `c.set()` に渡した変数の型が、handler の `c.get()` に伝わります。
+
+```ts
+// src/lib/greet.ts
+import { defineMiddleware, defineServerFn } from "rinka/server";
+
+import { readUser } from "./session.ts";
+
+const auth = defineMiddleware<{ Variables: { name: string } }>(async (c, next) => {
+  const name = await readUser(c);
+  if (!name) return c.text("Unauthorized", 401);
+  c.set("name", name);
+  await next();
+});
+
+export const greet = defineServerFn(auth, (c) => `こんにちは、${c.get("name")} さん`);
+```
+
+ミドルウェアが `next()` を呼び出さずにレスポンスを返すと、handler は実行されず、そのレスポンスがサーバー関数のレスポンスになります。`basicAuth()` のような Hono の既存のミドルウェアも、同じ位置に指定できます。サーバー関数の定義と呼び出しは[サーバー関数](/guide/server-functions)で説明します。

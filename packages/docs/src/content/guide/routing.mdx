@@ -1,0 +1,324 @@
+---
+title: ルーティング
+---
+
+rinka は、`src/routes/` のディレクトリの構成から、ページの URL を決定します。
+
+## ページのファイル
+
+`page.tsx` を配置したディレクトリが、1 つの URL になります。`page.tsx` は、ページのサーバーコンポーネントを default export します。
+
+| ファイル                      | URL        |
+| ----------------------------- | ---------- |
+| `src/routes/page.tsx`         | `/`        |
+| `src/routes/users/page.tsx`   | `/users`   |
+| `src/routes/contact/page.tsx` | `/contact` |
+
+```tsx
+// src/routes/users/page.tsx
+import type { PageProps } from "rinka/router";
+
+export default function Users({ url }: PageProps<"/users">) {
+  const page = Number(url.searchParams.get("page") ?? "1");
+  return <h1>ユーザーの一覧（{page} ページ目）</h1>;
+}
+```
+
+ページは、props の `url` でリクエストの URL を受け取ります。クエリは `url.searchParams` で参照します。
+
+`src/routes/` の中では、次のファイル名が特別な意味を持ちます。
+
+| ファイル        | 役割                                              |
+| --------------- | ------------------------------------------------- |
+| `page.tsx`      | ページ                                            |
+| `layout.tsx`    | 配下のページを包むレイアウト                      |
+| `middleware.ts` | 配下のリクエストに適用するミドルウェア            |
+| `not-found.tsx` | 配下の存在しない URL に返す 404 のページ          |
+| `error.tsx`     | 配下のページの描画が失敗したときの 500 のページ   |
+| `route.ts`      | HTTP メソッドごとの関数でリクエストを処理する API |
+
+それ以外の名前のファイルはルートになりません。ページだけが使用する部品は、ページと同じディレクトリに配置できます。`route.ts` の書き方は [サーバー関数](/guide/server-functions) で説明します。同じディレクトリに `page.tsx` と `route.ts` を配置すると、エラーになります。
+
+## 動的な区切り
+
+`[id]` のように角括弧で囲んだ名前のディレクトリは、URL の任意の 1 つの区切りに一致します。一致した値は、props の `params` で受け取ります。値は常に文字列です。
+
+```tsx
+// src/routes/users/[id]/page.tsx
+import type { PageProps } from "rinka/router";
+import { notFound } from "rinka/server";
+
+export default function User({ params }: PageProps<"/users/[id]">) {
+  if (!/^\d+$/.test(params.id)) throw notFound();
+  return <h1>ユーザー {params.id}</h1>;
+}
+```
+
+例えば `/users/1` では、`params.id` が `"1"` になります。`/users/1/edit` のように区切りが多い URL は、このページに一致しません。
+
+動的な区切りとキャッチオールのパラメータの名前には、ASCII の英数字と `_` を使用します。
+
+`[` か `(` で始まり、動的な区切り、キャッチオール、グループのどの形にも合わない名前のディレクトリは、エラーになります。
+
+## キャッチオール
+
+`[...slug]` の形の名前のディレクトリは、1 つ以上の区切りに一致します。値は、区切りの `/` を含む文字列です。
+
+```tsx
+// src/routes/docs/[...slug]/page.tsx
+import type { PageProps } from "rinka/router";
+
+export default function Doc({ params }: PageProps<"/docs/[...slug]">) {
+  return <h1>{params.slug}</h1>;
+}
+```
+
+`/docs/guide/routing` では、`params.slug` が `guide/routing` になります。`/docs` には一致しません。
+
+`page.tsx`、`route.ts`、`not-found.tsx` は、キャッチオールのディレクトリより下にある、URL の区切りになるディレクトリには配置できません。配置すると、エラーになります。
+
+同じ URL に複数のルートが一致するときは、静的な区切り、動的な区切り、キャッチオールの順に優先します。例えば `src/routes/docs/intro/page.tsx` があれば、`/docs/intro` にはそのページを使用します。
+
+## グループ
+
+`(marketing)` のように丸括弧で囲んだ名前のディレクトリを、グループと呼びます。グループの名前は URL に含めないので、URL を変えずに、ページをレイアウトごとに分割できます。グループの中の `layout.tsx` と `middleware.ts` は、そのグループのページだけに適用します。
+
+```tsx
+// src/routes/(marketing)/layout.tsx
+import type { LayoutProps } from "rinka/router";
+
+export default function MarketingLayout(props: LayoutProps) {
+  return <article class="marketing">{props.children}</article>;
+}
+```
+
+```tsx
+// src/routes/(marketing)/about/page.tsx
+export default function About() {
+  return <h1>会社概要</h1>;
+}
+```
+
+`/about` のページは、`MarketingLayout` で包まれます。グループの外のページは、このレイアウトで包まれません。グループの名前を除くと同じ URL になる 2 つのページがあると、エラーになります。
+
+## レイアウト
+
+`layout.tsx` は、そのディレクトリの配下のすべてのページを包みます。ページは、ルートの `layout.tsx` を最も外側にして、ページのディレクトリまでのすべての `layout.tsx` で包まれます。レイアウトは、props の `children` にページを受け取ります。
+
+```tsx
+// src/routes/users/layout.tsx
+import type { LayoutProps } from "rinka/router";
+
+export default function UsersLayout(props: LayoutProps) {
+  return (
+    <section>
+      <nav>
+        <a href="/users">ユーザーの一覧</a>
+      </nav>
+      {props.children}
+    </section>
+  );
+}
+```
+
+ページごとにレイアウトを指定する方法はありません。別のレイアウトを使用するページは、グループに分割します。
+
+レイアウトの props の `params` には、ページと同じパラメータが入りますが、型は `Record<string, string>` です。
+
+## ミドルウェア
+
+`middleware.ts` は、Hono のミドルウェアを `defineMiddleware` で包んで default export します。
+
+```ts
+// src/routes/admin/middleware.ts
+import { getCookie } from "hono/cookie";
+import { defineMiddleware, redirect } from "rinka/server";
+
+export default defineMiddleware(async (c, next) => {
+  if (getCookie(c, "session") === undefined) throw redirect("/login");
+  await next();
+});
+```
+
+適用する範囲は、ファイルの位置で異なります。
+
+- `src/routes/middleware.ts` は、サーバー関数の呼び出しとフォームの送信を含む、すべてのリクエストに適用します
+- ほかのディレクトリの `middleware.ts` は、その配下のページと `route.ts` と、配下の `not-found.tsx` を存在しない URL に返すときにも適用します。サーバー関数の呼び出しには適用しません
+
+ミドルウェアが Response を返すと、ページの代わりにその Response を返します。`redirect()` を投げるとリダイレクトのレスポンスになり、`notFound()` を投げると `not-found.tsx` を 404 で返します。ミドルウェアが `c.set` で設定した値を、ページで参照する方法は [ページとデータ](/guide/pages-and-data) で説明します。
+
+ミドルウェアか `route.ts` が `notFound()` を投げたときは、存在しない URL のときと異なり、`not-found.tsx` のディレクトリの `middleware.ts` を実行せずに `not-found.tsx` を描画します。そのため、`not-found.tsx` を包むレイアウトは、ディレクトリの `middleware.ts` が設定する値が無くても描画できるように記述します。
+
+## not-found と error のページ
+
+`not-found.tsx` は、存在しない URL と、ページが投げた `notFound()` に使用し、404 を返します。
+
+```tsx
+// src/routes/not-found.tsx
+export default function NotFoundPage(props: { url: URL }) {
+  return <h1>{props.url.pathname} は見つかりません</h1>;
+}
+```
+
+`error.tsx` は、ページのシェルの描画で投げられ、どの [`<Errored>`](/guide/pages-and-data) も受け止めなかったエラーに使用し、500 を返します。投げられた値は、props の `error` で受け取ります。本番でエラーの内容を表示するかどうかは、`error.tsx` で決定します。
+
+```tsx
+// src/routes/error.tsx
+export default function ErrorPage(props: { error: unknown }) {
+  return (
+    <>
+      <h1>エラーが発生しました</h1>
+      {import.meta.env.DEV && <pre>{String(props.error)}</pre>}
+    </>
+  );
+}
+```
+
+どちらのページも、ページと同じく `params` と `url` を props で受け取り、ルートからそのファイルのディレクトリまでのレイアウトで包まれます。`error.tsx` を使用したときは、投げられた値をサーバーのログに出力します。
+
+使用するファイルは、次の規則で選択します。
+
+- ページが投げた `notFound()` とエラーには、ページのディレクトリか、その祖先のディレクトリのうち、最も近いディレクトリのファイルを使用します
+- 存在しない URL には、URL の先頭から区切りが一致するディレクトリのうち、最も深いディレクトリの `not-found.tsx` を使用します。例えば `/users/x/y` には、`src/routes/users/not-found.tsx` があればそれを使用します
+- 該当するファイルが無いときは、404 では `Not Found` のテキストを返します。500 では、本番は `Internal Server Error` のテキストを返し、開発中は Vite のエラーのオーバーレイを表示する HTML を返します
+
+`error.tsx` は、フォームの送信先のサーバー関数が失敗したときにも使用します。このリクエストには、ルートの `middleware.ts` だけを適用し、`error.tsx` のディレクトリの `middleware.ts` を実行しません。そのため、`error.tsx` を包むレイアウトは、ディレクトリの `middleware.ts` が設定する値が無くても描画できるように記述します。
+
+## `<head>` への出力
+
+ページとレイアウトの JSX に記述した `<title>`、`<meta>`、`<link>` は、文書の `<head>` に移動します。
+
+```tsx
+// src/routes/privacy/page.tsx
+import { pageTitle } from "../../lib/title.ts";
+
+export default function Privacy() {
+  return (
+    <>
+      <title>{pageTitle("プライバシーポリシー")}</title>
+      <meta name="description" content="個人情報の取り扱い" />
+      <h1>プライバシーポリシー</h1>
+    </>
+  );
+}
+```
+
+```ts
+// src/lib/title.ts
+export const pageTitle = (name: string) => `${name} | My App`;
+```
+
+`<title>` と、`name`、`property`、`http-equiv` のどれかを持つ `<meta>` と、`<link rel="canonical">` は、同じキーのタグが複数あると 1 つだけを出力します。キーは、`<meta>` では `name` などの属性の名前と値の組で、`<title>` と `<link rel="canonical">` ではタグの種類です。出力するのは、より深いファイルに記述したタグです。深さは、ルートのレイアウト、内側のレイアウト、ページの順に深くなります。サイト名だけのタイトルをルートのレイアウトに記述しておくと、ページの `<title>` がそれを上書きします。
+
+次の位置に記述したタグは、`<head>` に移動せず、記述した位置に出力します。
+
+- `<Loading>` の内側とフォールバックの中
+- 要素の中と、要素に渡した子
+- `<svg>` と `<noscript>` の配下
+
+例えば、`<svg>` の中の `<title>` は、SVG のタイトルとして出力します。
+
+`itemprop` を持つ `<meta>` と `<link>` は、どの位置に記述しても、`<head>` に移動せずに記述した位置に出力します。
+
+`<Loading>` の内側とフォールバックの中、要素の中、要素に渡した子に `<title>`、`<meta>`、`<link>` を記述すると、開発中は警告を表示します。`itemprop` を持つ `<meta>` と `<link>` と、`<link rel="stylesheet">` のように `<body>` の中でも効果のある `<link>` には、警告を表示しません。
+
+### `<html>` と `<body>`
+
+`<!doctype html>`、`<html>`、`<head>`、`<body>` は rinka が出力します。`<html>` の `lang` のような属性は、レイアウトに `<html>` と `<body>` を記述して指定します。
+
+```tsx
+// src/routes/layout.tsx
+import type { LayoutProps } from "rinka/router";
+
+export default function RootLayout(props: LayoutProps) {
+  return (
+    <html lang="ja">
+      <body>
+        <title>My App</title>
+        <header>My App</header>
+        {props.children}
+      </body>
+    </html>
+  );
+}
+```
+
+属性は、rinka が出力する `<html>` と `<body>` の開始タグに移動します。複数のファイルが同じ属性を指定したときは、深いファイルの値を使用します。`<script>` や `<style>` を `<head>` に出力するときは、レイアウトに `<head>` を記述し、その子にします。
+
+## ルートのパラメータの型
+
+`rinka prepare` は、`src/routes/` のページから、ルートごとのパラメータの型を生成します。開発サーバーとビルドは、開始するときと、ページのファイルを追加か削除したときに、同じ処理を実行します。手動で実行するのは、Vite を起動せずに型を検査するときだけです。`rinka create` で作成したアプリでは、`pnpm typecheck` が `rinka prepare` を実行してから型を検査します。
+
+`PageProps` には、`/users/[id]` のように、ページのディレクトリの名前を `/` で連結したパスを指定します。グループの名前は含めません。指定したルートのパラメータが、`params` の型になります。
+
+```tsx
+// src/routes/users/[id]/page.tsx
+import type { PageProps } from "rinka/router";
+
+export default function User({ params }: PageProps<"/users/[id]">) {
+  return <h1>ユーザー {params.id}</h1>;
+}
+```
+
+`href()` は、ルートとパラメータから URL を作成します。存在しないルートと、不足したパラメータは型エラーになります。`href()` は、ページと要素のどちらでも使用できます。
+
+```tsx
+// src/routes/page.tsx
+import { href } from "rinka/router";
+
+export default function Home() {
+  return (
+    <ul>
+      <li>
+        <a href={href("/users/[id]", { id: 1 })}>ユーザー 1</a>
+      </li>
+      <li>
+        <a href={href("/docs/[...slug]", { slug: "guide/routing" })}>ルーティング</a>
+      </li>
+      <li>
+        <a href={href("/users", undefined, { page: 2 })}>ユーザーの一覧の 2 ページ目</a>
+      </li>
+    </ul>
+  );
+}
+```
+
+この例の URL は、順に `/users/1`、`/docs/guide/routing`、`/users?page=2` になります。パラメータの値は URL エンコードし、キャッチオールの値の `/` は区切りとして残します。3 つ目の引数のクエリには、オブジェクトか `URLSearchParams` を指定します。`<a href>` に直接記述した文字列は、型を検査しません。
+
+## 静的な書き出し
+
+ページが `prerender` を export すると、`vite build` は、そのページの HTML をファイルに書き出します。書き出したファイルは、サーバーで描画せずに、静的ファイルとして配信します。
+
+```tsx
+// src/routes/terms/page.tsx
+import type { Prerender } from "rinka/router";
+
+export const prerender: Prerender<"/terms"> = true;
+
+export default function Terms() {
+  return <h1>利用規約</h1>;
+}
+```
+
+パラメータのあるページでは、パラメータのオブジェクトの配列を返す関数を export します。
+
+```tsx
+// src/routes/blog/[slug]/page.tsx
+import type { PageProps, Prerender } from "rinka/router";
+import { notFound } from "rinka/server";
+
+import { findPost, listPosts } from "../../../lib/posts.ts";
+
+export const prerender: Prerender<"/blog/[slug]"> = async () =>
+  (await listPosts()).map((post) => ({ slug: post.slug }));
+
+export default async function BlogPost({ params }: PageProps<"/blog/[slug]">) {
+  const post = await findPost(params.slug);
+  if (!post) throw notFound();
+  return <h1>{post.title}</h1>;
+}
+```
+
+書き出したページを配信するときは、`middleware.ts` を実行しません。利用者ごとに内容が変わるページは書き出さないでください。書き出すときのリクエストには `middleware.ts` を適用し、レスポンスが 200 でないときは、ビルドが失敗します。そのため、ミドルウェアがリダイレクトするページを書き出すと、ビルドが失敗します。開発サーバーは、`prerender` の有無にかかわらず、リクエストごとにページを描画します。
+
+書き出したファイルの配置と、サーバーを置かずに配信するアプリの設定は、[デプロイ](/guide/deploy) で説明します。

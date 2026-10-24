@@ -1,0 +1,274 @@
+---
+title: サーバー関数
+---
+
+サーバー関数は、`defineServerFn` で定義する関数です。要素から呼び出すと、ブラウザからサーバーにリクエストを送信し、サーバーで実行した結果を返します。ページから呼び出すと、HTTP を介さずにサーバーで直接実行します。
+
+## サーバー関数を定義する
+
+```ts
+// src/lib/posts.ts
+import { defineServerFn } from "rinka/server";
+import { z } from "zod";
+
+import { db } from "./db.ts";
+
+export const addPost = defineServerFn({
+  input: z.object({ title: z.string().min(1) }),
+})(async (c, { input }) => {
+  return db.posts.insert(input.title);
+});
+```
+
+`defineServerFn` は 2 段で呼び出します。1 段目にはオプション（`method` と `input`）を、2 段目にはミドルウェアと handler を渡します。ミドルウェアは省略できます。handler の `c` は Hono の Context で、`input` は検証を通過した入力です。オプションが無ければ、1 段目を省略して、`defineServerFn(() => "pong")` のようにミドルウェアと handler を 1 回の呼び出しで渡せます。メソッドのデフォルトは POST です。
+
+サーバー関数は、`src/` の中のファイルで、トップレベルの `const` を初期化する形で定義します。関数の中や、`src/` の外のファイルで定義すると、ビルドのエラーになります。
+
+要素から呼び出すサーバー関数は、`src/routes/` の外（`src/lib/` など）に定義します。要素のファイルからは、`src/routes/` のファイルを import できません。
+
+サーバー関数を定義したファイルのトップレベルの処理は、ブラウザに送信するコードにも残ります。DB の接続のようなサーバーでだけ実行する処理は、例の `db.ts` のように別のファイルに定義し、handler の中から使用します。handler と、handler だけが使用する import は、ブラウザに送信しません。
+
+## 入力を検証する
+
+`input` には、Standard Schema に対応したスキーマ（zod や valibot など）か、関数を指定します。呼び出すときの引数の型はスキーマの入力の型になり、handler の `input` の型はスキーマの出力の型になります。
+
+```ts
+// src/lib/posts.ts
+import { HTTPException } from "hono/http-exception";
+
+export const likePost = defineServerFn({
+  input: (value: unknown) => {
+    if (typeof value !== "number") throw new HTTPException(400, { message: "id は数です" });
+    return value;
+  },
+})(async (c, { input }) => db.posts.like(input));
+```
+
+- スキーマの検証に失敗すると、handler を呼び出さずに、422 のステータスで `{ issues }` を返します。`issues` は Standard Schema の issues です
+- 検証の関数が `HTTPException` を投げると、そのレスポンスを返します。それ以外の例外を投げると、500 を返します
+- ページからサーバー関数を直接呼び出して、スキーマの検証に失敗すると、呼び出しは `issues` を持つ `SchemaError` を投げます
+
+## 要素から呼び出す
+
+要素からは、サーバー関数を import して普通の関数と同じく呼び出します。1 つ目の引数が入力で、2 つ目の引数が呼び出しのオプション（`CallOptions`）です。
+
+```tsx
+// src/elements/like-button.tsx
+import { signal } from "rinka";
+
+import { likePost } from "../lib/posts.ts";
+
+export default function LikeButton(props: { postId: number }) {
+  const [likes, setLikes] = signal<number | undefined>(undefined);
+  const like = async () => {
+    setLikes(await likePost(props.postId, { signal: AbortSignal.timeout(5000) }));
+  };
+  return <button onClick={like}>いいね {likes()}</button>;
+}
+```
+
+| オプション | 内容                                                    |
+| ---------- | ------------------------------------------------------- |
+| `signal`   | この `AbortSignal` を中止すると、リクエストを中止します |
+| `headers`  | リクエストに付与するヘッダーです                        |
+| `refresh`  | `false` にすると、呼び出した後にページを描き直しません  |
+
+rinka はタイムアウトと再試行の機能を持ちません。タイムアウトは、例のように `AbortSignal.timeout()` を `signal` に渡して設定します。
+
+入力と戻り値には、JSON で表せない値（Date や Map など）も使用できます。
+
+### props で渡す
+
+ページから要素の props にサーバー関数を渡すこともできます。要素の側では、Props の型に普通の関数の型を記述します。
+
+```tsx
+// src/elements/delete-button.tsx
+type Props = { postId: number; onDelete: (id: number) => Promise<void> };
+
+export default function DeleteButton(props: Props) {
+  return <button onClick={() => props.onDelete(props.postId)}>削除</button>;
+}
+```
+
+```tsx
+// src/routes/page.tsx
+import DeleteButton from "../elements/delete-button.tsx";
+import { deletePost } from "../lib/posts.ts";
+
+export default function Page() {
+  return <DeleteButton postId={1} onDelete={deletePost} />;
+}
+```
+
+## エラーを受け取る
+
+要素から呼び出したサーバー関数が 2xx 以外のレスポンスを返すと、呼び出しは `ServerFnError` を投げます。`ServerFnError` は、ステータス（`status`）、JSON として読み取った本文（`data`）、受け取った Response（`response`）を持ちます。本文が JSON でなければ、`data` は `null` です。
+
+```tsx
+// src/elements/post-form.tsx
+import { ServerFnError, signal } from "rinka";
+
+import { addPost } from "../lib/posts.ts";
+
+export default function PostForm() {
+  const [title, setTitle] = signal("");
+  const [message, setMessage] = signal("");
+
+  const submit = async () => {
+    try {
+      await addPost({ title: title() });
+      setTitle("");
+    } catch (e) {
+      if (!(e instanceof ServerFnError) || e.status !== 422) throw e;
+      const { issues } = e.data as { issues: { message: string }[] };
+      setMessage(issues.map((issue) => issue.message).join("、"));
+    }
+  };
+
+  return (
+    <div>
+      <input value={title()} onInput={(e) => setTitle(e.currentTarget.value)} />
+      <button onClick={submit}>投稿する</button>
+      <p>{message()}</p>
+    </div>
+  );
+}
+```
+
+handler の中で `rinka/server` の `redirect()` を投げると、ブラウザはその URL に移動します。移動するときは、呼び出しが返す Promise は解決しないので、`await` の後のコードは実行されません。`notFound()` を投げると、呼び出しは 404 の `ServerFnError` を投げます。
+
+## 呼び出した後のページの描き直し
+
+GET 以外のサーバー関数を要素から呼び出すと、rinka は、サーバー関数のレスポンスに、現在のページを描き直した結果も含めます。呼び出しは、描き直した結果をページに反映してから値を返します。例えば、上の `PostForm` で投稿すると、ページの投稿の一覧に新しい投稿が表示されます。
+
+描き直すのは、サーバーで描画した部分（ページ、レイアウト、`<head>`、要素の props）です。要素の状態は保持されます。要素が memo に保持している値を、サーバー関数を呼び出した後に取得し直すときは、`rinka` の `refresh()` に memo を渡し、呼び出すサーバー関数には `{ refresh: false }` を指定します（[リアクティビティ](/guide/reactivity)）。
+
+handler が `redirect()` で現在のページの URL を指定したときは、ページを移動せずに描き直し、呼び出しは `undefined` を返します。`refresh: false` を指定した呼び出しでは、handler が現在のページの URL を指定したときも、ブラウザはその URL に移動します。
+
+描き直しはページの描画の完了を待つので、`<Loading>` の内側に時間のかかるデータがあるページでは、その分だけ呼び出しも遅くなります。描き直しが要らない呼び出しには、`refresh: false` を指定します。
+
+```ts
+await likePost(postId, { refresh: false });
+```
+
+サーバー関数を呼び出さずにページを描き直すときは、`rinka` の `refreshPage()` を呼び出します。
+
+```tsx
+// src/elements/reload-button.tsx
+import { refreshPage } from "rinka";
+
+export default function ReloadButton() {
+  return <button onClick={() => refreshPage()}>最新の状態にする</button>;
+}
+```
+
+## GET のサーバー関数
+
+`method: "GET"` を指定したサーバー関数は、入力を URL に含めて送信します。要素の中では、非同期の memo でそのまま使用できます。
+
+```ts
+// src/lib/posts.ts
+export const getPost = defineServerFn({ method: "GET", input: z.number() })(async (
+  c,
+  { input },
+) => {
+  c.header("cache-control", "private, max-age=60");
+  const post = db.posts.find(input);
+  if (!post) throw notFound();
+  return post;
+});
+```
+
+```tsx
+// src/elements/post-title.tsx
+import { memo } from "rinka";
+
+import { getPost } from "../lib/posts.ts";
+
+export default function PostTitle(props: { postId: number }) {
+  const post = memo(() => getPost(props.postId));
+  return <span>{post().title}</span>;
+}
+```
+
+rinka は、サーバー関数の結果をキャッシュしません。GET のサーバー関数の URL は入力ごとに決まるので、例のように `cache-control` のヘッダーを設定すると、ブラウザのキャッシュが使用されます。例えば、同じ入力で 2 回呼び出すと、2 回目はブラウザのキャッシュから値を返します。
+
+GET のサーバー関数は、データを変更しない処理にだけ使用してください。rinka はこれを検査しません。
+
+## ミドルウェアで保護する
+
+定義したサーバー関数は、export していなくても、すべて公開のエンドポイントになります。UI のボタンを表示しないだけでは、呼び出しを防止できません。
+
+認証や認可は、サーバー関数のミドルウェアで実行します。ミドルウェアは、`defineServerFn` の 2 段目で handler の前に列挙します。`defineMiddleware` の型引数に `{ Variables: ... }` の形の型を指定すると、`c.set` した値を handler の `c.get` で型付きで読み取れます。
+
+```ts
+// src/lib/auth.ts
+import { getSignedCookie } from "hono/cookie";
+import { defineMiddleware } from "rinka/server";
+
+import { sessionSecret } from "./secret.ts";
+
+type User = { name: string };
+
+export const auth = defineMiddleware<{ Variables: { user: User } }>(async (c, next) => {
+  const name = await getSignedCookie(c, sessionSecret, "user");
+  if (!name) return c.text("Unauthorized", 401);
+  c.set("user", { name });
+  await next();
+});
+```
+
+```ts
+// src/lib/posts.ts
+export const deletePost = defineServerFn({ input: z.number() })(auth, async (c, { input }) => {
+  console.log(`${c.get("user").name} が削除しました`);
+  db.posts.remove(input);
+  throw redirect("/");
+});
+```
+
+`getSignedCookie` は、Hono の `setSignedCookie` で署名した Cookie の値を、署名を検証してから返します。`sessionSecret` は、署名の鍵を環境変数などから読み込むアプリの値です。
+
+ミドルウェアが `next()` を呼び出さずに Response を返すと、handler を実行せずに、その Response を返します。`basicAuth()` のような Hono のミドルウェアも、そのまま列挙できます。
+
+ルートの `src/routes/middleware.ts` は、サーバー関数のリクエストにも適用します。`src/routes/` の配下のディレクトリにある `middleware.ts` は、サーバー関数には適用しません。例えば、`src/routes/admin/middleware.ts` で保護しているページが呼び出すサーバー関数にも、サーバー関数のミドルウェアで認可を設定してください。
+
+## 別のオリジンからのリクエスト
+
+rinka は、別のオリジンのページから送信された、サーバー関数への GET 以外のリクエストを、403 で拒否します。サブドメインだけが異なるページも、別のオリジンです。`route.ts` へのリクエストは拒否しません。別のオリジンのページからの呼び出しを許可するときは、Vite プラグインの `trustedOrigins` に、そのオリジンを列挙します。
+
+```ts
+// vite.config.ts
+import { rinka } from "rinka/vite";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [rinka({ trustedOrigins: ["https://www.example.com"] })],
+});
+```
+
+オリジンは、`https://www.example.com` のように、スキーム、ホスト、ポートだけを記述します。パスと末尾の `/` は付与せず、デフォルトのポートは省略します。この形に合わない値と、ワイルドカードを含む値を指定すると、`vite build` と開発サーバーの起動がエラーになります。
+
+## API ルート
+
+サーバー関数の URL は rinka が決定し、定義したファイルを移動すると変わります。外部に公開する API や Webhook は、`src/routes/` の `route.ts` に、HTTP のメソッドの名前で handler を export して定義します。
+
+```ts
+// src/routes/api/posts/route.ts
+import { defineHandler } from "rinka/server";
+import { z } from "zod";
+
+import { db } from "../../../lib/db.ts";
+
+export const GET = defineHandler(() => db.posts.list());
+
+export const POST = defineHandler({ json: z.object({ title: z.string().min(1) }) })(async (
+  c,
+  { json },
+) => {
+  c.status(201);
+  return db.posts.insert(json.title);
+});
+```
+
+`rinka/server` の `defineHandler` は、Hono の `defineHandler` と同じものです。handler が返したオブジェクトは JSON のレスポンスになります。`route.ts` の配置の規則は [ルーティング](/guide/routing) を、Hono との組み合わせは [Hono との連携](/guide/hono) を参照してください。

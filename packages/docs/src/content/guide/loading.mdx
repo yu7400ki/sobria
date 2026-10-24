@@ -1,0 +1,169 @@
+---
+title: 読み込みと値の受け渡し
+---
+
+要素は、JS が届くまでサーバーで描画した HTML のまま表示されます。要素の JS を読み込むと要素が起動し、操作できるようになります。
+
+## 要素を起動するタイミング
+
+デフォルトでは、ページを読み込むとすぐに要素の JS を読み込み、要素を起動します。起動のタイミングは、要素のファイルと、要素を配置する箇所で変更できます。
+
+### 要素のファイルで指定する
+
+要素のファイルで `load` を export すると、その要素のデフォルトのタイミングを変更できます。
+
+```tsx
+// src/elements/chart.tsx
+export const load = "visible";
+
+export default function Chart(props: { values: number[] }) {
+  return <p>{props.values.join(", ")}</p>;
+}
+```
+
+| 値        | 起動するタイミング                         |
+| --------- | ------------------------------------------ |
+| `load`    | ページを読み込んだ直後。デフォルトの値です |
+| `idle`    | ブラウザの処理が空いた時点                 |
+| `visible` | 要素が初めて画面に入った時点               |
+
+`export const load` には、この 3 つの文字列のどれかを直接記述します。例えば `export const load = mode` のように変数を記述すると、ビルドのエラーになります。
+
+### 配置する箇所で指定する
+
+サーバーコンポーネントで要素を配置するときに、`load:*` の属性でタイミングを指定できます。この指定は、要素のファイルの `export const load` より優先されます。
+
+```tsx
+// src/routes/page.tsx
+import Chart from "../elements/chart.tsx";
+
+export default function Page() {
+  return (
+    <>
+      <Chart load:load values={[1, 2, 3]} />
+      <Chart load:idle values={[4, 5, 6]} />
+      <Chart load:media="(min-width: 800px)" values={[7, 8, 9]} />
+    </>
+  );
+}
+```
+
+`load:media` を指定した要素は、メディアクエリに一致した時点で起動します。最初から一致していれば、すぐに起動します。メディアクエリは配置する箇所でだけ指定でき、`export const load` には記述できません。
+
+同じ要素を複数配置したときは、最初に条件を満たした要素の時点で JS を読み込みます。ほかの要素は、それぞれの条件を満たした時点で起動します。
+
+### 起動する前の要素
+
+起動する前の要素は、サーバーで描画した内容と CSS で表示されます。イベントのハンドラーは動作せず、`ctx.expose` で公開したメソッドもまだ要素にありません。外部から公開したメソッドを呼び出すときの注意は、[外部からの利用](/guide/interop) で説明します。
+
+要素は、起動するときに Shadow DOM の内容を作り直します。そのため、起動する前に利用者が操作した結果は失われます。例えば、入力欄の文字はサーバーで描画した値に戻り、フォーカスも外れます。
+
+### 要素の中で使用した要素
+
+要素の Shadow DOM の中で使用した要素は、親の要素と一緒に JS を読み込み、親と同時に起動します。子の要素のファイルの `export const load` は適用されません。要素の中で `load:*` を記述すると、型エラーになります。
+
+サーバーコンポーネントが要素の子として配置した要素は、その要素自身のタイミングで起動します。
+
+## サーバーで取得した値を引き継ぐ
+
+要素の関数は、サーバーでも実行します。要素の中で非同期の memo を使用すると、サーバーで解決した値がページに埋め込まれ、要素はその値を使用して起動します。
+
+```ts
+// src/lib/users.ts
+import { defineServerFn } from "rinka/server";
+import { z } from "zod";
+
+import { db } from "./db.ts";
+
+export const getUser = defineServerFn({ method: "GET", input: z.number() })(async (_c, { input }) =>
+  db.users.find(input),
+);
+```
+
+```tsx
+// src/elements/user-card.tsx
+import { memo } from "rinka";
+
+import { getUser } from "../lib/users.ts";
+
+export default function UserCard(props: { userId: number }) {
+  const user = memo(() => getUser(props.userId));
+  return <p>{user().name}</p>;
+}
+```
+
+サーバーで描画するときは、`getUser` をサーバーで直接実行します。ブラウザで要素が起動するときは、埋め込まれた値を使用するので、`getUser` を再び呼び出しません。要素が起動しても、表示はサーバーで描画した内容と同じです。
+
+同期の memo の値は引き継がず、ブラウザで計算し直します。
+
+### 値を引き継がない memo
+
+次の memo は、ブラウザで値を取得し直します。
+
+- 要素が返す JSX の中の関数（`{() => …}`）で作成した memo と、要素の JSX に配置した関数のコンポーネントで作成した memo。値を引き継ぐには、要素の関数を実行している間に memo を作成します
+- サーバーで失敗した memo
+- 値が、後の「送れない値」の節に挙げた値である memo。サーバーは、送れなかった値をエラーとして記録します
+
+## サーバーから要素に渡す props
+
+サーバーコンポーネントから要素に渡す props には、次の値を使用できます。
+
+- 文字列、数値、真偽値は、要素の属性として出力します
+- オブジェクト、配列、Date、Map、Set、RegExp、型付き配列は、ページに埋め込み、型を保ったまま要素に渡します
+- サーバー関数を渡すと、要素から呼び出したときにサーバーで実行します。サーバー関数は、オブジェクトの中に入れても渡せます
+- JSX は、Props の型でスロットとして宣言した props にだけ渡せます。スロットは [要素](/guide/elements) の章で説明します
+
+```tsx
+// src/elements/event-form.tsx
+import { signal } from "rinka";
+
+type Props = {
+  heading: string;
+  at: Date;
+  tags: Set<string>;
+  onSave: (heading: string) => Promise<string>;
+};
+
+export default function EventForm(props: Props) {
+  const [result, setResult] = signal("");
+  return (
+    <div>
+      <p>
+        {props.heading} {props.at.toLocaleString()} {[...props.tags].join("、")}
+      </p>
+      <button onClick={async () => setResult(await props.onSave(props.heading))}>保存</button>
+      <output>{result()}</output>
+    </div>
+  );
+}
+```
+
+```tsx
+// src/routes/page.tsx
+import EventForm from "../elements/event-form.tsx";
+import { saveEvent } from "../lib/events.ts";
+
+export default function Page() {
+  return (
+    <EventForm
+      heading="定例"
+      at={new Date("2026-11-02T10:00:00Z")}
+      tags={new Set(["週次", "全員"])}
+      onSave={saveEvent}
+    />
+  );
+}
+```
+
+### 送れない値
+
+次の値は、オブジェクトや配列の中にあっても送れません。props に渡すと、サーバーで描画するときにエラーになります。
+
+- サーバー関数以外の関数
+- クラスのインスタンス
+- オブジェクトや配列の中の symbol
+- Promise（`await` で解決した値を渡します）
+- Error（`{ message }` のようなオブジェクトに変換して渡します）
+- 関数のコンポーネントを使用した JSX（`<Card />` など）を、オブジェクトの中に入れたもの
+
+例えば、`onSave={async (heading) => heading}` のようにサーバー関数でない関数を渡すと、`<rinka-event-form> onSave は関数なので、シリアライズできません。` のように、要素のタグ名と props の名前を含むエラーになります。

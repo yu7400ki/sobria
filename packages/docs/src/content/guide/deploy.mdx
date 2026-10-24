@@ -1,0 +1,215 @@
+---
+title: デプロイ
+---
+
+rinka のアプリは Hono のアプリなので、Hono が対応するランタイムで動作します。
+
+## ビルドの出力
+
+`vite build` は、アプリを `dist/` に出力します。
+
+| パス                       | 内容                                          |
+| -------------------------- | --------------------------------------------- |
+| `dist/client/`             | 要素のモジュール、CSS、書き出したページ       |
+| `dist/server/entry.js`     | サーバーのエントリーをビルドしたもの          |
+| `dist/server/package.json` | `entry.js` を ES モジュールとして読み込む設定 |
+
+サーバーのエントリーは、`src/server.ts` があればそのファイル、無ければ `rinka/app` です。rinka、`hono`、TSX のソースのまま配布された要素のライブラリ（[外部からの利用](/guide/interop)）と、`src/server.ts` が import した `@hono/node-server` は、`dist/server/` に含まれます。Node と Bun では、アプリが import するほかのパッケージは `dist/server/` に含まれないので、起動する環境にもインストールします。
+
+`dist/client/` の静的ファイルは、サーバーのエントリーより先に配信するように設定します。Node と Bun の例では `serveStatic` が、Workers では静的アセットの配信が、リクエストをサーバーのエントリーより先に処理します。
+
+## Node
+
+`rinka create` で作成した `src/server.ts` は、そのまま Node で起動できます。
+
+```ts
+// src/server.ts
+/// <reference types="node" />
+
+import { fileURLToPath } from "node:url";
+
+import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
+import { Hono } from "hono";
+import app from "rinka/app";
+
+const server = new Hono();
+if (import.meta.main) {
+  server.use(serveStatic({ root: fileURLToPath(new URL("../client", import.meta.url)) }));
+}
+server.route("/", app);
+
+if (import.meta.main) serve({ fetch: server.fetch, port: Number(process.env.PORT ?? 3000) });
+
+export default server;
+```
+
+```sh
+pnpm build
+node dist/server/entry.js
+```
+
+`import.meta.main` は、`node` や `bun` のコマンドで直接実行したときだけ `true` になります。開発サーバーと `vite preview` は `src/server.ts` を import するので、サーバーを二重に起動しません。`dist/client/` の場所は `import.meta.url` からの相対パスで指定しているので、どのディレクトリから起動しても同じファイルを配信します。ポートは、環境変数 `PORT` で変更できます。
+
+## Bun
+
+Bun は、直接実行したモジュールが default で `fetch` を持つ値を export していれば、その値でサーバーを起動します。Bun で起動するときは、Node の `src/server.ts` から `serve()` の呼び出しと、その import を削除します。静的ファイルは、Node と同じ `@hono/node-server/serve-static` で配信します。
+
+```ts
+// src/server.ts
+/// <reference types="node" />
+
+import { fileURLToPath } from "node:url";
+
+import { serveStatic } from "@hono/node-server/serve-static";
+import { Hono } from "hono";
+import app from "rinka/app";
+
+const server = new Hono();
+if (import.meta.main) {
+  server.use(serveStatic({ root: fileURLToPath(new URL("../client", import.meta.url)) }));
+}
+server.route("/", app);
+
+export default server;
+```
+
+```sh
+pnpm build
+bun dist/server/entry.js
+```
+
+この `src/server.ts` からビルドした `dist/server/entry.js` を `node` で実行しても、サーバーは起動しません。
+
+## Cloudflare Workers
+
+Workers には、Cloudflare の Vite プラグイン `@cloudflare/vite-plugin` を使用します。
+
+```sh
+pnpm add -D @cloudflare/vite-plugin wrangler
+```
+
+```ts
+// vite.config.ts
+import { cloudflare } from "@cloudflare/vite-plugin";
+import { rinka } from "rinka/vite";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [
+    rinka(),
+    cloudflare({
+      viteEnvironment: { name: "ssr" },
+      config: {
+        name: "my-app",
+        main: "rinka/app",
+        compatibility_date: "2026-07-01",
+        compatibility_flags: ["nodejs_als"],
+        assets: { html_handling: "drop-trailing-slash" },
+      },
+    }),
+  ],
+});
+```
+
+| 設定                                               | 内容                                                                                                      |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `viteEnvironment: { name: "ssr" }`                 | rinka のサーバーのビルドを Worker として実行する                                                          |
+| `main: "rinka/app"`                                | Worker のエントリーを rinka のアプリにする                                                                |
+| `compatibility_flags: ["nodejs_als"]`              | リクエストごとの Context を保持するために、`node:async_hooks` の AsyncLocalStorage を使用できるようにする |
+| `assets: { html_handling: "drop-trailing-slash" }` | 書き出したページを `/about` の URL で返す。デフォルト値では、`/about` を `/about/` にリダイレクトする     |
+
+雛形の `src/server.ts` は Node で起動するためのファイルなので、削除します。Durable Object のクラスのように、アプリのほかにも export する値があるときは、`src/server.ts` を作成して `main` に `./src/server.ts` を指定します。`compatibility_date` に、使用している wrangler に同梱された Workers のランタイム（workerd）のリリース日より新しい日付を指定すると、Worker が起動しません。
+
+`vite` で起動する開発サーバーでは、ページとサーバー関数を workerd で実行します。ビルドした後は、wrangler で配置します。
+
+```sh
+pnpm build
+pnpm exec wrangler deploy
+```
+
+`dist/client/` は、Workers の静的アセットとして配信します。
+
+## ページを書き出す
+
+ページと `route.ts` が `prerender` を export すると、`vite build` は、その URL のレスポンスをファイルとして `dist/client/` に書き出します。書き出したファイルは静的ファイルとして配信するので、リクエストのたびに描画しません。
+
+```tsx
+// src/routes/about/page.tsx
+import type { Prerender } from "rinka/router";
+
+export const prerender: Prerender<"/about"> = true;
+
+export default function About() {
+  return <h1>about</h1>;
+}
+```
+
+パラメータのあるページでは、書き出すパラメータの配列を返す関数を export します。関数は async 関数にもできます。
+
+```tsx
+// src/routes/posts/[slug]/page.tsx
+import type { PageProps, Prerender } from "rinka/router";
+
+const posts = [
+  { slug: "hello", title: "はじめての投稿" },
+  { slug: "release", title: "リリースのお知らせ" },
+];
+
+export const prerender: Prerender<"/posts/[slug]"> = () =>
+  posts.map((post) => ({ slug: post.slug }));
+
+export default function Post({ params }: PageProps<"/posts/[slug]">) {
+  const post = posts.find((post) => post.slug === params.slug);
+  return <h1>{post?.title}</h1>;
+}
+```
+
+ページは `<URL のパス>/index.html` に保存します。例えば、`/posts/hello` は `dist/client/posts/hello/index.html` になります。
+
+`route.ts` は、パラメータの無いルートでだけ `prerender = true` を指定でき、`GET` のレスポンスを URL のパスのとおりに保存します。URL のパスの最後の部分には、`feed.xml` の `.xml` のような拡張子が必要です。拡張子が無いと、ビルドがエラーになります。
+
+```ts
+// src/routes/feed.xml/route.ts
+export const prerender = true;
+
+export const GET = () =>
+  new Response("<feed></feed>", { headers: { "content-type": "application/xml" } });
+```
+
+書き出しには、次の規則があります。
+
+- 書き出すときは、すべての `<Loading>` の内側の描画が完了するまで待ってから HTML にします
+- レスポンスが 200 でない URL があると、ビルドがエラーになります。認証のミドルウェアがリダイレクトしたページも、エラーになります
+- 書き出したページを配信するときは、`middleware.ts` を実行しません。利用者ごとに内容が変わるページには、`prerender` を指定しないでください
+- 書き出したページで `refreshPage()` を呼び出すと、ページ全体を再読み込みします
+- 開発サーバーは、`prerender` を指定したページも、リクエストのたびに描画します
+
+## サーバーを置かずに配置する
+
+Vite プラグインの設定 `output` を `"static"` にすると、すべてのページを書き出し、`dist/client/` だけを静的なサイトとして配置できます。
+
+```ts
+// vite.config.ts
+import { rinka } from "rinka/vite";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [rinka({ output: "static" })],
+});
+```
+
+`output: "static"` のビルドは、次のように動作します。
+
+| 対象                                                                              | 動作                                                                                                             |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| パラメータの無いページ                                                            | `prerender` を export しなくても書き出す                                                                         |
+| パラメータのあるページ                                                            | `prerender` の関数が無ければ、ビルドがエラーになる                                                               |
+| `route.ts`                                                                        | パラメータが無く、`GET` だけを export し、URL のパスの最後の部分に拡張子があれば書き出す。それ以外はエラーになる |
+| サーバー関数を定義したファイル                                                    | ビルドがエラーになる                                                                                             |
+| 見つからない URL のページ（ルートの `not-found.tsx`、無ければデフォルトのページ） | 描画した HTML を `dist/client/404.html` に保存する                                                               |
+| `dist/server/`                                                                    | 書き出した後で削除する                                                                                           |
+
+`public/404.html` があると、書き出す `404.html` と出力先のパスが重複するので、ビルドがエラーになります。`404.html` を見つからない URL に返すように、配置先のサービスを設定してください。`vite preview` は、一致するファイルが無い URL に `404.html` を 404 のステータスで返します。
+
+`output: "static"` の開発サーバーは、パラメータのあるページで `prerender` の関数を呼び出し、その戻り値に無いパラメータの URL には 404 を返します。

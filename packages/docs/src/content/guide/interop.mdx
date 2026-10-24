@@ -1,0 +1,156 @@
+---
+title: 外部からの利用
+---
+
+rinka の要素は Web 標準の Custom Element なので、rinka のアプリの外でも使用できます。
+
+## タグとして使用する
+
+外部からは、要素をタグとして使用します。タグ名の決まり方は、[要素](/guide/elements) の「タグ名」の節で説明します。例えば、Vite プラグインの設定を `prefix: "acme"` にすると、`src/elements/counter.tsx` の要素のタグは `<acme-counter>` になります。
+
+次の要素を例にします。
+
+```tsx
+// src/elements/counter.tsx
+type Props = {
+  count: number;
+  onLikeClick?: (count: number) => void;
+};
+
+export default function Counter(props: Props) {
+  return <button onClick={() => props.onLikeClick?.(props.count + 1)}>{props.count}</button>;
+}
+```
+
+要素は、Props の型で宣言した props のうち、スロットを除くすべての props について、同じ名前のプロパティを持ちます。プロパティに値を設定すると、要素はその値を props として受け取ります。`string`、`number`、`boolean` の props は、属性でも受け取ります。
+
+名前が `onX` の形の関数の props に使用する側が関数を渡していなければ、要素は、その props を呼んだときに `CustomEvent` を発行します。イベント名は、`on` の後の部分をハイフンで区切った小文字の名前です。`onLikeClick` のイベント名は `like-click` で、イベントの `detail` は props を呼んだときの最初の引数です。
+
+```js
+const counter = document.querySelector("acme-counter");
+counter.count = 5;
+counter.addEventListener("like-click", (event) => console.log(event.detail));
+```
+
+## 他のフレームワークから使用する
+
+フレームワークごとの書き方は次のとおりです。どのフレームワークでも、`count` はプロパティとして要素に渡り、値を変更すると、同じ要素のまま新しい値が届きます。
+
+| フレームワーク | 書き方                                                 | 必要な設定               |
+| -------------- | ------------------------------------------------------ | ------------------------ |
+| React 19       | `<acme-counter count={count} onlike-click={(e) => …}>` | 無し                     |
+| Vue 3          | `h("acme-counter", { count, onLikeClick })`            | `h()` では不要           |
+| Svelte 5       | `<acme-counter {count} onlike-click={(e) => …}>`       | 無し                     |
+| Angular        | `<acme-counter [count]="count()" (like-click)="…">`    | `CUSTOM_ELEMENTS_SCHEMA` |
+
+React からは、イベントのリスナーをイベント名に合わせて `onlike-click` と記述します。React は、Custom Element に渡した `onX` の `X` を、大文字と小文字を変えずにイベント名として使用します。`onLikeClick` と記述すると `LikeClick` のイベントのリスナーになり、`like-click` のイベントを受け取れません。
+
+Vue では、`onLikeClick` が `like-click` のイベントのリスナーになるので、Props の名前のまま記述できます。Vue のテンプレートにタグを記述するときは、`@vitejs/plugin-vue` の `template.compilerOptions.isCustomElement` で、`acme-` のタグを Custom Element として扱わせます。
+
+```ts
+// vite.config.ts
+import vue from "@vitejs/plugin-vue";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [
+    vue({
+      template: {
+        compilerOptions: { isCustomElement: (tag) => tag.startsWith("acme-") },
+      },
+    }),
+  ],
+});
+```
+
+## タグの型
+
+rinka のアプリの中では、`rinka prepare` がアプリの要素のタグを `HTMLElementTagNameMap` に追加する型宣言を生成します。そのため、`document.querySelector()` や `document.createElement()` で取得した要素の props に型が付きます。
+
+```ts
+document.createElement("acme-counter").count = 1;
+```
+
+存在しない props を使用すると、型エラーになります。他のフレームワークの JSX やテンプレートの型は生成しないので、必要であれば、そのフレームワークのプロジェクトで宣言してください。
+
+## expose したメソッドを外部から呼ぶ
+
+要素が `expose` で公開したメソッドは、外部からも呼び出せます。外部から呼び出すときは、`customElements.whenDefined()` でタグの登録を待ちます。
+
+```ts
+await customElements.whenDefined("acme-dialog");
+document.querySelector("acme-dialog")?.open();
+```
+
+`whenDefined()` が解決した時点で、各要素が起動しているとは限りません。`load:visible` や `load:idle` の要素は、起動するまで公開したメソッドを持ちません。`expose` は[要素](/guide/elements)で、起動のタイミングは[読み込みと値の受け渡し](/guide/loading)で説明します。
+
+## 要素をライブラリとして配布する
+
+素の HTML や他のフレームワークで使用するときは、ビルドした ES モジュールを配布します。別の rinka のアプリで使用するときは、TSX のソースのまま配布します。
+
+どちらの形でも、`prefix` には、ほかのライブラリとタグ名が重複しない固有の値を設定します。タグ名が重複すると、ES モジュールの形ではブラウザの `customElements.define()` が例外を投げ、TSX のソースの形では使用する側のアプリがエラーになります。
+
+### ES モジュールとして配布する
+
+Vite プラグインの設定に `library: true` を指定して `vite build` を実行します。
+
+```ts
+// vite.config.ts
+import { rinka } from "rinka/vite";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [rinka({ prefix: "acme", library: true })],
+});
+```
+
+`dist/` には、要素ごとに、自分自身を登録する ES モジュールを `<タグ名>.js` の名前で出力します。rinka のランタイムと、複数の要素が共通に使用するコードは `dist/chunks/` に出力します。要素の CSS はモジュールに含まれるので、CSS のファイルを別に読み込む必要はありません。`prefix` がデフォルト値の `rinka` のままのときは、ビルドが警告を表示します。
+
+使用する側のページでは、モジュールを読み込むと、タグを使用できます。
+
+```html
+<script type="module" src="https://example.com/acme/acme-rating.js"></script>
+<form>
+  <label for="score">評価</label>
+  <acme-rating id="score" name="score" required></acme-rating>
+</form>
+```
+
+フォームの部品、スロット、`<label for>` は、rinka のアプリの中と同じように動作します。この形にはサーバーが無いので、要素はサーバーで描画されず、[サーバー関数](/guide/server-functions)も呼び出せません。ライブラリには、サーバーを必要としない要素だけを含めてください。
+
+### TSX のソースのまま配布する
+
+別の rinka のアプリで使用するライブラリは、要素を TSX のソースのまま配布します。使用する側のアプリが、ライブラリの要素をアプリの要素と同じようにコンパイルします。そのため、ライブラリの要素もサーバーで描画され、アプリの要素と同じように動作します。
+
+ライブラリの `package.json` には、`rinka` のフィールドに接頭辞と要素のディレクトリを記述し、`exports` で要素のファイルと型宣言を公開します。
+
+```json
+{
+  "name": "acme-ui",
+  "type": "module",
+  "rinka": { "prefix": "acme", "elements": "src/elements" },
+  "exports": {
+    "./*": { "types": "./types/*.d.ts", "default": "./src/elements/*.tsx" }
+  },
+  "files": ["src", "types"],
+  "scripts": {
+    "types": "rinka prepare && tsc -p .rinka/tsconfig.elements.json --composite false --declaration --rootDir src/elements --outDir types"
+  },
+  "peerDependencies": { "rinka": "*" }
+}
+```
+
+`types` のスクリプトは、要素の型宣言を `types/` に出力します。出力した型宣言を、そのまま配布します。
+
+使用する側のアプリでは、アプリの要素と同じように import します。
+
+```tsx
+// src/routes/page.tsx
+import Badge from "acme-ui/badge";
+
+export default function Page() {
+  return <Badge label="new" />;
+}
+```
+
+アプリの Vite プラグインは、アプリの依存のうち `package.json` に `rinka` のフィールドを持つパッケージを、コンパイルの対象にします。pnpm の `link:` のように、プロジェクトの外のディレクトリを指す依存のライブラリも使用できます。

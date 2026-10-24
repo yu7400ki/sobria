@@ -1,0 +1,374 @@
+---
+title: 要素
+---
+
+要素は、ページの中で操作に応じて表示を変える部品です。rinka は、要素の関数から Custom Element を作成し、サーバーで描画した HTML をブラウザで起動します。
+
+## 要素を作成する
+
+`src/elements/` にファイルを配置し、関数を default export します。この関数が要素になります。
+
+```tsx
+// src/elements/stepper.tsx
+import { signal } from "rinka";
+
+type Props = {
+  label: string;
+  step?: number;
+};
+
+export default function Stepper(props: Props) {
+  const [value, setValue] = signal(0);
+  return (
+    <button onClick={() => setValue(value() + (props.step ?? 1))}>
+      {props.label}: {value()}
+    </button>
+  );
+}
+```
+
+要素を使用するときは、ファイルを import して、コンポーネントとして JSX に記述します。ページの中でも、別の要素の中でも、記述の方法は同じです。
+
+```tsx
+// src/routes/page.tsx
+import Stepper from "../elements/stepper.tsx";
+
+export default function Page() {
+  return <Stepper label="数" step={2} />;
+}
+```
+
+要素の関数は、要素が起動したときに 1 回だけ実行します。表示を更新する方法は [リアクティビティ](/guide/reactivity) で説明します。
+
+## props
+
+要素の関数は、1 番目の引数で props を受け取ります。引数には、同じファイルで宣言した Props の型を注釈します。rinka は、この型から、どの props を属性で受け取るかを決定します。
+
+props は `props.label` のように読みます。読み取りは追跡されるので、props が変化すると、その値を使用している箇所が更新されます。関数の引数で props を分割代入すると、ビルドのエラーになります。関数の本体で分割代入した変数は、分割代入した時点の値を保持し、後の変化には追従しません。
+
+### 属性で受け取る props
+
+型が `string`、`number`、`boolean` の props は、属性でも受け取ります。サーバーで描画した HTML では、これらの props は属性として出力されます。`"small" | "large"` のように、同じ種類のリテラルの合併型も、その種類の型として扱います。
+
+属性の値は、Props の型に従って変換します。
+
+| props の型 | 属性の値から変換した値                                     |
+| ---------- | ---------------------------------------------------------- |
+| `string`   | 属性の値の文字列                                           |
+| `number`   | 属性の値を `Number` で変換した数値                         |
+| `boolean`  | 属性の値が `false` の文字列なら `false`、それ以外は `true` |
+
+属性を削除すると、props の値は `undefined` になります。`string | number` のように種類を 1 つに決められない型と、別のファイルから import した型の props は、属性の値を文字列のまま受け取ります。関数、配列、オブジェクトの型の props は、プロパティでだけ受け取ります。
+
+ページから boolean の props に `false` を渡すと、サーバーで描画した HTML には属性が出力されません。このとき、サーバーで要素の関数を実行するときは props が `false` で、ブラウザで要素が起動した後は props が `undefined` になります。そのため、`props.open ?? true` のようなデフォルトの値を記述すると、サーバーとブラウザで値が異なります。boolean の props には、省略したときに `false` として扱える名前を付けます。例えば、省略したときに開いた状態で表示するなら、`open` の代わりに `collapsed` を props にします。
+
+関数とオブジェクトの props の型は、型リテラルか、同じファイルで宣言した type や interface で記述します。別のファイルから import した型で宣言した props は、関数の props として扱われません。この props に関数を渡すと、要素が受け取る props の値は、その関数を呼び出した戻り値になります。これらの props は、名前が `on` と大文字で始まっても、イベントになりません。
+
+属性名は、props の名前を kebab-case にした名前です。例えば、`userId` の属性名は `user-id`、`imageURL` の属性名は `image-url` です。
+
+### props にできない名前
+
+`title`、`id`、`class`、`hidden` のように、HTML の要素で意味を持つ名前は、props の名前にできません。props はホストの属性とプロパティにもなるので、ブラウザの動作と衝突するからです。`HTMLElement` のプロパティとメソッドの名前（`remove`、`focus` など）も使用できません。`ariaLabel` や `dataSource` のように、`aria` か `data` の後に大文字が続く名前も使用できません。これらの名前を Props の型に記述すると、ビルドのエラーになります。エラーのメッセージには、名前が使用できない理由と、代わりの名前の例が表示されます。`userId` と `userID` のように、kebab-case にすると同じ属性名になる 2 つの名前も、ビルドのエラーになります。
+
+Props の型を `Props<T>` で包むと、使用できない名前をエディタで型エラーとして確認できます。
+
+```tsx
+// src/elements/card.tsx
+import type { Props } from "rinka";
+
+type CardProps = Props<{
+  heading: string;
+  header?: JSX.Element;
+  children?: JSX.Element;
+}>;
+```
+
+要素の Props の型には、`ref` と `key` という名前と、`load:` で始まる名前を記述できません。これらの名前は rinka が使用します。`load:` で始まる名前は、要素を起動するタイミングを指定します（[読み込みと値の受け渡し](/guide/loading)）。
+
+### ホストの属性
+
+Props の型に無い属性（`id`、`class`、`aria-*`、`data-*` など）を記述すると、ホストの要素にそのまま付与されます。例えば、次の `id` と `class` は、`rinka-stepper` の要素に付与されます。
+
+```tsx
+// src/routes/page.tsx
+<Stepper label="数" id="stepper" class="wide" />
+```
+
+要素の中の JSX では、Props の型に無い `onClick` のような名前に関数を渡すと、ホストのイベントリスナーになります。ページの JSX では、Props の型に無い `onClick` は型エラーになります。
+
+### サーバーから渡す値
+
+ページから要素に渡した props は、HTML に埋め込んでブラウザに送信します。ページから関数の props に渡せるのは、サーバー関数だけです（[サーバー関数](/guide/server-functions)）。
+
+## イベント
+
+名前が `on` と大文字で始まり、Props の型で関数として宣言した props は、関数が渡されていなければイベントになります。要素がその props を呼ぶと、ホストが `CustomEvent` を発行します。
+
+```tsx
+// src/elements/like-button.tsx
+import { signal } from "rinka";
+
+type Props = {
+  count: number;
+  onLike?: (count: number) => void;
+};
+
+export default function LikeButton(props: Props) {
+  const [count, setCount] = signal(props.count);
+  const like = () => {
+    const next = count() + 1;
+    setCount(next);
+    props.onLike?.(next);
+  };
+  return <button onClick={like}>いいね {count()}</button>;
+}
+```
+
+イベント名は、`on` の後の部分を kebab-case にした名前です。例えば、`onLike` のイベント名は `like`、`onLikeClick` のイベント名は `like-click` です。イベントの `detail` は、props を呼んだときの最初の引数です。イベントは Shadow DOM の外までバブリングします。
+
+```ts
+// rinka を使用しないページの JS
+document.querySelector("rinka-like-button").addEventListener("like", (e) => {
+  console.log(e.detail);
+});
+```
+
+JSX で `onLike` に関数を渡すと、要素はその関数を呼び、イベントは発行しません。要素の側では、関数が渡されたかどうかを判別できません。`onLike` の型は省略可能なので、`props.onLike?.(next)` のように呼び出します。
+
+## children とスロット
+
+要素は、子の内容を `props.children` で受け取ります。Props の型で `JSX.Element` 型を宣言した props は、その名前のスロットになります。
+
+```tsx
+// src/elements/card.tsx
+import type { Props } from "rinka";
+
+type CardProps = Props<{
+  heading: string;
+  header?: JSX.Element;
+  children?: JSX.Element;
+}>;
+
+export default function Card(props: CardProps) {
+  return (
+    <section>
+      <header>{props.header ?? <h2>{props.heading}</h2>}</header>
+      <div>{props.children}</div>
+    </section>
+  );
+}
+```
+
+`{props.children}` は名前の無い `<slot>` に、`{props.header}` は `<slot name="header">` になります。`??` の右辺は、内容が渡されなかったときに表示する内容になります。
+
+```tsx
+// src/routes/page.tsx
+<Card heading="お知らせ" header={<h1>重要なお知らせ</h1>}>
+  <p>本文</p>
+</Card>
+```
+
+渡した内容は、要素の Light DOM に配置されます。名前付きのスロットに渡した要素には `slot="header"` が付与され、テキストは `<span slot="header">` で包まれます。そのため、`::slotted(h1)` のようなセレクタは、渡した要素に一致します。
+
+スロットには次の制約があります。
+
+- スロットは、要素の関数が返す JSX の子に、`{props.header}` か `{props.header ?? 内容}` の形で直接記述します。`{open() && props.children}` のように論理演算子の式の中に記述したり、三項演算子の枝に直接記述したり、`.map` に渡す関数の中に記述したりすると、ビルドのエラーになります
+- 1 つのスロットは、JSX に 1 回だけ配置できます。2 回配置すると、ビルドのエラーになります
+- 要素は、スロットに渡された要素やテキストを参照できません。スロットの props の値を読んで加工する記述は、ビルドのエラーになります
+
+スロットの表示を切り替えるときは、`<div hidden={!open()}>{props.children}</div>` のように、スロットを囲むタグの属性を切り替えます。非表示の間も、渡した内容は Light DOM に残ります。
+
+内容を加工したいときは、`renderItem` のような関数の props で受け取ります。
+
+## ref
+
+ネイティブのタグの `ref` に関数を渡すと、rinka はノードを作成した時点で、そのノードを引数に関数を呼びます。この時点では、ノードはまだ DOM に接続されていません。フォーカスのように接続した後に実行する処理は、`ctx.onMount` か `effect`（[リアクティビティ](/guide/reactivity)）の中で実行します。
+
+`ref` の関数が関数を返すと、rinka はその関数を、ノードが条件の分岐で消えるときと、要素がページから外れるときに呼びます。外部のライブラリを取り付ける処理と、取り外す処理を 1 か所に記述できます。
+
+```tsx
+// src/elements/size-label.tsx
+import { signal } from "rinka";
+
+export default function SizeLabel() {
+  const [width, setWidth] = signal(0);
+  return (
+    <div
+      ref={(el) => {
+        const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+        observer.observe(el);
+        return () => observer.disconnect();
+      }}
+    >
+      {width()}px
+    </div>
+  );
+}
+```
+
+`ref` は、要素の中の JSX でだけ使用できます。サーバーで描画するときは、`ref` の関数を呼びません。
+
+## メソッドを公開する
+
+`ctx.expose` に渡したオブジェクトのプロパティは、要素のインスタンスのプロパティになります。開く、再生する、フォーカスするといった操作を、メソッドとして公開します。データは props で受け渡します。
+
+```tsx
+// src/elements/dialog.tsx
+import { signal, type Ctx } from "rinka";
+
+type Props = { heading: string; children?: JSX.Element };
+type Methods = { open(): void; close(): void };
+
+export default function Dialog(props: Props, { expose }: Ctx<Methods>) {
+  const [isOpen, setOpen] = signal(false);
+  expose({ open: () => setOpen(true), close: () => setOpen(false) });
+  return (
+    <div hidden={!isOpen()}>
+      <h2>{props.heading}</h2>
+      {props.children}
+      <button onClick={() => setOpen(false)}>閉じる</button>
+    </div>
+  );
+}
+```
+
+公開するメソッドの型は `Ctx<Methods>` で宣言します。
+
+別の要素から操作するときは、要素の `ref` でインスタンスを受け取ります。インスタンスの型は `ElementRef<typeof Dialog>` です。要素に渡した `ref` は、その要素が起動して `expose` を実行した後に呼ばれます。
+
+```tsx
+// src/elements/settings.tsx
+import { signal, type ElementRef } from "rinka";
+
+import Dialog from "./dialog.tsx";
+
+export default function Settings() {
+  const [dialog, setDialog] = signal<ElementRef<typeof Dialog>>();
+  return (
+    <>
+      <button onClick={() => dialog()?.open()}>設定を開く</button>
+      <Dialog heading="設定" ref={setDialog}>
+        <p>設定の内容</p>
+      </Dialog>
+    </>
+  );
+}
+```
+
+`focus` のように `HTMLElement` に既にあるメソッドと同じ名前で公開すると、そのメソッドを置換します。`remove`、`setAttribute`、`addEventListener` のように rinka が使用するメソッドの名前と、同じ要素の props の名前は、公開できません。開発時にこれらの名前を公開すると、エラーになります。
+
+要素の `ref` で受け取れるのはインスタンスだけで、Shadow DOM の内側のノードは受け取れません。
+
+## ctx
+
+要素の関数は、2 番目の引数で ctx を受け取ります。ctx は分割代入するか、`ctx.host` のようにプロパティを参照して使用します。ctx を別の関数に渡すと、ビルドのエラーになります。
+
+| 名前        | 内容                                                          |
+| ----------- | ------------------------------------------------------------- |
+| `host`      | ホストの要素                                                  |
+| `onMount`   | 最初の内容を Shadow DOM に表示した後に呼ぶ関数を登録する      |
+| `expose`    | インスタンスにメソッドとプロパティを追加する                  |
+| `css`       | Shadow DOM にスタイルを追加する（[スタイル](/guide/styling)） |
+| `form`      | 要素をフォームの部品にする（[フォーム](/guide/forms)）        |
+| `internals` | ホストの `ElementInternals`（[フォーム](/guide/forms)）       |
+
+```tsx
+// src/elements/clock.tsx
+import { effect, signal, type Ctx } from "rinka";
+
+export default function Clock(props: { interval?: number }, { host, onMount }: Ctx) {
+  const [now, setNow] = signal(new Date().toLocaleTimeString());
+  onMount(() => {
+    host.dataset.started = "";
+  });
+  effect(
+    () => props.interval ?? 1000,
+    (ms) => {
+      const timer = setInterval(() => setNow(new Date().toLocaleTimeString()), ms);
+      return () => clearInterval(timer);
+    },
+  );
+  return <time>{now()}</time>;
+}
+```
+
+要素の関数はサーバーでも実行します。サーバーで要素の関数を実行している間に `host` のプロパティを参照すると、エラーになります。`host` は `onMount` か `effect` の中で使用します。サーバーでは、`onMount` に登録した関数は呼ばれず、`expose` は何も実行しません。
+
+## 補助コンポーネント
+
+`src/elements/` の中で、`_` で始まるファイルとディレクトリは要素になりません。これらのファイルには、要素の中で使用する普通の関数コンポーネントを記述します。この章では、これを補助コンポーネントと呼びます。補助コンポーネントは Custom Element にならず、使用した要素の Shadow DOM の中に描画されます。
+
+補助コンポーネントに `ref` を渡すと、ほかの props と同じく関数の引数に渡ります。受け取った `ref` を内側のタグに付与すれば、そのタグのノードを呼び出し側に渡せます。`ref` を受け取る補助コンポーネントは、Props の型に `ref` を宣言します。
+
+```tsx
+// src/elements/_parts/text-field.tsx
+export default function TextField(props: { label: string; ref?: (el: HTMLInputElement) => void }) {
+  return (
+    <label>
+      {props.label}
+      <input ref={props.ref} />
+    </label>
+  );
+}
+```
+
+```tsx
+// src/elements/search.tsx
+import type { Ctx } from "rinka";
+
+import TextField from "./_parts/text-field.tsx";
+
+export default function Search(_props: {}, { onMount }: Ctx) {
+  let input: HTMLInputElement | undefined;
+  onMount(() => input?.focus());
+  return <TextField label="検索" ref={(el) => (input = el)} />;
+}
+```
+
+## 共通のコンポーネント
+
+ページと要素の両方で使用する、マークアップだけのコンポーネントは、`src/elements/` と `src/routes/` の外（`src/components/` など）に配置します。共通のコンポーネントは、ページの中ではサーバーで、要素の中ではブラウザで描画します。
+
+```tsx
+// src/components/badge.tsx
+export default function Badge(props: { label: string; children?: JSX.Element }) {
+  return (
+    <span class="badge">
+      {props.label}
+      {props.children}
+    </span>
+  );
+}
+```
+
+共通のコンポーネントには、ネイティブのタグと属性、ほかの共通のコンポーネント、`children` を記述できます。共通のコンポーネントはページの中でも描画され、ページの中では JS が動作しないので、イベントハンドラーと `ref` は記述できません。共通のコンポーネントから、要素とページのコンポーネントは import できません。
+
+## タグ名
+
+タグ名は、接頭辞と、`src/elements/` からのファイルのパスから決定します。接頭辞のデフォルトは `rinka` です。
+
+| ファイル                            | タグ名                    |
+| ----------------------------------- | ------------------------- |
+| `src/elements/like-button.tsx`      | `rinka-like-button`       |
+| `src/elements/forms/DatePicker.tsx` | `rinka-forms-date-picker` |
+| `src/elements/forms/index.tsx`      | `rinka-forms`             |
+
+ディレクトリの名前もタグ名に含め、パスの区切りを `-` で連結します。ファイル名の camelCase と PascalCase は kebab-case に変換します。`index` のファイルは、ディレクトリの名前になります。次のファイルはビルドのエラーになります。
+
+- `src/elements/` の直下の `index` のファイル
+- 英数字、`-`、`_` 以外の文字を名前に含むファイル
+- 別のファイルと同じタグ名になるファイル（`forms/date-picker.tsx` と `forms-date-picker.tsx` など）
+
+接頭辞と、要素を配置するディレクトリは、Vite プラグインの `prefix` と `elementsDir` で変更できます。
+
+```ts
+// vite.config.ts
+import { rinka } from "rinka/vite";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [rinka({ prefix: "app" })],
+});
+```
+
+要素は import して使用するので、アプリのコードにタグ名を記述する必要はありません。タグ名は、DevTools で要素を探すときと、HTML や rinka の外のコードに要素を記述するときに使用します（[外部からの利用](/guide/interop)）。
