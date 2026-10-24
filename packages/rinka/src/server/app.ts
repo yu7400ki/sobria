@@ -2,7 +2,7 @@ import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { every } from "hono/combine";
 
 import { prerenderKindOf, type Output } from "../shared/prerender.ts";
-import { PAGE_HEADER, REFRESH_HEADER } from "../shared/refresh.ts";
+import { REFRESH_HEADER } from "../shared/refresh.ts";
 import {
   routeMethods,
   type AppOptions,
@@ -17,8 +17,8 @@ import {
 import { isBot } from "./bots.ts";
 import { blockingRenderOf, runInRequest, withContextHeaders } from "./context.ts";
 import {
+  callerOf,
   callerResponses,
-  pageUrlOf,
   serverFnFailure,
   serverFnMiddleware,
   type Failure,
@@ -203,9 +203,10 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     }
   };
   const formFailure: Failure = async (c, error) => {
+    const caller = callerOf(c);
     const referer = c.req.header("referer");
     const url =
-      pageUrlOf(c) ??
+      caller?.page ??
       (referer !== undefined && URL.canParse(referer) ? new URL(referer) : undefined);
     if (url === undefined || url.host !== new URL(c.req.url).host) return fail(c, error);
     const found = await find(url);
@@ -218,7 +219,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
         params: found.params,
         url,
       },
-      { refresh: c.req.header(PAGE_HEADER) !== undefined },
+      { refresh: caller !== undefined },
     );
   };
   app.onError(async (c) => withContextHeaders(c, await fail(c, c.error)));

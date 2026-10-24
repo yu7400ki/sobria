@@ -74,6 +74,14 @@ const runnableCheck: Path = {
 
 const build = [directory("client"), directory("server"), self, runnableCheck];
 
+/** 呼び出したページの URL のヘッダーの名前の import に一致する指定を表す。 */
+const pageHeader: Path = {
+  name: "../shared/refresh.ts",
+  importNames: ["PAGE_HEADER"],
+  message:
+    "x-rinka-page を読むのは src/server/endpoint.ts の callerOf だけです。呼び出し元は callerOf で判定してください。",
+};
+
 export default defineConfig({
   ...base,
   jsPlugins: ["./oxlint-plugin.ts"],
@@ -109,9 +117,10 @@ export default defineConfig({
     {
       files: ["src/server/**"],
       env: { node: true },
-      rules: { ...restrict(...server, seroval), "no-undef": "error" },
+      rules: { ...restrict(...server, seroval, pageHeader), "no-undef": "error" },
     },
-    { files: ["src/server/wire.ts"], rules: restrict(...server) },
+    { files: ["src/server/wire.ts"], rules: restrict(...server, pageHeader) },
+    { files: ["src/server/endpoint.ts"], rules: restrict(...server, seroval) },
     {
       files: ["src/build/**"],
       env: { node: true },

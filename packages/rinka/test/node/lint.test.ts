@@ -184,6 +184,13 @@ describe("src/ の lint の規則", () => {
     ]);
   });
 
+  it("src/server/ の中で、呼び出したページの URL のヘッダーの名前を import できるのは src/server/endpoint.ts だけである", () => {
+    const lines = ['import { PAGE_HEADER } from "../shared/refresh.ts";'];
+    expect(reports("src/server/app.ts", lines)).toEqual([[1, "import"]]);
+    expect(reports("src/server/wire.ts", lines)).toEqual([[1, "import"]]);
+    expect(reports("src/server/endpoint.ts", lines)).toEqual([]);
+  });
+
   it("seroval を値として import できるのは src/server/wire.ts と src/client/wire-codec.ts で、src/shared/wire.ts は型だけを import できる", () => {
     expect(reports("src/server/wire.ts", ['import "seroval";'])).toEqual([]);
     expect(reports("src/client/wire-codec.ts", ['import "seroval";'])).toEqual([]);

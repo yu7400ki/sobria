@@ -207,7 +207,7 @@ const responders = {
     respond: (c, outcome, fail) => {
       switch (outcome.kind) {
         case "value":
-          return c.redirect(pageUrlOf(c)?.href ?? c.req.header("referer") ?? "/", 303);
+          return c.redirect(callerOf(c)?.page?.href ?? c.req.header("referer") ?? "/", 303);
         case "redirect":
           return c.redirect(outcome.location, 303);
         case "notFound":
@@ -241,8 +241,8 @@ export type FetchPage = (c: Context, request: Request) => Response | Promise<Res
 export function callerResponses(fetchPage: FetchPage): MiddlewareHandler {
   return async (c, next) => {
     await next();
-    const kind = requestKind(c);
-    if (kind === undefined || (kind === "form" && c.req.header(PAGE_HEADER) === undefined)) return;
+    const caller = callerOf(c);
+    if (caller === undefined) return;
     const location = c.res.headers.get("location");
     if (
       location !== null &&
@@ -252,7 +252,7 @@ export function callerResponses(fetchPage: FetchPage): MiddlewareHandler {
     ) {
       replaceJson(c, { redirect: location } satisfies RedirectJson, c.res.headers, 200);
     }
-    const page = pageUrlOf(c);
+    const { page } = caller;
     if (page === undefined || !c.res.ok || c.res.headers.get(wireHeader) !== wireFormat.rpc) {
       return;
     }
@@ -271,22 +271,29 @@ export function callerResponses(fetchPage: FetchPage): MiddlewareHandler {
   };
 }
 
-/**
- * リクエスト `c` の `x-rinka-page` の URL を返す。
- * ヘッダーが無いとき、URL として解析できないとき、ホストがリクエストの URL と異なるとき、パスが `/_rinka/` の下にあるときは `undefined` を返す。
- */
-export function pageUrlOf(c: Pick<Context, "req">): URL | undefined {
-  const value = c.req.header(PAGE_HEADER);
-  if (value === undefined || !URL.canParse(value)) return undefined;
-  const url = new URL(value);
-  return url.host === new URL(c.req.url).host && !url.pathname.startsWith(internalPrefix)
-    ? url
-    : undefined;
+/** JS からサーバー関数を呼び出したリクエストの呼び出し元を表す。`page` は、描き直す呼び出し元のページの URL である。 */
+export interface Caller {
+  readonly page: URL | undefined;
 }
 
-/** リクエスト `c` のレスポンスの本文 `body` に、ページ `page` の描き直しを含めるかどうかを返す。GET のリクエストには偽を返す。 */
+/**
+ * リクエスト `c` が JS からのサーバー関数の呼び出し（RPC と、`x-rinka-page` を持つフォームの送信）なら、その呼び出し元を返す。それ以外のリクエストでは `undefined` を返す。
+ * `page` は、GET 以外のリクエストで、`x-rinka-page` の URL のホストがリクエストの URL と同じで、パスが `/_rinka/` の下にないときに、その URL を持つ。
+ */
+export function callerOf(c: Context): Caller | undefined {
+  const kind = requestKind(c);
+  const value = c.req.header(PAGE_HEADER);
+  if (kind === undefined || (kind === "form" && value === undefined)) return undefined;
+  if (handledMethod(c) === "GET" || value === undefined || !URL.canParse(value)) {
+    return { page: undefined };
+  }
+  const url = new URL(value);
+  const local = url.host === new URL(c.req.url).host && !url.pathname.startsWith(internalPrefix);
+  return { page: local ? url : undefined };
+}
+
+/** リクエスト `c` のレスポンスの本文 `body` に、ページ `page` の描き直しを含めるかどうかを返す。 */
 function refreshes(c: Context, body: object, page: URL): boolean {
-  if (handledMethod(c) === "GET") return false;
   if (isRedirectJson(body)) return sameDocument(locationOf(body.redirect, c, page), page);
   return "ok" in body || "s" in body;
 }
