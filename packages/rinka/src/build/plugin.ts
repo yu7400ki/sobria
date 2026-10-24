@@ -15,7 +15,7 @@ import { libraryBuild } from "./library-build.ts";
 import { fromApp } from "./package.ts";
 import { devPath, inside, relativePath } from "./paths.ts";
 import { preparedFiles, writePrepared } from "./prepare.ts";
-import { ROUTES_DIR, routesModule } from "./routes.ts";
+import { routesModule } from "./routes.ts";
 import { hashedFnModule, isServerFnSource, serverFnModules } from "./server-fns.ts";
 import {
   isClient,
@@ -214,7 +214,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       },
       load(id) {
         const { root, scene } = current();
-        if (id === ROUTES) return routesModule(root, ROUTES_DIR, extensions);
+        if (id === ROUTES) return routesModule(root, extensions);
         if (id === NO_ELEMENTS) return "export {};\n";
         if (id === APP) {
           const serverFns = new Map(serverFnModules(root).map((file) => [fnModuleOf(file), file]));

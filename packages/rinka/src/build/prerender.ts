@@ -7,7 +7,7 @@ import type { ESTree } from "vite";
 import { prerenderEnv, type PrerenderScope, type PrerenderTarget } from "../shared/prerender.ts";
 import { moduleExportName, parseModule, sourceLangOf } from "./ast.ts";
 import { entries, importInternal } from "./entries.ts";
-import { ROUTES_DIR, scanRoutes } from "./routes.ts";
+import { scanRoutes } from "./routes.ts";
 import { SERVER_ENTRY_NAME } from "./settings.ts";
 
 /** サーバーのビルドで、書き出す URL を返すモジュールの入力の名前である。出力のファイルの名前は、この名前に `.js` を付けたものになる。 */
@@ -34,7 +34,7 @@ function exportsName(program: ESTree.Program, name: string): boolean {
  */
 export function prerenderFiles(root: string, extensions: readonly string[]): string[] {
   const files: string[] = [];
-  for (const route of scanRoutes(root, ROUTES_DIR, extensions).routes) {
+  for (const route of scanRoutes(root, extensions).routes) {
     if (route.kind === "not-found") continue;
     const path = join(root, route.module);
     const source = sourceLangOf(path, extensions);

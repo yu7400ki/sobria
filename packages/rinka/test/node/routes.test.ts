@@ -32,7 +32,7 @@ function project(files: readonly string[]): string {
 
 /** `files` を配置したプロジェクトを、登録した拡張子 `extensions` で走査する。 */
 const scan = (files: readonly string[], extensions: readonly string[] = []) =>
-  scanRoutes(project(files), "src/routes", extensions);
+  scanRoutes(project(files), extensions);
 
 /** 行のモジュールのファイルを返す。`not-found.tsx` の行では、その `not-found.tsx` のファイルを返す。 */
 const moduleOf = (route: Route<PathFiles>): string =>
@@ -156,7 +156,7 @@ describe("scanRoutes", () => {
   });
 
   it("ルートのディレクトリが無ければ、空の表を返す", () => {
-    expect(scanRoutes(project([]), "src/routes", [])).toEqual({ routes: [] });
+    expect(scanRoutes(project([]), [])).toEqual({ routes: [] });
   });
 
   it("同じディレクトリに page.tsx と route.ts があれば、エラーを投げる", () => {
@@ -338,7 +338,7 @@ describe("routesModule", () => {
       "users/[id]/page.tsx",
       "api/route.ts",
     ]);
-    const code = routesModule(root, "src/routes", []);
+    const code = routesModule(root, []);
     // oxlint-disable-next-line typescript/no-implied-eval
     const evaluate = new Function(
       `${code.replaceAll("export const ", "const ")}\nreturn { routes, middleware };`,
@@ -350,6 +350,6 @@ describe("routesModule", () => {
         middleware: importedFile,
         handlers: importedFile,
       }),
-    ).toEqual(scanRoutes(root, "src/routes", []));
+    ).toEqual(scanRoutes(root, []));
   });
 });

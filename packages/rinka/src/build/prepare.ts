@@ -126,7 +126,7 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
 /** アプリのルート `root` の、登録した拡張子 `extensions` のものを含むページから、`RouteParams` を拡張する型宣言を返す。 */
 function routesDeclaration(root: string, extensions: readonly string[]): string {
   const lines: string[] = [];
-  for (const { path, params } of scanPages(root, ROUTES_DIR, extensions)) {
+  for (const { path, params } of scanPages(root, extensions)) {
     const type =
       params.length === 0 ? "{}" : `{ ${params.map((name) => `${name}: string`).join("; ")} }`;
     lines.push(`    ${JSON.stringify(path)}: ${type};\n`);

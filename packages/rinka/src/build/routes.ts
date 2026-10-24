@@ -184,7 +184,7 @@ function rowOf({
 }
 
 /**
- * プロジェクトのルート `root` からの相対パス `dir` のディレクトリを走査し、走査した行の列と、ルートのミドルウェアを返す。
+ * プロジェクトのルート `root` の `ROUTES_DIR` のディレクトリを走査し、走査した行の列と、ルートのミドルウェアを返す。
  * `page`、`layout`、`not-found`、`error` は、登録した拡張子 `extensions` のファイルも対象にする。
  * 2 つのページか `route` が同じ URL に対応するときは、エラーを投げる。同じディレクトリにページと `route` を置いたときも、このエラーになる。
  * 同じ URL に対応し、グループを含めたディレクトリの深さが同じ 2 つの `not-found` があるときも、エラーを投げる。
@@ -192,12 +192,11 @@ function rowOf({
  */
 function scan(
   root: string,
-  dir: string,
   extensions: readonly string[],
 ): { readonly scanned: readonly Scanned[]; readonly middleware: string | undefined } {
   const scanned: Scanned[] = [];
   let middleware: string | undefined;
-  const start = resolve(root, dir);
+  const start = resolve(root, ROUTES_DIR);
   const fileOf = (path: string): string => relativePath(root, path);
   const visit = (
     current: string,
@@ -294,15 +293,11 @@ function scan(
 }
 
 /**
- * プロジェクトのルート `root` からの相対パス `dir` のディレクトリを、登録した拡張子 `extensions` のファイルも含めて走査し、ルートの表を返す。
+ * プロジェクトのルート `root` の `ROUTES_DIR` のディレクトリを、登録した拡張子 `extensions` のファイルも含めて走査し、ルートの表を返す。
  * ルートは、同じ位置では静的な区切り、動的な区切り、キャッチオールの順に並ぶ。ルートのファイルの配置が不正なら、エラーを投げる。
  */
-export function scanRoutes(
-  root: string,
-  dir: string,
-  extensions: readonly string[],
-): Routes<PathFiles> {
-  const { scanned, middleware } = scan(root, dir, extensions);
+export function scanRoutes(root: string, extensions: readonly string[]): Routes<PathFiles> {
+  const { scanned, middleware } = scan(root, extensions);
   return {
     routes: scanned.toSorted(compareRoutes).map(({ route }) => route),
     ...(middleware !== undefined && { middleware }),
@@ -310,15 +305,14 @@ export function scanRoutes(
 }
 
 /**
- * `root` からの相対パス `dir` の、登録した拡張子 `extensions` のものを含むページごとに、グループを除いたファイルの形のパスと、パラメータとキャッチオールの名前を返す。
+ * プロジェクトのルート `root` の `ROUTES_DIR` の、登録した拡張子 `extensions` のものを含むページごとに、グループを除いたファイルの形のパスと、パラメータとキャッチオールの名前を返す。
  * ルートのファイルの配置が不正なら、エラーを投げる。
  */
 export function scanPages(
   root: string,
-  dir: string,
   extensions: readonly string[],
 ): { readonly path: string; readonly params: readonly string[] }[] {
-  return scan(root, dir, extensions)
+  return scan(root, extensions)
     .scanned.flatMap(({ route, segments }) => (route.kind === "page" ? [{ route, segments }] : []))
     .map(({ route, segments }) => ({
       path: route.pattern,
@@ -342,9 +336,9 @@ const toCode = (value: unknown): string =>
 /** ファイル `file` を、モジュールを読み込む関数に置き換える目印の文字列にする。 */
 const toImport = (file: string): string => `${importMarker}${file}`;
 
-/** `root` からの相対パス `dir` を、登録した拡張子 `extensions` のファイルも含めて走査し、ファイルごとにモジュールを読み込む関数を持つルートの表を export するモジュールのコードを返す。 */
-export function routesModule(root: string, dir: string, extensions: readonly string[]): string {
-  const { routes, middleware } = mapRouteFiles(scanRoutes(root, dir, extensions), {
+/** プロジェクトのルート `root` の `ROUTES_DIR` を、登録した拡張子 `extensions` のファイルも含めて走査し、ファイルごとにモジュールを読み込む関数を持つルートの表を export するモジュールのコードを返す。 */
+export function routesModule(root: string, extensions: readonly string[]): string {
+  const { routes, middleware } = mapRouteFiles(scanRoutes(root, extensions), {
     component: toImport,
     middleware: toImport,
     handlers: toImport,
