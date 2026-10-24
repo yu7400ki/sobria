@@ -135,6 +135,11 @@ const guard: MiddlewareHandler = async () => {
   throw redirect("/login");
 };
 
+/** `notFound()` を投げるミドルウェアである。 */
+const hide: MiddlewareHandler = async () => {
+  throw notFound();
+};
+
 /** 401 の Response を返すミドルウェアである。 */
 const deny: MiddlewareHandler = async (c) => c.text("denied", 401);
 
@@ -985,5 +990,33 @@ describe("アプリの onError", () => {
     expect([admin.status, admin.headers.get("location")]).toEqual([303, "/login"]);
     expect(broken.status).toBe(503);
     expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("ページの URL でミドルウェアが投げた notFound() は、ページの not-found.tsx を 404 で返し、not-found.tsx のシェルが投げたエラーには error.tsx を使用する", async () => {
+    const routes: Routes = {
+      routes: [
+        pageRoute("/shop", page("shop"), [], [hide], {
+          notFound: fallbackOf(fallback("shop")),
+        }),
+        apiRoute("/broken/api", {
+          GET: () => {
+            throw notFound();
+          },
+        }),
+        notFoundRoute(
+          "/broken",
+          fallbackOf(throwing(new Error("nf"))),
+          [],
+          fallbackOf(fallback("error")),
+        ),
+        notFoundRoute("/", fallbackOf(fallback("root"))),
+      ],
+    };
+    const [shop, broken] = await Promise.all([
+      request(routes, "/shop"),
+      request(routes, "/broken/api"),
+    ]);
+    expect([shop.status, await bodyOf(shop)]).toEqual([404, "<h1>shop /shop</h1>"]);
+    expect([broken.status, await bodyOf(broken)]).toEqual([500, "<h1>error /broken/api nf</h1>"]);
   });
 });

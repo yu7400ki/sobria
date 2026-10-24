@@ -67,6 +67,12 @@ test("公開の defineElement は、タグ名、要素の関数、登録の設�
   defineElement("type-four-args", () => null, { props: {} }, { send: () => {} });
 });
 
+test("登録の設定の props で、children に分類できるのは slot だけである", () => {
+  defineElement("type-children-slot", () => null, { props: { children: "slot" } });
+  // @ts-expect-error children は属性から受け取らない
+  defineElement("type-children-string", () => null, { props: { children: "string" } });
+});
+
 test("ctx の css は、タグ付きテンプレートと CSSStyleSheet を受け取る", () => {
   defineElement(
     "type-styled",

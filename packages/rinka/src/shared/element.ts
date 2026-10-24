@@ -37,7 +37,7 @@ export function propKinds(options: ElementOptions): PropKinds {
   const functions = new Set<string>();
   const attributes = new Map<string, AttributeProp>();
   for (const [name, kind] of Object.entries(options.props)) {
-    if (kind === "slot" || name === "children") {
+    if (kind === "slot") {
       slots.add(name);
       continue;
     }
@@ -73,8 +73,8 @@ export type PropKind = AttributeType | "unknown" | "function" | "object" | "slot
 
 /** `defineElement` の 3 つ目の引数を表す。 */
 export interface ElementOptions {
-  /** 受け付ける props の名前ごとの分類。`children` は、表に無いときも、分類にかかわらずスロットになる。 */
-  readonly props: Readonly<Record<string, PropKind>>;
+  /** 受け付ける props の名前ごとの分類。`children` は、表に無いときもスロットになる。 */
+  readonly props: Readonly<Record<string, PropKind>> & { readonly children?: "slot" };
   /** 要素の関数が ctx の `form` を使用し、要素がフォームの部品になるときに `true` である。 */
   readonly form?: true;
 }

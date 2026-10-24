@@ -39,7 +39,10 @@ const lazy =
   };
 
 /** ページとレイアウトが受け取る、リクエストの props を返す。 */
-const propsOf = (c: Context) => ({ params: c.req.param(), url: new URL(c.req.url) });
+const propsOf = (c: Context) => ({
+  params: c.req.param(),
+  url: new URL(c.req.url),
+});
 
 /** `page` を、外側から順に並んだ `layouts` で包んだノードを返す。各ファイルの描画には、外側から順に 0 から始まる深さを与える。 */
 async function wrap(
@@ -129,8 +132,8 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   };
   const find = finder(routes);
   /**
-   * ミドルウェア、`route.ts`、サーバー関数が投げた値から、リクエスト `c` のレスポンスを作成する。
-   * `redirect()` は移動にし、`notFound()` は URL に一致する `not-found.tsx` のページを 404 で返し、Response はそのまま返す。そのほかの値は `onError` に渡す。
+   * ミドルウェア、`route.ts`、サーバー関数が投げた値と、`error.tsx` の無いページの描画で投げた値から、リクエスト `c` のレスポンスを作成する。
+   * `redirect()` と `HTTPException` は、そのレスポンスを返す。`notFound()` は、URL に一致する `not-found.tsx` のページを 404 で返す。そのほかの値は `onError` に渡す。
    */
   const fail = async (
     c: Pick<Context, "req" | "newResponse">,
@@ -145,8 +148,10 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
       case "notFound": {
         const url = new URL(c.req.url);
         const found = await find(url);
-        const fallbacks = found?.route.notFound ? { notFound: found.route.notFound } : {};
-        return respond(c, jsx(missing, {}), fallbacks, { params: found?.params ?? {}, url });
+        return respond(c, jsx(missing, {}), found?.route ?? {}, {
+          params: found?.params ?? {},
+          url,
+        });
       }
       case "schema":
       case "error":
