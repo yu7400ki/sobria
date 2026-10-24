@@ -1,6 +1,6 @@
 import { transformMdast } from "@ox-content/napi";
 import { codeToHast } from "shiki";
-import type { Plugin } from "vite";
+import { parseSync, type Plugin } from "vite";
 
 /** MDX の変換の設定である。 */
 export interface MdxOptions {
@@ -15,12 +15,14 @@ export interface TocItem {
   readonly text: string;
 }
 
-/** MDX の JSX の属性である。`value` は、値の無い属性では `null`、文字列の属性では文字列、式の属性では式のソースを持つオブジェクトである。 */
-interface Attribute {
-  readonly type: string;
-  readonly name?: string;
-  readonly value?: string | null | { readonly value: string };
-}
+/** MDX の JSX の属性である。名前のある属性の `value` は、値の無い属性では `null`、文字列の属性では文字列、式の属性では式のソースを持つオブジェクトである。展開の属性の `value` は、`...` を含む式のソースである。 */
+type Attribute =
+  | {
+      readonly type: "mdxJsxAttribute";
+      readonly name: string;
+      readonly value: string | null | { readonly value: string };
+    }
+  | { readonly type: "mdxJsxExpressionAttribute"; readonly value: string };
 
 /** mdast と hast のノードの型のうち、TSX に変換するときに参照する欄だけを持つものである。 */
 interface Node {
@@ -197,7 +199,7 @@ export async function toTsx(source: string, options: MdxOptions): Promise<string
         return `\0${blocks.length - 1}\0`;
       case "mdxjsEsm": {
         const value = node.value ?? "";
-        if (/\bexport\s+default\b/.test(value)) {
+        if (exportsDefault(value)) {
           throw new Error(
             "MDX の export default は、本文のコンポーネントと重複するので記述できません。",
           );
@@ -263,11 +265,25 @@ function textOf(node: Node): string {
 }
 
 /** MDX の JSX の属性 `attribute` を、JSX の属性のソースにする。 */
-function attribute({ type, name, value }: Attribute): string {
-  if (type === "mdxJsxExpressionAttribute") return ` {${typeof value === "string" ? value : ""}}`;
-  if (value == null) return ` ${name}`;
+function attribute(node: Attribute): string {
+  if (node.type === "mdxJsxExpressionAttribute") return ` {${node.value}}`;
+  const { name, value } = node;
+  if (value === null) return ` ${name}`;
   if (typeof value === "string") return ` ${name}={${literal(value)}}`;
   return ` ${name}={${value.value}}`;
+}
+
+/** ESM のソース `source` が、default export を持つかを返す。 */
+function exportsDefault(source: string): boolean {
+  return parseSync("esm.tsx", source).program.body.some(
+    (statement) =>
+      statement.type === "ExportDefaultDeclaration" ||
+      (statement.type === "ExportNamedDeclaration" &&
+        statement.specifiers.some(
+          ({ exported }) =>
+            (exported.type === "Identifier" ? exported.name : exported.value) === "default",
+        )),
+  );
 }
 
 /** Shiki が出力した hast のノード `node` を、JSX のソースにする。 */

@@ -150,5 +150,14 @@ describe("toTsx", () => {
 
   it("ESM の export default は、エラーにする", async () => {
     await expect(tsx("export default 1")).rejects.toThrow("export default");
+    await expect(tsx("export const a = 1\nexport { a as default }")).rejects.toThrow(
+      "export default",
+    );
+  });
+
+  it("ESM の文字列の中の export default は、エラーにしない", async () => {
+    expect(await tsx('export const s = "export default"')).toContain(
+      'export const s = "export default"',
+    );
   });
 });
