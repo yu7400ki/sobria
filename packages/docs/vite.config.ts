@@ -4,5 +4,8 @@ import { defineConfig } from "vite";
 import { mdx } from "./plugins/mdx.ts";
 
 export default defineConfig({
-  plugins: [mdx(), rinka({ extensions: [".mdx"], output: "static" })],
+  plugins: [
+    mdx({ codeBlock: "/src/components/code-block.tsx" }),
+    rinka({ extensions: [".mdx"], output: "static" }),
+  ],
 });

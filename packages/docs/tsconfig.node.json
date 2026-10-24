@@ -9,5 +9,5 @@
     "moduleResolution": "bundler",
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "plugins", "test"]
+  "include": ["vite.config.ts", "vitest.config.ts", "plugins", "test"]
 }

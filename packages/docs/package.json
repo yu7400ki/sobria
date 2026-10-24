@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "rinka prepare && vite build --app",
-    "typecheck": "rinka prepare && tsc -b"
+    "typecheck": "rinka prepare && tsc -b",
+    "test": "vitest run"
   },
   "dependencies": {
     "rinka": "workspace:*"
@@ -15,7 +16,9 @@
     "@rinka/config": "workspace:*",
     "@types/node": "catalog:",
     "hono": "catalog:",
+    "shiki": "^4.5.0",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "vitest": "catalog:"
   }
 }
