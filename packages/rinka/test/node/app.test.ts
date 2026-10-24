@@ -1281,3 +1281,106 @@ describe("アプリの onError", () => {
     expect([broken.status, await bodyOf(broken)]).toEqual([500, "<h1>error /broken/api nf</h1>"]);
   });
 });
+
+/** 読み込んだときに `log` に記録する、ファイル `file` の `value` のモジュールを読み込む関数を返す。 */
+const logged = (log: string[], value: RouteComponent, file: string) =>
+  Object.assign(
+    async () => {
+      log.push(`load ${file}`);
+      return { default: value };
+    },
+    { file },
+  );
+
+describe("createApp のページの CSS", () => {
+  it("not-found.tsx と error.tsx のページには、そのページとレイアウトのモジュールを読み込んだ後に、それらのファイルを styles に渡す", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    onTestFinished(() => error.mockRestore());
+    const log: string[] = [];
+    const root = logged(log, layout("main", "root"), "src/routes/layout.tsx");
+    const fallbacks = {
+      notFound: {
+        module: logged(log, page("missing"), "src/routes/not-found.tsx"),
+        layouts: [root],
+      },
+      error: { module: logged(log, page("failed"), "src/routes/error.tsx"), layouts: [root] },
+    };
+    /** `component` を `file` から読み込む、`path` のページの行を返す。 */
+    const thrown = (path: string, component: RouteComponent, file: string): Route => ({
+      kind: "page",
+      path,
+      pattern: path,
+      module: logged(log, component, file),
+      layouts: [],
+      middlewares: [],
+      ...fallbacks,
+    });
+    const app = createApp(
+      {
+        routes: [
+          thrown(
+            "/gone",
+            () => {
+              throw notFound();
+            },
+            "src/routes/gone/page.tsx",
+          ),
+          thrown(
+            "/broken",
+            () => {
+              throw new Error("broken");
+            },
+            "src/routes/broken/page.tsx",
+          ),
+          notFoundRoute("/", fallbacks.notFound, [], fallbacks.error),
+        ],
+      },
+      {
+        styles: async (files) => {
+          log.push(`styles ${files.join(" ")}`);
+          return files.map((file) => `/${file}.css`);
+        },
+      },
+    );
+    const results = [];
+    for (const path of ["/nope", "/gone", "/broken"]) {
+      log.length = 0;
+      // oxlint-disable-next-line no-await-in-loop
+      const response = await app.fetch(new Request(`http://localhost${path}`));
+      // oxlint-disable-next-line no-await-in-loop
+      const html = await response.text();
+      const head = html.slice(0, html.indexOf("</head>"));
+      const links = [...head.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map(
+        (match) => match[1],
+      );
+      results.push({ path, status: response.status, links, log: [...log] });
+    }
+    const notFoundLinks = ["/src/routes/layout.tsx.css", "/src/routes/not-found.tsx.css"];
+    const notFoundLog = [
+      "load src/routes/not-found.tsx",
+      "load src/routes/layout.tsx",
+      "styles src/routes/layout.tsx src/routes/not-found.tsx",
+    ];
+    expect(results).toEqual([
+      { path: "/nope", status: 404, links: notFoundLinks, log: notFoundLog },
+      {
+        path: "/gone",
+        status: 404,
+        links: notFoundLinks,
+        log: ["load src/routes/gone/page.tsx", "styles src/routes/gone/page.tsx", ...notFoundLog],
+      },
+      {
+        path: "/broken",
+        status: 500,
+        links: ["/src/routes/layout.tsx.css", "/src/routes/error.tsx.css"],
+        log: [
+          "load src/routes/broken/page.tsx",
+          "styles src/routes/broken/page.tsx",
+          "load src/routes/error.tsx",
+          "load src/routes/layout.tsx",
+          "styles src/routes/layout.tsx src/routes/error.tsx",
+        ],
+      },
+    ]);
+  });
+});

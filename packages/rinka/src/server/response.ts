@@ -42,14 +42,17 @@ export function renderToStream(
   });
 }
 
-/** レスポンスのオプションを表す。 */
-export interface ResponseOptions extends RenderOptions {
+/** レスポンスのオプションを表す。`P` は、エラーのページを表す値の型である。 */
+interface PageOptions<P> extends RenderOptions {
   readonly headers?: Record<string, string>;
   /** シェルの中で `notFound()` を投げたときに、404 で返すページを返す。 */
-  readonly notFound?: () => unknown;
+  readonly notFound?: () => P;
   /** シェルの中で、どの `<Errored>` も受け止めなかったエラーを受け取り、500 で返すページを返す。 */
-  readonly error?: (error: unknown) => unknown;
+  readonly error?: (error: unknown) => P;
 }
+
+/** レスポンスのオプションを表す。 */
+export type ResponseOptions = PageOptions<unknown>;
 
 /**
  * `node` を描画し、シェルが揃った時点で、本文を送り続ける Response を返す。
@@ -83,10 +86,7 @@ export interface DocumentPage {
 const withoutHead = (node: unknown): DocumentPage => ({ node, head: "" });
 
 /** 文書のレスポンスのオプションを表す。エラーのページは、そのページの `<head>` のマークアップとともに返す。 */
-export interface DocumentOptions
-  extends
-    Omit<ResponseOptions, keyof FallbackPages<unknown>>,
-    FallbackPages<Promise<DocumentPage>> {}
+export type DocumentOptions = PageOptions<Promise<DocumentPage>>;
 
 /**
  * `renderToResponse` と同じ規則で、`page` のノードを描画し、`page` のマークアップを `<head>` の末尾に出力した Response を返す。
@@ -114,17 +114,16 @@ async function respond(
     write: (text) => controller.enqueue(encoder.encode(text)),
     blocking: options.blocking ?? false,
   });
+  let resolved: DocumentPage;
   let shell: string;
-  let head: string;
   try {
-    const { node, head: markup } = await page;
-    head = markup;
-    shell = await renderer.shell(asNode(node));
+    resolved = await page;
+    shell = await renderer.shell(asNode(resolved.node));
   } catch (error) {
     renderer.dispose();
     return failure(error, options, respond);
   }
-  renderer.finish(shell, head).then(
+  renderer.finish(shell, resolved.head).then(
     () => controller.close(),
     (error: unknown) => controller.error(error),
   );
@@ -165,16 +164,8 @@ async function refreshed(
   }
 }
 
-/** シェルの中で `notFound()` やエラーを投げたときに、エラーのページを返す関数の組を表す。`P` は、エラーのページを表す値の型である。 */
-interface FallbackPages<P> {
-  /** シェルの中で `notFound()` を投げたときに、404 で返すページを返す。 */
-  readonly notFound?: () => P;
-  /** シェルの中で、どの `<Errored>` も受け止めなかったエラーを受け取り、500 で返すページを返す。 */
-  readonly error?: (error: unknown) => P;
-}
-
 /** シェルの中で投げられた値から、レスポンスを作成する。`notFound` と `error` のページは `render` で描画する。 */
-function failure<P, O extends FallbackPages<P>>(
+function failure<P, O extends PageOptions<P>>(
   error: unknown,
   options: O,
   render: (page: P, options: O, status: number) => Promise<Response>,
