@@ -4,7 +4,7 @@ import { Errored, Loading, Navigation } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { createApp } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
-import { renderToResponse, renderToString } from "../../src/server/render.ts";
+import { renderToResponse, renderToString } from "../../src/server/response.ts";
 import type { Route, RouteComponent } from "../../src/shared/routes.ts";
 import { memo } from "../../src/shared/signals.ts";
 import { loadOf } from "./load.ts";

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { notFound, redirect } from "../../src/server/errors.ts";
 import { createApp, registerServerFn } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
-import { renderToString } from "../../src/server/render.ts";
+import { renderToString } from "../../src/server/response.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
 import { rpcPath, wireHeader } from "../../src/shared/wire.ts";
 

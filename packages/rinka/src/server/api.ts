@@ -6,7 +6,7 @@ export {
   renderToString,
   type RenderOptions,
   type ResponseOptions,
-} from "./render.ts";
+} from "./response.ts";
 export { getContext } from "./context.ts";
 export { defineHandler, defineMiddleware } from "hono/factory";
 export {

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
-import { renderToStream, renderToString } from "../../src/server/render.ts";
+import { renderToStream, renderToString } from "../../src/server/response.ts";
 import type { Ctx } from "../../src/shared/element.ts";
 import { memo } from "../../src/shared/signals.ts";
 import { read } from "./stream-order.ts";

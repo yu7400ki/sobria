@@ -20,7 +20,7 @@ import { formRedirects, handledMethod, serverFnMiddleware, type Failure } from "
 import { notFound } from "./errors.ts";
 import { stylesheetLink } from "./html.ts";
 import { jsx } from "./jsx-runtime.ts";
-import { renderDocument, renderRefresh } from "./render.ts";
+import { renderDocument, renderRefresh } from "./response.ts";
 import { withDepth } from "./tree.ts";
 
 /** エラーを記録して、素のテキストの 500 にする。 */

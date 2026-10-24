@@ -27,7 +27,6 @@ import {
   isElementComponent,
   propKinds,
   type Ctx,
-  type Delivery,
   type ElementComponent,
   unsupportedFormControls,
 } from "../shared/element.ts";
@@ -39,7 +38,7 @@ import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
 import type { RefreshJson, RefreshValues } from "../shared/refresh.ts";
 import { createScope, withScope, type ScopedChild } from "../shared/scope.ts";
 import { BOUNDARIES_KEY, childKey, PROPS_KEY, REFRESH_PROPS_KEY } from "../shared/transfer-keys.ts";
-import { checkSerializable, formProps, internalPrefix } from "../shared/wire.ts";
+import { checkSerializable, formProps } from "../shared/wire.ts";
 import { ariaAttributes } from "./aria.ts";
 import {
   bootstrap,
@@ -49,9 +48,34 @@ import {
   noValue,
   swapScript,
 } from "./bootstrap.ts";
+import {
+  attributesText,
+  documentTags,
+  headlessParents,
+  headTags,
+  mergeByName,
+  rootAttributesOf,
+  warnsOutOfHead,
+  type Attributes,
+  type DocumentParts,
+  type HeadOutput,
+  type Hoisted,
+} from "./document-head.ts";
 import { classify } from "./errors.ts";
+import { HostRecord, hostIds, serverHost } from "./host-record.ts";
 import { attribute, checkAttributeName, escapeAttribute, escapeText } from "./html.ts";
 import { Labels } from "./labels.ts";
+import {
+  mergeDelivered,
+  Out,
+  resolvable,
+  type DeferredFlush,
+  type Delivered,
+  type Flush,
+  type Patch,
+  type ShellFlush,
+  type Target,
+} from "./out.ts";
 import { scriptJson } from "./script.ts";
 import { elementCss, propertiesStyle, type SheetInfo } from "./styles.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
@@ -132,200 +156,6 @@ interface Host {
   };
 }
 
-/**
- * 文書を出力する描画で、特別に扱うタグの扱いを表す。
- * `head` は `<head>` に移動するタグ、`html` と `body` は属性を文書の同じタグの開始タグに移動して子だけを描画するタグ、`transparent` は子だけを描画するタグである。
- */
-type DocumentTag = "head" | "html" | "body" | "transparent";
-
-/** 文書を出力する描画で、特別に扱うタグと、その扱いである。 */
-const documentTags: ReadonlyMap<string, DocumentTag> = new Map([
-  ["title", "head"],
-  ["meta", "head"],
-  ["link", "head"],
-  ["html", "html"],
-  ["body", "body"],
-  ["head", "transparent"],
-]);
-
-/** 配下のタグを `<head>` に移動しないタグである。 */
-const headlessParents: ReadonlySet<string> = new Set(["svg", "noscript"]);
-
-/** `<body>` に置いても効果のある `<link>` の `rel` の値である。 */
-const bodyOkRels: ReadonlySet<string> = new Set([
-  "stylesheet",
-  "preload",
-  "modulepreload",
-  "prefetch",
-  "preconnect",
-  "dns-prefetch",
-  "pingback",
-]);
-
-/** `<head>` に移動できない位置にある `tag` を、開発時に警告するかどうかを返す。`<link>` は、`rel` の値がすべて `<body>` でも効果のある値なら警告しない。 */
-function warnsOutOfHead(tag: string, props: Record<string, unknown>): boolean {
-  if (tag !== "link") return true;
-  const rel = props.rel;
-  return (
-    typeof rel !== "string" ||
-    !rel
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((value) => value !== "")
-      .every((value) => bodyOkRels.has(value))
-  );
-}
-
-/**
- * 文書の骨組みに移動するものを、目印の番号ごとに表す。`depth` は、記述したルートのファイルの深さである。
- * `head` は `<head>` に移動するタグで、`html` と `body` は、そのタグの属性で、`navigation` は `<Navigation>` の props である。
- */
-type Hoisted =
-  | {
-      readonly kind: "head";
-      readonly key: string | undefined | Promise<string | undefined>;
-      readonly depth: number;
-    }
-  | {
-      readonly kind: "html" | "body";
-      readonly values: Attributes;
-      readonly depth: number;
-    }
-  | {
-      readonly kind: "navigation";
-      readonly values: NavigationValues;
-      readonly depth: number;
-    };
-
-/** `<Navigation>` に指定した props を、名前ごとに表す。 */
-type NavigationValues = ReadonlyMap<keyof NavigationProps, NavigationProps[keyof NavigationProps]>;
-
-/** 属性の名前ごとの値を表す。`null` は、属性を出力しないことを表す。 */
-type Attributes = ReadonlyMap<string, string | null>;
-
-/** `<head>` に出力する候補のタグを表す。 */
-interface HeadOutput {
-  readonly html: string;
-  readonly key: string | undefined;
-  readonly depth: number;
-}
-
-/**
- * 文書の順序で並んだ `<head>` のタグから、キーごとに、深さが最も大きく、同じ深さなら後のタグだけを選択して、文書の順序で返す。
- * 選択したタグは、そのキーのタグが最初に現れた位置に置く。`<meta charset>` は、rinka が出力するので選択しない。
- */
-function selectHead(tags: readonly HeadOutput[]): HeadOutput[] {
-  const chosen = new Map<string | number, HeadOutput>();
-  for (const [index, tag] of tags.entries()) {
-    if (tag.key === "charset") continue;
-    const key = tag.key ?? index;
-    const current = chosen.get(key);
-    if (!current || tag.depth >= current.depth) chosen.set(key, tag);
-  }
-  return [...chosen.values()];
-}
-
-/**
- * 文書の順序で並んだ記録の値を、名前ごとに、深さが最も大きく、同じ深さなら後の値にする。
- * 値は、その名前が最初に現れた順に並べる。
- */
-function mergeByName<K, V>(
-  records: readonly { readonly values: ReadonlyMap<K, V>; readonly depth: number }[],
-): Map<K, V> {
-  const chosen = new Map<K, { readonly value: V; readonly depth: number }>();
-  for (const { values, depth } of records) {
-    for (const [name, value] of values) {
-      const current = chosen.get(name);
-      if (!current || depth >= current.depth) chosen.set(name, { value, depth });
-    }
-  }
-  return new Map([...chosen].map(([name, { value }]) => [name, value]));
-}
-
-/** `parts` の `<head>` のタグのうち、キーごとに選択したタグと、`<Navigation>` の出力を連結する。 */
-const headTags = (parts: DocumentParts): string =>
-  selectHead(parts.heads)
-    .map(({ html }) => html)
-    .join("") + navigationHead(parts.navigation);
-
-/** `<Navigation>` の props を、`<head>` に出力する View Transitions の `<style>` と Speculation Rules の `<script>` にする。 */
-function navigationHead(values: NavigationValues): string {
-  const prefetch = values.get("prefetch");
-  const rules = {
-    prefetch: [
-      {
-        where: { and: [{ href_matches: "/*" }, { not: { href_matches: `${internalPrefix}*` } }] },
-        eagerness: prefetch,
-      },
-    ],
-  };
-  return (
-    (values.get("transitions") === true ? "<style>@view-transition{navigation:auto}</style>" : "") +
-    (typeof prefetch === "string"
-      ? `<script type="speculationrules">${JSON.stringify(rules)}</script>`
-      : "")
-  );
-}
-
-/** `attributes` を、開始タグに出力する属性の文字列にする。 */
-const attributesText = (attributes: ReadonlyMap<string, string>): string =>
-  [...attributes]
-    .map(([name, value]) => (value === "" ? ` ${name}` : ` ${name}="${escapeAttribute(value)}"`))
-    .join("");
-
-/** 文書の順序で並んだ `<html>` か `<body>` の記録の属性を、`mergeByName` の規則で名前ごとに 1 つの値にし、値が `null` の属性を除く。 */
-const rootAttributesOf = (
-  records: readonly { readonly values: Attributes; readonly depth: number }[],
-): Map<string, string> =>
-  new Map(
-    [...mergeByName(records)].filter((entry): entry is [string, string] => entry[1] !== null),
-  );
-
-/**
- * シェルから取り出した、文書の骨組みに並べる値を表す。
- * `heads` は、文書の順序で並んだ `<head>` のタグで、キーが同じタグを 1 つにする前のものである。`html` と `body` は、開始タグに出力する属性である。
- */
-interface DocumentParts {
-  readonly heads: readonly HeadOutput[];
-  readonly html: ReadonlyMap<string, string>;
-  readonly body: ReadonlyMap<string, string>;
-  readonly navigation: NavigationValues;
-  /** シェルから、移動したタグと目印を取り除いた残りである。 */
-  readonly rest: string;
-}
-
-/**
- * 描画の種類を表す。`fragment` は `renderToString` の描画で、文書の骨組みに何も移動しない。
- * `document` は文書を出力する描画で、`write` は出力する文字列を受け取る。`blocking` なら、すべての境界を待って、フォールバックと差し替えを出力しない。
- * `refresh` は `refreshPage()` の描き直しで、要素を実行せずに、Shadow DOM の中身を持たないホストを出力する。
- * `fragment` と `refresh` は、すべての境界を待ち、文字列を書き込まない。
- */
-type Target =
-  | { readonly kind: "fragment" }
-  | {
-      readonly kind: "document";
-      readonly write: (text: string) => void;
-      readonly blocking: boolean;
-    }
-  | { readonly kind: "refresh" };
-
-/** 起動スクリプトに伝える要素を表す。`immediate` は、すぐ起動するインスタンスが 1 つでもあれば真である。 */
-interface Delivered {
-  readonly tag: string;
-  readonly delivery: Delivery;
-  readonly immediate: boolean;
-}
-
-/** 境界の差し替えを表す。 */
-interface Patch {
-  readonly id: string;
-  /** 目印を含む Shadow DOM のホストを、外側から順に列挙する。 */
-  readonly path: readonly HostRecord[];
-  readonly html: Promise<string>;
-  /** 差し替えの中身を出力する位置である。 */
-  readonly out: Out;
-}
-
 /** `<Loading>` の境界と、シェルを表す。 */
 interface Boundary {
   readonly id: string;
@@ -338,139 +168,6 @@ interface Boundary {
   readonly patches: Patch[];
   /** 境界を後送りにしたときに、中身を送るチャンクを表す。 */
   flush?: DeferredFlush;
-}
-
-/** 出力を送るチャンクを表す。シェルか、後送りの境界の中身である。 */
-type Flush = ShellFlush | DeferredFlush;
-
-/** チャンクがページに現れるかどうかを表す `shown` と、それを解決する `resolve` の組を表す。 */
-interface Resolvable {
-  /** チャンクを書き込んだら `true` に、書き込まないことが決まったら `false` に解決する。 */
-  readonly shown: Promise<boolean>;
-  readonly resolve: (shown: boolean) => void;
-}
-
-/** シェルを送るチャンクを表す。 */
-interface ShellFlush extends Resolvable {
-  readonly kind: "shell";
-}
-
-/** 後送りの境界の中身を送るチャンクを表す。 */
-interface DeferredFlush extends Resolvable {
-  readonly kind: "deferred";
-  /** 中身の中で `notFound()` を受け止めたことを表す。 */
-  noindex: boolean;
-}
-
-/** `source` の要素を、タグ名ごとに `target` に加える。同じタグなら、どちらかがすぐ起動するインスタンスを持つときに `immediate` を真にする。 */
-function mergeDelivered(target: Map<string, Delivered>, source: Iterable<Delivered>): void {
-  for (const delivered of source) {
-    const current = target.get(delivered.tag);
-    if (!current || (!current.immediate && delivered.immediate))
-      target.set(delivered.tag, delivered);
-  }
-}
-
-/** 解決していない `Resolvable` を作成する。 */
-function resolvable(): Resolvable {
-  const resolvers = Promise.withResolvers<boolean>();
-  return { shown: resolvers.promise, resolve: resolvers.resolve };
-}
-
-/**
- * 出力の位置を表す。`flush` は、この位置の出力を送るチャンクである。
- * `shown` は、この位置の出力がページに現れたら `true` に、現れないことが決まったら `false` に解決する。
- * どの位置の `shown` も、外側の位置の `shown` より先には解決しない。
- * `shown` が `true` に解決する時点で、この位置の文字列化は終わっている。
- */
-class Out {
-  /** `Out` を、同じ形のオブジェクトと区別する。 */
-  declare private readonly nominal: never;
-  /** この位置の出力と同じ書き込みで、出力の後に書き込むスクリプトである。 */
-  private readonly scripts: string[] = [];
-  /** この位置に出力した、起動スクリプトに伝える要素を、タグ名ごとに表す。 */
-  private readonly elements = new Map<string, Delivered>();
-  /** 描き直しで、この位置に出力したホストの ID ごとに、`data` に入れる JS の式を表す。 */
-  private readonly refreshData = new Map<string, string>();
-  /** この位置に出力した要素が使用したシートの `@property` の規則を、シートの URL ごとに表す。 */
-  private readonly sheetRules = new Map<string, string>();
-
-  /** 出力の後に書き込むスクリプトを加える。 */
-  addScript(script: string): void {
-    this.scripts.push(script);
-  }
-
-  /** 起動スクリプトに伝える要素を加える。 */
-  addElement(delivered: Delivered): void {
-    mergeDelivered(this.elements, [delivered]);
-  }
-
-  /** 要素が使用したシートを加える。 */
-  addSheet({ href, properties }: SheetInfo): void {
-    this.sheetRules.set(href, properties);
-  }
-
-  /** 描き直しの `data` に入れる、ホストの ID が `id` の props の JS の式を加える。 */
-  addRefreshData(id: string, expression: string): void {
-    this.refreshData.set(id, expression);
-  }
-
-  /** `other` の位置のスクリプト、要素、描き直しの `data`、シートを、この位置に加える。 */
-  absorb(other: Out): void {
-    this.scripts.push(...other.scripts);
-    mergeDelivered(this.elements, other.elements.values());
-    for (const [id, expression] of other.refreshData) this.refreshData.set(id, expression);
-    for (const [href, properties] of other.sheetRules) this.sheetRules.set(href, properties);
-  }
-
-  /** この位置に出力した要素が使用したシートの、URL と `@property` の規則の組である。 */
-  get sheets(): Iterable<readonly [string, string]> {
-    return this.sheetRules.entries();
-  }
-
-  /** 描き直しの `data` に入れる、ホストの ID ごとの JS の式である。 */
-  get data(): Readonly<Record<string, string>> {
-    return Object.fromEntries(this.refreshData);
-  }
-
-  /** 出力の後に書き込むスクリプトを連結した文字列である。 */
-  get scriptText(): string {
-    return this.scripts.join("");
-  }
-
-  /** 起動スクリプトに伝える要素である。 */
-  get delivered(): Iterable<Delivered> {
-    return this.elements.values();
-  }
-
-  private constructor(
-    readonly flush: Flush,
-    readonly shown: Promise<boolean>,
-  ) {}
-
-  /** `flush` で送る出力の、最も外側の位置を作成する。 */
-  static of(flush: Flush): Out {
-    return new Out(flush, flush.shown);
-  }
-
-  /** この位置にあり、出力を `flush` で送る位置を作成する。この位置がページに現れ、`flush` のチャンクを書き込んだときに、ページに現れる。 */
-  into(flush: Flush): Out {
-    return new Out(
-      flush,
-      this.shown.then(async (output) => output && (await flush.shown)),
-    );
-  }
-
-  /**
-   * この位置のうち、この位置の `shown` が `true` に解決した時点で `kept` が真を返すときだけ、ページに現れる位置を作成する。
-   * 戻り値の位置の `scripts` は、呼び出し側がこの位置の `scripts` に追加したときだけ書き込む。
-   */
-  conditional(kept: () => boolean): Out {
-    return new Out(
-      this.flush,
-      this.shown.then((output) => output && kept()),
-    );
-  }
 }
 
 /** 描画している位置の状態を表す。 */
@@ -566,84 +263,6 @@ function childPlacement(tag: string, placement: HeadPlacement): HeadPlacement {
   return placement === "all" ? "auto" : placement;
 }
 
-/** 要素のホストごとの状態を表す。 */
-class HostRecord {
-  /** 開始タグを作成する前に、`data-om` に列挙するキーを集める。開始タグを作成した後は `undefined` である。 */
-  private listed: { readonly memo: string[]; readonly child: string[] } | undefined = {
-    memo: [],
-    child: [],
-  };
-  /** Shadow DOM の中で後送りにして、まだ送り終えていない境界の数である。 */
-  private deferred = 0;
-  /**
-   * ホストをページに出力したら、開始タグの `data-om` に列挙したキーのうち、まだ値を送っていないものの集合に解決する。
-   * 出力しないことが決まったら `false` に解決する。
-   */
-  private readonly settled = Promise.withResolvers<Set<string> | false>();
-
-  constructor(
-    readonly id: string,
-    readonly tag: string,
-  ) {}
-
-  /** 開始タグを作成する前なら、キーのある非同期の memo のキー `key` を `data-om` に列挙するキーに加える。加えたら真を返す。 */
-  listMemo(key: string): boolean {
-    if (!this.listed || this.listed.memo.includes(key)) return false;
-    this.listed.memo.push(key);
-    return true;
-  }
-
-  /** 開始タグを作成する前なら、`@c:キー` の `key` を `data-om` に列挙するキーに加える。加えたら真を返す。 */
-  listChild(key: string): boolean {
-    if (!this.listed) return false;
-    this.listed.child.push(key);
-    return true;
-  }
-
-  /**
-   * 集めたキーに、後送りの境界を待つなら `@b` を、さらに `extra` を加えて、`data-om` に列挙するキーとして確定し、その列を返す。
-   * `hide` を先に呼び出していなければ、`shown` が真に解決したときに、ホストをページに出力したことを決める。
-   */
-  seal(extra: readonly string[], shown: Promise<boolean>): string[] {
-    if (!this.listed) throw new Error(`ホスト ${this.id} の開始タグを 2 回作成しました。`);
-    const keys = [
-      ...this.listed.memo,
-      ...this.listed.child,
-      ...(this.deferred > 0 ? [BOUNDARIES_KEY] : []),
-      ...extra,
-    ];
-    this.listed = undefined;
-    const unsent = new Set(keys);
-    this.settled.resolve(shown.then((output) => output && unsent));
-    return keys;
-  }
-
-  /** Shadow DOM の中で後送りにした境界を 1 つ数える。 */
-  defer(): void {
-    this.deferred++;
-  }
-
-  /** 後送りにした境界を 1 つ送り終えたものとして数え、すべて送り終えたら真を返す。 */
-  release(): boolean {
-    this.deferred--;
-    return this.deferred === 0;
-  }
-
-  /** 開始タグを作成する前なら、ホストをページに出力しないことを決める。 */
-  hide(): void {
-    this.settled.resolve(false);
-  }
-
-  /** ホストをページに出力し、`key` の値をまだ送っていなければ、送ったものとして記録して真に解決する。 */
-  async take(key: string): Promise<boolean> {
-    const unsent = await this.settled.promise;
-    return unsent !== false && unsent.delete(key);
-  }
-}
-
-/** ホストの列を、ホストの ID の列にする。 */
-const hostIds = (path: readonly HostRecord[]): string[] => path.map((host) => host.id);
-
 const isNodeList = (node: Node): node is readonly Node[] => Array.isArray(node);
 
 const voidTags: ReadonlySet<string> = new Set([
@@ -665,18 +284,6 @@ const voidTags: ReadonlySet<string> = new Set([
 /** 目印の開始と終了の HTML を返す。 */
 const marker = (id: string, inner = ""): string =>
   `<template ${BOUNDARY_ATTRIBUTE}="${id}"></template>${inner}<!--${BOUNDARY_END}${id}-->`;
-
-/** サーバーの描画で、`ctx.host` の代わりに渡す値である。プロパティを参照すると、エラーを投げる。 */
-const serverHost = new Proxy(
-  {},
-  {
-    get() {
-      throw new Error(
-        "サーバーで描画している間は、ctx.host を使用できません。onMount か effect の中で使用してください。",
-      );
-    },
-  },
-);
 
 /**
  * 出力の単位の列に、穴があるかどうかを返す。`<Errored>` の領域と要素のホストの中は調べ、`<Loading>` の中とスロットの内容の中は調べない。属性が未解決のホストは、穴として扱う。
@@ -725,7 +332,7 @@ const preloadLinks = (elements: readonly Delivered[]): string => {
 };
 
 /** サーバーで木を描画する。 */
-class Renderer<K extends Target["kind"] = Target["kind"]> {
+export class Renderer<K extends Target["kind"] = Target["kind"]> {
   /** 描画の種類を、型の上で区別する。 */
   declare private readonly kind: K;
   private seq = 0;
@@ -1719,164 +1326,3 @@ function warnHandlers(tag: string, props: Record<string, unknown>): void {
 /** `value` が、`then` を持つ値かどうかを返す。 */
 const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
   typeof value === "object" && value !== null && "then" in value && isFunction(value.then);
-
-/** 描画のオプションを表す。 */
-export interface RenderOptions {
-  /** すべての `<Loading>` の中身を待ち、中身を埋め込んだ HTML を送る。 */
-  readonly blocking?: boolean;
-}
-
-/** `node` を描画し、すべての非同期の内容を待ってから、`node` の HTML の文字列を返す。 */
-export async function renderToString(node: unknown): Promise<string> {
-  const renderer = new Renderer({ kind: "fragment" });
-  try {
-    return await renderer.shell(asNode(node));
-  } finally {
-    renderer.dispose();
-  }
-}
-
-/** `node` を、文書の全体の HTML のストリームとして描画する。シェルを送った後に、後送りの境界を届いた順に送る。 */
-export function renderToStream(
-  node: unknown,
-  options: RenderOptions = {},
-): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  return new ReadableStream({
-    async start(controller) {
-      const renderer = new Renderer({
-        kind: "document",
-        write: (text) => controller.enqueue(encoder.encode(text)),
-        blocking: options.blocking ?? false,
-      });
-      try {
-        await renderer.finish(await renderer.shell(asNode(node)), "");
-        controller.close();
-      } catch (error) {
-        renderer.dispose();
-        controller.error(error);
-      }
-    },
-  });
-}
-
-/** レスポンスのオプションを表す。 */
-export interface ResponseOptions extends RenderOptions {
-  readonly headers?: Record<string, string>;
-  /** シェルの中で `notFound()` を投げたときに、404 で返すページを返す。 */
-  readonly notFound?: () => unknown;
-  /** シェルの中で、どの `<Errored>` も受け止めなかったエラーを受け取り、500 で返すページを返す。 */
-  readonly error?: (error: unknown) => unknown;
-}
-
-/**
- * `node` を描画し、シェルが揃った時点で、本文を送り続ける Response を返す。
- * シェルの中で投げた `redirect()` はリダイレクトのレスポンスにし、Response はそのまま返す。
- * `notFound()` は `notFound` のページを 404 で返し、ページが無ければ `Not Found` のテキストを 404 で返す。
- * どの `<Errored>` も受け止めなかったエラーは、`error` のページを 500 で返し、ページが無ければ reject する。
- * `notFound` のページの描画で投げたエラーには `error` のページを使用する。`error` のページの描画で投げた値は、ページを使用せずに、`redirect()` と `notFound()` と Response を同じ規則で扱い、それ以外では reject する。
- */
-export function renderToResponse(node: unknown, options: ResponseOptions = {}): Promise<Response> {
-  return respond(node, options, 200);
-}
-
-/** `<head>` に出力するマークアップを加えた、レスポンスのオプションを表す。 */
-export interface DocumentOptions extends ResponseOptions {
-  /** 文書の `<head>` の末尾に出力するマークアップである。 */
-  readonly head?: string;
-}
-
-/** `renderToResponse` と同じ規則で、`options.head` を `<head>` の末尾に出力した Response を返す。 */
-export function renderDocument(node: unknown, options: DocumentOptions): Promise<Response> {
-  return respond(node, options, 200);
-}
-
-/** `node` を描画した Response を返す。ステータスは、`status` と、シェルの中の `<Errored>` が決めたステータスのうち大きいほうである。 */
-async function respond(node: unknown, options: DocumentOptions, status: number): Promise<Response> {
-  const encoder = new TextEncoder();
-  let controller!: ReadableStreamDefaultController<Uint8Array>;
-  const body = new ReadableStream<Uint8Array>({
-    start: (c) => {
-      controller = c;
-    },
-  });
-  const renderer = new Renderer({
-    kind: "document",
-    write: (text) => controller.enqueue(encoder.encode(text)),
-    blocking: options.blocking ?? false,
-  });
-  let shell: string;
-  try {
-    shell = await renderer.shell(asNode(node));
-  } catch (error) {
-    renderer.dispose();
-    return failure(error, options, respond);
-  }
-  renderer.finish(shell, options.head ?? "").then(
-    () => controller.close(),
-    (error: unknown) => controller.error(error),
-  );
-  return new Response(body, {
-    status: Math.max(status, renderer.status),
-    headers: { "content-type": "text/html; charset=utf-8", ...options.headers },
-  });
-}
-
-/**
- * `node` を描き直して、`refreshPage()` のレスポンスの JSON を返す。`<Loading>` の内側も含めて、すべて揃えてから返す。
- * シェルの中で投げた値は、`renderToResponse` と同じ規則で扱い、`notFound` と `error` のページも描き直しの JSON で返す。
- */
-export function renderRefresh(node: unknown, options: ResponseOptions = {}): Promise<Response> {
-  return refreshed(node, options, 200);
-}
-
-/** `node` を描き直した Response を返す。ステータスは、`status` と、シェルの中の `<Errored>` が決めたステータスのうち大きいほうである。 */
-async function refreshed(
-  node: unknown,
-  options: ResponseOptions,
-  status: number,
-): Promise<Response> {
-  const renderer = new Renderer({ kind: "refresh" });
-  try {
-    let shell: string;
-    try {
-      shell = await renderer.shell(asNode(node));
-    } catch (error) {
-      return await failure(error, options, refreshed);
-    }
-    return Response.json(await renderer.refresh(shell), {
-      status: Math.max(status, renderer.status),
-      ...(options.headers && { headers: options.headers }),
-    });
-  } finally {
-    renderer.dispose();
-  }
-}
-
-/** シェルの中で投げられた値から、レスポンスを作成する。`notFound` と `error` のページは `render` で描画する。 */
-function failure<O extends ResponseOptions>(
-  error: unknown,
-  options: O,
-  render: (node: unknown, options: O, status: number) => Promise<Response>,
-): Response | Promise<Response> {
-  const thrown = classify(error);
-  switch (thrown.kind) {
-    case "redirect":
-      return thrown.response;
-    case "response":
-      return thrown.response;
-    case "notFound": {
-      const page = options.notFound;
-      return page
-        ? render(page(), { ...options, notFound: undefined }, 404)
-        : new Response("Not Found", { status: 404 });
-    }
-    case "schema":
-    case "error": {
-      const page = options.error;
-      if (page)
-        return render(page(error), { ...options, notFound: undefined, error: undefined }, 500);
-      throw error;
-    }
-  }
-}

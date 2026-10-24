@@ -5,7 +5,7 @@ import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { NotFound, notFound, redirect } from "../../src/server/errors.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
-import { renderToResponse } from "../../src/server/render.ts";
+import { renderToResponse } from "../../src/server/response.ts";
 import { readText } from "./stream-order.ts";
 
 afterEach(() => {

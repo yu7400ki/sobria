@@ -5,7 +5,7 @@ import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { notFound } from "../../src/server/errors.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
-import { renderToStream } from "../../src/server/render.ts";
+import { renderToStream } from "../../src/server/response.ts";
 import type { Receiver } from "../../src/shared/receiver.ts";
 
 afterEach(() => {

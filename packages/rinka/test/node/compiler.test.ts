@@ -11,7 +11,7 @@ import { oxc } from "../../src/build/entries.ts";
 import { transformJsx } from "../../src/build/jsx.ts";
 import { stopIfSeeding } from "../../src/client/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
-import { renderToString } from "../../src/server/render.ts";
+import { renderToString } from "../../src/server/response.ts";
 import { defineServerFn, definitionOf } from "../../src/server/server-fn.ts";
 import { runSeeding } from "../../src/shared/scope.ts";
 

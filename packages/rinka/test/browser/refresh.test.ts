@@ -6,7 +6,7 @@ import { applyRefresh, refreshPage } from "../../src/client/refresh.ts";
 import { bootstrapSource } from "../../src/server/bootstrap.ts";
 import { defineElement as defineServer } from "../../src/server/element.ts";
 import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
-import { renderRefresh, renderToStream } from "../../src/server/render.ts";
+import { renderRefresh, renderToStream } from "../../src/server/response.ts";
 import type { RefreshJson } from "../../src/shared/refresh.ts";
 import { signal } from "../../src/shared/signals.ts";
 

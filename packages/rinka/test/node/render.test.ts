@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { Fragment, jsx } from "../../src/server/jsx-runtime.ts";
-import { renderToString } from "../../src/server/render.ts";
+import { renderToString } from "../../src/server/response.ts";
 import { memo } from "../../src/shared/signals.ts";
 
 describe("ネイティブのタグ", () => {

@@ -4,7 +4,7 @@ import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement as definePlain } from "../../src/server/element.ts";
 import { defineElement } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
-import { renderToStream } from "../../src/server/render.ts";
+import { renderToStream } from "../../src/server/response.ts";
 import type { DefaultLoad } from "../../src/shared/element.ts";
 import { read } from "./stream-order.ts";
 

@@ -6,7 +6,7 @@ import { bootstrapSource } from "../../src/server/bootstrap.ts";
 import { Loading as ServerLoading } from "../../src/server/control.ts";
 import { defineElement as defineServer } from "../../src/server/element.ts";
 import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
-import { renderToStream } from "../../src/server/render.ts";
+import { renderToStream } from "../../src/server/response.ts";
 import { isSeeding } from "../../src/shared/scope.ts";
 import { siteMemo as memo, signal } from "../../src/shared/signals.ts";
 

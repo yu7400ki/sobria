@@ -6,7 +6,7 @@ import { createSheet, updateSheet } from "../../src/client/styles.ts";
 import { bootstrapSource } from "../../src/server/bootstrap.ts";
 import { defineElement as defineServer } from "../../src/server/element.ts";
 import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
-import { renderToStream } from "../../src/server/render.ts";
+import { renderToStream } from "../../src/server/response.ts";
 import { serverSheet } from "../../src/server/styles.ts";
 import type { Ctx } from "../../src/shared/element.ts";
 

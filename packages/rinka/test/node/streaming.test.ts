@@ -5,7 +5,7 @@ import { isBot } from "../../src/server/bots.ts";
 import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
-import { renderToResponse, renderToStream } from "../../src/server/render.ts";
+import { renderToResponse, renderToStream } from "../../src/server/response.ts";
 import { memo } from "../../src/shared/signals.ts";
 import { checkOrder, read, readText } from "./stream-order.ts";
 

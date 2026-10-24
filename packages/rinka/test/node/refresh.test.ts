@@ -6,7 +6,7 @@ import { notFound, redirect } from "../../src/server/errors.ts";
 import { defineElement as defineDelivered, registerServerFn } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { refreshPage } from "../../src/server/refresh.ts";
-import { renderRefresh } from "../../src/server/render.ts";
+import { renderRefresh } from "../../src/server/response.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
 import type { RefreshJson } from "../../src/shared/refresh.ts";
 

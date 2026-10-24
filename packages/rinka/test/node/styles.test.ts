@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
-import { renderToResponse, renderToString } from "../../src/server/render.ts";
+import { renderToResponse, renderToString } from "../../src/server/response.ts";
 import { serverSheet } from "../../src/server/styles.ts";
 import type { Ctx } from "../../src/shared/element.ts";
 
