@@ -568,6 +568,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     const role = this.hoists ? documentTags.get(tag) : undefined;
     const position = this.position(ctx);
     if (role === "html" || role === "body" || role === "transparent") {
+      if (ctx.owner === null) warnHandlers(tag, props);
       if (position !== "shell") {
         this.warnOutside(tag, position, `文書の <${tag}> に反映せずに、子だけを出力します`);
         this.walk(asNode(props.children), ctx, out);
@@ -597,6 +598,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       this.nativeTag(tag, props, key, ctx, out);
       return;
     }
+    if (ctx.owner === null) warnHandlers(tag, props);
     const id = ++this.seq;
     const headTagKey = this.settle(ctx, (tracked) =>
       headKey(tag, (name) => this.value(props[name], ctx, tracked)),

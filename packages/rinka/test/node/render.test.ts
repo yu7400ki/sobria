@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { Fragment, jsx } from "../../src/server/jsx-runtime.ts";
-import { renderToString } from "../../src/server/response.ts";
+import { renderToResponse, renderToString } from "../../src/server/response.ts";
 import { memo } from "../../src/shared/signals.ts";
 
 describe("ネイティブのタグ", () => {
@@ -292,6 +292,23 @@ describe("要素の外のイベントハンドラー", () => {
     expect(html).toContain("<button>out</button>");
     expect(warn.mock.calls).toEqual([
       ["[rinka] 要素の外の <button> に渡した onClick は、ブラウザで実行されません。"],
+    ]);
+  });
+
+  it("文書の <html> と <body> に渡したイベントハンドラーも、開発時に警告する", async () => {
+    vi.stubEnv("DEV", true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await (
+      await renderToResponse(
+        jsx("html", {
+          onClick: () => {},
+          children: jsx("body", { onLoad: () => {}, children: "x" }),
+        }),
+      )
+    ).text();
+    expect(warn.mock.calls).toEqual([
+      ["[rinka] 要素の外の <html> に渡した onClick は、ブラウザで実行されません。"],
+      ["[rinka] 要素の外の <body> に渡した onLoad は、ブラウザで実行されません。"],
     ]);
   });
 
