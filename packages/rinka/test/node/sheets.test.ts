@@ -50,10 +50,10 @@ describe("シートのモジュール", () => {
     expect(code).toContain("export default sheet;");
   });
 
-  it("サーバーのモジュールは、<link> の URL と ?inline の CSS からシートの情報を作成して default export する", () => {
+  it("サーバーのモジュールは、<link> の URL からシートの情報を作成して default export する", () => {
     const code = sheetModule("/src/a.css", "serve", false);
     expect(code).toContain('import { serverSheet } from "rinka/internal";');
-    expect(code).toContain('export default serverSheet("/src/a.css?direct", css);');
+    expect(code).toContain('export default serverSheet("/src/a.css?direct");');
     expect(code).not.toContain("rinka.sheet");
   });
 });
@@ -66,11 +66,10 @@ describe("本番のシートのモジュール", () => {
     expect(code).toContain("export default await loadSheet(url);");
   });
 
-  it("サーバーのモジュールは、?url の URL と ?inline の CSS からシートの情報を作成する", () => {
+  it("サーバーのモジュールは、?url の URL からシートの情報を作成する", () => {
     const code = sheetModule("/src/a.css", "app", false);
     expect(code).toContain('import href from "/src/a.css?url";');
-    expect(code).toContain('import css from "/src/a.css?inline";');
-    expect(code).toContain("export default serverSheet(href, css);");
+    expect(code).toContain("export default serverSheet(href);");
   });
 });
 
@@ -96,11 +95,7 @@ describe("開発サーバーのパスと URL", () => {
 });
 
 describe("サーバーのシート", () => {
-  it("CSS の @property の規則を、シートの情報に持つ", () => {
-    const rule = '@property --x { syntax: "*"; inherits: false; }';
-    expect(Reflect.get(serverSheet("/a.css?direct", `.a {}\n${rule}`), sheetInfo)).toEqual({
-      href: "/a.css?direct",
-      properties: rule,
-    });
+  it("<link> に出力する URL を、シートの情報に持つ", () => {
+    expect(Reflect.get(serverSheet("/a.css?direct"), sheetInfo)).toEqual({ href: "/a.css?direct" });
   });
 });

@@ -265,7 +265,7 @@ describe("rinka が HTML に出力する目印の属性名", () => {
         'export const c = "data-other metadata-ok";',
         'export const d = "template[data-op=\\"1\\"]";',
         'export const e = (x: string) => `<p ${x} data-rinka-load="idle">`;',
-        'export const f = "<style data-rinka-properties>";',
+        'export const f = "<style data-rinka-sheet>";',
         "export const g = (x: string) => `<p${x}data-rinka-load>`;",
       ]),
     ).toEqual([

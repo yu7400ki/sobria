@@ -114,7 +114,7 @@ describe("ctx の css", () => {
 
   it("SSR した要素を引き継ぐと、DSD の <style> と <link> を adoptedStyleSheets に置換する", async () => {
     const tag = nextTag();
-    const sheet = serverSheet("data:text/css,", "");
+    const sheet = serverSheet("data:text/css,");
     const server = defineServer(
       tag,
       (props: object, ctx: Ctx) => {

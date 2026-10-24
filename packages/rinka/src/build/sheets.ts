@@ -75,11 +75,10 @@ export default sheet;
 `;
 }
 
-/** `?inline` の指定子 `inline` の CSS と、`<link>` に出力する URL `href` から作成したシートの情報を default export する、サーバーのシートのモジュールのコードを返す。 */
-function serverSheetModule(inline: string, href: string): string {
+/** `<link>` に出力する URL `href` から作成したシートの情報を default export する、サーバーのシートのモジュールのコードを返す。 */
+function serverSheetModule(href: string): string {
   return `${importInternal("server", "serverSheet")}
-import css from ${JSON.stringify(inline)};
-export default serverSheet(${JSON.stringify(href)}, css);
+export default serverSheet(${JSON.stringify(href)});
 `;
 }
 
@@ -99,12 +98,11 @@ export default await loadSheet(url);
 `;
 }
 
-/** 本番のビルドで、`?url` の指定子 `url` の URL と、`?inline` の指定子 `inline` の CSS から作成したシートの情報を default export する、サーバーのシートのモジュールのコードを返す。 */
-function serverBuildSheetModule(url: string, inline: string): string {
+/** 本番のビルドで、`?url` の指定子 `url` の URL から作成したシートの情報を default export する、サーバーのシートのモジュールのコードを返す。 */
+function serverBuildSheetModule(url: string): string {
   return `${importInternal("server", "serverSheet")}
 import href from ${JSON.stringify(url)};
-import css from ${JSON.stringify(inline)};
-export default serverSheet(href, css);
+export default serverSheet(href);
 `;
 }
 
@@ -115,13 +113,9 @@ export default serverSheet(href, css);
 export function sheetModule(path: string, scene: Scene, client: boolean): string {
   switch (scene) {
     case "serve":
-      return client
-        ? clientSheetModule(`${path}?inline`)
-        : serverSheetModule(`${path}?inline`, directUrl(path));
+      return client ? clientSheetModule(`${path}?inline`) : serverSheetModule(directUrl(path));
     case "app":
-      return client
-        ? clientBuildSheetModule(`${path}?url`)
-        : serverBuildSheetModule(`${path}?url`, `${path}?inline`);
+      return client ? clientBuildSheetModule(`${path}?url`) : serverBuildSheetModule(`${path}?url`);
     case "library":
       return librarySheetModule(`${path}?inline`);
   }

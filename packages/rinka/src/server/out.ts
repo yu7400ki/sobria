@@ -1,5 +1,4 @@
 import type { Delivery } from "../shared/element.ts";
-import type { SheetInfo } from "./styles.ts";
 
 /** 起動スクリプトに伝える要素を表す。`immediate` は、すぐ起動するインスタンスが 1 つでもあれば真である。 */
 export interface Delivered {
@@ -60,8 +59,6 @@ export class Out {
   private readonly elements = new Map<string, Delivered>();
   /** 描き直しで、この位置に出力したホストの ID ごとに、`data` に入れる JS の式を表す。 */
   private readonly refreshData = new Map<string, string>();
-  /** この位置に出力した要素が使用したシートの `@property` の規則を、シートの URL ごとに表す。 */
-  private readonly sheetRules = new Map<string, string>();
 
   /** 出力の後に書き込むスクリプトを加える。 */
   addScript(script: string): void {
@@ -73,27 +70,16 @@ export class Out {
     mergeDelivered(this.elements, [delivered]);
   }
 
-  /** 要素が使用したシートを加える。 */
-  addSheet({ href, properties }: SheetInfo): void {
-    this.sheetRules.set(href, properties);
-  }
-
   /** 描き直しの `data` に入れる、ホストの ID が `id` の props の JS の式を加える。 */
   addRefreshData(id: string, expression: string): void {
     this.refreshData.set(id, expression);
   }
 
-  /** `other` の位置のスクリプト、要素、描き直しの `data`、シートを、この位置に加える。 */
+  /** `other` の位置のスクリプト、要素、描き直しの `data` を、この位置に加える。 */
   absorb(other: Out): void {
     this.scripts.push(...other.scripts);
     mergeDelivered(this.elements, other.elements.values());
     for (const [id, expression] of other.refreshData) this.refreshData.set(id, expression);
-    for (const [href, properties] of other.sheetRules) this.sheetRules.set(href, properties);
-  }
-
-  /** この位置に出力した要素が使用したシートの、URL と `@property` の規則の組である。 */
-  get sheets(): Iterable<readonly [string, string]> {
-    return this.sheetRules.entries();
   }
 
   /** 描き直しの `data` に入れる、ホストの ID ごとの JS の式である。 */

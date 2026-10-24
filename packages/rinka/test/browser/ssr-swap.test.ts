@@ -244,15 +244,3 @@ describe("後送りの内容の CSS の待機で失敗した差し替え", () =>
     expect(doc.querySelector("main")!.textContent).toContain("two");
   });
 });
-
-describe("後送りの内容の @property の規則", () => {
-  it("差し替える内容の <style data-rinka-properties> を、差し替える前に <head> に移動する", async () => {
-    const doc = await load(
-      '<main><template data-ob="b1"></template>wait<!--/ob:b1--></main>' +
-        '<template data-os="b1"><style data-rinka-properties>@property --x { syntax: "*"; inherits: false; }</style><b>done</b></template>',
-    );
-    rinka(doc).r({ b: "b1", bp: [], p: [] });
-    expect(doc.querySelector("main")!.innerHTML).toBe("<b>done</b>");
-    expect(doc.head.querySelector("style[data-rinka-properties]")).not.toBeNull();
-  });
-});

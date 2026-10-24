@@ -75,7 +75,7 @@ import {
   type ShellFlush,
 } from "./out.ts";
 import { scriptJson } from "./script.ts";
-import { elementCss, propertiesStyle, type SheetInfo } from "./styles.ts";
+import { elementCss } from "./styles.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
 import { toScript } from "./wire.ts";
 
@@ -186,8 +186,6 @@ interface Host {
     readonly announce: string | undefined;
     /** サーバーコンポーネントが直接使用した、配信の情報を持つ要素なら、起動スクリプトに伝える内容を持つ。 */
     readonly delivered: Delivered | undefined;
-    /** 要素の関数が ctx の `css` に渡したシートの情報である。 */
-    readonly sheets: readonly SheetInfo[];
   };
 }
 
@@ -412,8 +410,6 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   private caught = 200;
   /** 文書の骨組みに移動するものの目印に含める、描画ごとの値である。 */
   private readonly nonce = crypto.randomUUID();
-  /** `@property` の規則を出力したシートの URL である。 */
-  private readonly sentSheets = new Set<string>();
   /** `<label for>` の補完の目印を作成し、置換する。 */
   private readonly labels = new Labels(this.nonce);
   /** 文書の骨組みに移動するものを、目印の番号ごとに保持する。 */
@@ -892,7 +888,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     };
     out.push({
       kind: "host",
-      host: { attributes, open, chunks, announce, delivered, sheets: shadow?.sheets ?? [] },
+      host: { attributes, open, chunks, announce, delivered },
     });
   }
 
@@ -912,10 +908,8 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     readonly chunks: Chunk[];
     readonly slots: ReadonlyMap<string, Boundary>;
     readonly internals: object;
-    readonly sheets: readonly SheetInfo[];
   } {
     const { tag } = record;
-    const sheets: SheetInfo[] = [];
     const chunks: Chunk[] = [];
     const slots = new Map<string, Boundary>();
     let owner: Owner | null = null;
@@ -925,7 +919,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     let submitted: (() => readonly [unknown, unknown, boolean]) | undefined;
     /** `css` に渡したスタイルを、DSD の先頭に出力する HTML にして、呼び出した順に保持する。 */
     const styles: string[] = [];
-    const css = elementCss(styles, sheets);
+    const css = elementCss(styles);
     const elementCtx: Ctx = {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       host: serverHost as HTMLElement,
@@ -984,7 +978,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     this.walk(tree, shadowCtx, chunks);
     chunks.push("</template>");
     if (input !== undefined) chunks.push(input);
-    return { chunks, slots, internals, sheets };
+    return { chunks, slots, internals };
   }
 
   /**
@@ -1027,9 +1021,8 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         return marker(id);
       }
       case "host": {
-        const { attributes, open, chunks, announce, delivered, sheets } = chunk.host;
+        const { attributes, open, chunks, announce, delivered } = chunk.host;
         if (delivered) out.addElement(delivered);
-        for (const sheet of sheets) out.addSheet(sheet);
         const inner = await this.serialize(chunks, out);
         const resolved = await attributes;
         const start = open(resolved, out);
@@ -1141,7 +1134,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         this.reveal(
           flush,
           noindex +
-            `<template ${BOUNDARY_CONTENT_ATTRIBUTE}="${boundary.id}">${this.takeProperties(outs)}${resolvedRegion}</template>` +
+            `<template ${BOUNDARY_CONTENT_ATTRIBUTE}="${boundary.id}">${resolvedRegion}</template>` +
             patches
               .map(
                 ([patch], index) =>
@@ -1307,7 +1300,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /**
    * 文書の先頭と `shell` を出力し、後送りの境界をすべて出力してから、文書を閉じる。
-   * `<head>` には、rinka の `<meta charset="utf-8">`、キーが同じタグを 1 つにしたタグ、`<Navigation>` の出力、`extraHead`、シェルまでに使用したシートの `@property` の規則の `<style>` の順に並べる。
+   * `<head>` には、rinka の `<meta charset="utf-8">`、キーが同じタグを 1 つにしたタグ、`<Navigation>` の出力、`extraHead` の順に並べる。
    */
   async finish(this: Renderer<"document">, shell: string, extraHead: string): Promise<void> {
     try {
@@ -1319,7 +1312,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       const head = `<meta charset="utf-8">${headTags(parts)}`;
       this.reveal(
         this.shellOut.flush,
-        `<!doctype html><html${attributesText(parts.html)}><head>${head}${script}${extraHead}${this.takeProperties([this.shellOut])}</head><body${attributesText(parts.body)}>${parts.rest}${this.shellOut.scriptText}`,
+        `<!doctype html><html${attributesText(parts.html)}><head>${head}${script}${extraHead}</head><body${attributesText(parts.body)}>${parts.rest}${this.shellOut.scriptText}`,
       );
       await this.drain();
       for (const host of this.hosts) host.hide();
@@ -1328,22 +1321,6 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     } finally {
       this.dispose();
     }
-  }
-
-  /**
-   * `outs` の位置に出力した要素が使用したシートのうち、まだ規則を出力していないシートの `@property` の規則の `<style>` を返し、出力したものとして記録する。
-   * 規則が無ければ空の文字列を返す。
-   */
-  private takeProperties(outs: readonly Out[]): string {
-    const rules: string[] = [];
-    for (const out of outs) {
-      for (const [href, properties] of out.sheets) {
-        if (this.sentSheets.has(href)) continue;
-        this.sentSheets.add(href);
-        if (properties !== "") rules.push(properties);
-      }
-    }
-    return rules.length === 0 ? "" : propertiesStyle(rules.join("\n"));
   }
 
   /** 描き直しの `shell` から、`refreshPage()` のレスポンスの JSON の値を作成する。 */
