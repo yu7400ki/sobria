@@ -281,6 +281,9 @@ type HeadPlacement = "all" | "auto" | Restriction;
 /** どのタグも文書の骨組みに移動できない理由を表す。 */
 type Restriction = "loading" | "fallback" | "element" | "none";
 
+/** `head` がシェルの位置かどうかを返す。 */
+const inShell = (head: HeadPlacement): head is "all" | "auto" => head === "all" || head === "auto";
+
 /** `restrict` が比較する、移動できない理由の順位の値である。 */
 const restrictionRanks = {
   loading: 1,
@@ -294,7 +297,7 @@ const restrictionRanks = {
  * `head` がシェルの位置なら `reason` を返し、移動できない理由なら、`head` と `reason` のうち順位の値が大きいほうを返す。
  */
 function restrict(head: HeadPlacement, reason: Restriction): HeadPlacement {
-  if (head === "all" || head === "auto") return reason;
+  if (inShell(head)) return reason;
   return restrictionRanks[reason] > restrictionRanks[head] ? reason : head;
 }
 
@@ -585,7 +588,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   ): void {
     const role = this.hoists ? documentTags.get(tag) : undefined;
     const { head } = ctx;
-    const shell = head === "all" || head === "auto";
+    const shell = inShell(head);
     if (role === "html" || role === "body" || role === "transparent") {
       if (ctx.owner === null) warnHandlers(tag, props);
       if (!shell) {
