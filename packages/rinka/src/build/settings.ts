@@ -19,6 +19,11 @@ export interface RinkaOptions {
   readonly outDir?: string;
   /** `true` なら、`vite build --app` で、要素ごとに自分自身を登録する ES モジュールを出力する。 */
   readonly library?: true;
+  /**
+   * `'static'` なら、`vite build --app` ですべてのページを書き出し、サーバーのビルドの出力を削除する。
+   * サーバーが必要なルートとサーバー関数があれば、ビルドのエラーにする。デフォルトは `'server'` である。
+   */
+  readonly output?: "server" | "static";
 }
 
 /** 要素のタグ名の接頭辞のデフォルト値である。 */

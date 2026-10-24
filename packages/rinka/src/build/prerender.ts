@@ -13,6 +13,9 @@ import { SERVER_ENTRY_NAME } from "./settings.ts";
 /** サーバーのビルドで、書き出す URL を返すモジュールの入力の名前である。出力のファイルの名前は、この名前に `.js` を付けたものになる。 */
 export const PRERENDER_ENTRY_NAME = "prerender";
 
+/** `404.html` に保存するレスポンスを取得する、どのルートにも一致しない URL のパスである。 */
+const MISSING_PATH = "/__rinka/not-found";
+
 /** 書き出すルートの範囲を表す。ページと `route.ts` のファイルの集合か、すべてのルートを表す `"all"` である。 */
 export type PrerenderScope = ReadonlySet<string> | "all";
 
@@ -85,8 +88,13 @@ function fileOf(clientDir: string, pathname: string, kind: Target["kind"]): stri
 /**
  * サーバーの出力先 `serverDir` のサーバーのエントリーと書き出すモジュールを読み込み、書き出す各 URL のレスポンスの本文を、クライアントの出力先 `clientDir` に保存する。
  * 保存した後で、書き出すモジュールを削除する。200 以外のレスポンスと、既にあるファイルと重なる URL は、エラーにする。
+ * `alone` が真なら、存在しない URL のレスポンスが 404 のときに、その本文を `404.html` に保存し、最後に `serverDir` を削除する。
  */
-export async function writePrerendered(serverDir: string, clientDir: string): Promise<void> {
+export async function writePrerendered(
+  serverDir: string,
+  clientDir: string,
+  alone: boolean,
+): Promise<void> {
   const load = async (name: string): Promise<unknown> =>
     import(pathToFileURL(join(serverDir, `${name}.js`)).href);
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
@@ -99,13 +107,14 @@ export async function writePrerendered(serverDir: string, clientDir: string): Pr
   const targets = (await load(PRERENDER_ENTRY_NAME)) as {
     readonly default: () => Promise<readonly Target[]>;
   };
+  /** URL のパス `url` を、書き出しのリクエストとしてサーバーのエントリーで描画する。 */
+  const render = async (url: string) =>
+    entry.default.fetch(new Request(new URL(url, "http://localhost")), { [prerenderEnv]: true });
   for (const { kind, urls } of await targets.default()) {
     for (const url of urls) {
       // 書き出しの順序とエラーを決定的にするため、URL を 1 つずつ取得する
       // oxlint-disable-next-line no-await-in-loop
-      const response = await entry.default.fetch(new Request(new URL(url, "http://localhost")), {
-        [prerenderEnv]: true,
-      });
+      const response = await render(url);
       if (response.status !== 200) {
         throw new Error(
           `[rinka] ${url} を書き出すと、ステータスが ${response.status} になりました。書き出す URL は、200 のレスポンスを返す必要があります。`,
@@ -119,6 +128,15 @@ export async function writePrerendered(serverDir: string, clientDir: string): Pr
       // oxlint-disable-next-line no-await-in-loop
       writeFileSync(file, new Uint8Array(await response.arrayBuffer()));
     }
+  }
+  if (alone) {
+    const missing = await render(MISSING_PATH);
+    const file = join(clientDir, "404.html");
+    if (missing.status === 404 && !existsSync(file)) {
+      writeFileSync(file, new Uint8Array(await missing.arrayBuffer()));
+    }
+    rmSync(serverDir, { recursive: true, force: true });
+    return;
   }
   rmSync(join(serverDir, `${PRERENDER_ENTRY_NAME}.js`), { force: true });
 }

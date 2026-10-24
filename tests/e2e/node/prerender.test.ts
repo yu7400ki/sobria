@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { appendFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { rinka } from "rinka/vite";
@@ -79,24 +79,66 @@ describe("prerender を export するページと route.ts の書き出し", () 
   }, 60_000);
 });
 
+/** テスト用のアプリを tests/e2e の中の一時ディレクトリにコピーし、そのルートを返す。 */
+async function copyFixture(): Promise<string> {
+  // rinka を解決できるように、コピーは tests/e2e の中に置く
+  const copy = await mkdtemp(fileURLToPath(new URL("../.rinka-tmp-", import.meta.url)));
+  temporaries.push(copy);
+  await cp(root, copy, { recursive: true });
+  return copy;
+}
+
+/** アプリのルート `copy` の `src/` からの相対パス `file` に、`lines` を行とするファイルを作成する。 */
+async function addFile(copy: string, file: string, lines: readonly string[]): Promise<void> {
+  await mkdir(dirname(join(copy, "src", file)), { recursive: true });
+  await writeFile(join(copy, "src", file), [...lines, ""].join("\n"));
+}
+
+describe("output: 'static'", () => {
+  it("prerender の無いパラメータの無いページも書き出し、not-found.tsx を 404.html に保存して、dist/server を削除する", async () => {
+    const outDir = join(await temporary(), "dist");
+    await buildFixture(root, outDir, { output: "static" });
+    const written = (path: string) => readFile(join(outDir, "client", path), "utf8");
+    expect(await written("dynamic/index.html")).toContain("<h1>dynamic</h1>");
+    expect(await written("posts/hello/index.html")).toContain("<h1>post hello</h1>");
+    expect(await written("404.html")).toContain("<h1>missing</h1>");
+    expect(existsSync(join(outDir, "server"))).toBe(false);
+  }, 60_000);
+
+  it("サーバー関数を定義したファイルがあれば、ファイルの名前を含むビルドのエラーにする", async () => {
+    const copy = await copyFixture();
+    await addFile(copy, "lib/fns.ts", [
+      'import { defineServerFn } from "rinka/server";',
+      "export const save = defineServerFn(() => 1);",
+    ]);
+    await expect(buildFixture(copy, join(copy, "dist"), { output: "static" })).rejects.toThrow(
+      "src/lib/fns.ts",
+    );
+  }, 60_000);
+
+  it("パラメータのあるページに prerender が無ければ、ファイルの名前を含むビルドのエラーにする", async () => {
+    const copy = await copyFixture();
+    await addFile(copy, "routes/users/[id]/page.tsx", [
+      "export default function User() {",
+      "  return <h1>user</h1>;",
+      "}",
+    ]);
+    await expect(buildFixture(copy, join(copy, "dist"), { output: "static" })).rejects.toThrow(
+      "src/routes/users/[id]/page.tsx",
+    );
+  }, 60_000);
+});
+
 describe("書き出しの失敗", () => {
   it("書き出す URL のレスポンスが 200 でなければ、URL とステータスを含むビルドのエラーにする", async () => {
-    // rinka を解決できるように、コピーは tests/e2e の中に置く
-    const copy = await mkdtemp(fileURLToPath(new URL("../.rinka-tmp-", import.meta.url)));
-    temporaries.push(copy);
-    await cp(root, copy, { recursive: true });
-    await mkdir(join(copy, "src/routes/missing/[id]"), { recursive: true });
-    await writeFile(
-      join(copy, "src/routes/missing/[id]/page.tsx"),
-      [
-        'import { notFound } from "rinka/server";',
-        'export const prerender = () => [{ id: "gone" }];',
-        "export default function Missing() {",
-        "  throw notFound();",
-        "}",
-        "",
-      ].join("\n"),
-    );
+    const copy = await copyFixture();
+    await addFile(copy, "routes/missing/[id]/page.tsx", [
+      'import { notFound } from "rinka/server";',
+      'export const prerender = () => [{ id: "gone" }];',
+      "export default function Missing() {",
+      "  throw notFound();",
+      "}",
+    ]);
     await expect(buildFixture(copy, join(copy, "dist"))).rejects.toThrow(
       "/missing/gone を書き出すと、ステータスが 404 になりました。",
     );
