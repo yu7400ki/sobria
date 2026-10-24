@@ -1,20 +1,37 @@
 import type { AddressInfo } from "node:net";
 
 import tailwindcss from "@tailwindcss/vite";
-import { rinka } from "rinka/vite";
-import { createServer, mergeConfig, type InlineConfig, type ViteDevServer } from "vite";
+import { rinka, type RinkaOptions } from "rinka/vite";
+import {
+  createServer,
+  mergeConfig,
+  type InlineConfig,
+  type PluginOption,
+  type ViteDevServer,
+} from "vite";
+
+/** 開発サーバーの rinka のプラグインに渡す設定と、rinka のプラグインより前に登録するプラグインを表す。 */
+export interface RinkaSetup {
+  readonly options?: RinkaOptions;
+  readonly before?: readonly PluginOption[];
+}
 
 /**
  * `root` のアプリの開発サーバーを、rinka のプラグイン（接頭辞は `app`）を登録し、HMR を無効にして作成する。
  * `config` は Vite の `mergeConfig` でこの設定に重ねるので、`plugins` に記述したプラグインは rinka のプラグインの後ろに追加する。
+ * `setup` の `options` は rinka のプラグインの設定に重ね、`before` のプラグインは rinka のプラグインの前に登録する。
  */
-export function createDevServer(root: string, config: InlineConfig = {}): Promise<ViteDevServer> {
+export function createDevServer(
+  root: string,
+  config: InlineConfig = {},
+  setup: RinkaSetup = {},
+): Promise<ViteDevServer> {
   const base: InlineConfig = {
     root,
     configFile: false,
     logLevel: "error",
     server: { hmr: false },
-    plugins: [rinka({ prefix: "app" })],
+    plugins: [...(setup.before ?? []), rinka({ prefix: "app", ...setup.options })],
   };
   return createServer(mergeConfig(base, config));
 }

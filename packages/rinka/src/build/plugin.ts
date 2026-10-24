@@ -1,7 +1,7 @@
 import { extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { Plugin, ResolvedConfig } from "vite";
+import { transformWithOxc, type Plugin, type ResolvedConfig } from "vite";
 
 import { appBuild } from "./app-build.ts";
 import { langs, type Lang } from "./ast.ts";
@@ -10,6 +10,7 @@ import { devAppModule, serve } from "./dev-server.ts";
 import { sourceTag } from "./elements.ts";
 import { clientImports, entries, oxc, runtimes, virtualId } from "./entries.ts";
 import { buildAppModule } from "./entry.ts";
+import { ParseError } from "./errors.ts";
 import { transformJsx } from "./jsx.ts";
 import { libraryBuild } from "./library-build.ts";
 import { fromApp } from "./package.ts";
@@ -60,6 +61,8 @@ interface ProjectFile {
   readonly lang: Lang;
   /** ライブラリのファイルなら真である。 */
   readonly library: boolean;
+  /** プラグインの設定の `extensions` に登録した拡張子のファイルなら真である。 */
+  readonly registered: boolean;
 }
 
 /**
@@ -96,18 +99,61 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
 
   /**
    * モジュールの ID を、クエリの無いプロジェクトかライブラリのファイルなら、ルートからの相対パスと言語にする。
-   * ライブラリのファイルのルートからの相対パスは、`../` で始まることがある。
+   * 登録した拡張子のファイルの言語は `tsx` にする。ライブラリのファイルのルートからの相対パスは、`../` で始まることがある。
    */
   const projectFile = (id: string): ProjectFile | undefined => {
-    const lang = langs[extname(id)];
-    if (!lang || id.includes("?") || id.startsWith("\0")) return undefined;
-    const { root, sources } = current();
+    if (id.includes("?") || id.startsWith("\0")) return undefined;
+    const { root, sources, extensions } = current();
+    const extension = extname(id);
+    const registered = extensions.includes(extension);
+    const lang = registered ? "tsx" : langs[extension];
+    if (!lang) return undefined;
     const owner = sources.find(({ dir }) => {
       const inner = inside(dir, id);
       return inner !== undefined && !inner.split("/").includes("node_modules");
     });
     if (!owner) return undefined;
-    return { path: id, file: relativePath(root, id), lang, library: owner.dir !== root };
+    return {
+      path: id,
+      file: relativePath(root, id),
+      lang,
+      library: owner.dir !== root,
+      registered,
+    };
+  };
+
+  /**
+   * プロジェクトのファイル `target` のソース `code` に、`client` ならクライアント向けの `transformSource` を適用する。
+   * ライブラリのファイル、登録した拡張子のファイル、サーバー関数を定義できないファイルでサーバー関数を定義していれば、エラーを投げる。
+   */
+  const compile = (code: string, target: ProjectFile, client: boolean) => {
+    const { root, scene, sources } = current();
+    const tag = sourceTag(sources, target.path);
+    const result = transformSource(code, {
+      id: target.path,
+      file: target.file,
+      lang: target.lang,
+      client,
+      ...(tag !== undefined && {
+        element: {
+          tag,
+          ...(scene === "app" && !client
+            ? build.elementAssets(target.file)
+            : { module: devPath(target.path, root) }),
+        },
+      }),
+      fnModule: fnModuleOf(target.file),
+    });
+    if (result.serverFns.length > 0 && (target.library || !isServerFnSource(target.file))) {
+      throw new Error(
+        target.registered
+          ? `${target.file}: 登録した拡張子のファイルでは、サーバー関数を定義できません。.ts か .tsx のファイルで定義して、import してください。`
+          : target.library
+            ? `${target.file}: サーバー関数は、ライブラリでは定義できません。アプリの src/ の中のファイルで定義してください。`
+            : `${target.file}: サーバー関数は、src/ の中のファイルで定義してください。`,
+      );
+    }
+    return { code: result.code, map: result.map };
   };
 
   return [
@@ -182,33 +228,34 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       },
       transform(code, id) {
         const target = projectFile(id);
-        if (!target) return null;
-        const client = isClient(this.environment);
-        const { root, scene, sources } = current();
-        const tag = sourceTag(sources, target.path);
-        const result = transformSource(code, {
-          id: target.path,
-          file: target.file,
-          lang: target.lang,
-          client,
-          ...(tag !== undefined && {
-            element: {
-              tag,
-              ...(scene === "app" && !client
-                ? build.elementAssets(target.file)
-                : { module: devPath(target.path, root) }),
-            },
-          }),
-          fnModule: fnModuleOf(target.file),
-        });
-        if (result.serverFns.length > 0 && (target.library || !isServerFnSource(target.file))) {
+        if (!target || target.registered) return null;
+        return compile(code, target, isClient(this.environment));
+      },
+    },
+    {
+      name: `${NAME}:extensions`,
+      sharedDuringBuild: true,
+      transform(code, id) {
+        const target = projectFile(id);
+        if (!target?.registered) return null;
+        try {
+          return compile(code, target, isClient(this.environment));
+        } catch (error) {
+          if (!(error instanceof ParseError)) throw error;
           throw new Error(
-            target.library
-              ? `${target.file}: サーバー関数は、ライブラリでは定義できません。アプリの src/ の中のファイルで定義してください。`
-              : `${target.file}: サーバー関数は、src/ の中のファイルで定義してください。`,
+            `${error.message}\n${target.file} を TSX のソースに変換するプラグインを、plugins の配列で rinka より前に配置してください。`,
+            { cause: error },
           );
         }
-        return { code: result.code, map: result.map };
+      },
+    },
+    {
+      name: `${NAME}:oxc`,
+      sharedDuringBuild: true,
+      async transform(code, id) {
+        if (!projectFile(id)?.registered) return null;
+        const result = await transformWithOxc(code, id, { lang: "tsx", ...oxc });
+        return { code: result.code, map: result.map, moduleType: "js" };
       },
     },
     {

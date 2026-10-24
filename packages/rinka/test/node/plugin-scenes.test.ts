@@ -23,10 +23,10 @@ describe("場面ごとのプラグイン", () => {
       build: names("build", false),
       buildLibrary: names("build", true),
     }).toEqual({
-      serve: ["rinka", "rinka:jsx", "rinka:serve"],
-      serveLibrary: ["rinka", "rinka:jsx", "rinka:serve"],
-      build: ["rinka", "rinka:jsx", "rinka:build"],
-      buildLibrary: ["rinka", "rinka:jsx", "rinka:library"],
+      serve: ["rinka", "rinka:extensions", "rinka:oxc", "rinka:jsx", "rinka:serve"],
+      serveLibrary: ["rinka", "rinka:extensions", "rinka:oxc", "rinka:jsx", "rinka:serve"],
+      build: ["rinka", "rinka:extensions", "rinka:oxc", "rinka:jsx", "rinka:build"],
+      buildLibrary: ["rinka", "rinka:extensions", "rinka:oxc", "rinka:jsx", "rinka:library"],
     });
   });
 

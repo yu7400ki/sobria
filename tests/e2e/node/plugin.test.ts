@@ -15,7 +15,7 @@ import {
 } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createDevServer, originOf } from "../dev-server.ts";
+import { createDevServer, originOf, type RinkaSetup } from "../dev-server.ts";
 
 const root = fileURLToPath(new URL("../fixtures/basic", import.meta.url));
 
@@ -125,6 +125,7 @@ async function withProject(
   files: Readonly<Record<string, string>>,
   run: (server: ViteDevServer) => Promise<void>,
   config: InlineConfig = {},
+  setup: RinkaSetup = {},
 ): Promise<void> {
   const project = await mkdtemp(join(tmpdir(), "rinka-plugin-"));
   try {
@@ -137,6 +138,7 @@ async function withProject(
     const dev = await createDevServer(
       project,
       mergeConfig({ server: { middlewareMode: true } }, config),
+      setup,
     );
     try {
       await run(dev);
@@ -260,6 +262,80 @@ describe("変換の対象", () => {
         expect(resolved?.id.split(sep).join("/")).toMatch(/\/lib\/client\/index\.js$/);
       },
       { environments: { widget: { consumer: "client" } } },
+    );
+  });
+});
+
+/** 拡張子が `.page` のファイルの先頭の行 `@page` を取り除いて、TSX のソースにするテスト用のプラグインを作成する。 */
+const pagePlugin = (): Plugin => ({
+  name: "test:page",
+  transform: (code, id) => (id.endsWith(".page") ? code.replace(/^@page\n/, "") : null),
+});
+
+/** 拡張子が `.page` のファイルの内容である。コンポーネントのタグと、型注釈を含む。 */
+const doc = `@page
+import Card from "./card.tsx";
+const n: number = 1;
+export default function Doc() { return <Card n={n} />; }
+`;
+
+/** 開発サーバー `dev` の ssr の環境で `src/lib/doc.page` を変換したコードか、エラーのメッセージを返す。 */
+const transformed = (dev: ViteDevServer) =>
+  dev.environments.ssr.transformRequest("/src/lib/doc.page").then(
+    (result) => result?.code ?? "",
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  );
+
+describe("登録した拡張子のファイル", () => {
+  const options = { extensions: [".page"] };
+  const files = {
+    "src/lib/doc.page": doc,
+    "src/lib/card.tsx":
+      "export default function Card(props: { n: number }) { return <p>{props.n}</p>; }\n",
+  };
+
+  it("変換するプラグインを rinka より前に配置すると、enforce が無くても、ssr と client の環境で TSX としてコンパイルする", async () => {
+    await withProject(
+      {
+        ...files,
+        "src/routes/page.tsx":
+          'import Doc from "../lib/doc.page";\nexport default function Page() { return <main><Doc /></main>; }\n',
+      },
+      async (dev) => {
+        await dev.listen();
+        const html = await (await fetch(originOf(dev))).text();
+        expect(html).toContain("<main><p>1</p></main>");
+        const client = await dev.environments.client.transformRequest("/src/lib/doc.page");
+        expect(client?.code).toContain("get n()");
+        expect(client?.code).toMatch(/_jsx\(Card, \{[^]*\}, void 0, "src\/lib\/doc\.page:3:\d+"\)/);
+        expect(client?.code).not.toContain("number");
+      },
+      { server: { middlewareMode: false, port: 0 } },
+      { options, before: [pagePlugin()] },
+    );
+  });
+
+  it("enforce の無い変換するプラグインを rinka より後ろに配置すると、配置を直すことを求めるエラーにする", async () => {
+    await withProject(
+      files,
+      async (dev) => expect(await transformed(dev)).toContain("rinka より前に配置してください"),
+      { plugins: [pagePlugin()] },
+      { options },
+    );
+  });
+
+  it("登録した拡張子のファイルでサーバー関数を定義すると、エラーにする", async () => {
+    await withProject(
+      {
+        "src/lib/doc.page": `@page
+import { defineServerFn } from "rinka/server";
+export const a = defineServerFn(() => 1);
+`,
+      },
+      async (dev) =>
+        expect(await transformed(dev)).toContain("src/lib/doc.page: 登録した拡張子のファイルでは"),
+      {},
+      { options, before: [pagePlugin()] },
     );
   });
 });
