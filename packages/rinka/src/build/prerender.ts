@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 
 import type { ESTree } from "vite";
 
-import { prerenderEnv } from "../shared/prerender.ts";
+import { prerenderEnv, type PrerenderKind } from "../shared/prerender.ts";
 import { langs, moduleExportName, parseModule } from "./ast.ts";
 import { entries, importInternal } from "./entries.ts";
 import { ROUTES_DIR, scanRoutes } from "./routes.ts";
@@ -13,7 +13,7 @@ import { SERVER_ENTRY_NAME } from "./settings.ts";
 /** サーバーのビルドで、書き出す URL を返すモジュールの入力の名前である。出力のファイルの名前は、この名前に `.js` を付けたものになる。 */
 export const PRERENDER_ENTRY_NAME = "prerender";
 
-/** `404.html` に保存するレスポンスを取得する、どのルートにも一致しない URL のパスである。 */
+/** `404.html` に保存する 404 のページを取得する URL のパスである。 */
 const MISSING_PATH = "/__rinka/not-found";
 
 /** 書き出すルートの範囲を表す。ページと `route.ts` のファイルの集合か、すべてのルートを表す `"all"` である。 */
@@ -110,8 +110,8 @@ export async function writePrerendered(
     readonly default: () => Promise<readonly Target[]>;
   };
   /** URL のパス `url` を、書き出しのリクエストとしてサーバーのエントリーで描画する。 */
-  const render = async (url: string) =>
-    entry.default.fetch(new Request(new URL(url, "http://localhost")), { [prerenderEnv]: true });
+  const render = async (url: string, kind: PrerenderKind = "page") =>
+    entry.default.fetch(new Request(new URL(url, "http://localhost")), { [prerenderEnv]: kind });
   for (const { kind, urls } of await targets.default()) {
     for (const url of urls) {
       // 書き出しの順序とエラーを決定的にするため、URL を 1 つずつ取得する
@@ -132,7 +132,7 @@ export async function writePrerendered(
     }
   }
   if (alone) {
-    const missing = await render(MISSING_PATH);
+    const missing = await render(MISSING_PATH, "not-found");
     const file = join(clientDir, "404.html");
     if (missing.status === 404 && !existsSync(file)) {
       writeFileSync(file, new Uint8Array(await missing.arrayBuffer()));

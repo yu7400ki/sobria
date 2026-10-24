@@ -8,8 +8,8 @@ export interface PrerenderTarget {
   readonly urls: readonly string[];
 }
 
-/** 書き出す URL の区切りに含められない文字である。`encodeURIComponent` がエンコードし `decodeURI` がデコードしない文字と、Windows のファイル名に使用できない文字である。 */
-const UNSAFE = '/\\;,?:@&=+$#<>"|*'.split("");
+/** 書き出す URL の区切りに含められない文字である。`encodeURIComponent` がエンコードし `decodeURI` がデコードしない文字、`%`、Windows のファイル名に使用できない文字である。 */
+const UNSAFE = '/\\;,?:@&=+$#<>"|*%'.split("");
 
 /** ページと `route.ts` の行を表す。 */
 type Target = Extract<Route, { readonly kind: "page" | "route" }>;
@@ -43,10 +43,7 @@ async function urlsOf(route: Target, all: boolean): Promise<string[] | undefined
   const { file } = route.module;
   const module = objectOf(await route.module());
   const prerender: unknown = Reflect.get(module, "prerender");
-  const params = pattern.split("/").flatMap((part) => {
-    const segment = parseSegment(part);
-    return segment?.kind === "param" || segment?.kind === "catch-all" ? [segment] : [];
-  });
+  const params = paramsOf(pattern);
   if (prerender === undefined && !all) return undefined;
   if (route.kind === "route") {
     if (prerender !== undefined && prerender !== true) {
@@ -77,6 +74,24 @@ async function urlsOf(route: Target, all: boolean): Promise<string[] | undefined
     }
     return [pattern];
   }
+  const list = await prerenderParams(route);
+  return list?.map((values) => fillPattern(pattern, values));
+}
+
+/** ページの行を表す。 */
+type Page = Extract<Route, { readonly kind: "page" }>;
+
+/**
+ * パラメータのあるページの行 `route` の `prerender` が返すパラメータを、値を文字列にして返す。パラメータの無いページには `undefined` を返す。
+ * `prerender` が関数でないとき、URL の区切りにできない値と、重複したパラメータがあるときは、エラーを投げる。
+ */
+export async function prerenderParams(
+  route: Page,
+): Promise<Readonly<Record<string, string>>[] | undefined> {
+  const { file } = route.module;
+  const params = paramsOf(route.pattern);
+  if (params.length === 0) return undefined;
+  const prerender: unknown = Reflect.get(objectOf(await route.module()), "prerender");
   if (typeof prerender !== "function") {
     throw new Error(
       `${file}: パラメータのあるページの prerender には、書き出すパラメータの配列を返す関数を指定してください。`,
@@ -87,7 +102,7 @@ async function urlsOf(route: Target, all: boolean): Promise<string[] | undefined
     throw new Error(`${file}: prerender の関数は、パラメータの配列を返してください。`);
   }
   const names = params.map((param) => param.name);
-  const urls = list.map((item: unknown, index) => {
+  const records = list.map((item: unknown, index) => {
     const values = objectOf(item);
     const entries = params.map(({ kind, name }) => {
       const value: unknown = Reflect.get(values, name);
@@ -114,14 +129,22 @@ async function urlsOf(route: Target, all: boolean): Promise<string[] | undefined
         `${file}: prerender の関数が返した ${index + 1} 番目のパラメータは、${names.join("、")} の値を、URL の区切りにできる文字列か数で持ち、ほかの名前を持たないようにしてください。空の文字列、「.」、「..」と、${UNSAFE.join(" ")} のどれかを含む文字列は、区切りにできません。`,
       );
     }
-    return fillPattern(pattern, Object.fromEntries(entries.filter((entry) => entry !== undefined)));
+    return Object.fromEntries(entries.filter((entry) => entry !== undefined));
   });
+  const urls = records.map((values) => fillPattern(route.pattern, values));
   const duplicate = urls.find((url, index) => urls.indexOf(url) !== index);
   if (duplicate !== undefined) {
     throw new Error(`${file}: prerender の関数が、${duplicate} のパラメータを 2 回返しました。`);
   }
-  return urls;
+  return records;
 }
+
+/** ファイルの形のパス `pattern` の、パラメータとキャッチオールの区切りを返す。 */
+const paramsOf = (pattern: string) =>
+  pattern.split("/").flatMap((part) => {
+    const segment = parseSegment(part);
+    return segment?.kind === "param" || segment?.kind === "catch-all" ? [segment] : [];
+  });
 
 /** `value` がオブジェクトか関数ならそれを、それ以外なら空のオブジェクトを返す。 */
 const objectOf = (value: unknown): object =>

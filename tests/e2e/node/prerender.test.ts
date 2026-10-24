@@ -106,6 +106,23 @@ describe("output: 'static'", () => {
     expect(existsSync(join(outDir, "server"))).toBe(false);
   }, 60_000);
 
+  it("ルートのキャッチオールのページがあっても、not-found.tsx を 404.html に保存する", async () => {
+    const copy = await copyFixture();
+    await addFile(copy, "routes/[...slug]/page.tsx", [
+      'export const prerender = () => [{ slug: "x/y" }];',
+      "export default function All() {",
+      "  return <h1>all</h1>;",
+      "}",
+    ]);
+    await buildFixture(copy, join(copy, "dist"), { output: "static" });
+    expect(await readFile(join(copy, "dist/client/x/y/index.html"), "utf8")).toContain(
+      "<h1>all</h1>",
+    );
+    expect(await readFile(join(copy, "dist/client/404.html"), "utf8")).toContain(
+      "<h1>missing</h1>",
+    );
+  }, 60_000);
+
   it("サーバー関数を定義したファイルがあれば、ファイルの名前を含むビルドのエラーにする", async () => {
     const copy = await copyFixture();
     await addFile(copy, "lib/fns.ts", [
@@ -145,6 +162,11 @@ describe("output: 'static'", () => {
       expect([listed.status, await listed.text()]).toEqual([
         200,
         expect.stringContaining("<h1>post hello</h1>"),
+      ]);
+      const encoded = await fetch(`${origin}/posts/%e6%97%a5%e6%9c%ac`);
+      expect([encoded.status, await encoded.text()]).toEqual([
+        200,
+        expect.stringContaining("<h1>post 日本</h1>"),
       ]);
       const unlisted = await fetch(`${origin}/posts/other`);
       expect([unlisted.status, await unlisted.text()]).toEqual([

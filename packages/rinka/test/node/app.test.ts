@@ -239,7 +239,7 @@ describe("createApp のページ", () => {
   it("書き出しのリクエストには、setBlockingRender の値にかかわらず、すべての <Loading> の中身を待った HTML を返す", async () => {
     const app = createApp({ routes: [pageRoute("/", view, [], [choose])] });
     const html = await bodyOf(
-      await app.fetch(new Request("http://localhost/?blocking=0"), { [prerenderEnv]: true }),
+      await app.fetch(new Request("http://localhost/?blocking=0"), { [prerenderEnv]: "page" }),
     );
     expect(html).toContain("<p>done</p>");
     expect(html).not.toContain("$rinka");

@@ -1,7 +1,7 @@
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { every } from "hono/combine";
 
-import { isPrerenderEnv } from "../shared/prerender.ts";
+import { prerenderKindOf } from "../shared/prerender.ts";
 import { REFRESH_HEADER } from "../shared/refresh.ts";
 import {
   routeMethods,
@@ -26,7 +26,7 @@ import {
 import { classify, notFound } from "./errors.ts";
 import { stylesheetLink } from "./html.ts";
 import { jsx } from "./jsx-runtime.ts";
-import { prerenderTargets } from "./prerender.ts";
+import { prerenderParams } from "./prerender.ts";
 import { handledMethod } from "./request.ts";
 import { renderDocument, renderRefresh } from "./response.ts";
 import { withDepth } from "./tree.ts";
@@ -157,7 +157,9 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     const head = `${options.head ?? ""}${styles.map(stylesheetLink).join("")}`;
     const response = await renderDocument(node, {
       ...pages,
-      blocking: isPrerenderEnv(c.env) || (blockingRenderOf(c) ?? isBot(c.req.header("user-agent"))),
+      blocking:
+        prerenderKindOf(c.env) !== undefined ||
+        (blockingRenderOf(c) ?? isBot(c.req.header("user-agent"))),
       ...(head !== "" && { head }),
     });
     return withContextHeaders(c, response);
@@ -211,6 +213,10 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   const serverFns = serverFnMiddleware(options, failures);
   const rinka =
     middleware === undefined ? serverFns : every(root(lazy(middleware), failures), serverFns);
+  app.use(async (c, next) => {
+    if (prerenderKindOf(c.env) === "not-found") throw notFound();
+    await next();
+  });
   app.use(formRedirects);
   app.use((c, next) => runInRequest(c, () => rinka(c, next)));
   for (const route of routes) register(app, route, respond, options.prerendered === true);
@@ -232,7 +238,7 @@ type Respond = (
 
 /**
  * `route` を、ディレクトリのミドルウェアの後に `app` に登録する。
- * `prerendered` が真なら、ページのリクエストの URL が、そのページの `prerender` が返す URL に無いときに、`notFound()` を投げる。
+ * `prerendered` が真なら、パラメータのあるページのリクエストのパラメータが、そのページの `prerender` が返すパラメータに無いときに、`notFound()` を投げる。
  */
 function register(app: Hono, route: Route, respond: Respond, prerendered: boolean): void {
   const directory = every(...route.middlewares.map(lazy));
@@ -240,8 +246,12 @@ function register(app: Hono, route: Route, respond: Respond, prerendered: boolea
     case "page":
       app.get(route.path, directory, async (c) => {
         if (prerendered) {
-          const [target] = await prerenderTargets({ routes: [route] }, "all");
-          if (!target?.urls.includes(new URL(c.req.url).pathname)) throw notFound();
+          const list = await prerenderParams(route);
+          const params: Readonly<Record<string, string>> = c.req.param();
+          const listed = list?.some((values) =>
+            Object.entries(values).every(([name, value]) => params[name] === value),
+          );
+          if (listed === false) throw notFound();
         }
         const props = propsOf(c);
         return respond(
