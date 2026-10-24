@@ -104,6 +104,8 @@ describe("output: 'static'", () => {
     expect(await written("posts/hello/index.html")).toContain("<h1>post hello</h1>");
     expect(await written("404.html")).toContain("<h1>missing</h1>");
     expect(existsSync(join(outDir, "server"))).toBe(false);
+    // 書き出しで読み込んだサーバーのエントリーが import のキャッシュに残っていても、404.html のファイルから返したことを印で確認する
+    await appendFile(join(outDir, "client/404.html"), "<!-- written -->");
     const server = await preview({
       root,
       configFile: false,

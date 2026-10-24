@@ -48,12 +48,12 @@ async function urlsOf(route: Target, output: Output): Promise<string[] | undefin
   const { pattern } = route;
   const { file } = route.module;
   const params = paramsOf(pattern);
-  if (route.kind === "page" && params.length > 0) {
-    return (await prerenderParams(route))?.map(({ url }) => url);
-  }
   const module = objectOf(await route.module());
   const prerender: unknown = Reflect.get(module, "prerender");
   if (prerender === undefined && output === "server") return undefined;
+  if (route.kind === "page" && params.length > 0) {
+    return (await prerenderParams(route))?.map(({ url }) => url);
+  }
   if (route.kind === "page") {
     if (prerender !== undefined && prerender !== true) {
       throw new Error(

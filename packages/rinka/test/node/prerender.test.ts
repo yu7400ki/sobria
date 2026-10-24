@@ -37,6 +37,12 @@ const user = (values: unknown[]) => pageRow("/users/[id]", { prerender: () => va
 const docs = (path: string) => pageRow("/docs/[...path]", { prerender: () => [{ path }] });
 
 describe("prerenderTargets", () => {
+  it("output が server なら、files にあっても prerender の値が undefined の行は書き出さない", async () => {
+    const routes = table(pageRow("/users/[id]", { prerender: undefined }), pageRow("/about"));
+    const files = ["src/routes/users/[id]/page.tsx", "src/routes/about/page.tsx"];
+    expect(await prerenderTargets(routes, { output: "server", files })).toEqual([]);
+  });
+
   it("prerender が true のページと route.ts は、パターンの URL を、関数のページは戻り値のパラメータを埋めた URL を返す", async () => {
     const routes = table(
       pageRow("/about", { prerender: true }),
