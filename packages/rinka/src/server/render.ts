@@ -271,30 +271,44 @@ function hiddenInput(tag: string, name: unknown, value: unknown, disabled: boole
 }
 
 /**
- * タグを `<head>` に移動するかどうかを表す。
- * `auto` は `<title>`、`<meta>`、`<link>` を移動し、`all` はシェルの `<head>` の子として、すべてのタグを移動し、`none` は `<svg>` か `<noscript>` の配下と、`<head>` に移動するタグの子孫として、どのタグも移動しない。
- * `fallback` は `<Loading>` のフォールバックの中として、どのタグも移動せずに、`<Loading>` の内側と同じく警告する。
- * `element` は要素の Shadow DOM の中身と、要素に渡した Light DOM の子として、どのタグも移動せずに、要素の中として警告する。
+ * 描画している位置で、どのタグを文書の骨組みに移動するかと、どのタグも移動できない理由を表す。
+ * `auto` と `all` はシェルの位置を表す。`auto` は `<title>`、`<meta>`、`<link>` を移動し、`all` はシェルの `<head>` の子として、すべてのタグを移動する。
+ * `loading` は `<Loading>` の内側を表し、`fallback` は `<Loading>` のフォールバックの中を表す。
+ * `element` は要素の Shadow DOM の中身と、要素に渡した Light DOM の子を表し、`none` は `<svg>` か `<noscript>` の配下と、`<head>` に移動するタグの子孫を表す。
  */
-type HeadPlacement = "auto" | "all" | "none" | "fallback" | "element";
+type HeadPlacement = "all" | "auto" | Restriction;
+
+/** どのタグも文書の骨組みに移動できない理由を表す。 */
+type Restriction = "loading" | "fallback" | "element" | "none";
+
+/** `restrict` が比較する、移動できない理由の順位の値である。 */
+const restrictionRanks = {
+  loading: 1,
+  fallback: 2,
+  element: 3,
+  none: 4,
+} as const satisfies Record<Restriction, number>;
 
 /**
- * 文書を出力する描画で、描画している位置を表す。`shell` は、文書の骨組みに移動できる位置である。
- * `shell` 以外の値は、移動できない理由を表す。`loading` は `<Loading>` の内側を表し、`none`、`element`、`fallback` は同じ名前の `HeadPlacement` の位置を表す。
+ * 外側の位置が `head` で、`reason` にも該当する内側の位置の `HeadPlacement` を返す。
+ * `head` がシェルの位置なら `reason` を返し、移動できない理由なら、`head` と `reason` のうち順位の値が大きいほうを返す。
  */
-type Position = Exclude<HeadPlacement, "auto" | "all"> | "shell" | "loading";
+function restrict(head: HeadPlacement, reason: Restriction): HeadPlacement {
+  if (head === "all" || head === "auto") return reason;
+  return restrictionRanks[reason] > restrictionRanks[head] ? reason : head;
+}
 
-/** 移動できない位置ごとの、開発時の警告に表示する位置の説明である。 */
+/** 開発時の警告に表示する、移動できない理由ごとの位置の説明である。 */
 const positionNames = {
   none: " <head> に移動しない位置（<svg> や <noscript> の配下、<head> に移動するタグの中）",
   element: "要素の中",
   fallback: " <Loading> のフォールバックの中",
   loading: " <Loading> の内側",
-} as const satisfies Record<Exclude<Position, "shell">, string>;
+} as const satisfies Record<Restriction, string>;
 
 /** `placement` の位置にある `tag` の子の `HeadPlacement` を返す。 */
 function childPlacement(tag: string, placement: HeadPlacement): HeadPlacement {
-  if (headlessParents.has(tag) || placement === "none") return "none";
+  if (headlessParents.has(tag)) return "none";
   return placement === "all" ? "auto" : placement;
 }
 
@@ -466,14 +480,18 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         return;
       case "loading": {
         const boundary = this.newBoundary(`b${++this.seq}`, ctx.path);
-        this.walk(node.children, { ...ctx, boundary }, boundary.region);
+        this.walk(
+          node.children,
+          { ...ctx, boundary, head: restrict(ctx.head, "loading") },
+          boundary.region,
+        );
         out.push({
           kind: "mark",
           mark: boundary,
           fallback: () =>
             this.chunks(node.fallback, {
               ...ctx,
-              head: ctx.head === "none" || ctx.head === "element" ? ctx.head : "fallback",
+              head: restrict(ctx.head, "fallback"),
               fallback: true,
             }),
         });
@@ -566,11 +584,12 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     out: Chunk[],
   ): void {
     const role = this.hoists ? documentTags.get(tag) : undefined;
-    const position = this.position(ctx);
+    const { head } = ctx;
+    const shell = head === "all" || head === "auto";
     if (role === "html" || role === "body" || role === "transparent") {
       if (ctx.owner === null) warnHandlers(tag, props);
-      if (position !== "shell") {
-        this.warnOutside(tag, position, `文書の <${tag}> に反映せずに、子だけを出力します`);
+      if (!shell) {
+        this.warnOutside(tag, head, `文書の <${tag}> に反映せずに、子だけを出力します`);
         this.walk(asNode(props.children), ctx, out);
         return;
       }
@@ -590,10 +609,10 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     }
     const movable =
       role === "head" && (tag === "title" || attributeValue("itemprop", props.itemprop) === null);
-    if (movable && position !== "shell" && position !== "none" && warnsOutOfHead(tag, props)) {
-      this.warnOutside(tag, position, "<head> に移動せずに、記述した位置に出力します");
+    if (movable && !shell && head !== "none" && warnsOutOfHead(tag, props)) {
+      this.warnOutside(tag, head, "<head> に移動せずに、記述した位置に出力します");
     }
-    const hoist = position === "shell" && (ctx.head === "all" || movable);
+    const hoist = head === "all" || (head === "auto" && movable);
     if (!hoist) {
       this.nativeTag(tag, props, key, ctx, out);
       return;
@@ -612,9 +631,9 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   /** 文書を出力する描画で、`<title>` を `<head>` に移動する位置の `<Navigation>` の props を、深さとともに記録する。 */
   private navigation(props: NavigationProps, ctx: WalkCtx, out: Chunk[]): void {
     if (!this.hoists) return;
-    const position = this.position(ctx);
-    if (position !== "shell") {
-      this.warnOutside("Navigation", position, "反映しません");
+    const { head } = ctx;
+    if (head !== "all" && head !== "auto") {
+      this.warnOutside("Navigation", head, "反映しません");
       return;
     }
     const values = new Map<keyof NavigationProps, NavigationProps[keyof NavigationProps]>();
@@ -625,14 +644,8 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     out.push(this.marker(id, ""), this.marker(id, "/"));
   }
 
-  /** `ctx` の位置を返す。 */
-  private position(ctx: WalkCtx): Position {
-    if (ctx.head !== "auto" && ctx.head !== "all") return ctx.head;
-    return ctx.boundary === this.root ? "shell" : "loading";
-  }
-
-  /** `position` にある `tag` を、開発時に、位置の説明と、`action` に記述した扱いとともに警告する。 */
-  private warnOutside(tag: string, position: Exclude<Position, "shell">, action: string): void {
+  /** `position` の理由で移動できない位置にある `tag` を、開発時に、位置の説明と、`action` に記述した扱いとともに警告する。 */
+  private warnOutside(tag: string, position: Restriction, action: string): void {
     if (!import.meta.env?.DEV) return;
     console.warn(`[rinka] <${tag}> は${positionNames[position]}にあるので、${action}。`);
   }
@@ -836,7 +849,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         path: ctx.path,
         boundary,
         depth: ctx.depth,
-        head: ctx.head === "none" ? "none" : "element",
+        head: restrict(ctx.head, "element"),
         slots: ctx.slots,
         slot: slot === "" ? undefined : slot,
         disabled: ctx.disabled,
