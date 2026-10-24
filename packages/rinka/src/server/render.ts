@@ -770,7 +770,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         announce = dataScript(creator.id, mapKey, scriptJson(id));
       }
     }
-    const { slots: slotNames, functions: functionProps } = propKinds(options);
+    const kinds = propKinds(options);
     const descriptors = Object.getOwnPropertyDescriptors(props);
     const read = (name: string): unknown => {
       const descriptor = descriptors[name];
@@ -780,16 +780,14 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     /** 要素の関数に渡す値を返す。関数の props でない props に渡した関数は、呼び出した値にする。 */
     const propValue = (name: string): unknown => {
       const value = read(name);
-      return isFunction(value) && !functionProps.has(name) ? value() : value;
+      return kinds.isReader(name, value) ? value() : value;
     };
 
     const elementProps = {};
-    for (const name of options.props) {
-      if (slotNames.has(name)) continue;
+    for (const name of kinds.values) {
       Object.defineProperty(elementProps, name, {
         enumerable: true,
-        get: () =>
-          propValue(name) ?? (functionProps.has(name) && isEventProp(name) ? () => {} : undefined),
+        get: () => propValue(name) ?? (kinds.events.has(name) ? () => {} : undefined),
       });
     }
     const hostAttributes = (tracked: boolean): HostAttributes => {
@@ -802,8 +800,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       };
       let transfer: Record<string, unknown> | undefined;
       const current: Record<string, unknown> = {};
-      for (const name of options.props) {
-        if (slotNames.has(name)) continue;
+      for (const name of kinds.values) {
         const value = propValue(name);
         current[name] = value;
         if ((typeof value === "object" && value !== null) || typeof value === "function") {
@@ -815,7 +812,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         add(propToAttribute(name), value);
       }
       for (const name of Object.keys(descriptors)) {
-        if (options.props.includes(name) || slotNames.has(name) || name === "ref") continue;
+        if (kinds.names.includes(name) || kinds.slots.has(name) || name === "ref") continue;
         if (reservedProp(name) === "load:" || (name === "slot" && ctx.slot !== undefined)) continue;
         const raw = read(name);
         if (isEventProp(name) && isFunction(raw)) continue;
@@ -840,7 +837,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     const aria = ariaAttributes(shadow?.internals ?? {});
     const hostId = form && shadow ? this.settle(ctx, () => propValue("id")) : undefined;
     for (const name of Object.keys(descriptors)) {
-      if (!slotNames.has(name)) continue;
+      if (!kinds.slots.has(name)) continue;
       const slot = name === "children" ? "" : name;
       const content = asNode(runWithOwner(ctx.owner, () => untrack(() => read(name))));
       const boundary = shadow?.slots.get(slot) ?? ctx.boundary;

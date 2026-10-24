@@ -1,20 +1,33 @@
-import { propToAttribute, type defaultLoads } from "./names.ts";
+import { isEventProp, propToAttribute, type defaultLoads } from "./names.ts";
 import type { ClientNode, Slot } from "./nodes.ts";
+import { isFunction } from "./objects.ts";
 import type { ElementCss } from "./styles.ts";
 
 /** 属性の値から変換する props の型を表す。 */
 export type AttributeType = "string" | "number" | "boolean";
 
+/** 属性の変化を受け取る props の名前と、属性の値を変換した後の型を表す。型が `undefined` なら、属性の値を文字列のまま受け取る。 */
+export interface AttributeProp {
+  readonly name: string;
+  readonly type: AttributeType | undefined;
+}
+
 /** 要素の設定から求めた、props の分類を表す。 */
 export interface PropKinds {
+  /** 受け付ける props の名前を、設定に記述した順に列挙する。 */
+  readonly names: readonly string[];
+  /** `names` からスロットの props を除いた名前を、設定に記述した順に列挙する。関数の props とオブジェクトの props を含む。 */
+  readonly values: readonly string[];
   /** `children` を含む、スロットの props の名前である。 */
   readonly slots: ReadonlySet<string>;
-  /** 関数の props の名前である。 */
-  readonly functions: ReadonlySet<string>;
-  /** 属性の名前ごとの、属性の変化を受け取る props の名前である。 */
-  readonly attributes: ReadonlyMap<string, string>;
+  /** 関数の props のうち、名前が `on` と英字の大文字で始まる props の名前である。これらの props が渡されていないときも、要素の関数は、これらの props の値として関数を受け取る。 */
+  readonly events: ReadonlySet<string>;
+  /** 属性の名前ごとの、属性の変化を受け取る props である。 */
+  readonly attributes: ReadonlyMap<string, AttributeProp>;
   /** ホストの属性に反映する props の名前である。反映した属性の変化は、props に書き戻さない。 */
   readonly reflects: ReadonlySet<string>;
+  /** `value` が関数で、`name` が関数の props でなければ `true` を返す。このとき、要素の関数は、`value` を呼び出した戻り値を `name` の props の値として受け取る。 */
+  readonly isReader: (name: string, value: unknown) => value is () => unknown;
 }
 
 /** 要素の設定 `options` から、props の分類を返す。 */
@@ -22,15 +35,19 @@ export function propKinds(options: ElementOptions): PropKinds {
   const slots = new Set(["children", ...(options.slots ?? [])]);
   const functions = new Set(options.functionProps);
   const objects = new Set(options.objectProps);
+  const values = options.props.filter((name) => !slots.has(name));
   return {
+    names: options.props,
+    values,
     slots,
-    functions,
+    events: new Set([...functions].filter(isEventProp)),
     attributes: new Map(
-      options.props
-        .filter((name) => !slots.has(name) && !functions.has(name) && !objects.has(name))
-        .map((name) => [propToAttribute(name), name]),
+      values
+        .filter((name) => !functions.has(name) && !objects.has(name))
+        .map((name) => [propToAttribute(name), { name, type: options.types?.[name] }]),
     ),
     reflects: new Set(options.form ? Object.keys(formAttributeTypes) : []),
+    isReader: (name, value): value is () => unknown => isFunction(value) && !functions.has(name),
   };
 }
 

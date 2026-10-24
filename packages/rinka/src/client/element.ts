@@ -22,6 +22,7 @@ import {
   type ElementComponent,
   type ElementOptions,
   propKinds,
+  type PropKinds,
   unsupportedFormControls,
 } from "../shared/element.ts";
 import { checkExposeName } from "../shared/expose-names.ts";
@@ -74,10 +75,8 @@ interface Run {
 interface Instance {
   /** props の名前ごとの状態。要素の寿命の間は同じ状態を保持する。 */
   readonly props: ReadonlyMap<string, Prop>;
-  /** 関数として宣言した props の名前。 */
-  readonly functionProps: ReadonlySet<string>;
-  /** スロットになる props の名前。`children` を含む。 */
-  readonly slotNames: ReadonlySet<string>;
+  /** 要素の設定から求めた、props の分類。 */
+  readonly kinds: PropKinds;
   /** スロットの状態。 */
   readonly slots: HostSlots;
   /** `owner` の下でインスタンスを起動する。 */
@@ -209,13 +208,8 @@ export function registerElement<P, M extends object = object>(
     return createElementComponent(tag, fn, options);
   }
   const definition: Definition = { fn, signature, shown: new Set() };
-  const types = options.types ?? {};
-  const {
-    slots: slotNames,
-    functions: functionProps,
-    attributes: propOfAttribute,
-    reflects,
-  } = propKinds(options);
+  const kinds = propKinds(options);
+  const { events, attributes: propOfAttribute, reflects } = kinds;
   const unsupported = unsupportedFormControls(tag);
   /** 要素の関数に渡す ctx の `form` を返す。 */
   const formOf = options.form ? formControls : () => unsupported;
@@ -228,7 +222,7 @@ export function registerElement<P, M extends object = object>(
         prop.track();
         return readSource(prop.source);
       };
-      if (functionProps.has(name) && isEventProp(name)) {
+      if (events.has(name)) {
         const dispatch = (detail?: unknown) =>
           host.dispatchEvent(
             new CustomEvent(customEventName(name), { detail, bubbles: true, composed: true }),
@@ -291,7 +285,7 @@ export function registerElement<P, M extends object = object>(
             const descriptors = Object.getOwnPropertyDescriptors(members);
             if (import.meta.env?.DEV) {
               for (const name of Object.keys(descriptors)) {
-                const error = checkExposeName(name, options.props);
+                const error = checkExposeName(name, kinds.names);
                 if (error) throw new Error(`<${tag}> ${error}`);
               }
             }
@@ -342,8 +336,7 @@ export function registerElement<P, M extends object = object>(
     constructor() {
       super();
       const props = new Map<string, Prop>();
-      for (const name of options.props) {
-        if (slotNames.has(name)) continue;
+      for (const name of kinds.values) {
         const prop = createProp({ value: Object.getOwnPropertyDescriptor(this, name)?.value });
         props.set(name, prop);
         Object.defineProperty(this, name, {
@@ -359,8 +352,7 @@ export function registerElement<P, M extends object = object>(
       const instance: Instance = {
         internals,
         props,
-        functionProps,
-        slotNames,
+        kinds,
         slots: createHostSlots(),
         activate: (owner) => activate(this, instance, owner),
         owned: false,
@@ -370,11 +362,11 @@ export function registerElement<P, M extends object = object>(
     }
 
     attributeChangedCallback(attribute: string, _old: string | null, value: string | null): void {
-      const name = propOfAttribute.get(attribute);
-      if (name === undefined) return;
-      const prop = instances.get(this)!.props.get(name)!;
-      if (reflects.has(name) && attributeValue(attribute, peek(prop)) === value) return;
-      write(prop, { value: convert(value, types[name]) });
+      const entry = propOfAttribute.get(attribute);
+      if (entry === undefined) return;
+      const prop = instances.get(this)!.props.get(entry.name)!;
+      if (reflects.has(entry.name) && attributeValue(attribute, peek(prop)) === value) return;
+      write(prop, { value: convert(value, entry.type) });
     }
 
     connectedCallback(): void {
@@ -540,11 +532,10 @@ export function createElementInstance(
     const read = getter ? () => getter.call(props) as unknown : undefined;
     const value: unknown = read ?? descriptor.value;
     const prop = instance.props.get(name);
-    if (instance.slotNames.has(name)) {
+    if (instance.kinds.slots.has(name)) {
       placeInSlot(instance.slots, name, (place) => insert(host, value, place));
     } else if (prop) {
-      const reactive =
-        read ?? (isFunction(value) && !instance.functionProps.has(name) ? value : undefined);
+      const reactive = read ?? (instance.kinds.isReader(name, value) ? value : undefined);
       write(prop, reactive ? derive(reactive) : { value });
     } else if (read && isEventProp(name)) {
       const listener = untrack(read);
