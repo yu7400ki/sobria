@@ -1,7 +1,7 @@
 import { rmSync } from "node:fs";
 import { join, posix } from "node:path";
 
-import type { Plugin, Rolldown } from "vite";
+import type { Plugin, Rolldown, UserConfig } from "vite";
 
 import type { PrerenderScope } from "../shared/prerender.ts";
 import { embedRouteStyles, moveServerAssets } from "./build-styles.ts";
@@ -24,14 +24,31 @@ import {
   type SceneContext,
 } from "./settings.ts";
 
-/** `assetsDir` に出力するアセットのファイル名を返す関数を返す。CSS のアセットは内容のハッシュだけを名前にし、ほかのアセットは Vite のデフォルトと同じ名前にする。 */
-const assetFileNames =
-  (assetsDir: string) =>
-  ({ names }: Rolldown.PreRenderedAsset): string =>
-    posix.join(
-      assetsDir,
-      names.some((name) => name.endsWith(".css")) ? "[hash].css" : "[name]-[hash].[ext]",
-    );
+/**
+ * 利用者の設定 `config` のクライアントの環境のビルドの設定から、CSS の出力先、minify、CSS のターゲットと、アセットのファイル名を求めた、環境のビルドの設定を返す。
+ * CSS のファイル名は内容のハッシュだけにし、ほかのアセットのファイル名は Vite のデフォルトと同じにする。
+ */
+function cssOutput(config: UserConfig) {
+  const client = { ...config.build, ...config.environments?.client?.build };
+  const assetsDir = client.assetsDir ?? "assets";
+  const cssTarget = client.cssTarget ?? client.target;
+  return {
+    assetsDir,
+    // クライアントの環境の cssMinify のデフォルトと同じ値にする
+    cssMinify: client.cssMinify ?? client.minify !== false,
+    // Vite は、cssTarget では target の "baseline-widely-available" を解決しない
+    ...(cssTarget !== undefined && cssTarget !== "baseline-widely-available" && { cssTarget }),
+    rolldownOptions: {
+      output: {
+        assetFileNames: ({ names }: Rolldown.PreRenderedAsset): string =>
+          posix.join(
+            assetsDir,
+            names.some((name) => name.endsWith(".css")) ? "[hash].css" : "[name]-[hash].[ext]",
+          ),
+      },
+    },
+  };
+}
 
 /**
  * アプリの `vite build` で、要素のクライアントのビルドと、サーバーのエントリーのサーバーのビルドを、この順に出力するプラグインと、
@@ -60,8 +77,9 @@ export function appBuild({ options, settings }: SceneContext): {
     enforce: "pre",
     sharedDuringBuild: true,
     applyToEnvironment: (environment) => !isClient(environment),
-    config: () => {
+    config: (config) => {
       const { root, clientDir, serverDir, elements } = settings();
+      const css = cssOutput(config);
       const file = serverEntry(root);
       if (settings().output === "static") {
         const serverFns = serverFnModules(root);
@@ -79,9 +97,11 @@ export function appBuild({ options, settings }: SceneContext): {
         environments: {
           client: {
             build: {
+              ...css,
               outDir: clientDir,
               manifest: true,
               rolldownOptions: {
+                ...css.rolldownOptions,
                 input:
                   elements.length > 0
                     ? elements.map((element) => element.path)
@@ -91,6 +111,7 @@ export function appBuild({ options, settings }: SceneContext): {
           },
           ssr: {
             build: {
+              ...css,
               outDir: serverDir,
               emitAssets: true,
               rolldownOptions: {
@@ -98,7 +119,7 @@ export function appBuild({ options, settings }: SceneContext): {
                   [SERVER_ENTRY_NAME]: file === undefined ? entries.app : join(root, file),
                   ...(scope !== undefined && { [PRERENDER_ENTRY_NAME]: entries.prerender }),
                 },
-                output: { entryFileNames: "[name].js" },
+                output: { ...css.rolldownOptions.output, entryFileNames: "[name].js" },
               },
             },
           },
@@ -121,24 +142,14 @@ export function appBuild({ options, settings }: SceneContext): {
         },
       };
     },
-    configEnvironment: (name, config) => ({
-      ...((name === "client" || name === "ssr") && {
-        build: {
-          rolldownOptions: {
-            output: { assetFileNames: assetFileNames(config.build?.assetsDir ?? "assets") },
-          },
-          // クライアントの環境の cssMinify のデフォルトと同じ値にする
-          ...(name === "ssr" && {
-            cssMinify: config.build?.cssMinify ?? config.build?.minify !== false,
-          }),
-        },
-      }),
-      ...(isServerEnvironment(name, config) && {
-        resolve: {
-          noExternal: ["@hono/node-server", ...new Set(serverImports.map(packageOf))],
-        },
-      }),
-    }),
+    configEnvironment: (name, config) =>
+      isServerEnvironment(name, config)
+        ? {
+            resolve: {
+              noExternal: ["@hono/node-server", ...new Set(serverImports.map(packageOf))],
+            },
+          }
+        : null,
     buildStart() {
       clientAssets = readClientAssets(settings().clientDir);
     },

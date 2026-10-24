@@ -302,6 +302,14 @@ describe("レイアウトと要素が同じ CSS を import するアプリ", () 
   it.each([
     ["Vite のデフォルトの設定", {}],
     ["build.minify が false の設定", { build: { minify: false } }],
+    [
+      "クライアントの環境だけの build.assetsDir の設定",
+      { environments: { client: { build: { assetsDir: "static" } } } },
+    ],
+    [
+      "クライアントの環境だけの build.minify が false の設定",
+      { environments: { client: { build: { minify: false } } } },
+    ],
   ])(
     "%sでビルドすると、<head> の <link>、要素のシートの DSD の <link>、要素のモジュールは、同じ 1 つの CSS の URL を参照する",
     async (_name, config) => {
@@ -315,20 +323,20 @@ describe("レイアウトと要素が同じ CSS を import するアプリ", () 
         const head = html.slice(0, html.indexOf("</head>"));
         const note = html.slice(html.indexOf("<app-note"), html.indexOf("</app-note>"));
         const module = /\$rinka\.m\(\[\["app-note","([^"]+)"/.exec(html)![1]!;
-        const fetched = (await readFile(join(out, "client", module), "utf8")).match(
-          /\/assets\/[^"'`]+\.css/g,
-        );
-        const urls = [...stylesheets(head), ...stylesheets(note), ...fetched!];
+        const fetched = [
+          ...(await readFile(join(out, "client", module), "utf8")).matchAll(
+            /["'`](\/[^"'`]+\.css)["'`]/g,
+          ),
+        ].map(([, url]) => url!);
+        const urls = [...stylesheets(head), ...stylesheets(note), ...fetched];
         expect(urls).toHaveLength(3);
         expect(new Set(urls)).toEqual(new Set([urls[0]]));
         const css = await readFile(join(out, "client", urls[0]!), "utf8");
-        const assets = await readdir(join(out, "client/assets"));
+        const files = await readdir(join(out, "client"), { recursive: true });
         const same = await Promise.all(
-          assets
+          files
             .filter((file) => file.endsWith(".css"))
-            .map(
-              async (file) => (await readFile(join(out, "client/assets", file), "utf8")) === css,
-            ),
+            .map(async (file) => (await readFile(join(out, "client", file), "utf8")) === css),
         );
         expect(same.filter(Boolean)).toHaveLength(1);
       } finally {
