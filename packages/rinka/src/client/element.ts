@@ -141,7 +141,10 @@ function createProp(source: Source): Prop {
   return { source, track, trigger: () => trigger(undefined) };
 }
 
+/** `prop` に `source` を書き込む。書き込む前と後の source がどちらも値で、`Object.is` で等しければ、何もしない。 */
 function write(prop: Prop, source: Source): void {
+  const before = prop.source;
+  if ("value" in before && "value" in source && Object.is(before.value, source.value)) return;
   prop.source = source;
   prop.trigger();
 }

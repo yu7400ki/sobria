@@ -9,7 +9,7 @@ import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
 import { renderRefresh, renderToStream } from "../../src/server/response.ts";
 import type { ElementOptions } from "../../src/shared/element.ts";
 import type { RefreshJson } from "../../src/shared/refresh.ts";
-import { signal } from "../../src/shared/signals.ts";
+import { action, memo, optimistic, refresh, signal } from "../../src/shared/signals.ts";
 
 /** テストの前の `<head>` の子と、文書のタイトルである。 */
 let headBefore: Element[] = [];
@@ -159,6 +159,60 @@ describe("applyRefresh", () => {
     expect(kept).toBe(first);
     expect(kept?.shadowRoot?.textContent).toBe("b bob 1");
     expect(added?.shadowRoot?.textContent).toBe("c cy 0");
+  });
+
+  it("ページにある要素の props のうち、描き直しで値が変わらない props を読み取った計算は、再び実行しない", async () => {
+    const tag = nextTag();
+    const options: ElementOptions = { props: { label: "string" } };
+    let calls = 0;
+    const view = (h: H) => (props: { label: string }) => {
+      const upper = memo(() => {
+        calls++;
+        return props.label.toUpperCase();
+      });
+      return h("span", { children: () => upper() });
+    };
+    const element = defineServer(tag, view(server), options);
+    const page = (label: string) => server("main", { children: server(element, { label }) });
+    await serve(page("a"));
+    defineClient(tag, view(client), options);
+    await tick();
+    const started = calls;
+
+    applyRefresh((await (await renderRefresh(page("a"))).json()) as RefreshJson);
+    await tick();
+    expect(calls).toBe(started);
+
+    applyRefresh((await (await renderRefresh(page("b"))).json()) as RefreshJson);
+    await tick();
+    expect(calls).toBe(started + 1);
+    expect(document.querySelector(tag)?.shadowRoot?.textContent).toBe("B");
+  });
+
+  it("action の中で、props の値が変わらない描き直しを反映した後に refresh(memo) を待つと、action が終わる", async () => {
+    const tag = nextTag();
+    const options: ElementOptions = { props: { id: "number" } };
+    let send: (() => Promise<void>) | undefined;
+    const view = (h: H) => (props: { id: number }) => {
+      const user = memo(async () => ({ likes: props.id }));
+      const [likes, setLikes] = optimistic(() => user().likes);
+      send = action(async () => {
+        setLikes(likes() + 1);
+        await tick();
+        applyRefresh((await (await renderRefresh(page(1))).json()) as RefreshJson);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        await refresh(user);
+      });
+      return h("span", { children: () => String(likes()) });
+    };
+    const element = defineServer(tag, view(server), options);
+    const page = (id: number) => server("main", { children: server(element, { id }) });
+    await serve(page(1));
+    defineClient(tag, view(client), options);
+    await tick();
+
+    const timeout = new Promise((resolve) => setTimeout(resolve, 500, "timeout"));
+    expect(await Promise.race([send?.().then(() => "done"), timeout])).toBe("done");
   });
 });
 
