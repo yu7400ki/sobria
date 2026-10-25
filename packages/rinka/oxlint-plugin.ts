@@ -42,10 +42,19 @@ interface DeclaratorNode {
   };
 }
 
+/** 代入の式を表す。 */
+interface AssignmentNode {
+  readonly left: {
+    readonly type: string;
+    readonly computed?: boolean;
+    readonly property?: StringNode & { readonly name?: string };
+  };
+}
+
 interface Context {
   readonly filename: string;
   report(descriptor: {
-    node: ModuleDeclaration | StringNode | CallNode | DeclaratorNode;
+    node: ModuleDeclaration | StringNode | CallNode | DeclaratorNode | AssignmentNode;
     message: string;
   }): void;
 }
@@ -264,6 +273,25 @@ export default {
               node,
               message:
                 "文字列で引く表は、Object のプロトタイプにある名前でも値を返すので、ReadonlyMap で記述してください。",
+            });
+          },
+        };
+      },
+    },
+    /** `src/server/context.ts` の外で、`res` のプロパティへの代入を報告する。 */
+    "no-res-assignment": {
+      create(context: Context) {
+        if (packagePath(context) === "src/server/context.ts") return {};
+        return {
+          AssignmentExpression(node: AssignmentNode) {
+            const { left } = node;
+            if (left.type !== "MemberExpression" || left.property === undefined) return;
+            const name = left.computed ? left.property.value : left.property.name;
+            if (name !== "res") return;
+            context.report({
+              node,
+              message:
+                "c.res の setter は、前のレスポンスの Set-Cookie で新しいレスポンスの Set-Cookie を置換するので、c.res は src/server/context.ts の replaceResponse で置換してください。",
             });
           },
         };

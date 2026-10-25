@@ -17,7 +17,6 @@ import {
 import { isBot } from "./bots.ts";
 import { blockingRenderOf, replaceResponse, runInRequest, withContextHeaders } from "./context.ts";
 import {
-  callerOf,
   callerResponses,
   pageRequest,
   serverFnFailure,
@@ -203,16 +202,15 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   /** サブリクエスト `request` を、リクエスト `c` と同じ env と executionCtx で、このアプリに送信する。 */
   const fetchPage: FetchPage = (c, request) => app.fetch(request, c.env, executionCtxOf(c));
   const formFailure: Failure = async (c, error) => {
-    const caller = callerOf(c);
-    const url = submittedPage(c);
+    const { js, page: url } = submittedPage(c);
     if (url === undefined) return fail(c, error);
-    const request = pageRequest(c, url, caller !== undefined);
+    const request = pageRequest(c, url, js);
     formErrors.set(request, { error });
     const response = await fetchPage(c, request);
     // error.tsx と onError のどちらにも渡らなかった値は、ここで記録する
     if (formErrors.has(request)) console.error(error);
     // JS が無いときは、307 と 308 のリダイレクトを 303 に変換する
-    const resend = caller === undefined && (response.status === 307 || response.status === 308);
+    const resend = !js && (response.status === 307 || response.status === 308);
     return withContextHeaders(
       c,
       resend ? new Response(response.body, { status: 303, headers: response.headers }) : response,
@@ -241,7 +239,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
               // 404.html の書き出しのリクエストでは、ルートの middleware.ts の後で、rootMissing の行の middleware.ts を実行してから描画する
               const props = { params: {}, url: new URL(c.req.url) };
               await directoryOf(respond, rootMissing?.middlewares ?? [])(c, async () => {
-                c.res = await respond(c, jsx(missing, {}), rootMissing ?? {}, props);
+                await replaceResponse(c, respond(c, jsx(missing, {}), rootMissing ?? {}, props));
               });
             }
           : next,

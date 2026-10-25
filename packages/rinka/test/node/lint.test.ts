@@ -32,6 +32,7 @@ const rules = new Map([
   ["rinka(no-directional-insert)", "insert"],
   ["rinka(no-constant-literal)", "literal"],
   ["rinka(no-string-record-literal)", "record"],
+  ["rinka(no-res-assignment)", "res"],
 ]);
 
 type Diagnostic = { code: string; labels: { span: { line: number } }[] };
@@ -311,6 +312,30 @@ describe("MagicString の向きを持つ挿入", () => {
     expect(
       reports("src/build/ast.ts", [
         'export const a = (s: { appendLeft(i: number, t: string): void }) => s.appendLeft(0, "x");',
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("c.res への代入", () => {
+  it("src/server/ の中で、res のプロパティに代入すると報告し、読むだけなら報告しない", () => {
+    expect(
+      reports("src/server/res.ts", [
+        "export const a = (c: { res: unknown }) => { c.res = undefined; };",
+        'export const b = (c: { res: unknown }) => { c["res"] = undefined; };',
+        "export const c = (x: { res: unknown }) => x.res;",
+        "export const d = (x: { body: unknown }) => { x.body = undefined; };",
+      ]),
+    ).toEqual([
+      [1, "res"],
+      [2, "res"],
+    ]);
+  });
+
+  it("src/server/context.ts では報告しない", () => {
+    expect(
+      reports("src/server/context.ts", [
+        "export const a = (c: { res: unknown }) => { c.res = undefined; };",
       ]),
     ).toEqual([]);
   });

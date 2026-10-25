@@ -310,16 +310,19 @@ const isLocalPage = (url: URL, c: Context): boolean =>
   url.host === new URL(c.req.url).host && !url.pathname.startsWith(internalPrefix);
 
 /**
- * フォームの送信 `c` の、送信したページの URL を返す。JS があるときは `x-rinka-page` の URL を、JS が無いときは Referer の URL を使用する。
- * URL が無いとき、そのホストがリクエストのホストと異なるとき、そのパスが `/_rinka/` の下にあるときは `undefined` を返す。
+ * フォームの送信 `c` が JS からの送信かどうかを `js` に、送信したページの URL を `page` に返す。JS があるときは `x-rinka-page` の URL を、JS が無いときは Referer の URL を使用する。
+ * URL が無いとき、そのホストがリクエストのホストと異なるとき、そのパスが `/_rinka/` の下にあるときは、`page` を `undefined` にする。
  */
-export function submittedPage(c: Context): URL | undefined {
+export function submittedPage(c: Context): {
+  readonly js: boolean;
+  readonly page: URL | undefined;
+} {
   const caller = callerOf(c);
-  if (caller !== undefined) return caller.page;
+  if (caller !== undefined) return { js: true, page: caller.page };
   const referer = c.req.header("referer");
-  if (referer === undefined || !URL.canParse(referer)) return undefined;
+  if (referer === undefined || !URL.canParse(referer)) return { js: false, page: undefined };
   const url = new URL(referer);
-  return isLocalPage(url, c) ? url : undefined;
+  return { js: false, page: isLocalPage(url, c) ? url : undefined };
 }
 
 /** リクエスト `c` のレスポンスの移動先 `location` を、`c` の URL のパスとクエリと、ページ `page` の URL のオリジンを基準に解決する。 */

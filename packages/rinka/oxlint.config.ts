@@ -120,7 +120,11 @@ export default defineConfig({
     {
       files: ["src/server/**"],
       env: { node: true },
-      rules: { ...restrict(...server, seroval, pageHeader), "no-undef": "error" },
+      rules: {
+        ...restrict(...server, seroval, pageHeader),
+        "no-undef": "error",
+        "rinka/no-res-assignment": "error",
+      },
     },
     { files: ["src/server/wire.ts"], rules: restrict(...server, pageHeader) },
     { files: ["src/server/endpoint.ts"], rules: restrict(...server, seroval) },
