@@ -33,7 +33,7 @@ describe("SSR の ctx の css", () => {
       { props: {} },
     );
     expect(squash(await renderToString(jsx(Card, {})))).toContain(
-      '<template shadowrootmode="open"><style> :host { display: block; } </style><link rel="stylesheet" href="/src/app.css?direct"><style> p { margin: 4px; } </style><p>x</p></template>',
+      '<template shadowrootmode="open"><style> :host { display: block; } </style><link rel="stylesheet" href="/src/app.css?direct"><style> p { margin: 4px; } </style><!----><p>x</p><!----></template>',
     );
   });
 

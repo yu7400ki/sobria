@@ -80,7 +80,7 @@ describe("SSR したインスタンスの起動", () => {
     const [now, later] = document.querySelectorAll(tag);
     expect(now?.hasAttribute("data-started")).toBe(true);
     expect(later?.hasAttribute("data-started")).toBe(false);
-    expect(later?.shadowRoot?.innerHTML).toBe("<p>x</p>");
+    expect(later?.shadowRoot?.innerHTML).toBe("<!----><p>x</p><!---->");
     for (const callback of callbacks) callback();
     await tick();
     expect(later?.hasAttribute("data-started")).toBe(true);

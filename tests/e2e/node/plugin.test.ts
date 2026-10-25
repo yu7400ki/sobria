@@ -38,7 +38,9 @@ describe("Vite プラグイン", () => {
     const html: string = await renderToString(jsx(Page, {}));
     expect(html).toContain('<app-counter data-oh="h1"');
     expect(html).toContain('start="2"');
-    expect(html).toContain("<button>clicks: 2</button><p>4</p><div><slot></slot></div>");
+    expect(html).toContain(
+      "<button><!---->clicks<!---->: <!---->2<!----></button><p><!---->4<!----></p><div><slot></slot></div>",
+    );
     expect(html).toContain("</template>body</app-counter>");
   });
 

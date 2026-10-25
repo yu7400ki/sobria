@@ -59,7 +59,7 @@ describe("ネイティブのタグの出力の全体", () => {
         }),
       ),
     ).toMatchInlineSnapshot(
-      `"<fieldset disabled><legend><x-native-field data-oh="h1" name="a"><template shadowrootmode="open" shadowrootdelegatesfocus><button></button></template><input type="hidden" name="a" value="v" data-rinka-form></x-native-field></legend><legend><x-native-field data-oh="h2" name="b"><template shadowrootmode="open" shadowrootdelegatesfocus><button disabled></button></template><input type="hidden" name="b" value="v" data-rinka-form disabled></x-native-field></legend><x-native-wrap data-oh="h3"><template shadowrootmode="open"><slot></slot></template><x-native-field data-oh="h4" name="c"><template shadowrootmode="open" shadowrootdelegatesfocus><button disabled></button></template><input type="hidden" name="c" value="v" data-rinka-form disabled></x-native-field></x-native-wrap></fieldset>"`,
+      `"<fieldset disabled><legend><x-native-field data-oh="h1" name="a"><template shadowrootmode="open" shadowrootdelegatesfocus><!----><button></button><!----></template><input type="hidden" name="a" value="v" data-rinka-form></x-native-field></legend><legend><x-native-field data-oh="h2" name="b"><template shadowrootmode="open" shadowrootdelegatesfocus><!----><button disabled></button><!----></template><input type="hidden" name="b" value="v" data-rinka-form disabled></x-native-field></legend><x-native-wrap data-oh="h3"><template shadowrootmode="open"><!----><slot></slot><!----></template><x-native-field data-oh="h4" name="c"><template shadowrootmode="open" shadowrootdelegatesfocus><!----><button disabled></button><!----></template><input type="hidden" name="c" value="v" data-rinka-form disabled></x-native-field></x-native-wrap></fieldset>"`,
     );
   });
 
@@ -78,7 +78,7 @@ describe("ネイティブのタグの出力の全体", () => {
         }),
       ),
     ).toMatchInlineSnapshot(
-      `"<select><x-native-wrap data-oh="h1"><template shadowrootmode="open"><slot></slot></template><option value="b"></option><select><optgroup><option value="a">A</option><option value="b" selected>B</option></optgroup><option selected>b</option><option value="b">C</option></select></x-native-wrap></select>"`,
+      `"<select><x-native-wrap data-oh="h1"><template shadowrootmode="open"><!----><slot></slot><!----></template><option value="b"></option><select><optgroup><option value="a">A</option><option value="b" selected>B</option></optgroup><option selected>b</option><option value="b">C</option></select></x-native-wrap></select>"`,
     );
   });
 
@@ -123,7 +123,7 @@ describe("ネイティブのタグの出力の全体", () => {
         jsx("form", { action: fn, children: jsx("input", { value: "v", checked: true }) }),
       ]),
     ).toMatchInlineSnapshot(
-      `"<label for="f" id="rinka-l1">名前</label><x-native-field data-oh="h1" id="f" name="n" aria-labelledby="rinka-l1"><template shadowrootmode="open" shadowrootdelegatesfocus><button></button></template><input type="hidden" name="n" value="v" data-rinka-form></x-native-field><form action="/_rinka/fn/src%2Fnative-tags.ts%23fn" method="post" enctype="multipart/form-data"><input value="v" checked></form>"`,
+      `"<label for="f" id="rinka-l1">名前</label><x-native-field data-oh="h1" id="f" name="n" aria-labelledby="rinka-l1"><template shadowrootmode="open" shadowrootdelegatesfocus><!----><button></button><!----></template><input type="hidden" name="n" value="v" data-rinka-form></x-native-field><form action="/_rinka/fn/src%2Fnative-tags.ts%23fn" method="post" enctype="multipart/form-data"><input value="v" checked></form>"`,
     );
   });
 });

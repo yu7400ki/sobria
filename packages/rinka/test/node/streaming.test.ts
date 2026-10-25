@@ -105,10 +105,10 @@ describe("要素の中の境界", () => {
     resolve("v");
     const html = (await reading).join("");
     expect(html).toContain(
-      '<x-card data-oh="h1" data-om="@b"><template shadowrootmode="open"><template data-ob="b2"></template>wait<!--/ob:b2--></template></x-card>',
+      '<x-card data-oh="h1" data-om="@b"><template shadowrootmode="open"><!----><!----><template data-ob="b2"></template>wait<!--/ob:b2--><!----><!----></template></x-card>',
     );
     expect(html).toContain(
-      '<template data-os="b2"><b>v</b></template><script>$rinka.r({"b":"b2","bp":["h1"],"p":[]})</script><script>$rinka.d("h1",{"@b":1})</script>',
+      '<template data-os="b2"><b><!---->v<!----></b></template><script>$rinka.r({"b":"b2","bp":["h1"],"p":[]})</script><script>$rinka.d("h1",{"@b":1})</script>',
     );
   });
 
@@ -132,10 +132,10 @@ describe("要素の中の境界", () => {
     resolve("v");
     const html = (await reading).join("");
     expect(html).toContain(
-      '<x-container data-oh="h1" data-om="@b"><template shadowrootmode="open"><template data-ob="b2"></template>wait<!--/ob:b2--></template><template data-ob="p4"></template><!--/ob:p4--></x-container>',
+      '<x-container data-oh="h1" data-om="@b"><template shadowrootmode="open"><!----><!----><template data-ob="b2"></template>wait<!--/ob:b2--><!----><!----></template><template data-ob="p4"></template><!--/ob:p4--></x-container>',
     );
     expect(html).toContain(
-      '<template data-os="b2"><slot></slot></template><template data-op="p4"><x-child data-oh="h3"><template shadowrootmode="open"><i>v</i></template></x-child></template><script>$rinka.r({"b":"b2","bp":["h1"],"p":[["p4",[]]]})</script><script>$rinka.d("h1",{"@b":1})</script>',
+      '<template data-os="b2"><slot></slot></template><template data-op="p4"><x-child data-oh="h3"><template shadowrootmode="open"><!----><i><!---->v<!----></i><!----></template></x-child></template><script>$rinka.r({"b":"b2","bp":["h1"],"p":[["p4",[]]]})</script><script>$rinka.d("h1",{"@b":1})</script>',
     );
   });
 });
@@ -158,7 +158,7 @@ describe("スロットの内容の保留中のタグ", () => {
     resolve("v");
     const html = (await reading).join("");
     expect(html).toContain(
-      '<x-wrap data-oh="h1" data-om="@b"><template shadowrootmode="open"><template data-ob="b2"></template>wait<!--/ob:b2--></template><template data-ob="p3"></template><!--/ob:p3--></x-wrap>',
+      '<x-wrap data-oh="h1" data-om="@b"><template shadowrootmode="open"><!----><!----><template data-ob="b2"></template>wait<!--/ob:b2--><!----><!----></template><template data-ob="p3"></template><!--/ob:p3--></x-wrap>',
     );
     expect(html).toContain('<template data-op="p3"><b title="v">t</b></template>');
   });
@@ -186,7 +186,7 @@ describe("境界を待つホスト", () => {
     });
     const html = (await read(renderToStream(jsx(Now, {})))).join("");
     expect(html).toContain(
-      '<x-now data-oh="h1"><template shadowrootmode="open">now</template></x-now>',
+      '<x-now data-oh="h1"><template shadowrootmode="open"><!----><!---->now<!----><!----></template></x-now>',
     );
   });
 
@@ -225,7 +225,9 @@ describe("境界を待つホスト", () => {
       { props: {} },
     );
     const html = (await read(renderToStream(jsx(Unused, {})))).join("");
-    expect(html).toContain('<x-unused data-oh="h1"><template shadowrootmode="open">now</template>');
+    expect(html).toContain(
+      '<x-unused data-oh="h1"><template shadowrootmode="open"><!----><!---->now<!----><!----></template>',
+    );
     expect(rendered).toBe(0);
   });
 
@@ -515,7 +517,7 @@ describe("境界の失敗と順序", () => {
     slow.resolve();
     const html = (await reading).join("");
     expect(html).toContain(
-      '<x-raw-style data-oh="h1"><template shadowrootmode="open"><style>f</style></template></x-raw-style>',
+      '<x-raw-style data-oh="h1"><template shadowrootmode="open"><!----><style>f</style><!----></template></x-raw-style>',
     );
     expect(html).not.toContain("遅い");
   });

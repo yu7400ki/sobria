@@ -75,7 +75,9 @@ describe("memo の値", () => {
       { props: {} },
     );
     const { html, sent } = await render(jsx(Card, {}));
-    expect(html).toContain('<x-tr2 data-oh="h1"><template shadowrootmode="open"><p>3</p>');
+    expect(html).toContain(
+      '<x-tr2 data-oh="h1"><template shadowrootmode="open"><!----><p><!---->3<!----></p>',
+    );
     expect(sent).toEqual([]);
   });
 
@@ -149,7 +151,9 @@ describe("props の値", () => {
       { props: {} },
     );
     const { html, sent } = await render(jsx(Outer, {}));
-    expect(html).toContain('<x-tr-card data-oh="h2"><template shadowrootmode="open"><p>object</p>');
+    expect(html).toContain(
+      '<x-tr-card data-oh="h2"><template shadowrootmode="open"><!----><p><!---->object<!----></p>',
+    );
     expect(sent).toEqual([]);
   });
 });
