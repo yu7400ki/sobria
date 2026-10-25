@@ -111,29 +111,6 @@ const throwing = (error: unknown) => (): never => {
   throw error;
 };
 
-/** URL に一致したページか `not-found.tsx` の行と、そのパラメータを表す。 */
-interface Found {
-  readonly route: Extract<Route, { kind: "page" | "not-found" }>;
-  readonly params: Record<string, string>;
-}
-
-/** ページと `not-found.tsx` の行を、`createApp` がページを登録するのと同じ順序で登録し、URL に一致する最初の行を返す関数を作成する。 */
-function finder(routes: readonly Route[]): (url: URL) => Promise<Found | undefined> {
-  const rows = new Hono<{ Bindings: { found?: Found } }>();
-  for (const route of routes) {
-    if (route.kind === "route") continue;
-    rows.get(route.path, (c) => {
-      c.env.found = { route, params: c.req.param() };
-      return c.body(null);
-    });
-  }
-  return async (url) => {
-    const box: { found?: Found } = {};
-    await rows.fetch(new Request(url), box);
-    return box.found;
-  };
-}
-
 /** リクエスト `c` の `executionCtx` を返す。無ければ `undefined` を返す。 */
 function executionCtxOf(c: Context): Context["executionCtx"] | undefined {
   try {
@@ -196,7 +173,6 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     );
     return withContextHeaders(c, response);
   };
-  const find = finder(routes);
   /**
    * ミドルウェア、`route.ts`、サーバー関数が投げた値と、`error.tsx` の無いページの描画で投げた値から、リクエスト `c` のレスポンスを作成する。
    * `redirect()` と `HTTPException` はそれぞれが表すレスポンスにし、`notFound()` は `Not Found` のテキストの 404 にし、そのほかの値は `onError` に渡す。
@@ -269,6 +245,8 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
           catching(lazy(middleware), (c, error) => serverFnFailure(c, error, failures)),
           serverFns,
         );
+  // URL の区切りの無い not-found.tsx の行のうち、ルートの表で最初の行である。グループの外のものが先に並ぶ
+  const rootMissing = routes.find((route) => route.kind === "not-found" && route.path === "/*");
   app.use(callerResponses((c, request) => app.fetch(request, c.env, executionCtxOf(c))));
   app.use((c, next) =>
     runInRequest(c, () =>
@@ -276,12 +254,10 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
         c,
         prerenderKindOf(c.env) === "not-found"
           ? async () => {
-              // 404.html の書き出しのリクエストでは、ルートのミドルウェアの後で、URL に一致する not-found.tsx を描画する
-              const url = new URL(c.req.url);
-              const found = await find(url);
-              c.res = await respond(c, jsx(missing, {}), found?.route ?? {}, {
-                params: found?.params ?? {},
-                url,
+              // 404.html の書き出しのリクエストでは、ルートの middleware.ts の後で、rootMissing の行の middleware.ts を実行してから描画する
+              const props = { params: {}, url: new URL(c.req.url) };
+              await directoryOf(respond, rootMissing?.middlewares ?? [])(c, async () => {
+                c.res = await respond(c, jsx(missing, {}), rootMissing ?? {}, props);
               });
             }
           : next,
@@ -311,10 +287,24 @@ type Respond = (
   options?: { readonly files?: readonly string[]; readonly refresh?: boolean },
 ) => Promise<Response>;
 
+/** `notFound()` を受け取ったときは `fallbacks` の `not-found.tsx` を描画した 404 を、そのほかの値を受け取ったときは `undefined` を返す関数を返す。 */
+const notFoundWith = (respond: Respond, fallbacks: Fallbacks) => (c: Context, error: unknown) =>
+  classify(error).kind === "notFound"
+    ? respond(c, jsx(missing, {}), fallbacks, propsOf(c))
+    : undefined;
+
+/** ディレクトリのミドルウェア `middlewares` を外側から順に実行するミドルウェアを返す。ミドルウェアが投げた `notFound()` には、そのミドルウェアに付与した `not-found.tsx` を使用する。 */
+const directoryOf = (respond: Respond, middlewares: Route["middlewares"]): MiddlewareHandler =>
+  every(
+    ...middlewares.map((middleware) =>
+      catching(lazy(middleware.module), notFoundWith(respond, middleware)),
+    ),
+  );
+
 /**
  * `route` を、ディレクトリのミドルウェアの後に `app` に登録する。
  * `formErrorOf` がそのリクエストに対して値を返したら、ページと `not-found.tsx` の行は、ページの代わりに、行の `error.tsx` にその値を渡して描画し、`route.ts` の行は、関数を呼ばずにその値を投げる。
- * ディレクトリのミドルウェアが投げた `notFound()` には、そのミドルウェアに付与した `not-found.tsx` を使用し、行の処理が投げた `notFound()` には、行の `not-found.tsx` を使用する。
+ * 行の処理が投げた `notFound()` には、行の `not-found.tsx` を使用する。
  * `output` が `static` なら、パラメータのあるページのリクエストのパラメータが、そのページの `prerender` が返すパラメータに無いときに、`notFound()` を投げる。
  */
 function register(
@@ -324,16 +314,7 @@ function register(
   output: Output,
   formErrorOf: (c: Context) => { readonly error: unknown } | undefined,
 ): void {
-  /** `notFound()` を受け取ったときは `fallbacks` の `not-found.tsx` を描画した 404 を、そのほかの値を受け取ったときは `undefined` を返す関数を返す。 */
-  const notFoundWith = (fallbacks: Fallbacks) => (c: Context, error: unknown) =>
-    classify(error).kind === "notFound"
-      ? respond(c, jsx(missing, {}), fallbacks, propsOf(c))
-      : undefined;
-  const directory = every(
-    ...route.middlewares.map((middleware) =>
-      catching(lazy(middleware.module), notFoundWith(middleware)),
-    ),
-  );
+  const directory = directoryOf(respond, route.middlewares);
   /** `formErrorOf(c)` が値を返したら、その値を、エラーのページ `errorPage` に渡して描画したレスポンスを返す。そうでなければ `undefined` を返す。 */
   const formFailurePage = (c: Context, errorPage: Fallbacks["error"]) => {
     const failed = formErrorOf(c);
@@ -341,7 +322,7 @@ function register(
   };
   /** 行の処理 `handler` を、`directory` の後に実行するハンドラーの列を返す。 */
   const chain = (handler: MiddlewareHandler) =>
-    [directory, catching(handler, notFoundWith(route))] as const;
+    [directory, catching(handler, notFoundWith(respond, route))] as const;
   switch (route.kind) {
     case "page":
       app.get(

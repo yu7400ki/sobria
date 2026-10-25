@@ -1119,6 +1119,46 @@ describe("ディレクトリの middleware.ts と route.ts が投げた notFound
   });
 });
 
+/** `routes` のアプリに、404.html の書き出しのリクエストを送る。 */
+const exported = async (routes: Routes) => {
+  const response = await createApp(routes).fetch(new Request("http://localhost/_rinka/not-found"), {
+    [prerenderEnv]: "not-found",
+  });
+  return [response.status, await bodyOf(response), response.headers.get("x-dir")];
+};
+
+describe("404.html の書き出しのリクエスト", () => {
+  it("URL に一致する行にかかわらず、URL の区切りの無い not-found.tsx を、その行の middleware.ts の後で 404 で返す", async () => {
+    const slug = fallbackOf(fallback("slug"));
+    const site = fallbackOf(fallback("site"));
+    expect(
+      await Promise.all([
+        exported({
+          routes: [
+            pageRoute("/:slug{.+}", page("slug"), [], [deny], { notFound: slug }),
+            notFoundRoute("/:slug{.+}", slug, [deny]),
+            notFoundRoute("/", fallbackOf(fallback("root"))),
+            notFoundRoute("/", site, [marking("x-dir")]),
+          ],
+        }),
+        exported({ routes: [notFoundRoute("/", site, [marking("x-dir")])] }),
+        exported({ routes: [pageRoute("/", page("top"))] }),
+      ]),
+    ).toEqual([
+      [404, "<h1>root /_rinka/not-found</h1>", null],
+      [404, "<h1>site /_rinka/not-found</h1>", "1"],
+      [404, "Not Found", null],
+    ]);
+  });
+
+  it("その行の middleware.ts が返した Response を、not-found.tsx の代わりに返す", async () => {
+    const response = await createApp({
+      routes: [notFoundRoute("/", fallbackOf(fallback("root")), [deny])],
+    }).fetch(new Request("http://localhost/_rinka/not-found"), { [prerenderEnv]: "not-found" });
+    expect([response.status, await response.text()]).toEqual([401, "denied"]);
+  });
+});
+
 describe("getContext", () => {
   it("ページの描画中は処理中のリクエストの Context を返し、リクエストの外では undefined を返す", async () => {
     const response = await request({ routes: [pageRoute("/", reading)] }, "/", {
