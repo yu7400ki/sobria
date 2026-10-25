@@ -21,6 +21,8 @@ import {
   LOAD_ATTRIBUTE,
   PATCH_ATTRIBUTE,
   tagAttributeName,
+  tagProperties,
+  type PropertyOutput,
 } from "../shared/attributes.ts";
 import {
   elementInfo,
@@ -252,6 +254,15 @@ interface WalkCtx {
   readonly selectValue: ((tracked: boolean) => unknown) | undefined;
   /** テキストだけを子に持つ要素（`<title>` と `<textarea>`）の中なら `true` である。 */
   readonly rawText: boolean;
+}
+
+/** タグのプロパティの出力の形の表 `outputs` のうち、出力の形が `output` で、`props` に記述した props の名前を返す。 */
+function propertyOf(
+  outputs: Readonly<Record<string, PropertyOutput>>,
+  props: Record<string, unknown>,
+  output: PropertyOutput,
+): string | undefined {
+  return Object.keys(outputs).find((name) => outputs[name] === output && name in props);
 }
 
 /** SSR するフォームの部品のホストの `name` と `disabled` を返す関数を表す。 */
@@ -736,6 +747,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     const attributesOf =
       tag === "form" ? formProps(props) : label ? { ...props, id: label.id } : props;
     if (ctx.owner === null) warnHandlers(tag, props);
+    const outputs = tagProperties[tag] ?? {};
     const { selectValue } = ctx;
     const openTag = (tracked: boolean): string => {
       let attributes = "";
@@ -743,7 +755,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         if (name === "children" || name === "ref") continue;
         if (name === "slot" && ctx.slot !== undefined) continue;
         if (isEventProp(name) && isFunction(raw)) continue;
-        if (name === "value" && (tag === "textarea" || tag === "select")) continue;
+        if ((outputs[name] ?? "attribute") !== "attribute") continue;
         attributes += attribute(name, this.value(raw, ctx, tracked));
       }
       if (tag === "option" && selectValue && !("selected" in props)) {
@@ -780,9 +792,10 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     }
     if (tag === "fieldset")
       disabled = () => outer() || disables(this.value(props.disabled, ctx, true));
-    if (tag === "textarea" && "value" in props) out.push("\n");
+    const text = propertyOf(outputs, props, "text");
+    const option = propertyOf(outputs, props, "option");
     this.walk(
-      asNode(tag === "textarea" && "value" in props ? props.value : props.children),
+      asNode(text === undefined ? props.children : ["\n", props[text]]),
       {
         ...ctx,
         head: childPlacement(tag, ctx.head),
@@ -792,9 +805,9 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         selectValue:
           tag !== "select"
             ? selectValue
-            : "value" in props
-              ? (tracked) => this.value(props.value, ctx, tracked)
-              : undefined,
+            : option === undefined
+              ? undefined
+              : (tracked) => this.value(props[option], ctx, tracked),
         rawText: ctx.rawText || tag === "title" || tag === "textarea",
       },
       out,

@@ -1,6 +1,6 @@
 import { createRenderEffect, onCleanup, runWithOwner, untrack } from "@solidjs/signals";
 
-import { attributeValue, tagAttributeName } from "../shared/attributes.ts";
+import { attributeValue, tagAttributeName, tagProperties } from "../shared/attributes.ts";
 import { isEventProp, listenerEventName } from "../shared/names.ts";
 import type { ClientNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
@@ -22,14 +22,6 @@ export type Child =
 
 /** JSX に記述するコンポーネントの関数を表す。 */
 export type Component<P> = (props: P) => unknown;
-
-/** ネイティブのタグで、プロパティとして設定する props の名前を、タグ名ごとに列挙する。 */
-const properties: Readonly<Record<string, readonly string[]>> = {
-  input: ["value", "checked"],
-  textarea: ["value"],
-  select: ["value"],
-  option: ["selected"],
-};
 
 /** JSX を評価した実行時の値（DOM のノードと、挿入できる値）を、`ClientNode` の型として扱う。 */
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion
@@ -73,7 +65,7 @@ function createTag(tag: string, given: Record<string, unknown>): Element {
   const props = tag === "form" ? formProps(given) : given;
   const el = document.createElement(tag);
   if (props.children !== undefined) insert(el, props.children);
-  const propertyNames = properties[tag] ?? [];
+  const propertyNames = Object.keys(tagProperties[tag] ?? {});
   for (const [name, value] of Object.entries(props)) {
     if (name === "children" || name === "ref" || propertyNames.includes(name)) continue;
     applyAttribute(el, name, value);

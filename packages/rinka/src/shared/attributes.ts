@@ -56,3 +56,14 @@ export const ARIA_ATTRIBUTE = "data-rinka-aria";
 
 /** サーバーが、フォームの部品の Light DOM に出力した hidden input に付与する属性の名前である。 */
 export const FORM_VALUE_ATTRIBUTE = "data-rinka-form";
+
+/** プロパティとして設定する props を、SSR で出力する形を表す。`attribute` は属性、`text` はテキストの子、`option` は値が一致する子の `<option>` の `selected` として出力する。 */
+export type PropertyOutput = "attribute" | "text" | "option";
+
+/** ネイティブのタグで、プロパティとして設定する props の名前と、SSR で出力する形を、タグ名ごとに表す。 */
+export const tagProperties: Readonly<Record<string, Readonly<Record<string, PropertyOutput>>>> = {
+  input: { value: "attribute", checked: "attribute" },
+  textarea: { value: "text" },
+  select: { value: "option" },
+  option: { selected: "attribute" },
+};
