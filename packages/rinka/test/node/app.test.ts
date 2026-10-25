@@ -166,12 +166,12 @@ const late: MiddlewareHandler = async (_c, next) => {
   throw notFound();
 };
 
-/** ヘッダーの `x-throw` に応じて、`redirect()`、`notFound()`、通常のエラーを投げるミドルウェアである。 */
+/** ヘッダーの `x-throw` に応じて、`redirect()` と `notFound()` を投げ、POST のリクエストでは通常のエラーを投げるミドルウェアである。 */
 const thrower: MiddlewareHandler = async (c, next) => {
   const kind = c.req.header("x-throw");
   if (kind === "redirect") throw redirect("/login", 307);
   if (kind === "notFound") throw notFound();
-  if (kind === "error") throw new Error("root");
+  if (kind === "error" && c.req.method === "POST") throw new Error("root");
   await next();
 };
 
@@ -417,6 +417,164 @@ const flashPage = () => {
 /** JSON として読めない本文を、JSON の Content-Type で返すミドルウェアである。 */
 const brokenJson: MiddlewareHandler = async (c) =>
   c.body("{", 200, { "content-type": "application/json" });
+
+/** c.var.org に、パラメータの id を設定するミドルウェアである。 */
+const orgGate: MiddlewareHandler = async (c, next) => {
+  c.set("org", `org-${c.req.param("id") ?? ""}`);
+  await next();
+};
+
+/** Cookie の `root` を設定するミドルウェアである。 */
+const rootCookie: MiddlewareHandler = async (c, next) => {
+  setCookie(c, "root", "1");
+  await next();
+};
+
+/** c.var.org を `data-org` 属性に出力するレイアウトである。 */
+const orgLayout = ({ children }: { readonly children: unknown }) =>
+  jsx("section", { "data-org": String(getContext()?.get("org")), children });
+
+describe("フォームの送信が失敗したときの、送信したページへのサブリクエスト", () => {
+  const explode = defineServerFn(() => {
+    throw new Error("kaboom");
+  });
+  const id = "src/app-test.ts#explode-subrequest";
+  registerServerFn(id, explode);
+  const rootNotFound = fallbackOf(fallback("root"));
+  const orgError = fallbackOf(fallback("org"), [orgLayout]);
+  const routes: Routes = {
+    middleware: loadOf(rootCookie),
+    routes: [
+      pageRoute("/orgs/:id", page("org"), [orgLayout], [orgGate], { error: orgError }),
+      pageRoute("/private", page("private"), [], [guard], { error: orgError }),
+      pageRoute(
+        "/kept",
+        page("kept"),
+        [],
+        [
+          async () => {
+            throw redirect("/login", 307);
+          },
+        ],
+        { error: orgError },
+      ),
+      pageRoute("/hidden", page("hidden"), [], [guarded(hide, { notFound: rootNotFound })], {
+        error: orgError,
+      }),
+      pageRoute("/plain", page("plain")),
+      pageRoute("/session", page("session"), [], [session], { error: orgError }),
+      pageRoute(
+        "/session-moved",
+        page("session-moved"),
+        [],
+        [
+          async (c) => {
+            setCookie(c, "session", "1");
+            throw redirect("/login", 308);
+          },
+        ],
+        { error: orgError },
+      ),
+      apiRoute("/api/html", { GET: (c) => c.html("<form>api</form>") }),
+    ],
+  };
+  /** Referer を `referer` にしてフォームを送信する。`js` が真なら、`x-rinka-page` も `referer` にする。`logged` には、`console.error` に渡した値を加える。 */
+  const submit = async (referer: string, js = false, logged: unknown[] = []) => {
+    const error = vi.spyOn(console, "error").mockImplementation((value: unknown) => {
+      logged.push(value);
+    });
+    onTestFinished(() => {
+      error.mockRestore();
+    });
+    return createApp(routes, { onError: handled }).fetch(
+      new Request(`http://localhost${rpcPath(id)}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          referer,
+          ...(js && { "x-rinka-page": referer }),
+        },
+        body: "a=1",
+      }),
+    );
+  };
+
+  it("ページのディレクトリの middleware.ts を実行してから error.tsx を描画するので、レイアウトは middleware.ts が c.set した値を参照できる", async () => {
+    const response = await submit("http://localhost/orgs/7");
+    expect([response.status, await bodyOf(response)]).toEqual([
+      500,
+      '<section data-org="org-7"><h1>org /orgs/7 kaboom</h1></section>',
+    ]);
+  });
+
+  it("middleware.ts がリダイレクトしたら、JS が無いときはリダイレクトのレスポンスに、JS があるときは { redirect } にする", async () => {
+    const [plain, js] = await Promise.all([
+      submit("http://localhost/private"),
+      submit("http://localhost/private", true),
+    ]);
+    expect([plain.status, plain.headers.get("location")]).toEqual([303, "/login"]);
+    expect([js.status, await js.json()]).toEqual([200, { redirect: "/login" }]);
+  });
+
+  it("JS が無いときは、middleware.ts の 307 のリダイレクトを 303 にする", async () => {
+    const [plain, js] = await Promise.all([
+      submit("http://localhost/kept"),
+      submit("http://localhost/kept", true),
+    ]);
+    expect([plain.status, plain.headers.get("location")]).toEqual([303, "/login"]);
+    expect([js.status, await js.json()]).toEqual([200, { redirect: "/login" }]);
+  });
+
+  it("サーバー関数が投げた値は、error.tsx を描画したときも、middleware.ts が拒否したときも、1 回だけ記録する", async () => {
+    const logged: unknown[] = [];
+    await submit("http://localhost/orgs/7", false, logged);
+    await submit("http://localhost/private", false, logged);
+    await submit("http://localhost/hidden", true, logged);
+    await submit("http://localhost/api/html", false, logged);
+    expect(logged.map((value) => (value instanceof Error ? value.message : value))).toEqual([
+      "kaboom",
+      "kaboom",
+      "kaboom",
+    ]);
+  });
+
+  it("middleware.ts が notFound() を投げたら、親から探索した not-found.tsx を 404 で返す", async () => {
+    const [plain, js] = await Promise.all([
+      submit("http://localhost/hidden"),
+      submit("http://localhost/hidden", true),
+    ]);
+    expect([plain.status, await bodyOf(plain)]).toEqual([404, "<h1>root /hidden</h1>"]);
+    expect([js.status, ((await js.json()) as { body: string }).body]).toEqual([
+      404,
+      "<h1>root /hidden</h1>",
+    ]);
+  });
+
+  it("サブリクエストの middleware.ts が設定した Cookie を、ルートの middleware.ts の Cookie とともに、フォームの送信のレスポンスに 1 回ずつ付ける", async () => {
+    const responses = await Promise.all([
+      submit("http://localhost/session"),
+      submit("http://localhost/session", true),
+      submit("http://localhost/session-moved"),
+    ]);
+    expect(responses.map((response) => [response.status, response.headers.getSetCookie()])).toEqual(
+      [
+        [500, ["root=1; Path=/", "session=1; Path=/"]],
+        [500, ["root=1; Path=/", "session=1; Path=/"]],
+        [303, ["root=1; Path=/", "session=1; Path=/"]],
+      ],
+    );
+  });
+
+  it("送信したページの URL に一致する行が、error.tsx の無いページか、route.ts か、/_rinka/ の下か、無いときは、onError のレスポンスを返す", async () => {
+    const urls = ["/plain", "/api/html", rpcPath(id), "/nowhere"];
+    const responses = await Promise.all(urls.map((url) => submit(`http://localhost${url}`)));
+    expect(
+      await Promise.all(
+        responses.map(async (response) => [response.status, await response.text()]),
+      ),
+    ).toEqual(urls.map(() => [503, "handled"]));
+  });
+});
 
 describe("JS からのサーバー関数の呼び出し", () => {
   const ids = {

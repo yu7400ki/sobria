@@ -14,11 +14,13 @@ import {
   type RouteComponent,
   type Routes,
 } from "../shared/routes.ts";
+import { internalPrefix } from "../shared/wire.ts";
 import { isBot } from "./bots.ts";
 import { blockingRenderOf, runInRequest, withContextHeaders } from "./context.ts";
 import {
   callerOf,
   callerResponses,
+  pageRequest,
   serverFnFailure,
   serverFnMiddleware,
   type Failure,
@@ -216,24 +218,44 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
         return onError(error);
     }
   };
+  /** 送信したページへのサブリクエストの `Request` をキーにして、フォームの送信先のサーバー関数が投げた値を保持する。 */
+  const formErrors = new WeakMap<Request, { readonly error: unknown }>();
+  /** `c` が保持する `Request` をキーにした、サーバー関数が投げた値を、`formErrors` から除去して返す。キーに対応する値が無ければ `undefined` を返す。 */
+  const takeFormError = (c: Pick<Context, "req">): { readonly error: unknown } | undefined => {
+    const failed = formErrors.get(c.req.raw);
+    formErrors.delete(c.req.raw);
+    return failed;
+  };
   const formFailure: Failure = async (c, error) => {
     const caller = callerOf(c);
     const referer = c.req.header("referer");
     const url =
       caller?.page ??
       (referer !== undefined && URL.canParse(referer) ? new URL(referer) : undefined);
-    if (url === undefined || url.host !== new URL(c.req.url).host) return fail(c, error);
-    const found = await find(url);
-    if (found?.route.error === undefined) return fail(c, error);
-    return respond(
+    if (
+      url === undefined ||
+      url.host !== new URL(c.req.url).host ||
+      url.pathname.startsWith(internalPrefix)
+    ) {
+      return fail(c, error);
+    }
+    const request = pageRequest(c, url, caller !== undefined);
+    formErrors.set(request, { error });
+    const response = await app.fetch(request, c.env, executionCtxOf(c));
+    // error.tsx と onError のどちらにも渡らなかった値は、ここで記録する
+    if (formErrors.has(request)) console.error(error);
+    // サブリクエストの Set-Cookie を Context に加え、c.res の setter が Context の Set-Cookie で置き換えても残るようにする
+    const pending = c.newResponse(null).headers.getSetCookie();
+    for (const cookie of response.headers.getSetCookie()) {
+      const index = pending.indexOf(cookie);
+      if (index === -1) c.header("set-cookie", cookie, { append: true });
+      else pending.splice(index, 1);
+    }
+    // JS が無いときは、307 と 308 のリダイレクトを 303 に変換する
+    const resend = caller === undefined && (response.status === 307 || response.status === 308);
+    return withContextHeaders(
       c,
-      jsx(throwing(error), {}),
-      { error: found.route.error },
-      {
-        params: found.params,
-        url,
-      },
-      { refresh: caller !== undefined },
+      resend ? new Response(response.body, { status: 303, headers: response.headers }) : response,
     );
   };
   app.onError(async (c) => withContextHeaders(c, await fail(c, c.error)));
@@ -266,8 +288,13 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
       ),
     ),
   );
-  for (const route of routes) register(app, route, respond, options.output ?? "server");
-  app.notFound((c) => respond(c, jsx(missing, {}), {}, {}));
+  for (const route of routes) {
+    register(app, route, respond, options.output ?? "server", takeFormError);
+  }
+  app.notFound((c) => {
+    const failed = takeFormError(c);
+    return failed ? fail(c, failed.error) : respond(c, jsx(missing, {}), {}, {});
+  });
   return app;
 }) satisfies CreateApp;
 
@@ -286,10 +313,17 @@ type Respond = (
 
 /**
  * `route` を、ディレクトリのミドルウェアの後に `app` に登録する。
+ * `formErrorOf` がそのリクエストに対して値を返したら、ページと `not-found.tsx` の行は、ページの代わりに、行の `error.tsx` にその値を渡して描画し、`route.ts` の行は、関数を呼ばずにその値を投げる。
  * ディレクトリのミドルウェアが投げた `notFound()` には、そのミドルウェアに付与した `not-found.tsx` を使用し、行の処理が投げた `notFound()` には、行の `not-found.tsx` を使用する。
  * `output` が `static` なら、パラメータのあるページのリクエストのパラメータが、そのページの `prerender` が返すパラメータに無いときに、`notFound()` を投げる。
  */
-function register(app: Hono, route: Route, respond: Respond, output: Output): void {
+function register(
+  app: Hono,
+  route: Route,
+  respond: Respond,
+  output: Output,
+  formErrorOf: (c: Context) => { readonly error: unknown } | undefined,
+): void {
   /** `notFound()` を受け取ったときは `fallbacks` の `not-found.tsx` を描画した 404 を、そのほかの値を受け取ったときは `undefined` を返す関数を返す。 */
   const notFoundWith = (fallbacks: Fallbacks) => (c: Context, error: unknown) =>
     classify(error).kind === "notFound"
@@ -300,6 +334,11 @@ function register(app: Hono, route: Route, respond: Respond, output: Output): vo
       catching(lazy(middleware.module), notFoundWith(middleware)),
     ),
   );
+  /** `formErrorOf(c)` が値を返したら、その値を、エラーのページ `errorPage` に渡して描画したレスポンスを返す。そうでなければ `undefined` を返す。 */
+  const formFailurePage = (c: Context, errorPage: Fallbacks["error"]) => {
+    const failed = formErrorOf(c);
+    return failed && respond(c, jsx(throwing(failed.error), {}), { error: errorPage }, propsOf(c));
+  };
   /** 行の処理 `handler` を、`directory` の後に実行するハンドラーの列を返す。 */
   const chain = (handler: MiddlewareHandler) =>
     [directory, catching(handler, notFoundWith(route))] as const;
@@ -316,6 +355,8 @@ function register(app: Hono, route: Route, respond: Respond, output: Output): vo
             );
             if (listed === false) throw notFound();
           }
+          const failure = formFailurePage(c, route.error);
+          if (failure) return failure;
           const props = propsOf(c);
           return respond(c, await wrap(route.module, route.layouts, props), route, props, {
             files: filesOf(route.module, route.layouts),
@@ -327,6 +368,8 @@ function register(app: Hono, route: Route, respond: Respond, output: Output): vo
       app.all(
         route.path,
         ...chain(async (c, next) => {
+          const failed = formErrorOf(c);
+          if (failed) throw failed.error;
           const handlers = await route.module();
           const requested = handledMethod(c);
           const method = routeMethods.find((name) => name === requested);
@@ -345,7 +388,12 @@ function register(app: Hono, route: Route, respond: Respond, output: Output): vo
       );
       return;
     case "not-found":
-      app.all(route.path, directory, async (c) => respond(c, jsx(missing, {}), route, propsOf(c)));
+      app.all(
+        route.path,
+        directory,
+        async (c) =>
+          formFailurePage(c, route.error) ?? respond(c, jsx(missing, {}), route, propsOf(c)),
+      );
       return;
   }
 }

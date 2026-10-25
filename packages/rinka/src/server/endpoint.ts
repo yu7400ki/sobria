@@ -272,7 +272,7 @@ async function replaceWithPage(
   fetchPage: FetchPage,
   status: number,
 ): Promise<void> {
-  const response = page === undefined ? undefined : await fetchPage(c, pageRequest(c, page));
+  const response = page === undefined ? undefined : await fetchPage(c, pageRequest(c, page, true));
   const json = response?.headers.get("content-type")?.startsWith("application/json") ?? false;
   const refreshed: unknown = json ? await response?.json().catch(() => undefined) : undefined;
   const headers = new Headers(c.res.headers);
@@ -312,10 +312,10 @@ function locationOf(location: string, c: Context, page: URL): URL {
 }
 
 /**
- * リクエスト `c` のヘッダーを引き継いで、ページ `page` を描き直す GET のリクエストを返す。
+ * リクエスト `c` のヘッダーを引き継いで、ページ `page` を取得する GET のリクエストを返す。`refresh` が真なら、描き直しの JSON を要求する。
  * 本文、圧縮、条件付きのリクエストのヘッダーと `x-rinka-page` は除外し、`Cookie` は、`c` のレスポンスの `Set-Cookie` を反映した値にする。
  */
-function pageRequest(c: Context, page: URL): Request {
+export function pageRequest(c: Context, page: URL, refresh: boolean): Request {
   const headers = new Headers(c.req.raw.headers);
   for (const name of [
     "content-type",
@@ -325,10 +325,11 @@ function pageRequest(c: Context, page: URL): Request {
     "if-modified-since",
     wireHeader,
     PAGE_HEADER,
+    REFRESH_HEADER,
   ]) {
     headers.delete(name);
   }
-  headers.set(REFRESH_HEADER, "1");
+  if (refresh) headers.set(REFRESH_HEADER, "1");
   const cookie = cookieAfter(c.req.header("cookie"), c.res.headers.getSetCookie());
   if (cookie === "") headers.delete("cookie");
   else headers.set("cookie", cookie);
