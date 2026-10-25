@@ -61,9 +61,15 @@ export const FORM_VALUE_ATTRIBUTE = "data-rinka-form";
 export type PropertyOutput = "attribute" | "text" | "option";
 
 /** ネイティブのタグで、プロパティとして設定する props の名前と、SSR で出力する形を、タグ名ごとに表す。 */
-export const tagProperties: Readonly<Record<string, Readonly<Record<string, PropertyOutput>>>> = {
-  input: { value: "attribute", checked: "attribute" },
-  textarea: { value: "text" },
-  select: { value: "option" },
-  option: { selected: "attribute" },
-};
+export const tagProperties: ReadonlyMap<string, ReadonlyMap<string, PropertyOutput>> = new Map([
+  [
+    "input",
+    new Map<string, PropertyOutput>([
+      ["value", "attribute"],
+      ["checked", "attribute"],
+    ]),
+  ],
+  ["textarea", new Map<string, PropertyOutput>([["value", "text"]])],
+  ["select", new Map<string, PropertyOutput>([["value", "option"]])],
+  ["option", new Map<string, PropertyOutput>([["selected", "attribute"]])],
+]);

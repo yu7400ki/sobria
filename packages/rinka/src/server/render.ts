@@ -252,13 +252,17 @@ interface WalkCtx {
   readonly parent: ParentTag;
 }
 
-/** タグのプロパティの出力の形の表 `outputs` のうち、出力の形が `output` で、`props` に記述した props の名前を返す。 */
+/** `tagProperties` に無いタグで使用する、空の表である。 */
+const noProperties: ReadonlyMap<string, PropertyOutput> = new Map();
+
+/** `outputs` に出力する形が `output` と記録された props のうち、`props` に記述したものの名前を返す。 */
 function propertyOf(
-  outputs: Readonly<Record<string, PropertyOutput>>,
+  outputs: ReadonlyMap<string, PropertyOutput>,
   props: Record<string, unknown>,
   output: PropertyOutput,
 ): string | undefined {
-  return Object.keys(outputs).find((name) => outputs[name] === output && name in props);
+  for (const [name, kind] of outputs) if (kind === output && name in props) return name;
+  return undefined;
 }
 
 /** SSR するフォームの部品のホストの `name` と `disabled` を返す関数を表す。 */
@@ -777,7 +781,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     const attributesOf =
       tag === "form" ? formProps(props) : label ? { ...props, id: label.id } : props;
     if (ctx.owner === null) warnHandlers(tag, props);
-    const outputs = tagProperties[tag] ?? {};
+    const outputs = tagProperties.get(tag) ?? noProperties;
     const { selectValue } = ctx.parent;
     const openTag = (tracked: boolean): string => {
       let attributes = "";
@@ -785,7 +789,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         if (name === "children" || name === "ref") continue;
         if (name === "slot" && ctx.slot !== undefined) continue;
         if (isEventProp(name) && isFunction(raw)) continue;
-        if ((outputs[name] ?? "attribute") !== "attribute") continue;
+        if ((outputs.get(name) ?? "attribute") !== "attribute") continue;
         attributes += attribute(name, this.value(raw, ctx, tracked));
       }
       if (tag === "option" && selectValue && !("selected" in props)) {
@@ -828,11 +832,11 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     out.push(`</${tag}>`);
   }
 
-  /** ネイティブのタグ `<tag>` の子の位置の、`disabled` と `parent` を返す。`outputs` は、そのタグのプロパティの出力の形の表である。 */
+  /** ネイティブのタグ `<tag>` の子の位置の、`disabled` と `parent` を返す。`outputs` は、そのタグでプロパティとして設定する props と、SSR で出力する形の表である。 */
   private childScope(
     tag: string,
     props: Record<string, unknown>,
-    outputs: Readonly<Record<string, PropertyOutput>>,
+    outputs: ReadonlyMap<string, PropertyOutput>,
     ctx: WalkCtx,
   ): Pick<WalkCtx, "disabled" | "parent"> {
     const { disabled: outer, parent } = ctx;
@@ -846,7 +850,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         parent: { ...parent, legend: { taken: false, outer } },
       };
     }
-    if (Object.values(outputs).includes("option")) {
+    if ([...outputs.values()].includes("option")) {
       const option = propertyOf(outputs, props, "option");
       return {
         disabled: outer,

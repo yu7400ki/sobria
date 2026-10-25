@@ -54,6 +54,15 @@ describe("ネイティブのタグ", () => {
     ).toBe("<select><option selected>1 件</option><option selected>1 件</option></select>");
   });
 
+  it("Object のプロトタイプにある名前の props も、属性として出力する", async () => {
+    expect(
+      await renderToString(jsx("input", { constructor: "c", toString: "t", hasOwnProperty: "h" })),
+    ).toBe('<input constructor="c" toString="t" hasOwnProperty="h">');
+    expect(await renderToString(jsx("constructor", { name: "n" }))).toBe(
+      '<constructor name="n"></constructor>',
+    );
+  });
+
   it("空要素は終了タグを出力しない", async () => {
     expect(await renderToString(jsx("input", { value: "v", disabled: true }))).toBe(
       '<input value="v" disabled>',
