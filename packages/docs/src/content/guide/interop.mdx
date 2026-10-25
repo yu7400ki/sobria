@@ -73,6 +73,14 @@ document.createElement("acme-counter").count = 1;
 
 存在しない props を使用すると、型エラーになります。他のフレームワークの JSX やテンプレートの型は生成しないので、必要であれば、そのフレームワークのプロジェクトで宣言してください。
 
+要素が発行するイベントにも型が付きます。`addEventListener` で受け取る `CustomEvent` の `detail` の型は、props の関数の最初の引数の型です。引数の無い関数の `detail` と、`undefined` を渡したときの `detail` は `null` です。`onClick` の `click` のように、イベント名がブラウザのイベントと同じときは、Shadow DOM の中から届くブラウザのイベントもリスナーに渡るので、リスナーが受け取るイベントの型は、`CustomEvent` とブラウザのイベントの型のユニオン型になります。
+
+```ts
+document.querySelector("acme-counter")?.addEventListener("like-click", (event) => {
+  console.log(event.detail.toFixed());
+});
+```
+
 ## expose したメソッドを外部から呼ぶ
 
 要素が `expose` で公開したメソッドは、外部からも呼び出せます。外部から呼び出すときは、`customElements.whenDefined()` でタグの登録を待ちます。

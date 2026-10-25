@@ -239,12 +239,98 @@ interface ElementOptions {
 
 ## ElementRef
 
-要素の関数か要素コンポーネント `C` の、インスタンスの型を表す。`ctx.expose` で公開したメンバーと、スロットになる props を除いた props を持つ。公開したメンバーと同じ名前の `HTMLElement` のメンバーは、公開した側の型になる。
+要素の関数か要素コンポーネント `C` の、インスタンスの型を表す。`ctx.expose` で公開したメンバーと、スロットになる props を除いた props を持つ。公開したメンバーと同じ名前の `HTMLElement` のメンバーは、公開した側の型になる。`addEventListener` と `removeEventListener` の型は、`onX` の形の名前の関数の props から決まる名前のイベントを、`CustomEvent` として扱う。
 
 ```ts
 type ElementRef<C> = C extends (props: infer P, ctx: Ctx<infer M>) => unknown
-  ? Omit<HTMLElement, keyof M> & M & Omit<P, SlotKeys<P>>
+  ? ElementEventListeners<ElementEventMap<P>> &
+      Omit<HTMLElement, keyof M> &
+      M &
+      Omit<P, SlotKeys<P>>
   : never;
+
+interface ElementEventListeners<E> {
+  addEventListener<K extends keyof E & string>(
+    type: K,
+    listener: (this: HTMLElement, event: E[K]) => unknown,
+    options?: boolean | AddEventListenerOptions,
+  ): void;
+  removeEventListener<K extends keyof E & string>(
+    type: K,
+    listener: (this: HTMLElement, event: E[K]) => unknown,
+    options?: boolean | EventListenerOptions,
+  ): void;
+}
+
+type ElementEventMap<P> = {
+  [
+    K in keyof P as K extends EventPropName
+      ? NonNullable<P[K]> extends (...args: never[]) => unknown
+        ? CustomEventName<K>
+        : never
+      : never
+  ]-?: K extends EventPropName
+    ? NonNullable<P[K]> extends infer F extends (...args: never[]) => unknown
+      ? WithNativeEvent<CustomEventName<K>, CustomEvent<DetailOf<F>>>
+      : never
+    : never;
+};
+
+type EventPropName = `on${UpperLetter}${string}`;
+
+type UpperLetter =
+  | "A"
+  | "B"
+  | "C"
+  | "D"
+  | "E"
+  | "F"
+  | "G"
+  | "H"
+  | "I"
+  | "J"
+  | "K"
+  | "L"
+  | "M"
+  | "N"
+  | "O"
+  | "P"
+  | "Q"
+  | "R"
+  | "S"
+  | "T"
+  | "U"
+  | "V"
+  | "W"
+  | "X"
+  | "Y"
+  | "Z";
+
+type CustomEventName<K extends EventPropName> = K extends `on${infer Name}`
+  ? KebabCase<Name>
+  : never;
+
+type KebabCase<
+  S extends string,
+  Prev extends string = "",
+  Acc extends string = "",
+> = S extends `${infer C}${infer Rest}`
+  ? KebabCase<
+      Rest,
+      C,
+      `${Acc}${C extends "_" ? "-" : C extends UpperLetter ? (Prev extends LowerOrDigit ? `-${Lowercase<C>}` : Prev extends UpperLetter ? (Rest extends `${Lowercase<UpperLetter>}${string}` ? `-${Lowercase<C>}` : Lowercase<C>) : Lowercase<C>) : C}`
+    >
+  : Acc;
+
+type LowerOrDigit =
+  Lowercase<UpperLetter> | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
+
+type WithNativeEvent<N, E> = N extends keyof HTMLElementEventMap ? E | HTMLElementEventMap[N] : E;
+
+type DetailOf<F extends (...args: never[]) => unknown> =
+  Parameters<F> extends []
+    ? null
+    : Exclude<Parameters<F>[0], undefined> | (undefined extends Parameters<F>[0] ? null : never);
 
 type SlotKeys<P> = {
   [K in keyof P]-?: K extends "children"

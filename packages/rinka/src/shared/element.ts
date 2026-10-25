@@ -1,4 +1,10 @@
-import { isEventProp, propToAttribute, type defaultLoads } from "./names.ts";
+import {
+  isEventProp,
+  propToAttribute,
+  type CustomEventName,
+  type defaultLoads,
+  type EventPropName,
+} from "./names.ts";
 import type { ClientNode, Slot } from "./nodes.ts";
 import { isFunction } from "./objects.ts";
 import type { ElementCss } from "./styles.ts";
@@ -185,12 +191,57 @@ type SlotKeys<P> = {
 }[keyof P];
 
 /**
+ * 関数 `F` の props を呼んだときに発行する `CustomEvent` の `detail` の型を表す。
+ * 引数が無ければ `null` を表し、それ以外では、最初の引数の型から `undefined` を除いて `null` を加えた型を表す。
+ */
+type DetailOf<F extends (...args: never[]) => unknown> =
+  Parameters<F> extends []
+    ? null
+    : Exclude<Parameters<F>[0], undefined> | (undefined extends Parameters<F>[0] ? null : never);
+
+/** イベント名 `N` の `CustomEvent` の型 `E` を表す。`HTMLElement` のイベントと同じ名前なら、そのイベントの型との合併を表す。 */
+type WithNativeEvent<N, E> = N extends keyof HTMLElementEventMap ? E | HTMLElementEventMap[N] : E;
+
+/** Props の型 `P` のイベントの props から、要素が発行する `CustomEvent` の名前と、その `CustomEvent` の型の対応を表す。 */
+type ElementEventMap<P> = {
+  [
+    K in keyof P as K extends EventPropName
+      ? NonNullable<P[K]> extends (...args: never[]) => unknown
+        ? CustomEventName<K>
+        : never
+      : never
+  ]-?: K extends EventPropName
+    ? NonNullable<P[K]> extends infer F extends (...args: never[]) => unknown
+      ? WithNativeEvent<CustomEventName<K>, CustomEvent<DetailOf<F>>>
+      : never
+    : never;
+};
+
+/** イベント名から `CustomEvent` の型への対応 `E` について、リスナーを登録する関数と、解除する関数を表す。 */
+interface ElementEventListeners<E> {
+  addEventListener<K extends keyof E & string>(
+    type: K,
+    listener: (this: HTMLElement, event: E[K]) => unknown,
+    options?: boolean | AddEventListenerOptions,
+  ): void;
+  removeEventListener<K extends keyof E & string>(
+    type: K,
+    listener: (this: HTMLElement, event: E[K]) => unknown,
+    options?: boolean | EventListenerOptions,
+  ): void;
+}
+
+/**
  * 要素の関数か要素コンポーネント `C` の、インスタンスの型を表す。
  * `ctx.expose` で公開したメンバーと、スロットになる props を除いた props を持つ。
  * 公開したメンバーと同じ名前の `HTMLElement` のメンバーは、公開した側の型になる。
+ * `addEventListener` と `removeEventListener` の型は、`onX` の形の名前の関数の props から決まる名前のイベントを、`CustomEvent` として扱う。
  */
 export type ElementRef<C> = C extends (props: infer P, ctx: Ctx<infer M>) => unknown
-  ? Omit<HTMLElement, keyof M> & M & Omit<P, SlotKeys<P>>
+  ? ElementEventListeners<ElementEventMap<P>> &
+      Omit<HTMLElement, keyof M> &
+      M &
+      Omit<P, SlotKeys<P>>
   : never;
 
 /** `fn` に、タグ名と `defineElement` に渡したオプションと配信の情報を付与した要素コンポーネントを作成する。 */

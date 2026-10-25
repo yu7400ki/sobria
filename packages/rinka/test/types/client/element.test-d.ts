@@ -96,3 +96,62 @@ test("memo の 2 番目の引数には、key だけを記述できる", () => {
   // @ts-expect-error 呼び出し箇所の ID は Vite プラグインが付与する
   memo(() => 1, { site: "a.tsx:1:1" });
 });
+
+type EventProps = {
+  onLikeClick?: (count: number) => void;
+  onURLChange?: (url: string) => void;
+  onClose?: () => void;
+  onToggle?: (open?: boolean) => void;
+};
+/** `like-click` のイベントを受け取るリスナーである。 */
+const listener = (event: CustomEvent<number>) => event;
+
+const Counter = defineElement("type-counter", (_props: EventProps) => null, {
+  props: {
+    onLikeClick: "function",
+    onURLChange: "function",
+    onClose: "function",
+    onToggle: "function",
+  },
+});
+
+test("ElementRef の addEventListener は、onX の props から決まるイベント名に、最初の引数を detail に持つ CustomEvent を渡す", () => {
+  const counter = null as unknown as ElementRef<typeof Counter>;
+  counter.addEventListener("like-click", (event) => {
+    expectTypeOf(event).toEqualTypeOf<CustomEvent<number>>();
+  });
+  counter.addEventListener("url-change", (event) => {
+    expectTypeOf(event.detail).toEqualTypeOf<string>();
+  });
+  counter.addEventListener("close", (event) => {
+    expectTypeOf(event).toEqualTypeOf<CustomEvent<null> | Event>();
+  });
+  counter.addEventListener("toggle", (event) => {
+    expectTypeOf(event).toEqualTypeOf<CustomEvent<boolean | null> | ToggleEvent>();
+  });
+  counter.addEventListener("click", (event) => {
+    expectTypeOf(event).toEqualTypeOf<HTMLElementEventMap["click"]>();
+  });
+  counter.addEventListener("like-click", listener);
+  counter.removeEventListener("like-click", listener);
+});
+
+type LongProps = {
+  onAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghij?: (
+    n: number,
+  ) => void;
+};
+const Long = defineElement("type-long", (_props: LongProps) => null, {
+  props: {
+    onAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghij:
+      "function",
+  },
+});
+
+test("ElementRef は、100 文字のイベントの props の名前からも、イベント名の型を導出する", () => {
+  const long = null as unknown as ElementRef<typeof Long>;
+  long.addEventListener(
+    "abcdefghij-abcdefghij-abcdefghij-abcdefghij-abcdefghij-abcdefghij-abcdefghij-abcdefghij-abcdefghij-abcdefghij",
+    (event) => expectTypeOf(event.detail).toEqualTypeOf<number>(),
+  );
+});

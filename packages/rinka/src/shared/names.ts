@@ -101,6 +101,51 @@ export type AriaOrDataPropName = `${"aria" | "data"}${UpperLetter}${string}`;
 export const isAriaOrDataProp = (name: string): name is AriaOrDataPropName =>
   /^(aria|data)[A-Z]/.test(name);
 
+/** 英字の小文字と数字を表す。 */
+type LowerOrDigit =
+  | Lowercase<UpperLetter>
+  | "0"
+  | "1"
+  | "2"
+  | "3"
+  | "4"
+  | "5"
+  | "6"
+  | "7"
+  | "8"
+  | "9";
+
+/**
+ * `toKebabCase` が名前 `S` から返す文字列を表す。`Prev` は直前の文字で、`Acc` は変換を終えた部分である。
+ * 大文字の前には、直前が小文字か数字のときと、直前が大文字で直後が小文字のときに `-` を挿入する。
+ */
+type KebabCase<
+  S extends string,
+  Prev extends string = "",
+  Acc extends string = "",
+> = S extends `${infer C}${infer Rest}`
+  ? KebabCase<
+      Rest,
+      C,
+      `${Acc}${C extends "_"
+        ? "-"
+        : C extends UpperLetter
+          ? Prev extends LowerOrDigit
+            ? `-${Lowercase<C>}`
+            : Prev extends UpperLetter
+              ? Rest extends `${Lowercase<UpperLetter>}${string}`
+                ? `-${Lowercase<C>}`
+                : Lowercase<C>
+              : Lowercase<C>
+          : C}`
+    >
+  : Acc;
+
+/** イベントの props の名前 `K` から、要素が発行する `CustomEvent` の名前を表す。 */
+export type CustomEventName<K extends EventPropName> = K extends `on${infer Name}`
+  ? KebabCase<Name>
+  : never;
+
 /** 要素が発行する `CustomEvent` の名前を、イベントの props の名前から返す。`onSelect` は `select`、`onLikeClick` は `like-click` になる。 */
 export const customEventName = (prop: string): string => toKebabCase(prop.slice(2));
 
