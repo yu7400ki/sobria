@@ -106,7 +106,7 @@ export function settingsOf(
 
 /** rinka や Vite が拡張子で扱いを決める、`extensions` に登録できない拡張子である。 */
 const reservedExtensions: ReadonlySet<string> = new Set([
-  ...Object.keys(langs),
+  ...langs.keys(),
   ".mts",
   ".cts",
   ".mjs",

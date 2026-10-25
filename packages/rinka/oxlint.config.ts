@@ -90,7 +90,10 @@ export default defineConfig({
     "unicorn/prefer-node-protocol": "error",
   },
   overrides: [
-    { files: ["src/**"], rules: { "rinka/no-constant-literal": "error" } },
+    {
+      files: ["src/**"],
+      rules: { "rinka/no-constant-literal": "error", "rinka/no-string-record-literal": "error" },
+    },
     {
       files: ["src/shared/**"],
       env: { "shared-node-browser": true },

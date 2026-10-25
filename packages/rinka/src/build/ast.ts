@@ -9,12 +9,12 @@ import { ParseError } from "./errors.ts";
 export type Lang = "ts" | "tsx" | "js" | "jsx";
 
 /** 拡張子ごとの、変換する言語である。 */
-export const langs: Readonly<Record<string, Lang>> = {
-  ".ts": "ts",
-  ".tsx": "tsx",
-  ".js": "js",
-  ".jsx": "jsx",
-};
+export const langs: ReadonlyMap<string, Lang> = new Map([
+  [".ts", "ts"],
+  [".tsx", "tsx"],
+  [".js", "js"],
+  [".jsx", "jsx"],
+]);
 
 /** ファイルを変換する言語と、プラグインの設定の `extensions` に登録した拡張子のファイルかどうかを表す。 */
 export interface SourceLang {
@@ -29,7 +29,7 @@ export interface SourceLang {
 export function sourceLangOf(file: string, extensions: readonly string[]): SourceLang | undefined {
   const extension = extname(file);
   if (extensions.includes(extension)) return { lang: "tsx", registered: true };
-  const lang = langs[extension];
+  const lang = langs.get(extension);
   return lang === undefined ? undefined : { lang, registered: false };
 }
 

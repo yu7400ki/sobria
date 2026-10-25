@@ -18,7 +18,7 @@ export const isServerFnSource = (file: string): boolean =>
   file.startsWith(`${SERVER_FN_DIR}/`) &&
   posix.normalize(file) === file &&
   !file.includes("\\") &&
-  extname(file) in langs &&
+  langs.has(extname(file)) &&
   !file.endsWith(".d.ts");
 
 /** アプリのルート `root` で、サーバー関数を定義したファイルを走査し、ルートからの相対パスを文字列の順に返す。 */
@@ -35,7 +35,7 @@ export function serverFnModules(root: string): string[] {
       if (!isServerFnSource(file)) continue;
       const code = readFileSync(path, "utf8");
       if (!code.includes("defineServerFn")) continue;
-      const lang = langs[extname(file)]!;
+      const lang = langs.get(extname(file))!;
       const program = parseModule(code, { id: path, file, lang });
       if (serverFnNames(findDefinitions(program, file)).length > 0) modules.push(file);
     }

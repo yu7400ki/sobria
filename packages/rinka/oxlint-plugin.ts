@@ -26,9 +26,28 @@ interface CallNode {
   readonly arguments: readonly StringNode[];
 }
 
+/** 型の注釈の中の型を表す。 */
+interface TypeNode {
+  readonly type: string;
+  readonly typeName?: { readonly name?: string };
+  readonly typeArguments?: { readonly params: readonly TypeNode[] } | null;
+}
+
+/** 変数の宣言の、1 つの変数を表す。 */
+interface DeclaratorNode {
+  readonly id: { readonly typeAnnotation?: { readonly typeAnnotation: TypeNode } | null };
+  readonly init: { readonly type: string } | null;
+  readonly parent?: {
+    readonly parent?: { readonly type: string; readonly parent?: { readonly type: string } };
+  };
+}
+
 interface Context {
   readonly filename: string;
-  report(descriptor: { node: ModuleDeclaration | StringNode | CallNode; message: string }): void;
+  report(descriptor: {
+    node: ModuleDeclaration | StringNode | CallNode | DeclaratorNode;
+    message: string;
+  }): void;
 }
 
 /**
@@ -157,6 +176,22 @@ const literalText = (node: StringNode, target: Target): string | undefined => {
   return isModuleSource(node) ? undefined : leadingText(node);
 };
 
+/** 変数 `node` を、モジュールの最上位で宣言したかどうかを返す。 */
+const isModuleLevel = (node: DeclaratorNode): boolean => {
+  const statement = node.parent?.parent;
+  if (statement?.type === "Program") return true;
+  return statement?.type === "ExportNamedDeclaration" && statement.parent?.type === "Program";
+};
+
+/** `type` が、`Readonly` で包んだものを含めて、キーを `string` にした `Record` の型かどうかを返す。 */
+const isStringRecord = (type: TypeNode): boolean => {
+  if (type.type !== "TSTypeReference") return false;
+  const [first] = type.typeArguments?.params ?? [];
+  if (first === undefined) return false;
+  if (type.typeName?.name === "Readonly") return isStringRecord(first);
+  return type.typeName?.name === "Record" && first.type === "TSStringKeyword";
+};
+
 const wireCodec = /\/wire-codec(\.[jt]s)?$/;
 
 /** rinka のパッケージに固有の lint の規則。 */
@@ -213,6 +248,23 @@ export default {
             const { type, name } = node.callee;
             if (type !== "Identifier" || name === undefined || !pathJoins.has(name)) return;
             for (const argument of node.arguments) check(argument, "path-argument");
+          },
+        };
+      },
+    },
+    /** モジュールの最上位で、キーを `string` にした `Record` の型の注釈を付けて、オブジェクトのリテラルで初期化する変数を報告する。 */
+    "no-string-record-literal": {
+      create(context: Context) {
+        return {
+          VariableDeclarator(node: DeclaratorNode) {
+            const type = node.id.typeAnnotation?.typeAnnotation;
+            if (node.init?.type !== "ObjectExpression" || !type || !isStringRecord(type)) return;
+            if (!isModuleLevel(node)) return;
+            context.report({
+              node,
+              message:
+                "文字列で引く表は、Object のプロトタイプにある名前でも値を返すので、ReadonlyMap で記述してください。",
+            });
           },
         };
       },

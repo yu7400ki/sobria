@@ -31,6 +31,7 @@ const rules = new Map([
   ["import(no-cycle)", "cycle"],
   ["rinka(no-directional-insert)", "insert"],
   ["rinka(no-constant-literal)", "literal"],
+  ["rinka(no-string-record-literal)", "record"],
 ]);
 
 type Diagnostic = { code: string; labels: { span: { line: number } }[] };
@@ -413,5 +414,26 @@ describe("ビルドの出力先", () => {
         'export const a = (out: string) => join(out, "client");',
       ]),
     ).toEqual([]);
+  });
+});
+
+describe("文字列をキーにするオブジェクトの表", () => {
+  it("src/ の中で、Record<string, …> の型注釈を付けたオブジェクトのリテラルで初期化する、モジュールの最上位の変数を報告する", () => {
+    expect(
+      reports("src/shared/tables.ts", [
+        "export const a: Record<string, number> = { x: 1 };",
+        "export const b: Readonly<Record<string, number>> = { x: 1 };",
+        'export const c: Record<"x" | "y", number> = { x: 1, y: 2 };',
+        'export const d: ReadonlyMap<string, number> = new Map([["x", 1]]);',
+        "export const e = (): Record<string, number> => ({});",
+        "export function f() {",
+        "  const g: Record<string, number> = {};",
+        "  return g;",
+        "}",
+      ]),
+    ).toEqual([
+      [1, "record"],
+      [2, "record"],
+    ]);
   });
 });
