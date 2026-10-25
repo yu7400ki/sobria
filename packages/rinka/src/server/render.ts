@@ -244,16 +244,12 @@ interface WalkCtx {
   readonly head: HeadPlacement;
   /** 同じ tree の外側にある `<fieldset disabled>` で無効になるかどうかを返す。値が未解決なら `NotReadyError` を投げる。 */
   readonly disabled: () => boolean;
-  /** `<fieldset>` の子なら、その `<fieldset>` の子の `<legend>` を表す。 */
-  readonly legend: Legend | undefined;
   /** `<Loading>` のフォールバックの中で、フォールバックと同じ tree にあれば `true` である。 */
   readonly fallback: boolean;
   /** この位置を囲む `<Errored>` のうち、シェルを送った後の失敗を受け止めるものを、内側から順に列挙する。 */
   readonly catchers: readonly Catcher[];
-  /** `<select>` の子なら、その `<select>` の `value` を返す。値が未解決なら `NotReadyError` を投げる。 */
-  readonly selectValue: ((tracked: boolean) => unknown) | undefined;
-  /** テキストだけを子に持つ要素（`<title>` と `<textarea>`）の中なら `true` である。 */
-  readonly rawText: boolean;
+  /** 祖先のネイティブのタグが子孫に渡す状態である。要素の境界では `noParentTag` に戻す。 */
+  readonly parent: ParentTag;
 }
 
 /** タグのプロパティの出力の形の表 `outputs` のうち、出力の形が `output` で、`props` に記述した props の名前を返す。 */
@@ -272,6 +268,19 @@ interface FormProps {
   /** ホストの `disabled` か、同じ tree の外側にある `<fieldset disabled>` で無効になるかどうかを返す。値が未解決なら `NotReadyError` を投げる。 */
   readonly disabled: () => boolean;
 }
+
+/** 祖先のネイティブのタグが子孫に渡す状態を表す。 */
+interface ParentTag {
+  /** `<fieldset>` の子なら、その `<fieldset>` の子の `<legend>` を表す。 */
+  readonly legend: Legend | undefined;
+  /** `<select>` の子なら、その `<select>` の `value` を返す。値が未解決なら `NotReadyError` を投げる。 */
+  readonly selectValue: ((tracked: boolean) => unknown) | undefined;
+  /** テキストだけを子に持つ要素（`<title>` と `<textarea>`）の中なら `true` である。 */
+  readonly rawText: boolean;
+}
+
+/** 祖先にネイティブのタグが無い位置の `ParentTag` である。 */
+const noParentTag: ParentTag = { legend: undefined, selectValue: undefined, rawText: false };
 
 /**
  * `<fieldset>` の子の `<legend>` を表す。`taken` は、最初の `<legend>` を描画したかどうかで、
@@ -748,7 +757,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       tag === "form" ? formProps(props) : label ? { ...props, id: label.id } : props;
     if (ctx.owner === null) warnHandlers(tag, props);
     const outputs = tagProperties[tag] ?? {};
-    const { selectValue } = ctx;
+    const { selectValue } = ctx.parent;
     const openTag = (tracked: boolean): string => {
       let attributes = "";
       for (const [name, raw] of Object.entries(attributesOf)) {
@@ -784,40 +793,63 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     out.push(this.chunkOf(open, (text) => text));
     if (label) out.push(label.mark);
     if (voidTags.has(tag)) return;
-    const { legend, disabled: outer } = ctx;
-    let disabled = outer;
-    if (tag === "legend" && legend && !legend.taken) {
-      legend.taken = true;
-      disabled = legend.outer;
-    }
-    if (tag === "fieldset")
-      disabled = () => outer() || disables(this.value(props.disabled, ctx, true));
     const text = propertyOf(outputs, props, "text");
-    const option = propertyOf(outputs, props, "option");
     this.walk(
       asNode(text === undefined ? props.children : ["\n", props[text]]),
       {
         ...ctx,
         head: childPlacement(tag, ctx.head),
         slot: undefined,
-        disabled,
-        legend: tag === "fieldset" ? { taken: false, outer } : undefined,
-        selectValue:
-          tag !== "select"
-            ? selectValue
-            : option === undefined
-              ? undefined
-              : (tracked) => this.value(props[option], ctx, tracked),
-        rawText: ctx.rawText || tag === "title" || tag === "textarea",
+        ...this.childScope(tag, props, outputs, ctx),
       },
       out,
     );
     out.push(`</${tag}>`);
   }
 
+  /** ネイティブのタグ `<tag>` の子の位置の、`disabled` と `parent` を返す。`outputs` は、そのタグのプロパティの出力の形の表である。 */
+  private childScope(
+    tag: string,
+    props: Record<string, unknown>,
+    outputs: Readonly<Record<string, PropertyOutput>>,
+    ctx: WalkCtx,
+  ): Pick<WalkCtx, "disabled" | "parent"> {
+    const { disabled: outer, parent } = ctx;
+    if (tag === "legend" && parent.legend && !parent.legend.taken) {
+      parent.legend.taken = true;
+      return { disabled: parent.legend.outer, parent: { ...parent, legend: undefined } };
+    }
+    if (tag === "fieldset") {
+      return {
+        disabled: () => outer() || disables(this.value(props.disabled, ctx, true)),
+        parent: { ...parent, legend: { taken: false, outer } },
+      };
+    }
+    if (Object.values(outputs).includes("option")) {
+      const option = propertyOf(outputs, props, "option");
+      return {
+        disabled: outer,
+        parent: {
+          ...parent,
+          legend: undefined,
+          selectValue:
+            option === undefined ? undefined : (tracked) => this.value(props[option], ctx, tracked),
+        },
+      };
+    }
+    return {
+      disabled: outer,
+      parent: {
+        ...parent,
+        legend: undefined,
+        rawText: parent.rawText || tag === "title" || tag === "textarea",
+      },
+    };
+  }
+
   private errored(node: ErroredNode, ctx: WalkCtx, out: Chunk[]): void {
     const catcher: Catcher | undefined =
-      ctx.path.length === 0 && !this.blocking && !ctx.rawText
+      ctx.path.length === 0 && !this.blocking && !ctx.parent.rawText
         ? { id: `e${++this.erroredSeq}`, node, ctx, replaced: undefined }
         : undefined;
     const inner = catcher ? { ...ctx, catchers: [catcher, ...ctx.catchers] } : ctx;
@@ -946,11 +978,9 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         slots: ctx.slots,
         slot: slot === "" ? undefined : slot,
         disabled: ctx.disabled,
-        legend: undefined,
         fallback: ctx.fallback,
         catchers: ctx.catchers,
-        selectValue: undefined,
-        rawText: false,
+        parent: noParentTag,
       };
       if (boundary === ctx.boundary) {
         this.walk(content, light, chunks);
@@ -1066,11 +1096,9 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       depth: ctx.depth,
       head: "element",
       disabled: notDisabled,
-      legend: undefined,
       fallback: false,
       catchers: ctx.catchers,
-      selectValue: undefined,
-      rawText: false,
+      parent: noParentTag,
     };
     const read = submitted;
     const input =
@@ -1409,11 +1437,9 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         depth: 0,
         head: "auto",
         disabled: notDisabled,
-        legend: undefined,
         fallback: false,
         catchers: [],
-        selectValue: undefined,
-        rawText: false,
+        parent: noParentTag,
       }),
       this.shellOut,
     );
