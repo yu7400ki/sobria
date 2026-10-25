@@ -462,6 +462,23 @@ describe("境界の失敗と順序", () => {
     expect(html).toContain('<template data-os="e1"><title>失敗</title>FB</template>');
   });
 
+  it("<title> と <textarea> の中の Errored は、目印を出力しない", async () => {
+    const html = (
+      await read(
+        renderToStream(
+          jsx("main", {
+            children: [
+              jsx("title", { children: jsx(Errored, { fallback: "App", children: "Page" }) }),
+              jsx("textarea", { children: jsx(Errored, { fallback: "", children: "text" }) }),
+            ],
+          }),
+        ),
+      )
+    ).join("");
+    expect(html).toContain("<title>Page</title>");
+    expect(html).toContain("<textarea>text</textarea>");
+  });
+
   it("シェルを送った後に notFound() を受け止めた、Loading の外側の Errored は、noindex を出力する", async () => {
     const { promise, resolve } = Promise.withResolvers<void>();
     const Missing = async () => {

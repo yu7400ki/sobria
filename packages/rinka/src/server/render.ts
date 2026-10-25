@@ -250,6 +250,8 @@ interface WalkCtx {
   readonly catchers: readonly Catcher[];
   /** `<select>` の子なら、その `<select>` の `value` を返す。値が未解決なら `NotReadyError` を投げる。 */
   readonly selectValue: ((tracked: boolean) => unknown) | undefined;
+  /** テキストだけを子に持つ要素（`<title>` と `<textarea>`）の中なら `true` である。 */
+  readonly rawText: boolean;
 }
 
 /** SSR するフォームの部品のホストの `name` と `disabled` を返す関数を表す。 */
@@ -793,6 +795,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
             : "value" in props
               ? (tracked) => this.value(props.value, ctx, tracked)
               : undefined,
+        rawText: ctx.rawText || tag === "title" || tag === "textarea",
       },
       out,
     );
@@ -801,7 +804,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   private errored(node: ErroredNode, ctx: WalkCtx, out: Chunk[]): void {
     const catcher: Catcher | undefined =
-      ctx.path.length === 0 && !this.blocking
+      ctx.path.length === 0 && !this.blocking && !ctx.rawText
         ? { id: `e${++this.erroredSeq}`, node, ctx, replaced: undefined }
         : undefined;
     const inner = catcher ? { ...ctx, catchers: [catcher, ...ctx.catchers] } : ctx;
@@ -934,6 +937,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         fallback: ctx.fallback,
         catchers: ctx.catchers,
         selectValue: undefined,
+        rawText: false,
       };
       if (boundary === ctx.boundary) {
         this.walk(content, light, chunks);
@@ -1053,6 +1057,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       fallback: false,
       catchers: ctx.catchers,
       selectValue: undefined,
+      rawText: false,
     };
     const read = submitted;
     const input =
@@ -1231,7 +1236,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   }
 
   /**
-   * Shadow DOM の外の境界 `boundary` を囲み、目印を出力した `<Errored>` の領域を、内側のものから順に、`error` を渡したフォールバックに差し替える。
+   * Shadow DOM の外の境界 `boundary` を囲む `<Errored>` の領域を、内側のものから順に、`error` を渡したフォールバックに差し替える。
    * フォールバックの描画が失敗したら、その値を次の `<Errored>` に渡す。差し替えたら真を返す。
    */
   private async replaceAround(boundary: Boundary, error: unknown): Promise<boolean> {
@@ -1395,6 +1400,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         fallback: false,
         catchers: [],
         selectValue: undefined,
+        rawText: false,
       }),
       this.shellOut,
     );
