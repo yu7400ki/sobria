@@ -35,6 +35,27 @@ interface LayoutProps {
 }
 ```
 
+## NotFoundProps
+
+`not-found` のページが受け取る props を表す。`url` はリクエストの URL である。
+
+```ts
+interface NotFoundProps {
+  readonly params: Readonly<Record<string, string>>;
+  readonly url: URL;
+}
+```
+
+## ErrorProps
+
+`error` のページが受け取る props を表す。`error` は投げられた値である。フォームの送信先のサーバー関数が失敗したときは、`url` は送信元のページの URL である。
+
+```ts
+interface ErrorProps extends NotFoundProps {
+  readonly error: unknown;
+}
+```
+
 ## Prerender
 
 `Route` のパラメータがあれば、そのパラメータの配列を返す関数を、無ければ `true` を表す。

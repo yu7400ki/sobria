@@ -1,6 +1,13 @@
 import type { Context } from "hono";
 import type { ServerNode } from "rinka";
-import { href, type LayoutProps, type PageProps, type Prerender } from "rinka/router";
+import {
+  href,
+  type ErrorProps,
+  type LayoutProps,
+  type NotFoundProps,
+  type PageProps,
+  type Prerender,
+} from "rinka/router";
 import { defineHandler, getContext, setBlockingRender } from "rinka/server";
 import { describe, expectTypeOf, it } from "vitest";
 
@@ -23,6 +30,18 @@ describe("rinka/router", () => {
   it("LayoutProps は、文字列の params と、url と、children を持つ", () => {
     expectTypeOf<LayoutProps["params"]>().toEqualTypeOf<Readonly<Record<string, string>>>();
     expectTypeOf<LayoutProps["children"]>().toEqualTypeOf<ServerNode>();
+  });
+
+  it("NotFoundProps は文字列の params と url を持ち、ErrorProps はさらに投げられた値の error を持つ", () => {
+    expectTypeOf<NotFoundProps>().toEqualTypeOf<{
+      readonly params: Readonly<Record<string, string>>;
+      readonly url: URL;
+    }>();
+    expectTypeOf<ErrorProps>().toEqualTypeOf<{
+      readonly params: Readonly<Record<string, string>>;
+      readonly url: URL;
+      readonly error: unknown;
+    }>();
   });
 
   it("href は、パラメータのあるルートでは、過不足の無いパラメータを要求する", () => {

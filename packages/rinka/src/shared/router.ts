@@ -17,6 +17,17 @@ export interface LayoutProps {
   readonly children: ServerNode;
 }
 
+/** `not-found` のページが受け取る props を表す。`url` はリクエストの URL である。 */
+export interface NotFoundProps {
+  readonly params: Readonly<Record<string, string>>;
+  readonly url: URL;
+}
+
+/** `error` のページが受け取る props を表す。`error` は投げられた値である。フォームの送信先のサーバー関数が失敗したときは、`url` は送信元のページの URL である。 */
+export interface ErrorProps extends NotFoundProps {
+  readonly error: unknown;
+}
+
 /** `href` が受け取るクエリを表す。 */
 type Query = Readonly<Record<string, string | number>> | URLSearchParams;
 

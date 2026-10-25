@@ -152,7 +152,9 @@ export default defineMiddleware(async (c, next) => {
 
 ```tsx
 // src/routes/not-found.tsx
-export default function NotFoundPage(props: { url: URL }) {
+import type { NotFoundProps } from "rinka/router";
+
+export default function NotFoundPage(props: NotFoundProps) {
   return <h1>{props.url.pathname} は見つかりません</h1>;
 }
 ```
@@ -161,7 +163,9 @@ export default function NotFoundPage(props: { url: URL }) {
 
 ```tsx
 // src/routes/error.tsx
-export default function ErrorPage(props: { error: unknown }) {
+import type { ErrorProps } from "rinka/router";
+
+export default function ErrorPage(props: ErrorProps) {
   return (
     <>
       <h1>エラーが発生しました</h1>
