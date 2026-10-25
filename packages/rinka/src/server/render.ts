@@ -306,6 +306,12 @@ type AfterShell =
   | { readonly kind: "blocked"; readonly location: string }
   | { readonly kind: "catch"; readonly noindex: boolean };
 
+/** 境界の中身の失敗の扱いを表す。`replaced` は `<Errored>` の領域を差し替えたことを、`navigate` はページを `location` に移動させることを、`uncaught` はどの `<Errored>` も受け止めなかったことを表す。 */
+type Around =
+  | { readonly kind: "replaced" }
+  | { readonly kind: "navigate"; readonly location: string }
+  | { readonly kind: "uncaught" };
+
 /** シェルを送った後に投げられた値 `error` の扱いを返す。`redirect()` と、規則に合う移動先への移動はページを移動させ、ほかの値は受け止める。 */
 function afterShell(error: unknown): AfterShell {
   const thrown = classify(error);
@@ -1202,8 +1208,15 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
             this.caught = Math.max(this.caught, node.status ?? 500);
           } else {
             const after = afterShell(error);
-            if (after.kind === "navigate") throw error;
-            if (after.kind === "catch" && after.noindex) flush.noindex = true;
+            switch (after.kind) {
+              case "navigate":
+                throw error;
+              case "blocked":
+                break;
+              case "catch":
+                if (after.noindex) flush.noindex = true;
+                break;
+            }
           }
           return this.serialize(this.chunks(node.fallback(error), ctx), out);
         }
@@ -1213,7 +1226,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /**
    * 境界の中身と差し替えを、目印の位置の出力がページに現れた後に出力する。
-   * 中身の出力に失敗したときは、規則に合う移動先への移動なら移動させる。それ以外では、境界を囲む `<Errored>` の領域をフォールバックに差し替え、差し替えられなければエラーを記録する。
+   * 中身の出力に失敗したときは、境界を囲む `<Errored>` の領域をフォールバックに差し替え、差し替えられなければエラーを記録する。中身かフォールバックが、規則に合う移動先への移動を投げたら、ページを移動させる。
    * 中身の出力に失敗したとき、目印の位置の出力がページに現れないとき、境界を囲む `<Errored>` の領域を差し替えたときは、中身と差し替えを出力しない。
    */
   private schedule(boundary: Boundary, out: Out): void {
@@ -1245,18 +1258,25 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
             ]),
           );
         } catch (error) {
-          const after = afterShell(error);
-          if (after.kind === "navigate") {
-            this.write(
-              `<script>location.replace(${scriptJson(after.location)})</script><meta http-equiv="refresh" content="0;url=${escapeAttribute(after.location)}">`,
-            );
-          } else if (!(await this.replaceAround(boundary, error))) {
-            console.error(
-              after.kind === "blocked"
-                ? `[rinka] 移動先 ${JSON.stringify(after.location)} は、相対 URL でも http や https の URL でもないので、移動させずにフォールバックのまま残します。`
-                : "[rinka] シェルを送った後に、<Loading> の中身の描画に失敗しました。フォールバックのまま残します。",
-              error,
-            );
+          const around = await this.replaceAround(boundary, error);
+          switch (around.kind) {
+            case "navigate":
+              this.write(
+                `<script>location.replace(${scriptJson(around.location)})</script><meta http-equiv="refresh" content="0;url=${escapeAttribute(around.location)}">`,
+              );
+              break;
+            case "replaced":
+              break;
+            case "uncaught": {
+              const after = afterShell(error);
+              console.error(
+                after.kind === "blocked"
+                  ? `[rinka] 移動先 ${JSON.stringify(after.location)} は、相対 URL でも http や https の URL でもないので、移動させずにフォールバックのまま残します。`
+                  : "[rinka] シェルを送った後に、<Loading> の中身の描画に失敗しました。フォールバックのまま残します。",
+                error,
+              );
+              break;
+            }
           }
           this.abandon(boundary, flush);
           return;
@@ -1268,20 +1288,28 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   }
 
   /**
-   * Shadow DOM の外の境界 `boundary` を囲む `<Errored>` の領域を、内側のものから順に、`error` を渡したフォールバックに差し替える。
-   * フォールバックの描画が失敗したら、その値を次の `<Errored>` に渡す。差し替えたら真を返す。
+   * 境界 `boundary` の中身の描画が投げた `error` を、境界を囲む `<Errored>` で受け止める。
+   * Shadow DOM の外の境界なら、`<Errored>` の領域を、内側のものから順に、`error` を渡したフォールバックに差し替える。フォールバックの描画が失敗したら、その値を次の `<Errored>` に渡す。
+   * `error` かフォールバックが投げた値が、ページを移動させる値なら、それより外側の `<Errored>` では受け止めずに、移動先を返す。
    */
-  private async replaceAround(boundary: Boundary, error: unknown): Promise<boolean> {
-    if (boundary.path.length !== 0) return false;
+  private async replaceAround(boundary: Boundary, error: unknown): Promise<Around> {
+    const catchers = boundary.path.length === 0 ? boundary.catchers : [];
     let cause = error;
-    for (const catcher of boundary.catchers) {
-      catcher.replaced ??= this.replaceWithFallback(catcher, cause);
+    for (let index = 0; ; index++) {
+      const after = afterShell(cause);
+      if (after.kind === "navigate") return after;
+      const catcher = catchers[index];
+      if (catcher === undefined) return { kind: "uncaught" };
+      catcher.replaced ??= this.replaceWithFallback(
+        catcher,
+        cause,
+        after.kind === "catch" && after.noindex,
+      );
       // oxlint-disable-next-line no-await-in-loop
       const result = await catcher.replaced;
-      if (result.ok) return true;
+      if (result.ok) return { kind: "replaced" };
       cause = result.error;
     }
-    return false;
   }
 
   /** 境界 `boundary` を囲む `<Errored>` のうち、領域をフォールバックに差し替えたものがあれば真を返す。 */
@@ -1293,16 +1321,15 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   }
 
   /**
-   * シェルを送った後に、`catcher` の領域を、`error` を渡したフォールバックに差し替える。`error` が `notFound()` なら `noindex` を出力する。
+   * シェルを送った後に、`catcher` の領域を、`error` を渡したフォールバックに差し替える。`noindex` が真なら `noindex` を出力する。
    * フォールバックの描画が失敗したら、差し替えずに、その失敗を記録して返す。
    */
-  private async replaceWithFallback(catcher: Catcher, error: unknown): Promise<Replaced> {
-    const after = afterShell(error);
-    const flush: DeferredFlush = {
-      ...resolvable(),
-      kind: "deferred",
-      noindex: after.kind === "catch" && after.noindex,
-    };
+  private async replaceWithFallback(
+    catcher: Catcher,
+    error: unknown,
+    noindex: boolean,
+  ): Promise<Replaced> {
+    const flush: DeferredFlush = { ...resolvable(), kind: "deferred", noindex };
     const fallbackOut = Out.of(flush);
     let html: string;
     try {
@@ -1314,7 +1341,9 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         fallbackOut,
       );
     } catch (fallbackError) {
-      console.error("[rinka] <Errored> のフォールバックの描画に失敗しました。", fallbackError);
+      if (afterShell(fallbackError).kind !== "navigate") {
+        console.error("[rinka] <Errored> のフォールバックの描画に失敗しました。", fallbackError);
+      }
       flush.resolve(false);
       return { ok: false, error: fallbackError };
     }

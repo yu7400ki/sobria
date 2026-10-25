@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { isBot } from "../../src/server/bots.ts";
 import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
-import { notFound } from "../../src/server/errors.ts";
+import { notFound, redirect } from "../../src/server/errors.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToResponse, renderToStream } from "../../src/server/response.ts";
 import { memo } from "../../src/shared/signals.ts";
@@ -500,6 +500,37 @@ describe("境界の失敗と順序", () => {
       '<meta name="robots" content="noindex"><script>document.head.append(document.currentScript.previousSibling.cloneNode())</script><template data-os="e1">gone</template>',
     );
   });
+
+  it.each([
+    ["redirect()", () => redirect("/next")],
+    ["3xx の Response", () => new Response(null, { status: 302, headers: { location: "/next" } })],
+  ])(
+    "シェルを送った後に、Errored のフォールバックが投げた %s は、Errored が 1 段でも、外側に Errored があっても、エラーを記録せずにページを移動させる",
+    async (_name, moved) => {
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      for (const outer of [false, true]) {
+        const { Fail, reject } = failing();
+        const inner = jsx(Errored, {
+          fallback: () => {
+            // oxlint-disable-next-line typescript/only-throw-error
+            throw moved();
+          },
+          children: jsx(Loading, { fallback: "f", children: jsx(Fail, {}) }),
+        });
+        const reading = read(
+          renderToStream(outer ? jsx(Errored, { fallback: "outer", children: inner }) : inner),
+        );
+        // oxlint-disable-next-line no-await-in-loop
+        await tick();
+        reject();
+        // oxlint-disable-next-line no-await-in-loop
+        const html = (await reading).join("");
+        expect(html).toContain('<script>location.replace("/next")</script>');
+        expect(html).not.toContain("<template data-os");
+      }
+      expect(error).not.toHaveBeenCalled();
+    },
+  );
 
   it("保留中でない境界の中にある保留中の境界も、送り終えてからストリームを閉じる", async () => {
     const inner = deferred("in");
