@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { isBot } from "../../src/server/bots.ts";
 import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
+import { notFound } from "../../src/server/errors.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToResponse, renderToStream } from "../../src/server/response.ts";
 import { memo } from "../../src/shared/signals.ts";
@@ -163,6 +164,11 @@ describe("スロットの内容の保留中のタグ", () => {
   });
 });
 
+/** フォールバックの描画に失敗するコンポーネントである。 */
+const BrokenFallback = () => {
+  throw new Error("fallback");
+};
+
 /** 外から失敗させられる async のコンポーネントを作成する。 */
 function failing(error: unknown = new Error("e")) {
   const { promise, resolve } = Promise.withResolvers<void>();
@@ -316,6 +322,166 @@ describe("境界の失敗と順序", () => {
     const html = (await reading).join("");
     expect(html).toContain('<template data-os="b1">EB</template>');
     expect(html).not.toContain("slow-done");
+  });
+
+  it("Loading を外側から囲む Errored は、シェルを送った後の中身の失敗を受け止め、領域の全体をフォールバックに差し替える", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { Fail, reject } = failing();
+    const slow = deferred("slow-done");
+    const reading = read(
+      renderToStream(
+        jsx("main", {
+          children: jsx(Errored, {
+            fallback: (cause: unknown) => jsx("p", { children: String(cause) }),
+            children: [
+              "before",
+              jsx(Loading, { fallback: "f", children: jsx(Fail, {}) }),
+              jsx(Loading, { fallback: "s", children: jsx(slow.Slow, {}) }),
+            ],
+          }),
+        }),
+      ),
+    );
+    await tick();
+    reject();
+    await tick();
+    slow.resolve();
+    const chunks = await reading;
+    const html = chunks.join("");
+    expect(chunks[0]).toContain(
+      '<main><template data-ob="e1"></template>before<template data-ob="b1"></template>f<!--/ob:b1--><template data-ob="b2"></template>s<!--/ob:b2--><!--/ob:e1--></main>',
+    );
+    expect(html).toContain(
+      '<template data-os="e1"><p>Error: e</p></template><script>$rinka.r({"b":"e1","bp":[],"p":[]})</script>',
+    );
+    expect(html).not.toContain("slow-done");
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it("内側の Errored のフォールバックの中の Loading が失敗すると、目印を出力した外側の Errored の領域を差し替える", async () => {
+    const first = failing();
+    const second = failing();
+    const reading = read(
+      renderToStream(
+        jsx("main", {
+          children: jsx(Errored, {
+            fallback: "OUTER",
+            children: jsx(Errored, {
+              fallback: () => jsx(Loading, { fallback: "x", children: jsx(second.Fail, {}) }),
+              children: jsx(Loading, { fallback: "f", children: jsx(first.Fail, {}) }),
+            }),
+          }),
+        }),
+      ),
+    );
+    await tick();
+    first.reject();
+    await tick();
+    second.reject();
+    const html = (await reading).join("");
+    expect(html).toMatch(
+      /<template data-os="(e\d+)">OUTER<\/template><script>\$rinka\.r\(\{"b":"\1"/,
+    );
+  });
+
+  it("スロットの内容の差し替えの中の境界の失敗も、データの解決の順序に関わらず、Loading を外側から囲む Errored が受け止める", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { Fail, reject } = failing();
+    const slow = deferred("slow");
+    const Frame = defineElement(
+      "x-errored-frame",
+      () => jsx(Loading, { fallback: "wait", children: [jsx(slow.Slow, {}), jsx("slot", {})] }),
+      { props: { children: "slot" } },
+    );
+    const late = Promise.withResolvers<void>();
+    const Wrapper = async () => {
+      await late.promise;
+      return jsx(Loading, { fallback: "inner", children: jsx(Fail, {}) });
+    };
+    const reading = read(
+      renderToStream(
+        jsx("main", {
+          children: jsx(Errored, {
+            fallback: "FB",
+            children: jsx(Frame, { children: jsx(Wrapper, {}) }),
+          }),
+        }),
+      ),
+    );
+    await tick();
+    late.resolve();
+    await tick();
+    slow.resolve();
+    await tick();
+    reject();
+    const html = (await reading).join("");
+    expect(html).toContain('<template data-os="e1">FB</template>');
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it("Errored のフォールバックの描画が失敗しても、同じ領域の境界を送り、元のエラーを記録する", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { Fail, reject } = failing();
+    const slow = deferred("OK");
+    const reading = read(
+      renderToStream(
+        jsx("main", {
+          children: jsx(Errored, {
+            fallback: () => jsx(BrokenFallback, {}),
+            children: [
+              jsx(Loading, { fallback: "f", children: jsx(Fail, {}) }),
+              jsx(Loading, { fallback: "s", children: jsx(slow.Slow, {}) }),
+            ],
+          }),
+        }),
+      ),
+    );
+    await tick();
+    reject();
+    await tick();
+    slow.resolve();
+    const html = (await reading).join("");
+    expect(html).toContain(">OK</template>");
+    expect(error.mock.calls.flat()).toContainEqual(new Error("e"));
+  });
+
+  it("シェルを送った後に描画する Errored のフォールバックの <title> は、<head> に移動せずにその場に出力する", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { Fail, reject } = failing();
+    const reading = read(
+      renderToStream(
+        jsx(Errored, {
+          fallback: [jsx("title", { children: "失敗" }), "FB"],
+          children: jsx(Loading, { fallback: "f", children: jsx(Fail, {}) }),
+        }),
+      ),
+    );
+    await tick();
+    reject();
+    const html = (await reading).join("");
+    expect(html).toContain('<template data-os="e1"><title>失敗</title>FB</template>');
+  });
+
+  it("シェルを送った後に notFound() を受け止めた、Loading の外側の Errored は、noindex を出力する", async () => {
+    const { promise, resolve } = Promise.withResolvers<void>();
+    const Missing = async () => {
+      await promise;
+      throw notFound();
+    };
+    const reading = read(
+      renderToStream(
+        jsx(Errored, {
+          fallback: "gone",
+          children: jsx(Loading, { fallback: "f", children: jsx(Missing, {}) }),
+        }),
+      ),
+    );
+    await tick();
+    resolve();
+    const html = (await reading).join("");
+    expect(html).toContain(
+      '<meta name="robots" content="noindex"><script>document.head.append(document.currentScript.previousSibling.cloneNode())</script><template data-os="e1">gone</template>',
+    );
   });
 
   it("保留中でない境界の中にある保留中の境界も、送り終えてからストリームを閉じる", async () => {

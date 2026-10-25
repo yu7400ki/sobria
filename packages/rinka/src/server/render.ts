@@ -145,8 +145,27 @@ interface Mark {
 /** `<Errored>` の領域を表す。中身が失敗すると、`node.fallback` が返した内容を出力する。 */
 interface ErroredRegion {
   readonly kind: "errored";
-  readonly errored: { readonly chunks: Chunk[]; readonly node: ErroredNode; readonly ctx: WalkCtx };
+  readonly errored: {
+    readonly chunks: Chunk[];
+    readonly node: ErroredNode;
+    readonly ctx: WalkCtx;
+    readonly catcher: Catcher | undefined;
+  };
 }
+
+/**
+ * Shadow DOM の外の `<Errored>` のうち、シェルを送った後に、中の `<Loading>` の中身の失敗を受け止めるものを表す。
+ * `id` は、領域を囲む目印の ID である。`replaced` は、差し替えを始めた後に、差し替えの結果に解決する。
+ */
+interface Catcher {
+  readonly id: string;
+  readonly node: ErroredNode;
+  readonly ctx: WalkCtx;
+  replaced: Promise<Replaced> | undefined;
+}
+
+/** `<Errored>` の領域をフォールバックに差し替えた結果を表す。差し替えなかったときは、フォールバックの描画で投げられた値を持つ。 */
+type Replaced = { readonly ok: true } | { readonly ok: false; readonly error: unknown };
 
 /**
  * 要素の Light DOM のうち、Shadow DOM の `<Loading>` の中にある `<slot>` に配置する内容を表す。
@@ -201,6 +220,8 @@ interface Boundary {
   readonly patches: Patch[];
   /** 境界を後送りにしたときに、中身を送るチャンクを表す。 */
   flush?: DeferredFlush;
+  /** 境界を囲む `<Errored>` のうち、シェルを送った後の中身の失敗を受け止めるものを、内側から順に列挙する。 */
+  readonly catchers: readonly Catcher[];
 }
 
 /** 描画している位置の状態を表す。 */
@@ -225,6 +246,8 @@ interface WalkCtx {
   readonly legend: Legend | undefined;
   /** `<Loading>` のフォールバックの中で、フォールバックと同じ tree にあれば `true` である。 */
   readonly fallback: boolean;
+  /** この位置を囲む `<Errored>` のうち、シェルを送った後の失敗を受け止めるものを、内側から順に列挙する。 */
+  readonly catchers: readonly Catcher[];
 }
 
 /** SSR するフォームの部品のホストの `name` と `disabled` を返す関数を表す。 */
@@ -386,6 +409,8 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   /** 描画の種類を、型の上で区別する。 */
   declare private readonly kind: K;
   private seq = 0;
+  /** `<Errored>` の領域を囲む目印に付与した ID の数である。 */
+  private erroredSeq = 0;
   private readonly disposers: (() => void)[] = [];
   /** シェルの後に後送りの境界を出力する処理のうち、終わっていないものを保持する。 */
   private readonly pending = new Set<Promise<void>>();
@@ -398,7 +423,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   /** `noindex` の `<meta>` を出力したことを表す。 */
   private noindexSent = false;
   /** シェルを表す境界である。 */
-  private readonly root = this.newBoundary("", []);
+  private readonly root = this.newBoundary("", [], []);
   /** シェルの最も外側の位置である。 */
   private readonly shellOut = Out.of({
     ...resolvable(),
@@ -446,8 +471,12 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     return this.caught;
   }
 
-  private newBoundary(id: string, path: readonly HostRecord[]): Boundary {
-    return { id, path, region: [], slotted: [], patches: [] };
+  private newBoundary(
+    id: string,
+    path: readonly HostRecord[],
+    catchers: readonly Catcher[],
+  ): Boundary {
+    return { id, path, region: [], slotted: [], patches: [], catchers };
   }
 
   private chunks(node: Node, ctx: WalkCtx): Chunk[] {
@@ -478,7 +507,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         this.tag(node.tag, node.props, node.key, ctx, out);
         return;
       case "loading": {
-        const boundary = this.newBoundary(`b${++this.seq}`, ctx.path);
+        const boundary = this.newBoundary(`b${++this.seq}`, ctx.path, ctx.catchers);
         this.walk(
           node.children,
           { ...ctx, boundary, head: restrict(ctx.head, "loading") },
@@ -727,13 +756,18 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   }
 
   private errored(node: ErroredNode, ctx: WalkCtx, out: Chunk[]): void {
+    const catcher: Catcher | undefined =
+      ctx.path.length === 0 && !this.blocking
+        ? { id: `e${++this.erroredSeq}`, node, ctx, replaced: undefined }
+        : undefined;
+    const inner = catcher ? { ...ctx, catchers: [catcher, ...ctx.catchers] } : ctx;
     let chunks: Chunk[] = [];
     try {
-      this.walk(node.children, ctx, chunks);
+      this.walk(node.children, inner, chunks);
     } catch (error) {
       chunks = [{ kind: "fail", fail: error }];
     }
-    out.push({ kind: "errored", errored: { chunks, node, ctx } });
+    out.push({ kind: "errored", errored: { chunks, node, ctx, catcher } });
   }
 
   /**
@@ -850,6 +884,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         disabled: ctx.disabled,
         legend: undefined,
         fallback: ctx.fallback,
+        catchers: ctx.catchers,
       };
       if (boundary === ctx.boundary) {
         this.walk(content, light, chunks);
@@ -967,6 +1002,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       disabled: notDisabled,
       legend: undefined,
       fallback: false,
+      catchers: ctx.catchers,
     };
     const read = submitted;
     const input =
@@ -1030,13 +1066,13 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         return start + inner;
       }
       case "errored": {
-        const { chunks, node, ctx } = chunk.errored;
+        const { chunks, node, ctx, catcher } = chunk.errored;
         let failed = false;
         const kept = out.conditional(() => !failed);
         try {
           const html = await this.serialize(chunks, kept);
           out.absorb(kept);
-          return html;
+          return catcher ? marker(catcher.id, html) : html;
         } catch (error) {
           failed = true;
           const { flush } = out;
@@ -1067,8 +1103,8 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /**
    * 境界の中身と差し替えを、目印の位置の出力がページに現れた後に出力する。
-   * 中身の出力に失敗したときは、規則に合う移動先への移動なら移動させ、それ以外ならエラーを記録する。
-   * 中身の出力に失敗したときと、目印の位置の出力がページに現れないときは、中身と差し替えを出力しない。
+   * 中身の出力に失敗したときは、規則に合う移動先への移動なら移動させる。それ以外では、境界を囲む `<Errored>` の領域をフォールバックに差し替え、差し替えられなければエラーを記録する。
+   * 中身の出力に失敗したとき、目印の位置の出力がページに現れないとき、境界を囲む `<Errored>` の領域を差し替えたときは、中身と差し替えを出力しない。
    */
   private schedule(boundary: Boundary, out: Out): void {
     this.interactive = true;
@@ -1084,7 +1120,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         const regionOut = Out.of(flush);
         const content = this.serialize(boundary.region, regionOut);
         await content.catch(() => {});
-        if (!(await out.shown)) {
+        if (!(await out.shown) || (await this.replacedAround(boundary))) {
           this.abandon(boundary, flush);
           return;
         }
@@ -1104,7 +1140,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
             this.write(
               `<script>location.replace(${scriptJson(thrown.location)})</script><meta http-equiv="refresh" content="0;url=${escapeAttribute(thrown.location)}">`,
             );
-          } else {
+          } else if (!(await this.replaceAround(boundary, error))) {
             console.error(
               thrown.kind === "moved"
                 ? `[rinka] 移動先 ${JSON.stringify(thrown.location)} は、相対 URL でも http や https の URL でもないので、移動させずにフォールバックのまま残します。`
@@ -1120,12 +1156,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
           bp: hostIds(boundary.path),
           p: patches.map(([patch]) => [patch.id, hostIds(patch.path)]),
         };
-        let noindex = "";
-        if (flush.noindex && !this.noindexSent) {
-          this.noindexSent = true;
-          noindex =
-            '<meta name="robots" content="noindex"><script>document.head.append(document.currentScript.previousSibling.cloneNode())</script>';
-        }
+        const noindex = this.noindexOnce(flush.noindex);
         const outs = [regionOut, ...patches.map(([patch]) => patch.out)];
         const [resolvedRegion, ...patched] = this.labels.resolve([
           region,
@@ -1147,6 +1178,78 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         this.finishBoundary(boundary);
       })(),
     );
+  }
+
+  /**
+   * Shadow DOM の外の境界 `boundary` を囲み、目印を出力した `<Errored>` の領域を、内側のものから順に、`error` を渡したフォールバックに差し替える。
+   * フォールバックの描画が失敗したら、その値を次の `<Errored>` に渡す。差し替えたら真を返す。
+   */
+  private async replaceAround(boundary: Boundary, error: unknown): Promise<boolean> {
+    if (boundary.path.length !== 0) return false;
+    let cause = error;
+    for (const catcher of boundary.catchers) {
+      catcher.replaced ??= this.replaceWithFallback(catcher, catcher.id, cause);
+      // oxlint-disable-next-line no-await-in-loop
+      const result = await catcher.replaced;
+      if (result.ok) return true;
+      cause = result.error;
+    }
+    return false;
+  }
+
+  /** 境界 `boundary` を囲む `<Errored>` のうち、領域をフォールバックに差し替えたものがあれば真を返す。 */
+  private async replacedAround(boundary: Boundary): Promise<boolean> {
+    const results = await Promise.all(
+      boundary.catchers.flatMap(({ replaced }) => (replaced ? [replaced] : [])),
+    );
+    return results.some(({ ok }) => ok);
+  }
+
+  /**
+   * シェルを送った後に、目印の ID が `id` の `catcher` の領域を、`error` を渡したフォールバックに差し替える。`error` が `notFound()` なら `noindex` を出力する。
+   * フォールバックの描画が失敗したら、差し替えずに、その失敗を記録して返す。
+   */
+  private async replaceWithFallback(
+    catcher: Catcher,
+    id: string,
+    error: unknown,
+  ): Promise<Replaced> {
+    const flush: DeferredFlush = {
+      ...resolvable(),
+      kind: "deferred",
+      noindex: classify(error).kind === "notFound",
+    };
+    const fallbackOut = Out.of(flush);
+    let html: string;
+    try {
+      html = await this.serialize(
+        this.chunks(catcher.node.fallback(error), {
+          ...catcher.ctx,
+          head: restrict(catcher.ctx.head, "loading"),
+        }),
+        fallbackOut,
+      );
+    } catch (fallbackError) {
+      console.error("[rinka] <Errored> のフォールバックの描画に失敗しました。", fallbackError);
+      flush.resolve(false);
+      return { ok: false, error: fallbackError };
+    }
+    const [resolved] = this.labels.resolve([html]);
+    this.reveal(
+      flush,
+      this.noindexOnce(flush.noindex) +
+        `<template ${BOUNDARY_CONTENT_ATTRIBUTE}="${id}">${resolved ?? ""}</template>` +
+        this.tailOf([fallbackOut]) +
+        swapScript({ b: id, bp: [], p: [] }),
+    );
+    return { ok: true };
+  }
+
+  /** `noindex` が真で、このレスポンスでまだ出力していなければ、`noindex` の `<meta>` と、それを `<head>` に加えるスクリプトを返す。 */
+  private noindexOnce(noindex: boolean): string {
+    if (!noindex || this.noindexSent) return "";
+    this.noindexSent = true;
+    return '<meta name="robots" content="noindex"><script>document.head.append(document.currentScript.previousSibling.cloneNode())</script>';
   }
 
   /**
@@ -1240,6 +1343,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         disabled: notDisabled,
         legend: undefined,
         fallback: false,
+        catchers: [],
       }),
       this.shellOut,
     );

@@ -115,7 +115,9 @@ export default async function PostPage({ params }: PageProps<"/posts/[slug]">) {
 
 `<Errored>` がシェルの中でエラーを受け止めると、レスポンスのステータスは 500 になります。補助的な部分の失敗で、ページとしては正常に表示できるときは、`status={200}` のようにステータスを指定します。要素の JSX に記述した `<Errored>` も、シェルの中で受け止めると 500 になり、`status` は指定できません。シェルの中で、どの `<Errored>` も受け止めなかったエラーには、[`error.tsx`](/guide/routing) を 500 で返します。
 
-シェルを送信した後に失敗した部分を受け止めるのは、その `<Loading>` の内側にある `<Errored>` だけです。上のページの例のように、`<Errored>` を `<Loading>` の内側に配置します。`<Loading>` の外側の `<Errored>` は、`<Loading>` の内側の失敗を受け止めません。どの `<Errored>` も受け止めなかったときは、フォールバックが残り、サーバーのログにエラーを出力します。
+シェルを送信した後に `<Loading>` の内側が失敗したときも、最も近い `<Errored>` が受け止めます。`<Loading>` の外側の `<Errored>` が受け止めたときは、その `<Errored>` の内側の全体を、送信済みの部分も含めてフォールバックに差し替えます。どの `<Errored>` も受け止めなかったときは、`<Loading>` のフォールバックが残り、サーバーのログにエラーを出力します。
+
+要素の Shadow DOM の中の `<Loading>` は例外で、サーバーで失敗を受け止めるのは、その `<Loading>` の内側の `<Errored>` だけです。内側の `<Errored>` が受け止めなかったときは、要素がブラウザで起動して描画し直します。
 
 ## `redirect()` と `notFound()`
 
@@ -145,7 +147,7 @@ export default function User({ params }: PageProps<"/users/[id]">) {
 シェルを送信した後に中身が揃った `<Loading>` の内側で投げたときは、ステータスを送信した後なので、次のように扱います。
 
 - `redirect()`：ブラウザで移動先のページに移動させます。JS が無い環境でも移動します
-- `notFound()`：その部分の失敗として扱い、`<Loading>` の内側の `<Errored>` が受け止めます。ステータスは 200 のままで、ページに `<meta name="robots" content="noindex">` を追加します
+- `notFound()`：その部分の失敗として扱い、最も近い `<Errored>` が受け止めます。ステータスは 200 のままで、ページに `<meta name="robots" content="noindex">` を追加します
 
 `<Errored>` の `fallback` で `notFound()` を区別するときは、受け取った値が `NotFound` のインスタンスかどうかを確認します。
 

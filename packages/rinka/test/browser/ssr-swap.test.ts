@@ -172,6 +172,18 @@ describe("サーバーの出力", () => {
     expect(doc.head.querySelector('meta[name="robots"]')?.getAttribute("content")).toBe("noindex");
     expect(doc.body.textContent).toContain("無い");
   });
+
+  it("シェルの後に Loading の中身が失敗すると、Loading を外側から囲む Errored の領域を、ブラウザでフォールバックに差し替える", async () => {
+    const doc = await render(
+      jsx("main", {
+        children: jsx(Errored, {
+          fallback: "失敗",
+          children: ["前", jsx(Loading, { fallback: "wait", children: jsx(Missing, {}) })],
+        }),
+      }),
+    );
+    expect(doc.querySelector("main")?.innerHTML).toBe("失敗");
+  });
 });
 
 /** 文書の `<head>` に追加する要素を、追加せずに `added` に記録する。 */
