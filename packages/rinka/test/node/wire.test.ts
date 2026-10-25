@@ -2,6 +2,7 @@ import { fromJSON, toJSON } from "seroval";
 import { describe, expect, it } from "vitest";
 
 import { registerServerFn } from "../../src/server/internal.ts";
+import { jsx } from "../../src/server/jsx-runtime.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
 import { fromRpcInput, toRpcBody, toScript } from "../../src/server/wire.ts";
 import { checkSerializable, isJson } from "../../src/shared/wire.ts";
@@ -54,6 +55,12 @@ describe("checkSerializable", () => {
     );
     expect(() => checkSerializable(new Map([[Symbol("k"), 1]]), "v", false)).toThrow(
       "v のキー は symbol なので",
+    );
+    expect(() => checkSerializable({ label: jsx("b", { children: "x" }) }, "v", true)).toThrow(
+      "v.label は JSX なので、シリアライズできません。JSX は、スロットの props で渡してください。",
+    );
+    expect(() => checkSerializable({ label: jsx("b", {}) }, "v", false)).toThrow(
+      /^v\.label は JSX なので、シリアライズできません。$/,
     );
   });
 

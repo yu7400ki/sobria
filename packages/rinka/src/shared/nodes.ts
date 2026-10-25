@@ -12,6 +12,9 @@ export interface ServerNode {
   readonly [server]: true;
 }
 
+/** サーバーのファイルの JSX のランタイムが作成した、タグとコンポーネントのノードを記録する集合である。 */
+export const serverJsxNodes = new WeakSet<object>();
+
 /** 要素の Props で、スロットになる props の型を表す。 */
 export interface Slot {
   readonly [slot]: true;

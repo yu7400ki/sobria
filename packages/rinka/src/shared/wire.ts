@@ -1,5 +1,6 @@
 import type { SerovalJSON } from "seroval";
 
+import { serverJsxNodes } from "./nodes.ts";
 import { isPlainObject } from "./objects.ts";
 import { serverFnRefOf } from "./server-fn.ts";
 
@@ -82,6 +83,10 @@ export function checkSerializable(value: unknown, path: string, serverFns: boole
 }
 
 function check(value: unknown, path: string, serverFns: boolean, seen: Set<object>): void {
+  if (typeof value === "object" && value !== null && serverJsxNodes.has(value)) {
+    const hint = serverFns ? "JSX は、スロットの props で渡してください。" : "";
+    throw new Error(`${path} は JSX なので、シリアライズできません。${hint}`);
+  }
   if (typeof value === "function" && !(serverFns && serverFnRefOf(value))) {
     const hint = serverFns ? "サーバーから要素に渡せる関数は、サーバー関数だけです。" : "";
     throw new Error(`${path} は関数なので、シリアライズできません。${hint}`);

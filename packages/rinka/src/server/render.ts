@@ -835,7 +835,11 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       for (const name of kinds.values) {
         const value = propValue(name);
         current[name] = value;
-        if ((typeof value === "object" && value !== null) || typeof value === "function") {
+        if (
+          (typeof value === "object" && value !== null) ||
+          typeof value === "function" ||
+          typeof value === "bigint"
+        ) {
           if (ctx.owner !== null) continue;
           checkSerializable(value, `<${tag}> ${name}`, true);
           (transfer ??= {})[name] = value;

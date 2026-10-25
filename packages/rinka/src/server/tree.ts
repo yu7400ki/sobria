@@ -1,5 +1,5 @@
 import type { NavigationProps } from "../shared/navigation.ts";
-import type { ServerNode } from "../shared/nodes.ts";
+import { serverJsxNodes, type ServerNode } from "../shared/nodes.ts";
 import type { ScopedChild } from "../shared/scope.ts";
 
 /** サーバーで描画する木のノードを表す。関数は、描画するときに呼び出して、返した値を描画する。 */
@@ -86,8 +86,12 @@ export function createNode(
   key?: string,
   child?: ScopedChild,
 ): Node {
-  if (typeof type === "string") return { kind: "tag", tag: type, props, key };
-  return child
-    ? { kind: "component", fn: type, props, key, child }
-    : { kind: "component", fn: type, props, key };
+  const node: TagNode | ComponentNode =
+    typeof type === "string"
+      ? { kind: "tag", tag: type, props, key }
+      : child
+        ? { kind: "component", fn: type, props, key, child }
+        : { kind: "component", fn: type, props, key };
+  serverJsxNodes.add(node);
+  return node;
 }

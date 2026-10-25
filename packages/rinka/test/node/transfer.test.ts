@@ -126,6 +126,12 @@ describe("props の値", () => {
     expect(sent).toEqual([["h1", { "@p": { data: { a: [1] } } }]]);
   });
 
+  it("BigInt の props は、属性にせずに @p として送る", async () => {
+    const { html, sent } = await render(jsx(Card, { data: 10n }));
+    expect(html).toContain('<x-tr-card data-oh="h1" data-om="@p">');
+    expect(sent).toEqual([["h1", { "@p": { data: 10n } }]]);
+  });
+
   it("サーバー関数の props は、オブジェクトの中にあっても、$rinka.f の呼び出しにして送る", async () => {
     const like = registerServerFn(
       "src/fns.ts#like",
