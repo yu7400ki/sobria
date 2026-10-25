@@ -229,6 +229,12 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
               build.clientAssets.sheet(sheet),
             );
       },
+      generateBundle(_output, bundle) {
+        for (const [fileName, output] of Object.entries(bundle)) {
+          if (output.type === "chunk" && output.facadeModuleId === NO_ELEMENTS)
+            delete bundle[fileName];
+        }
+      },
       transform(code, id) {
         const target = projectFile(id);
         if (!target || target.registered) return null;
