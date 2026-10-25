@@ -11,6 +11,7 @@ import { jsx } from "../../src/server/jsx-runtime.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
 import { prerenderEnv } from "../../src/shared/prerender.ts";
 import type {
+  DirectoryMiddleware,
   Fallback,
   Fallbacks,
   Route,
@@ -64,12 +65,22 @@ const page =
 const patternOf = (path: string): string =>
   path.replaceAll(/:(\w+)\{\.\+\}/g, "[...$1]").replaceAll(/:(\w+)/g, "[$1]");
 
+/** ディレクトリの `middleware.ts` の欄の値を返す。関数は、`notFound()` に使用する `not-found.tsx` の無いミドルウェアにする。 */
+const directoryOf = (value: MiddlewareHandler | DirectoryMiddleware): DirectoryMiddleware =>
+  typeof value === "function" ? { module: loadOf(value) } : value;
+
+/** `notFound()` を投げたときに `fallbacks` を使用する、ディレクトリの `middleware.ts` を返す。 */
+const guarded = (handler: MiddlewareHandler, fallbacks: Fallbacks): DirectoryMiddleware => ({
+  module: loadOf(handler),
+  ...fallbacks,
+});
+
 /** ページの行を返す。 */
 function pageRoute(
   path: string,
   component: RouteComponent,
   layouts: readonly RouteComponent[] = [],
-  middlewares: readonly MiddlewareHandler[] = [],
+  middlewares: readonly (MiddlewareHandler | DirectoryMiddleware)[] = [],
   fallbacks: Fallbacks = {},
 ): Route {
   return {
@@ -78,7 +89,7 @@ function pageRoute(
     pattern: patternOf(path),
     module: loadOf(component),
     layouts: layouts.map((value) => loadOf(value)),
-    middlewares: middlewares.map((value) => loadOf(value)),
+    middlewares: middlewares.map(directoryOf),
     ...fallbacks,
   };
 }
@@ -96,30 +107,32 @@ const fallbackOf = (
 function notFoundRoute(
   path: string,
   notFoundPage: Fallback,
-  middlewares: readonly MiddlewareHandler[] = [],
+  middlewares: readonly (MiddlewareHandler | DirectoryMiddleware)[] = [],
   error?: Fallback,
 ): Route {
   return {
     kind: "not-found",
     path: path === "/" ? "/*" : `${path}/*`,
-    middlewares: middlewares.map((value) => loadOf(value)),
+    middlewares: middlewares.map(directoryOf),
     notFound: notFoundPage,
     ...(error && { error }),
   };
 }
 
-/** `route.ts` の行を返す。 */
+/** `route.ts` の行を返す。`fallbacks` は、関数が投げた `notFound()` に使用するエラーのページである。 */
 function apiRoute(
   path: string,
   handlers: Partial<Record<RouteMethod, Handler>>,
-  middlewares: readonly MiddlewareHandler[] = [],
+  middlewares: readonly (MiddlewareHandler | DirectoryMiddleware)[] = [],
+  fallbacks: Fallbacks = {},
 ): Route {
   return {
     kind: "route",
     path,
     pattern: patternOf(path),
     module: Object.assign(async () => handlers, { file: `src/routes${path}/route.ts` }),
-    middlewares: middlewares.map((value) => loadOf(value)),
+    middlewares: middlewares.map(directoryOf),
+    ...fallbacks,
   };
 }
 
@@ -144,6 +157,12 @@ const guard: MiddlewareHandler = async () => {
 
 /** `notFound()` を投げるミドルウェアである。 */
 const hide: MiddlewareHandler = async () => {
+  throw notFound();
+};
+
+/** `next()` の後で `notFound()` を投げるミドルウェアである。 */
+const late: MiddlewareHandler = async (_c, next) => {
+  await next();
   throw notFound();
 };
 
@@ -871,6 +890,77 @@ describe("createApp の not-found.tsx と error.tsx", () => {
 /** リクエストのヘッダー `x-user` を `<p>` に出力するページである。 */
 const reading = () => jsx("p", { children: getContext()?.req.header("x-user") });
 
+describe("ディレクトリの middleware.ts と route.ts が投げた notFound()", () => {
+  const rootNotFound = fallbackOf(fallback("root"));
+  const rootError = fallbackOf(fallback("root error"));
+  const adminNotFound = fallbackOf(fallback("admin"), [layout("main", "admin")]);
+  const adminError = fallbackOf(fallback("admin error"), [layout("main", "admin")]);
+  const parent = { notFound: rootNotFound, error: rootError };
+  const routes: Routes = {
+    routes: [
+      pageRoute("/admin", page("admin"), [layout("main", "admin")], [guarded(hide, parent)], {
+        notFound: adminNotFound,
+        error: adminError,
+      }),
+      pageRoute(
+        "/secret",
+        page("secret"),
+        [],
+        [guarded(hide, { notFound: fallbackOf(throwing(new Error("nf"))), error: rootError })],
+        { notFound: rootNotFound, error: adminError },
+      ),
+      pageRoute("/bare", page("bare"), [], [hide], parent),
+      apiRoute(
+        "/api/users",
+        {
+          GET: () => {
+            throw notFound();
+          },
+        },
+        [],
+        parent,
+      ),
+      notFoundRoute("/admin", adminNotFound, [guarded(hide, parent)], adminError),
+      notFoundRoute("/api", fallbackOf(fallback("api"))),
+      notFoundRoute("/", rootNotFound, [], rootError),
+    ],
+  };
+  const render = async (path: string) => {
+    const response = await request(routes, path);
+    return [response.status, await bodyOf(response)];
+  };
+
+  it("middleware.ts が投げたときは、そのディレクトリのレイアウトと not-found.tsx を描画せずに、親から探索した not-found.tsx を 404 で返す", async () => {
+    expect(await Promise.all([render("/admin"), render("/admin/x")])).toEqual([
+      [404, "<h1>root /admin</h1>"],
+      [404, "<h1>root /admin/x</h1>"],
+    ]);
+  });
+
+  it("middleware.ts が投げたときの not-found.tsx のシェルが投げたエラーには、親から探索した error.tsx を使用する", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const rendered = await render("/secret");
+    error.mockRestore();
+    expect(rendered).toEqual([500, "<h1>root error /secret nf</h1>"]);
+  });
+
+  it("親から探索した not-found.tsx が無ければ、URL に一致する not-found.tsx を使用せずに、Not Found のテキストの 404 にする", async () => {
+    expect(await render("/bare")).toEqual([404, "Not Found"]);
+  });
+
+  it("middleware.ts が next() の後で投げたときも、ページの代わりに、親から探索した not-found.tsx を 404 で返す", async () => {
+    const response = await request(
+      { routes: [pageRoute("/late", page("late"), [], [guarded(late, parent), marking("x-dir")])] },
+      "/late",
+    );
+    expect([response.status, await bodyOf(response)]).toEqual([404, "<h1>root /late</h1>"]);
+  });
+
+  it("route.ts が投げたときは、URL に一致する not-found.tsx を使用せずに、route.ts のディレクトリから探索した not-found.tsx を使用する", async () => {
+    expect(await render("/api/users")).toEqual([404, "<h1>root /api/users</h1>"]);
+  });
+});
+
 describe("getContext", () => {
   it("ページの描画中は処理中のリクエストの Context を返し、リクエストの外では undefined を返す", async () => {
     const response = await request({ routes: [pageRoute("/", reading)] }, "/", {
@@ -1121,9 +1211,9 @@ describe("サーバー関数のリクエストで、ルートの middleware.ts �
       body,
     });
 
-  it("ページのリクエストでは、notFound() に URL に一致する not-found.tsx を使用する", async () => {
+  it("ページのリクエストでは、URL に一致する not-found.tsx を使用せずに、notFound() を Not Found のテキストの 404 にする", async () => {
     const response = await request(routes, "/nope", { headers: { "x-throw": "notFound" } });
-    expect([response.status, await bodyOf(response)]).toEqual([404, "<h1>missing /nope</h1>"]);
+    expect([response.status, await response.text()]).toEqual([404, "Not Found"]);
   });
 
   it("RPC では、サーバー関数が投げた値と同じく、redirect() を { redirect } に、notFound() を本文の無い 404 にする", async () => {
@@ -1223,11 +1313,16 @@ describe("アプリの onError", () => {
             throw redirect("/api/new", 307);
           },
         }),
-        apiRoute("/api/gone", {
-          GET: () => {
-            throw notFound();
+        apiRoute(
+          "/api/gone",
+          {
+            GET: () => {
+              throw notFound();
+            },
           },
-        }),
+          [],
+          { notFound: fallbackOf(fallback("missing")) },
+        ),
         pageRoute("/admin", page("admin"), [], [guard]),
         apiRoute("/api/broken", {
           GET: () => {
@@ -1253,32 +1348,26 @@ describe("アプリの onError", () => {
     expect(onError).toHaveBeenCalledTimes(1);
   });
 
-  it("ページの URL でミドルウェアが投げた notFound() は、ページの not-found.tsx を 404 で返し、not-found.tsx のシェルが投げたエラーには error.tsx を使用する", async () => {
+  it("route.ts が投げた notFound() の not-found.tsx のシェルが投げたエラーには、route.ts の行の error.tsx を使用する", async () => {
     const routes: Routes = {
       routes: [
-        pageRoute("/shop", page("shop"), [], [hide], {
-          notFound: fallbackOf(fallback("shop")),
-        }),
-        apiRoute("/broken/api", {
-          GET: () => {
-            throw notFound();
+        apiRoute(
+          "/broken/api",
+          {
+            GET: () => {
+              throw notFound();
+            },
           },
-        }),
-        notFoundRoute(
-          "/broken",
-          fallbackOf(throwing(new Error("nf"))),
           [],
-          fallbackOf(fallback("error")),
+          { notFound: fallbackOf(throwing(new Error("nf"))), error: fallbackOf(fallback("error")) },
         ),
-        notFoundRoute("/", fallbackOf(fallback("root"))),
       ],
     };
-    const [shop, broken] = await Promise.all([
-      request(routes, "/shop"),
-      request(routes, "/broken/api"),
+    const response = await request(routes, "/broken/api");
+    expect([response.status, await bodyOf(response)]).toEqual([
+      500,
+      "<h1>error /broken/api nf</h1>",
     ]);
-    expect([shop.status, await bodyOf(shop)]).toEqual([404, "<h1>shop /shop</h1>"]);
-    expect([broken.status, await bodyOf(broken)]).toEqual([500, "<h1>error /broken/api nf</h1>"]);
   });
 });
 

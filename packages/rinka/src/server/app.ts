@@ -22,7 +22,6 @@ import {
   serverFnFailure,
   serverFnMiddleware,
   type Failure,
-  type Failures,
 } from "./endpoint.ts";
 import { classify, notFound } from "./errors.ts";
 import { stylesheetLink } from "./html.ts";
@@ -48,11 +47,14 @@ const lazy =
   };
 
 /**
- * サーバー関数のエンドポイントへのリクエストでは、ミドルウェア `middleware` が投げた値を、`failures` を使用して、サーバー関数が投げた値と同じレスポンスにするミドルウェアを返す。
- * `middleware` が、`next()` が投げた値と同じ値を投げたときは、その値をそのまま投げる。
+ * ミドルウェア `middleware` が投げた値を `handle` に渡し、`handle` が返した Response を、`next()` の後で投げたときも含めてレスポンスにするミドルウェアを返す。
+ * `handle` が `undefined` を返したとき、または `middleware` が `next()` の投げた値と同じ値を投げたときは、`middleware` が投げた値をそのまま投げる。
  */
-const root =
-  (middleware: MiddlewareHandler, failures: Failures): MiddlewareHandler =>
+const catching =
+  (
+    middleware: MiddlewareHandler,
+    handle: (c: Context, error: unknown) => Response | Promise<Response> | undefined,
+  ): MiddlewareHandler =>
   async (c, next) => {
     let downstream: { readonly error: unknown } | undefined;
     try {
@@ -66,11 +68,12 @@ const root =
       });
     } catch (error) {
       const response =
-        downstream !== undefined && downstream.error === error
-          ? undefined
-          : serverFnFailure(c, error, failures);
+        downstream !== undefined && downstream.error === error ? undefined : handle(c, error);
       if (response === undefined) throw error;
-      return response;
+      // c.res の setter に、next() の後で設定されたレスポンスのヘッダーをマージさせない
+      c.res = undefined;
+      c.res = await response;
+      return c.res;
     }
   };
 
@@ -194,7 +197,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   const find = finder(routes);
   /**
    * ミドルウェア、`route.ts`、サーバー関数が投げた値と、`error.tsx` の無いページの描画で投げた値から、リクエスト `c` のレスポンスを作成する。
-   * `redirect()` と `HTTPException` は、そのレスポンスを返す。`notFound()` は、URL に一致する `not-found.tsx` のページを 404 で返す。そのほかの値は `onError` に渡す。
+   * `redirect()` と `HTTPException` はそれぞれが表すレスポンスにし、`notFound()` は `Not Found` のテキストの 404 にし、そのほかの値は `onError` に渡す。
    */
   const fail = async (
     c: Pick<Context, "req" | "newResponse" | "env">,
@@ -206,14 +209,8 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
       case "moved":
       case "response":
         return thrown.response;
-      case "notFound": {
-        const url = new URL(c.req.url);
-        const found = await find(url);
-        return respond(c, jsx(missing, {}), found?.route ?? {}, {
-          params: found?.params ?? {},
-          url,
-        });
-      }
+      case "notFound":
+        return respond(c, jsx(missing, {}), {}, {});
       case "schema":
       case "error":
         return onError(error);
@@ -243,7 +240,13 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   const failures = { rpc: fail, form: formFailure };
   const serverFns = serverFnMiddleware(options, failures);
   const rinka =
-    middleware === undefined ? serverFns : every(root(lazy(middleware), failures), serverFns);
+    middleware === undefined
+      ? serverFns
+      : every(
+          // サーバー関数のエンドポイントへのリクエストでは、ルートのミドルウェアが投げた値を、サーバー関数が投げた値と同じレスポンスにする
+          catching(lazy(middleware), (c, error) => serverFnFailure(c, error, failures)),
+          serverFns,
+        );
   app.use(callerResponses((c, request) => app.fetch(request, c.env, executionCtxOf(c))));
   app.use((c, next) =>
     runInRequest(c, () =>
@@ -251,8 +254,13 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
         c,
         prerenderKindOf(c.env) === "not-found"
           ? async () => {
-              // 404.html の書き出しのリクエストでは、ルートのミドルウェアの後で not-found.tsx を描画する
-              c.res = await fail(c, notFound());
+              // 404.html の書き出しのリクエストでは、ルートのミドルウェアの後で、URL に一致する not-found.tsx を描画する
+              const url = new URL(c.req.url);
+              const found = await find(url);
+              c.res = await respond(c, jsx(missing, {}), found?.route ?? {}, {
+                params: found?.params ?? {},
+                url,
+              });
             }
           : next,
       ),
@@ -278,44 +286,63 @@ type Respond = (
 
 /**
  * `route` を、ディレクトリのミドルウェアの後に `app` に登録する。
+ * ディレクトリのミドルウェアが投げた `notFound()` には、そのミドルウェアに付与した `not-found.tsx` を使用し、行の処理が投げた `notFound()` には、行の `not-found.tsx` を使用する。
  * `output` が `static` なら、パラメータのあるページのリクエストのパラメータが、そのページの `prerender` が返すパラメータに無いときに、`notFound()` を投げる。
  */
 function register(app: Hono, route: Route, respond: Respond, output: Output): void {
-  const directory = every(...route.middlewares.map(lazy));
+  /** `notFound()` を受け取ったときは `fallbacks` の `not-found.tsx` を描画した 404 を、そのほかの値を受け取ったときは `undefined` を返す関数を返す。 */
+  const notFoundWith = (fallbacks: Fallbacks) => (c: Context, error: unknown) =>
+    classify(error).kind === "notFound"
+      ? respond(c, jsx(missing, {}), fallbacks, propsOf(c))
+      : undefined;
+  const directory = every(
+    ...route.middlewares.map((middleware) =>
+      catching(lazy(middleware.module), notFoundWith(middleware)),
+    ),
+  );
+  /** 行の処理 `handler` を、`directory` の後に実行するハンドラーの列を返す。 */
+  const chain = (handler: MiddlewareHandler) =>
+    [directory, catching(handler, notFoundWith(route))] as const;
   switch (route.kind) {
     case "page":
-      app.get(route.path, directory, async (c) => {
-        if (output === "static") {
-          const list = await prerenderParams(route);
-          const params: Readonly<Record<string, string>> = c.req.param();
-          const listed = list?.some(({ values }) =>
-            Object.entries(values).every(([name, value]) => params[name] === value),
-          );
-          if (listed === false) throw notFound();
-        }
-        const props = propsOf(c);
-        return respond(c, await wrap(route.module, route.layouts, props), route, props, {
-          files: filesOf(route.module, route.layouts),
-        });
-      });
+      app.get(
+        route.path,
+        ...chain(async (c) => {
+          if (output === "static") {
+            const list = await prerenderParams(route);
+            const params: Readonly<Record<string, string>> = c.req.param();
+            const listed = list?.some(({ values }) =>
+              Object.entries(values).every(([name, value]) => params[name] === value),
+            );
+            if (listed === false) throw notFound();
+          }
+          const props = propsOf(c);
+          return respond(c, await wrap(route.module, route.layouts, props), route, props, {
+            files: filesOf(route.module, route.layouts),
+          });
+        }),
+      );
       return;
     case "route":
-      app.all(route.path, directory, async (c, next) => {
-        const handlers = await route.module();
-        const requested = handledMethod(c);
-        const method = routeMethods.find((name) => name === requested);
-        const handler = method === undefined ? undefined : handlers[method];
-        if (handler === undefined) {
-          const allow = routeMethods
-            .filter((name) => handlers[name] !== undefined)
-            .flatMap((name) => (name === "GET" ? ["GET", "HEAD"] : [name]))
-            .join(", ");
-          return c.body(null, 405, { allow });
-        }
-        const result: unknown = await handler(c, next);
-        if (result instanceof Response) return withContextHeaders(c, result);
-        return result === undefined ? c.body(null, 204) : c.json(result);
-      });
+      app.all(
+        route.path,
+        ...chain(async (c, next) => {
+          const handlers = await route.module();
+          const requested = handledMethod(c);
+          const method = routeMethods.find((name) => name === requested);
+          const handler = method === undefined ? undefined : handlers[method];
+          if (handler === undefined) {
+            const allow = routeMethods
+              .filter((name) => handlers[name] !== undefined)
+              .flatMap((name) => (name === "GET" ? ["GET", "HEAD"] : [name]))
+              .join(", ");
+            return c.body(null, 405, { allow });
+          }
+          const result: unknown = await handler(c, next);
+          if (result instanceof Response) return withContextHeaders(c, result);
+          return result === undefined ? c.body(null, 204) : c.json(result);
+        }),
+      );
       return;
     case "not-found":
       app.all(route.path, directory, async (c) => respond(c, jsx(missing, {}), route, propsOf(c)));

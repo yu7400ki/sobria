@@ -43,7 +43,7 @@ export interface Fallback<F extends RouteFiles = LoadedFiles> {
   readonly layouts: readonly F["component"][];
 }
 
-/** ページと `not-found.tsx` の行の、エラーのページを表す。 */
+/** ルートの表の各行が持つエラーのページを表す。 */
 export interface Fallbacks<F extends RouteFiles = LoadedFiles> {
   /** そのディレクトリか祖先のディレクトリで最も近い `not-found.tsx` である。 */
   readonly notFound?: Fallback<F>;
@@ -51,12 +51,21 @@ export interface Fallbacks<F extends RouteFiles = LoadedFiles> {
   readonly error?: Fallback<F>;
 }
 
+/**
+ * ルート以外のディレクトリにある `middleware.ts` を表す。`notFound` と `error` は、その `middleware.ts` が投げた `notFound()` に使用するエラーのページである。
+ * どちらも、`middleware.ts` のディレクトリの親から祖先に向かって探索し、最初に見つかったものである。
+ */
+export interface DirectoryMiddleware<F extends RouteFiles = LoadedFiles> {
+  readonly module: F["middleware"];
+  readonly notFound?: Fallback<F>;
+  readonly error?: Fallback<F>;
+}
+
 /** ルートの表の 1 行を表す。`layouts` と `middlewares` は、外側から順に列挙する。 */
 export type Route<F extends RouteFiles = LoadedFiles> = {
   /** Hono のパスである。`not-found.tsx` の行では、そのディレクトリの配下のすべての URL に一致するパスである。 */
   readonly path: string;
-  /** ルートのディレクトリ以外の `middleware.ts` である。 */
-  readonly middlewares: readonly F["middleware"][];
+  readonly middlewares: readonly DirectoryMiddleware<F>[];
 } & (
   | ({
       readonly kind: "page";
@@ -70,12 +79,12 @@ export type Route<F extends RouteFiles = LoadedFiles> = {
       /** この行の `not-found.tsx` と、そのディレクトリのレイアウトである。 */
       readonly notFound: Fallback<F>;
     } & Pick<Fallbacks<F>, "error">)
-  | {
+  | ({
       readonly kind: "route";
       /** グループを除いたファイルの形のパス（`/api/users`）である。 */
       readonly pattern: string;
       readonly module: F["handlers"];
-    }
+    } & Fallbacks<F>)
 );
 
 /** ルートの表を表す。`middleware` は、ルートのディレクトリの `middleware.ts` である。 */
@@ -103,7 +112,11 @@ export function mapRouteFiles<C, M, H, C2, M2, H2>(
   const optional = (page: Fallback<From> | undefined): Fallback<To> | undefined =>
     page === undefined ? undefined : fallback(page);
   const row = (route: Route<From>): Route<To> => {
-    const middlewares = route.middlewares.map(map.middleware);
+    const middlewares = route.middlewares.map((middleware) => ({
+      module: map.middleware(middleware.module),
+      notFound: optional(middleware.notFound),
+      error: optional(middleware.error),
+    }));
     switch (route.kind) {
       case "page":
         return {
@@ -122,7 +135,13 @@ export function mapRouteFiles<C, M, H, C2, M2, H2>(
           error: optional(route.error),
         };
       case "route":
-        return { ...route, middlewares, module: map.handlers(route.module) };
+        return {
+          ...route,
+          middlewares,
+          module: map.handlers(route.module),
+          notFound: optional(route.notFound),
+          error: optional(route.error),
+        };
     }
   };
   return {

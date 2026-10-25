@@ -70,7 +70,7 @@ describe("scanRoutes", () => {
     };
     const users = {
       layouts: [...root, "src/routes/users/layout.tsx"],
-      middlewares: ["src/routes/users/middleware.ts"],
+      middlewares: [{ module: "src/routes/users/middleware.ts", ...fallbacks }],
       ...fallbacks,
     };
     expect(table).toEqual({
@@ -107,6 +107,7 @@ describe("scanRoutes", () => {
           pattern: "/api/users",
           module: "src/routes/api/users/route.ts",
           middlewares: [],
+          ...fallbacks,
         },
         {
           kind: "page",
@@ -151,8 +152,37 @@ describe("scanRoutes", () => {
     expect(middleware).toBeUndefined();
     expect(routes.map((route) => [route.path, route.middlewares])).toEqual([
       ["/about", []],
-      ["/admin", ["src/routes/(admin)/middleware.ts"]],
+      ["/admin", [{ module: "src/routes/(admin)/middleware.ts" }]],
     ]);
+  });
+
+  it("middleware.ts には親のディレクトリから、route.ts にはそのディレクトリから探索した not-found.tsx と error.tsx を付ける", () => {
+    const { routes } = scan([
+      "not-found.tsx",
+      "(shop)/error.tsx",
+      "(shop)/middleware.ts",
+      "(shop)/not-found.tsx",
+      "(shop)/cart/middleware.ts",
+      "(shop)/cart/page.tsx",
+      "(shop)/cart/api/route.ts",
+    ]);
+    const root = { notFound: { module: "src/routes/not-found.tsx", layouts: [] } };
+    const shop = {
+      notFound: { module: "src/routes/(shop)/not-found.tsx", layouts: [] },
+      error: { module: "src/routes/(shop)/error.tsx", layouts: [] },
+    };
+    const middlewares = [
+      { module: "src/routes/(shop)/middleware.ts", ...root },
+      { module: "src/routes/(shop)/cart/middleware.ts", ...shop },
+    ];
+    expect(
+      routes.flatMap((route) =>
+        route.kind === "route"
+          ? [[route.path, route.middlewares, route.notFound, route.error]]
+          : [],
+      ),
+    ).toEqual([["/cart/api", middlewares, shop.notFound, shop.error]]);
+    expect(routes.find((route) => route.kind === "page")?.middlewares).toEqual(middlewares);
   });
 
   it("ルートのディレクトリが無ければ、空の表を返す", () => {
@@ -300,7 +330,7 @@ describe("scanRoutes のエラーのページ", () => {
     ]);
   });
 
-  it("not-found.tsx は、ページと route.ts の後に、深い順に並べ、同じ URL ならグループの外のものを先に並べる。route.ts にはエラーのページを付けない", () => {
+  it("not-found.tsx は、ページと route.ts の後に、深い順に並べ、同じ URL ならグループの外のものを先に並べる", () => {
     const { routes } = scan([
       "(a)/not-found.tsx",
       "(a)/x/not-found.tsx",
@@ -309,7 +339,7 @@ describe("scanRoutes のエラーのページ", () => {
       "api/route.ts",
     ]);
     expect(routes.map((route) => [moduleOf(route), route.path, "error" in route])).toEqual([
-      ["src/routes/api/route.ts", "/api", false],
+      ["src/routes/api/route.ts", "/api", true],
       ["src/routes/x/not-found.tsx", "/x/*", true],
       ["src/routes/(a)/x/not-found.tsx", "/x/*", true],
       ["src/routes/(a)/not-found.tsx", "/*", true],

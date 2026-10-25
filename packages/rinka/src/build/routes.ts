@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { parseSegment, type RouteSegment } from "../shared/route-segments.ts";
 import {
   mapRouteFiles,
+  type DirectoryMiddleware,
   type Fallback,
   type Fallbacks,
   type Route,
@@ -155,7 +156,7 @@ function compareRoutes(a: Scanned, b: Scanned): number {
   return a.depth - b.depth;
 }
 
-/** 種類が `kind` の行を返す。ページと `not-found.tsx` には `fallbacks` を付け、`not-found.tsx` の `notFound` はその行のファイルにする。 */
+/** 種類が `kind` の行に `fallbacks` を付与して返す。`not-found.tsx` の行の `notFound` は、その行のファイルにする。 */
 function rowOf({
   kind,
   path,
@@ -170,7 +171,7 @@ function rowOf({
   readonly pattern: string;
   readonly module: string;
   readonly layouts: readonly string[];
-  readonly middlewares: readonly string[];
+  readonly middlewares: readonly DirectoryMiddleware<PathFiles>[];
   readonly fallbacks: Fallbacks<PathFiles>;
 }): ScannedRoute {
   switch (kind) {
@@ -179,7 +180,7 @@ function rowOf({
     case "not-found":
       return { kind, path, middlewares, ...fallbacks, notFound: { module, layouts } };
     case "route":
-      return { kind, path, pattern, module, middlewares };
+      return { kind, path, pattern, module, middlewares, ...fallbacks };
   }
 }
 
@@ -203,7 +204,7 @@ function scan(
     segments: readonly UrlSegment[],
     depth: number,
     outerLayouts: readonly string[],
-    outerMiddlewares: readonly string[],
+    outerMiddlewares: readonly DirectoryMiddleware<PathFiles>[],
     outerFallbacks: Fallbacks<PathFiles>,
   ): void => {
     const entries = readdirSync(current, { withFileTypes: true }).toSorted((a, b) =>
@@ -227,7 +228,7 @@ function scan(
     const ownMiddleware = fileNamed("middleware");
     if (ownMiddleware !== undefined) {
       if (current === start) middleware = ownMiddleware;
-      else middlewares = [...outerMiddlewares, ownMiddleware];
+      else middlewares = [...outerMiddlewares, { module: ownMiddleware, ...outerFallbacks }];
     }
     const fallbackOf = (name: "not-found" | "error"): Fallback<PathFiles> | undefined => {
       const module = fileNamed(name);
