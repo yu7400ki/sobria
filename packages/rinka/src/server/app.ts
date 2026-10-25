@@ -24,6 +24,7 @@ import {
   serverFnFailure,
   serverFnMiddleware,
   type Failure,
+  type FetchPage,
 } from "./endpoint.ts";
 import { classify, notFound } from "./errors.ts";
 import { stylesheetLink } from "./html.ts";
@@ -199,6 +200,8 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     formErrors.delete(c.req.raw);
     return failed;
   };
+  /** サブリクエスト `request` を、リクエスト `c` と同じ env と executionCtx で、このアプリに送信する。 */
+  const fetchPage: FetchPage = (c, request) => app.fetch(request, c.env, executionCtxOf(c));
   const formFailure: Failure = async (c, error) => {
     const caller = callerOf(c);
     const referer = c.req.header("referer");
@@ -214,7 +217,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     }
     const request = pageRequest(c, url, caller !== undefined);
     formErrors.set(request, { error });
-    const response = await app.fetch(request, c.env, executionCtxOf(c));
+    const response = await fetchPage(c, request);
     // error.tsx と onError のどちらにも渡らなかった値は、ここで記録する
     if (formErrors.has(request)) console.error(error);
     // JS が無いときは、307 と 308 のリダイレクトを 303 に変換する
@@ -237,7 +240,7 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
         );
   // URL の区切りの無い not-found.tsx の行のうち、ルートの表で最初の行である。グループの外のものが先に並ぶ
   const rootMissing = routes.find((route) => route.kind === "not-found" && route.path === "/*");
-  app.use(callerResponses((c, request) => app.fetch(request, c.env, executionCtxOf(c))));
+  app.use(callerResponses(fetchPage));
   app.use((c, next) =>
     runInRequest(c, () =>
       rinka(
@@ -258,8 +261,10 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     register(app, route, respond, options.output ?? "server", takeFormError);
   }
   app.notFound((c) => {
+    // 一致する行が無い URL へのフォームの失敗のサブリクエストでは、投げた値を app.onError に渡す
     const failed = takeFormError(c);
-    return failed ? fail(c, failed.error) : respond(c, jsx(missing, {}), {}, {});
+    if (failed) throw failed.error;
+    return respond(c, jsx(missing, {}), {}, {});
   });
   return app;
 }) satisfies CreateApp;
@@ -293,7 +298,7 @@ const directoryOf = (respond: Respond, middlewares: Route["middlewares"]): Middl
 
 /**
  * `route` を、ディレクトリのミドルウェアの後に `app` に登録する。
- * `formErrorOf` がそのリクエストに対して値を返したら、ページと `not-found.tsx` の行は、ページの代わりに、行の `error.tsx` にその値を渡して描画し、`route.ts` の行は、関数を呼ばずにその値を投げる。
+ * `formErrorOf` がそのリクエストに対して値を返したら、行の処理を実行せずに、ページと `not-found.tsx` の行では行の `error.tsx` にその値を渡して描画し、`error.tsx` が無い行と `route.ts` の行ではその値を投げる。
  * 行の処理が投げた `notFound()` には、行の `not-found.tsx` を使用する。
  * `output` が `static` なら、パラメータのあるページのリクエストのパラメータが、そのページの `prerender` が返すパラメータに無いときに、`notFound()` を投げる。
  */
@@ -305,14 +310,20 @@ function register(
   formErrorOf: (c: Context) => { readonly error: unknown } | undefined,
 ): void {
   const directory = directoryOf(respond, route.middlewares);
-  /** `formErrorOf(c)` が値を返したら、その値を、エラーのページ `errorPage` に渡して描画したレスポンスを返す。そうでなければ `undefined` を返す。 */
-  const formFailurePage = (c: Context, errorPage: Fallbacks["error"]) => {
-    const failed = formErrorOf(c);
-    return failed && respond(c, jsx(throwing(failed.error), {}), { error: errorPage }, propsOf(c));
-  };
-  /** 行の処理 `handler` を、`directory` の後に実行するハンドラーの列を返す。 */
-  const chain = (handler: MiddlewareHandler) =>
-    [directory, catching(handler, notFoundWith(respond, route))] as const;
+  /** 行の処理 `handler` を、`directory` の後に実行するハンドラーの列を返す。`errorPage` は、フォームの失敗のサブリクエストに描画する `error.tsx` である。 */
+  const chain = (handler: MiddlewareHandler, errorPage: Fallback | undefined) =>
+    [
+      directory,
+      catching(
+        async (c, next) => {
+          const failed = formErrorOf(c);
+          if (failed === undefined) return handler(c, next);
+          if (errorPage === undefined) throw failed.error;
+          return respond(c, jsx(throwing(failed.error), {}), { error: errorPage }, propsOf(c));
+        },
+        notFoundWith(respond, route),
+      ),
+    ] as const;
   switch (route.kind) {
     case "page":
       app.get(
@@ -326,21 +337,17 @@ function register(
             );
             if (listed === false) throw notFound();
           }
-          const failure = formFailurePage(c, route.error);
-          if (failure) return failure;
           const props = propsOf(c);
           return respond(c, await wrap(route.module, route.layouts, props), route, props, {
             files: filesOf(route.module, route.layouts),
           });
-        }),
+        }, route.error),
       );
       return;
     case "route":
       app.all(
         route.path,
         ...chain(async (c, next) => {
-          const failed = formErrorOf(c);
-          if (failed) throw failed.error;
           const handlers = await route.module();
           const requested = handledMethod(c);
           const method = routeMethods.find((name) => name === requested);
@@ -355,15 +362,13 @@ function register(
           const result: unknown = await handler(c, next);
           if (result instanceof Response) return withContextHeaders(c, result);
           return result === undefined ? c.body(null, 204) : c.json(result);
-        }),
+        }, undefined),
       );
       return;
     case "not-found":
       app.all(
         route.path,
-        directory,
-        async (c) =>
-          formFailurePage(c, route.error) ?? respond(c, jsx(missing, {}), route, propsOf(c)),
+        ...chain(async (c) => respond(c, jsx(missing, {}), route, propsOf(c)), route.error),
       );
       return;
   }
