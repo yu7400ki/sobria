@@ -310,8 +310,8 @@ const isLocalPage = (url: URL, c: Context): boolean =>
   url.host === new URL(c.req.url).host && !url.pathname.startsWith(internalPrefix);
 
 /**
- * フォームの送信 `c` の、送信したページの URL を返す。JS があるときは `x-rinka-page` の URL を、JS が無いときは Referer の URL を、`callerOf` と同じ規則で検証する。
- * URL が無いときと、検証を通らないときは `undefined` を返す。
+ * フォームの送信 `c` の、送信したページの URL を返す。JS があるときは `x-rinka-page` の URL を、JS が無いときは Referer の URL を使用する。
+ * URL が無いとき、そのホストがリクエストのホストと異なるとき、そのパスが `/_rinka/` の下にあるときは `undefined` を返す。
  */
 export function submittedPage(c: Context): URL | undefined {
   const caller = callerOf(c);
