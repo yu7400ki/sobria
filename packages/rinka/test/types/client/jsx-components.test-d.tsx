@@ -1,5 +1,6 @@
 import {
   defineElement,
+  Errored,
   type ClientNode,
   type Ctx,
   type ElementRef,
@@ -137,4 +138,12 @@ test("要素の関数は、スロットの props を JSX の子に配置でき�
       {props.children}
     </section>
   ));
+});
+
+test("要素のファイルの Errored は、シェルの中で受け止めたときのステータスを status で受け付ける", () => {
+  void (
+    <Errored status={200} fallback={(_error, retry) => <button onClick={retry}>再試行</button>}>
+      body
+    </Errored>
+  );
 });

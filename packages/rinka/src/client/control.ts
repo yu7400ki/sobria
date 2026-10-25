@@ -21,10 +21,12 @@ export function Loading(props: { fallback?: Child; children?: Child }): ClientNo
 /**
  * 内側で投げられたエラーを受け止めて、`fallback` を表示する。
  * `fallback` に関数を渡すと、その関数はエラーと、内側を作り直す `retry` を受け取る。
+ * `status` は、サーバーで描画するときに、シェルの中で受け止めたときのレスポンスのステータスになる。
  */
 export function Errored(props: {
   fallback: Child | ((error: unknown, retry: () => void) => Child);
   children?: Child;
+  status?: number;
 }): ClientNode {
   return asClientNode(
     createErrorBoundary(

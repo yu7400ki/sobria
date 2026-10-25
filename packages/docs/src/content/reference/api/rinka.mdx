@@ -308,7 +308,7 @@ const effect: Effect;
 
 ## Errored
 
-- 要素のファイル：内側で投げられたエラーを受け止めて、`fallback` を表示する。`fallback` に関数を渡すと、その関数はエラーと、内側を作り直す `retry` を受け取る。
+- 要素のファイル：内側で投げられたエラーを受け止めて、`fallback` を表示する。`fallback` に関数を渡すと、その関数はエラーと、内側を作り直す `retry` を受け取る。`status` は、サーバーで描画するときに、シェルの中で受け止めたときのレスポンスのステータスになる。
 - サーバーのファイル：内側で投げられたエラーを受け止めて、`fallback` を出力する。`fallback` に関数を渡すと、その関数はエラーを受け取る。シェルの中で受け止めたときのレスポンスのステータスは、`status` で指定する。
 
 ```ts
@@ -316,6 +316,7 @@ const effect: Effect;
 function Errored(props: {
   fallback: Child | ((error: unknown, retry: () => void) => Child);
   children?: Child;
+  status?: number;
 }): ClientNode;
 
 type Child =
