@@ -152,11 +152,11 @@ describe("ネイティブのタグ", () => {
 });
 
 describe("子", () => {
-  it("文字列と数値はテキストにし、null、undefined、真偽値は出力せず、配列は展開する", () => {
+  it("文字列、数値、bigint はテキストにし、null、undefined、真偽値は出力せず、配列は展開する", () => {
     const { node } = mount(() =>
-      jsx("p", { children: ["a", 1, null, undefined, false, true, [jsx("b", {}), ["c"]]] }),
+      jsx("p", { children: ["a", 1, 2n, null, undefined, false, true, [jsx("b", {}), ["c"]]] }),
     );
-    expect(html(node)).toBe("<p>a1<b></b>c</p>");
+    expect(html(node)).toBe("<p>a12<b></b>c</p>");
   });
 
   it("関数の子は、前後の兄弟の間の位置で置換する", () => {

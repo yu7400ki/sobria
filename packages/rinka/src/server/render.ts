@@ -487,7 +487,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   private walk(node: Node, ctx: WalkCtx, out: Chunk[]): void {
     if (node === null || node === undefined || typeof node === "boolean") return;
-    if (typeof node === "string" || typeof node === "number") {
+    if (typeof node === "string" || typeof node === "number" || typeof node === "bigint") {
       const text = escapeText(String(node));
       out.push(
         ctx.slot === undefined ? text : `<span slot="${escapeAttribute(ctx.slot)}">${text}</span>`,

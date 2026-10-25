@@ -13,6 +13,10 @@ describe("ネイティブのタグ", () => {
     );
   });
 
+  it("bigint の子はテキストにする", async () => {
+    expect(await renderToString(jsx("p", { children: [1n, "a", 2n] }))).toBe("<p>1a2</p>");
+  });
+
   it("空要素は終了タグを出力しない", async () => {
     expect(await renderToString(jsx("input", { value: "v", disabled: true }))).toBe(
       '<input value="v" disabled>',

@@ -89,7 +89,7 @@ function createTag(tag: string, given: Record<string, unknown>): Element {
 /**
  * `value` を `parent` の末尾に挿入する。配列は要素ごとに挿入する。
  * 関数の値は、2 つのコメントで囲んだ領域になり、値が変化するたびに領域の中身を置換する。
- * 文字列、数値、ノードは、`place` で変換してから挿入する。
+ * 文字列、数値、bigint、ノードは、`place` で変換してから挿入する。
  */
 export function insert(
   parent: ParentNode,
@@ -113,7 +113,7 @@ export function insert(
         end.before(fragment);
       },
     );
-  } else if (typeof value === "string" || typeof value === "number") {
+  } else if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") {
     parent.append(place(document.createTextNode(String(value))));
   } else if (value instanceof Node) {
     parent.append(place(value));

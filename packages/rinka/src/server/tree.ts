@@ -6,6 +6,7 @@ import type { ScopedChild } from "../shared/scope.ts";
 export type Node =
   | string
   | number
+  | bigint
   | boolean
   | null
   | undefined
