@@ -137,11 +137,15 @@ interface Fail {
   readonly fail: unknown;
 }
 
-/** `<Loading>` の位置を表す。中身を埋め込むか、フォールバックを出力して後送りにするかは、文字列にする時点で決定する。 */
+/**
+ * `<Loading>` の位置を表す。中身を埋め込むか、フォールバックを出力して後送りにするかは、文字列にする時点で決定する。
+ * `raw` が真なら、保留中のときはフォールバックだけを出力し、中身を送らない。
+ */
 interface Mark {
   readonly kind: "mark";
   readonly mark: Boundary;
   readonly fallback: () => Chunk[];
+  readonly raw: boolean;
 }
 
 /** `<Errored>` の領域を表す。中身が失敗すると、`node.fallback` が返した内容を出力する。 */
@@ -275,9 +279,12 @@ interface ParentTag {
   readonly legend: Legend | undefined;
   /** `<select>` の子なら、その `<select>` の `value` を返す。値が未解決なら `NotReadyError` を投げる。 */
   readonly selectValue: ((tracked: boolean) => unknown) | undefined;
-  /** テキストだけを子に持つ要素（`<title>` と `<textarea>`）の中なら `true` である。 */
+  /** 中身をテキストとして解析する要素（`<title>`、`<textarea>`、`<script>`、`<style>`）の中なら `true` である。 */
   readonly rawText: boolean;
 }
+
+/** 中身をテキストとして解析する要素のタグ名である。この中には目印を出力できない。 */
+const rawTextTags: ReadonlySet<string> = new Set(["title", "textarea", "script", "style"]);
 
 /** シェルと要素の境界で使用する、`ParentTag` の初期の値である。 */
 const noParentTag: ParentTag = { legend: undefined, selectValue: undefined, rawText: false };
@@ -591,6 +598,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
               head: restrict(ctx.head, "fallback"),
               fallback: true,
             }),
+          raw: ctx.parent.rawText,
         });
         return;
       }
@@ -863,7 +871,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       parent: {
         legend: tag === "fieldset" ? { taken: false, outer } : undefined,
         selectValue,
-        rawText: parent.rawText || tag === "title" || tag === "textarea",
+        rawText: parent.rawText || rawTextTags.has(tag),
       },
     };
   }
@@ -1159,6 +1167,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       case "mark": {
         const boundary = chunk.mark;
         if (!this.isPending(boundary)) return this.serialize(boundary.region, out);
+        if (chunk.raw) return this.serialize(chunk.fallback(), out);
         this.schedule(boundary, out);
         return marker(boundary.id, await this.serialize(chunk.fallback(), out));
       }

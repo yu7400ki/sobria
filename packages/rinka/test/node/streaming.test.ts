@@ -462,21 +462,62 @@ describe("境界の失敗と順序", () => {
     expect(html).toContain('<template data-os="e1"><title>失敗</title>FB</template>');
   });
 
-  it("<title> と <textarea> の中の Errored は、目印を出力しない", async () => {
+  it("<title>、<textarea>、<script>、<style> の中の Errored は、目印を出力しない", async () => {
     const html = (
       await read(
         renderToStream(
           jsx("main", {
-            children: [
-              jsx("title", { children: jsx(Errored, { fallback: "App", children: "Page" }) }),
-              jsx("textarea", { children: jsx(Errored, { fallback: "", children: "text" }) }),
-            ],
+            children: ["title", "textarea", "script", "style"].map((tag) =>
+              jsx(tag, { children: jsx(Errored, { fallback: "", children: tag }) }),
+            ),
           }),
         ),
       )
     ).join("");
-    expect(html).toContain("<title>Page</title>");
-    expect(html).toContain("<textarea>text</textarea>");
+    for (const tag of ["title", "textarea", "script", "style"]) {
+      expect(html).toContain(`<${tag}>${tag}</${tag}>`);
+    }
+  });
+
+  it("<title>、<textarea>、<script>、<style> の中の保留中の Loading は、目印を出力せずにフォールバックだけを出力し、中身を送らない", async () => {
+    const slow = deferred("遅い");
+    const loading = () => jsx(Loading, { fallback: "wait", children: jsx(slow.Slow, {}) });
+    const reading = read(
+      renderToStream(
+        jsx("main", {
+          children: ["title", "textarea", "script", "style"].map((tag) =>
+            jsx(tag, { children: loading() }),
+          ),
+        }),
+      ),
+    );
+    await tick();
+    slow.resolve();
+    const html = (await reading).join("");
+    for (const tag of ["title", "textarea", "script", "style"]) {
+      expect(html).toContain(`<${tag}>wait</${tag}>`);
+    }
+    expect(html).not.toContain("<template data-ob");
+    expect(html).not.toContain("<template data-os");
+    expect(html).not.toContain("遅い");
+  });
+
+  it("要素の Shadow DOM の中の <style> の保留中の Loading は、ホストに待たせない", async () => {
+    const slow = deferred("遅い");
+    const Styled = defineElement(
+      "x-raw-style",
+      () =>
+        jsx("style", { children: jsx(Loading, { fallback: "f", children: jsx(slow.Slow, {}) }) }),
+      { props: {} },
+    );
+    const reading = read(renderToStream(jsx(Styled, {})));
+    await tick();
+    slow.resolve();
+    const html = (await reading).join("");
+    expect(html).toContain(
+      '<x-raw-style data-oh="h1"><template shadowrootmode="open"><style>f</style></template></x-raw-style>',
+    );
+    expect(html).not.toContain("遅い");
   });
 
   it("シェルを送った後に notFound() を受け止めた、Loading の外側の Errored は、noindex を出力する", async () => {
