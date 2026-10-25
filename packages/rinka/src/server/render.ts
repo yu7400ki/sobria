@@ -292,6 +292,27 @@ interface Legend {
   readonly outer: () => boolean;
 }
 
+/**
+ * シェルを送った後に投げられた値の扱いを表す。`navigate` はページを `location` に移動させ、`catch` は `<Errored>` が受け止める。
+ * `noindex` は、受け止めたときに `noindex` を出力するかどうかである。`unsafe` は、規則に合わないので移動させない移動先である。
+ */
+type AfterShell =
+  | { readonly kind: "navigate"; readonly location: string }
+  | { readonly kind: "catch"; readonly noindex: boolean; readonly unsafe: string | undefined };
+
+/** シェルを送った後に投げられた値 `error` の扱いを返す。`redirect()` と、規則に合う移動先への移動はページを移動させ、ほかの値は受け止める。 */
+function afterShell(error: unknown): AfterShell {
+  const thrown = classify(error);
+  if (thrown.kind === "redirect" || (thrown.kind === "moved" && thrown.safe)) {
+    return { kind: "navigate", location: thrown.location };
+  }
+  return {
+    kind: "catch",
+    noindex: thrown.kind === "notFound",
+    unsafe: thrown.kind === "moved" ? thrown.location : undefined,
+  };
+}
+
 /** `disabled` の属性の値 `value` が、無効であることを表すかどうかを返す。 */
 const disables = (value: unknown): boolean => attributeValue("disabled", value) !== null;
 
@@ -1172,24 +1193,14 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         } catch (error) {
           failed = true;
           const { flush } = out;
-          const thrown = classify(error);
-          switch (thrown.kind) {
-            case "redirect":
-              throw error;
-            case "moved":
-              if (flush.kind === "shell" || thrown.safe) throw error;
-              break;
-            case "notFound":
-              if (flush.kind === "shell") throw error;
-              flush.noindex = true;
-              break;
-            case "response":
-              if (flush.kind === "shell") throw error;
-              break;
-            case "schema":
-            case "error":
-              if (flush.kind === "shell") this.caught = Math.max(this.caught, node.status ?? 500);
-              break;
+          if (flush.kind === "shell") {
+            const { kind } = classify(error);
+            if (kind !== "schema" && kind !== "error") throw error;
+            this.caught = Math.max(this.caught, node.status ?? 500);
+          } else {
+            const after = afterShell(error);
+            if (after.kind === "navigate") throw error;
+            if (after.noindex) flush.noindex = true;
           }
           return this.serialize(this.chunks(node.fallback(error), ctx), out);
         }
@@ -1231,15 +1242,15 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
             ]),
           );
         } catch (error) {
-          const thrown = classify(error);
-          if (thrown.kind === "redirect" || (thrown.kind === "moved" && thrown.safe)) {
+          const after = afterShell(error);
+          if (after.kind === "navigate") {
             this.write(
-              `<script>location.replace(${scriptJson(thrown.location)})</script><meta http-equiv="refresh" content="0;url=${escapeAttribute(thrown.location)}">`,
+              `<script>location.replace(${scriptJson(after.location)})</script><meta http-equiv="refresh" content="0;url=${escapeAttribute(after.location)}">`,
             );
           } else if (!(await this.replaceAround(boundary, error))) {
             console.error(
-              thrown.kind === "moved"
-                ? `[rinka] 移動先 ${JSON.stringify(thrown.location)} は、相対 URL でも http や https の URL でもないので、移動させずにフォールバックのまま残します。`
+              after.unsafe !== undefined
+                ? `[rinka] 移動先 ${JSON.stringify(after.unsafe)} は、相対 URL でも http や https の URL でもないので、移動させずにフォールバックのまま残します。`
                 : "[rinka] シェルを送った後に、<Loading> の中身の描画に失敗しました。フォールバックのまま残します。",
               error,
             );
@@ -1252,24 +1263,11 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
           bp: hostIds(boundary.path),
           p: patches.map(([patch]) => [patch.id, hostIds(patch.path)]),
         };
-        const noindex = this.noindexOnce(flush.noindex);
-        const outs = [regionOut, ...patches.map(([patch]) => patch.out)];
-        const [resolvedRegion, ...patched] = this.labels.resolve([
-          region,
-          ...patches.map(([, html]) => html),
-        ]);
-        this.reveal(
+        this.revealSwap(
           flush,
-          noindex +
-            `<template ${BOUNDARY_CONTENT_ATTRIBUTE}="${boundary.id}">${resolvedRegion}</template>` +
-            patches
-              .map(
-                ([patch], index) =>
-                  `<template ${PATCH_ATTRIBUTE}="${patch.id}">${patched[index]}</template>`,
-              )
-              .join("") +
-            this.tailOf(outs) +
-            swapScript(spec),
+          spec,
+          [region, ...patches.map(([, html]) => html)],
+          [regionOut, ...patches.map(([patch]) => patch.out)],
         );
         this.finishBoundary(boundary);
       })(),
@@ -1284,7 +1282,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     if (boundary.path.length !== 0) return false;
     let cause = error;
     for (const catcher of boundary.catchers) {
-      catcher.replaced ??= this.replaceWithFallback(catcher, catcher.id, cause);
+      catcher.replaced ??= this.replaceWithFallback(catcher, cause);
       // oxlint-disable-next-line no-await-in-loop
       const result = await catcher.replaced;
       if (result.ok) return true;
@@ -1302,18 +1300,15 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   }
 
   /**
-   * シェルを送った後に、目印の ID が `id` の `catcher` の領域を、`error` を渡したフォールバックに差し替える。`error` が `notFound()` なら `noindex` を出力する。
+   * シェルを送った後に、`catcher` の領域を、`error` を渡したフォールバックに差し替える。`error` が `notFound()` なら `noindex` を出力する。
    * フォールバックの描画が失敗したら、差し替えずに、その失敗を記録して返す。
    */
-  private async replaceWithFallback(
-    catcher: Catcher,
-    id: string,
-    error: unknown,
-  ): Promise<Replaced> {
+  private async replaceWithFallback(catcher: Catcher, error: unknown): Promise<Replaced> {
+    const after = afterShell(error);
     const flush: DeferredFlush = {
       ...resolvable(),
       kind: "deferred",
-      noindex: classify(error).kind === "notFound",
+      noindex: after.kind === "catch" && after.noindex,
     };
     const fallbackOut = Out.of(flush);
     let html: string;
@@ -1330,15 +1325,35 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       flush.resolve(false);
       return { ok: false, error: fallbackError };
     }
-    const [resolved] = this.labels.resolve([html]);
+    this.revealSwap(flush, { b: catcher.id, bp: [], p: [] }, [html], [fallbackOut]);
+    return { ok: true };
+  }
+
+  /**
+   * `spec` の境界の中身と差し替えの HTML `htmls` を `<template>` に入れ、`outs` に集めたスクリプトと、差し替えのスクリプトを続けて、`flush` の出力として出力する。
+   * `htmls` の最初は境界の中身で、残りは `spec.p` と同じ順の差し替えである。`flush` が `noindex` を要求していれば、先頭に `noindex` を出力する。
+   */
+  private revealSwap(
+    flush: DeferredFlush,
+    spec: SwapSpec,
+    htmls: readonly string[],
+    outs: readonly Out[],
+  ): void {
+    const noindex = this.noindexOnce(flush.noindex);
+    const [region, ...patched] = this.labels.resolve(htmls);
     this.reveal(
       flush,
-      this.noindexOnce(flush.noindex) +
-        `<template ${BOUNDARY_CONTENT_ATTRIBUTE}="${id}">${resolved ?? ""}</template>` +
-        this.tailOf([fallbackOut]) +
-        swapScript({ b: id, bp: [], p: [] }),
+      noindex +
+        `<template ${BOUNDARY_CONTENT_ATTRIBUTE}="${spec.b}">${region ?? ""}</template>` +
+        spec.p
+          .map(
+            ([id], index) =>
+              `<template ${PATCH_ATTRIBUTE}="${id}">${patched[index] ?? ""}</template>`,
+          )
+          .join("") +
+        this.tailOf(outs) +
+        swapScript(spec),
     );
-    return { ok: true };
   }
 
   /** `noindex` が真で、このレスポンスでまだ出力していなければ、`noindex` の `<meta>` と、それを `<head>` に加えるスクリプトを返す。 */
