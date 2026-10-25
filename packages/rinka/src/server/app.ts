@@ -14,7 +14,6 @@ import {
   type RouteComponent,
   type Routes,
 } from "../shared/routes.ts";
-import { internalPrefix } from "../shared/wire.ts";
 import { isBot } from "./bots.ts";
 import { blockingRenderOf, replaceResponse, runInRequest, withContextHeaders } from "./context.ts";
 import {
@@ -23,6 +22,7 @@ import {
   pageRequest,
   serverFnFailure,
   serverFnMiddleware,
+  submittedPage,
   type Failure,
   type FetchPage,
 } from "./endpoint.ts";
@@ -204,17 +204,8 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   const fetchPage: FetchPage = (c, request) => app.fetch(request, c.env, executionCtxOf(c));
   const formFailure: Failure = async (c, error) => {
     const caller = callerOf(c);
-    const referer = c.req.header("referer");
-    const url =
-      caller?.page ??
-      (referer !== undefined && URL.canParse(referer) ? new URL(referer) : undefined);
-    if (
-      url === undefined ||
-      url.host !== new URL(c.req.url).host ||
-      url.pathname.startsWith(internalPrefix)
-    ) {
-      return fail(c, error);
-    }
+    const url = submittedPage(c);
+    if (url === undefined) return fail(c, error);
     const request = pageRequest(c, url, caller !== undefined);
     formErrors.set(request, { error });
     const response = await fetchPage(c, request);

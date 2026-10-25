@@ -302,8 +302,24 @@ export function callerOf(c: Context): Caller | undefined {
     return { page: undefined };
   }
   const url = new URL(value);
-  const local = url.host === new URL(c.req.url).host && !url.pathname.startsWith(internalPrefix);
-  return { page: local ? url : undefined };
+  return { page: isLocalPage(url, c) ? url : undefined };
+}
+
+/** URL `url` のホストがリクエスト `c` の URL と同じで、パスが `/_rinka/` の下にないかどうかを返す。 */
+const isLocalPage = (url: URL, c: Context): boolean =>
+  url.host === new URL(c.req.url).host && !url.pathname.startsWith(internalPrefix);
+
+/**
+ * フォームの送信 `c` の、送信したページの URL を返す。JS があるときは `x-rinka-page` の URL を、JS が無いときは Referer の URL を、`callerOf` と同じ規則で検証する。
+ * URL が無いときと、検証を通らないときは `undefined` を返す。
+ */
+export function submittedPage(c: Context): URL | undefined {
+  const caller = callerOf(c);
+  if (caller !== undefined) return caller.page;
+  const referer = c.req.header("referer");
+  if (referer === undefined || !URL.canParse(referer)) return undefined;
+  const url = new URL(referer);
+  return isLocalPage(url, c) ? url : undefined;
 }
 
 /** リクエスト `c` のレスポンスの移動先 `location` を、`c` の URL のパスとクエリと、ページ `page` の URL のオリジンを基準に解決する。 */

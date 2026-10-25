@@ -565,6 +565,25 @@ describe("フォームの送信が失敗したときの、送信したページ�
     );
   });
 
+  it("JS があるときは、x-rinka-page の URL のホストが異なれば、同じホストの Referer があっても onError のレスポンスを返す", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    onTestFinished(() => {
+      error.mockRestore();
+    });
+    const response = await createApp(routes, { onError: handled }).fetch(
+      new Request(`http://localhost${rpcPath(id)}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          referer: "http://localhost/orgs/7",
+          "x-rinka-page": "http://example.com/orgs/7",
+        },
+        body: "a=1",
+      }),
+    );
+    expect([response.status, await response.text()]).toEqual([503, "handled"]);
+  });
+
   it("送信したページの URL に一致する行が、error.tsx の無いページか、route.ts か、/_rinka/ の下か、無いときは、onError のレスポンスを返す", async () => {
     const urls = ["/plain", "/api/html", rpcPath(id), "/nowhere"];
     const responses = await Promise.all(urls.map((url) => submit(`http://localhost${url}`)));
