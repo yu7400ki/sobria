@@ -20,8 +20,8 @@ import {
   HOST_ATTRIBUTE,
   LOAD_ATTRIBUTE,
   PATCH_ATTRIBUTE,
+  propertiesOf,
   tagAttributeName,
-  tagProperties,
   type PropertyOutput,
 } from "../shared/attributes.ts";
 import {
@@ -252,16 +252,12 @@ interface WalkCtx {
   readonly parent: ParentTag;
 }
 
-/** `tagProperties` に無いタグで使用する、空の表である。 */
-const noProperties: ReadonlyMap<string, PropertyOutput> = new Map();
-
-/** `outputs` に出力する形が `output` と記録された props のうち、`props` に記述したものの名前を返す。 */
+/** `outputs` で、出力する形が `output` の props の名前を返す。 */
 function propertyOf(
   outputs: ReadonlyMap<string, PropertyOutput>,
-  props: Record<string, unknown>,
   output: PropertyOutput,
 ): string | undefined {
-  for (const [name, kind] of outputs) if (kind === output && name in props) return name;
+  for (const [name, kind] of outputs) if (kind === output) return name;
   return undefined;
 }
 
@@ -786,7 +782,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     const attributesOf =
       tag === "form" ? formProps(props) : label ? { ...props, id: label.id } : props;
     if (ctx.owner === null) warnHandlers(tag, props);
-    const outputs = tagProperties.get(tag) ?? noProperties;
+    const outputs = propertiesOf(tag);
     const { selectValue } = ctx.parent;
     const openTag = (tracked: boolean): string => {
       let attributes = "";
@@ -823,9 +819,9 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     out.push(this.chunkOf(open, (text) => text));
     if (label) out.push(label.mark);
     if (voidTags.has(tag)) return;
-    const text = propertyOf(outputs, props, "text");
+    const text = propertyOf(outputs, "text");
     this.walk(
-      asNode(text === undefined ? props.children : ["\n", props[text]]),
+      asNode(text === undefined || !(text in props) ? props.children : ["\n", props[text]]),
       {
         ...ctx,
         head: childPlacement(tag, ctx.head),
@@ -837,7 +833,10 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     out.push(`</${tag}>`);
   }
 
-  /** ネイティブのタグ `<tag>` の子の位置の、`disabled` と `parent` を返す。`outputs` は、そのタグでプロパティとして設定する props と、SSR で出力する形の表である。 */
+  /**
+   * ネイティブのタグ `<tag>` の子の位置の、`disabled` と `parent` を返す。`outputs` は、そのタグでプロパティとして設定する props と、SSR で出力する形の表である。
+   * `<tag>` が `<fieldset>` の子の最初の `<legend>` なら、その `<legend>` を描画したものとして記録する。
+   */
   private childScope(
     tag: string,
     props: Record<string, unknown>,
@@ -845,33 +844,25 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     ctx: WalkCtx,
   ): Pick<WalkCtx, "disabled" | "parent"> {
     const { disabled: outer, parent } = ctx;
+    let disabled = outer;
     if (tag === "legend" && parent.legend && !parent.legend.taken) {
       parent.legend.taken = true;
-      return { disabled: parent.legend.outer, parent: { ...parent, legend: undefined } };
+      disabled = parent.legend.outer;
     }
     if (tag === "fieldset") {
-      return {
-        disabled: () => outer() || disables(this.value(props.disabled, ctx, true)),
-        parent: { ...parent, legend: { taken: false, outer } },
-      };
+      disabled = () => outer() || disables(this.value(props.disabled, ctx, true));
     }
-    if ([...outputs.values()].includes("option")) {
-      const option = propertyOf(outputs, props, "option");
-      return {
-        disabled: outer,
-        parent: {
-          ...parent,
-          legend: undefined,
-          selectValue:
-            option === undefined ? undefined : (tracked) => this.value(props[option], ctx, tracked),
-        },
-      };
+    const option = propertyOf(outputs, "option");
+    let { selectValue } = parent;
+    if (option !== undefined) {
+      selectValue =
+        option in props ? (tracked) => this.value(props[option], ctx, tracked) : undefined;
     }
     return {
-      disabled: outer,
+      disabled,
       parent: {
-        ...parent,
-        legend: undefined,
+        legend: tag === "fieldset" ? { taken: false, outer } : undefined,
+        selectValue,
         rawText: parent.rawText || tag === "title" || tag === "textarea",
       },
     };

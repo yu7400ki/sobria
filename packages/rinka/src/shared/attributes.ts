@@ -61,7 +61,7 @@ export const FORM_VALUE_ATTRIBUTE = "data-rinka-form";
 export type PropertyOutput = "attribute" | "text" | "option";
 
 /** ネイティブのタグで、プロパティとして設定する props の名前と、SSR で出力する形を、タグ名ごとに表す。 */
-export const tagProperties: ReadonlyMap<string, ReadonlyMap<string, PropertyOutput>> = new Map([
+const tagProperties: ReadonlyMap<string, ReadonlyMap<string, PropertyOutput>> = new Map([
   [
     "input",
     new Map<string, PropertyOutput>([
@@ -73,3 +73,10 @@ export const tagProperties: ReadonlyMap<string, ReadonlyMap<string, PropertyOutp
   ["select", new Map<string, PropertyOutput>([["value", "option"]])],
   ["option", new Map<string, PropertyOutput>([["selected", "attribute"]])],
 ]);
+
+/** プロパティとして設定する props が無いタグの表である。 */
+const noProperties: ReadonlyMap<string, PropertyOutput> = new Map();
+
+/** タグ名が `tag` のネイティブのタグで、プロパティとして設定する props の名前と、SSR で出力する形の表を返す。 */
+export const propertiesOf = (tag: string): ReadonlyMap<string, PropertyOutput> =>
+  tagProperties.get(tag) ?? noProperties;

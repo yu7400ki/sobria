@@ -1,6 +1,6 @@
 import { createRenderEffect, onCleanup, runWithOwner, untrack } from "@solidjs/signals";
 
-import { attributeValue, tagAttributeName, tagProperties } from "../shared/attributes.ts";
+import { attributeValue, propertiesOf, tagAttributeName } from "../shared/attributes.ts";
 import { isEventProp, listenerEventName } from "../shared/names.ts";
 import type { ClientNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
@@ -65,12 +65,12 @@ function createTag(tag: string, given: Record<string, unknown>): Element {
   const props = tag === "form" ? formProps(given) : given;
   const el = document.createElement(tag);
   if (props.children !== undefined) insert(el, props.children);
-  const outputs = tagProperties.get(tag);
+  const outputs = propertiesOf(tag);
   for (const [name, value] of Object.entries(props)) {
-    if (name === "children" || name === "ref" || outputs?.has(name)) continue;
+    if (name === "children" || name === "ref" || outputs.has(name)) continue;
     applyAttribute(el, name, value);
   }
-  for (const name of outputs?.keys() ?? []) {
+  for (const name of outputs.keys()) {
     if (name in props) bind(props[name], setter(el, name, true));
   }
   if (tag === "slot") registerSlot(typeof props.name === "string" ? props.name : "");
