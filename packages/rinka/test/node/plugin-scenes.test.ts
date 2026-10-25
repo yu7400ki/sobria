@@ -39,3 +39,23 @@ describe("場面ごとのプラグイン", () => {
     expect(unshared).toEqual([]);
   });
 });
+
+/** `rinka` のプラグインの resolveId で、`consumer` の環境から `id` を解決した値を返す。 */
+function resolve(id: string, consumer: "client" | "server"): unknown {
+  const plugin = rinka().find(({ name }) => name === "rinka");
+  const hook = plugin?.resolveId;
+  const handler = typeof hook === "function" ? hook : hook?.handler;
+  const context = { environment: { config: { consumer } } } as never;
+  return handler?.call(context, id, undefined, { isEntry: false, attributes: {} } as never);
+}
+
+describe("実行時のコードの入口の解決", () => {
+  it("rinka の入口を環境ごとのファイルに解決し、Object のプロトタイプにある名前は解決しない", () => {
+    expect(resolve("rinka", "client")).toMatch(/[\\/]client[\\/]index\.js$/);
+    expect(resolve("rinka", "server")).toMatch(/[\\/]server[\\/]index\.js$/);
+    for (const consumer of ["client", "server"] as const) {
+      expect(resolve("constructor", consumer)).toBeNull();
+      expect(resolve("__proto__", consumer)).toBeNull();
+    }
+  });
+});

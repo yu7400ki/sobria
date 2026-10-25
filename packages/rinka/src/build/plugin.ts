@@ -209,7 +209,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
             `${from ?? "(不明なファイル)"}: クライアント向けのコードから ${entries.server} を参照しています。${entries.server} の値は、サーバー関数とミドルウェアの定義の式の中でだけ使用できます。型だけを使用する名前は、import type か export type で記述してください。`,
           );
         }
-        const entry = runtimes[isClient(this.environment) ? "client" : "server"][id];
+        const entry = runtimes[isClient(this.environment) ? "client" : "server"].get(id);
         return entry === undefined ? null : fileURLToPath(new URL(`../${entry}`, import.meta.url));
       },
       load(id) {

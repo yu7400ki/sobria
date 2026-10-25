@@ -39,7 +39,7 @@ describe("入口", () => {
   });
 
   it("プラグインが環境ごとに解決する入口のファイルは、ビルドした lib にある", () => {
-    const paths = [...Object.values(runtimes.client), ...Object.values(runtimes.server)];
+    const paths = [...runtimes.client.values(), ...runtimes.server.values()];
     const missing = paths.filter(
       (path) => !existsSync(new URL(`../../lib/${path}`, import.meta.url)),
     );
@@ -83,7 +83,7 @@ describe("入口", () => {
   it("プラグインが生成するコードが rinka/internal から import する名前は、環境ごとの内部の入口が関数として export する", async () => {
     const missing = await Promise.all(
       (["client", "server"] as const).map(async (environment) => {
-        const internal = await lib(runtimes[environment][entries.internal]!);
+        const internal = await lib(runtimes[environment].get(entries.internal)!);
         return internalNames[environment].filter((name) => typeof internal[name] !== "function");
       }),
     );
