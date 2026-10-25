@@ -6,6 +6,9 @@ import { Fragment, jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToResponse, renderToString } from "../../src/server/response.ts";
 import { memo } from "../../src/shared/signals.ts";
 
+/** `props` の `<option>` を作成する。 */
+const option = (props: Record<string, unknown>) => jsx("option", props);
+
 describe("ネイティブのタグ", () => {
   it("テキストと属性の値をエスケープする", async () => {
     expect(await renderToString(jsx("p", { title: 'a"<b&', children: "<x>&" }))).toBe(
@@ -15,6 +18,40 @@ describe("ネイティブのタグ", () => {
 
   it("bigint の子はテキストにする", async () => {
     expect(await renderToString(jsx("p", { children: [1n, "a", 2n] }))).toBe("<p>1a2</p>");
+  });
+
+  it("<textarea> の value は、属性にせずに、開始タグの直後の改行の後にテキストの子として出力する", async () => {
+    expect(await renderToString(jsx("textarea", { name: "t", value: "\na<b" }))).toBe(
+      '<textarea name="t">\n\na&lt;b</textarea>',
+    );
+  });
+
+  it("<select> の value は、属性にせずに、value かテキストが一致する <option> に selected を付ける", async () => {
+    expect(
+      await renderToString(
+        jsx("select", {
+          value: () => "b c",
+          children: [
+            option({ value: "a", children: "A" }),
+            option({ children: () => " b\n c " }),
+            jsx("select", { children: option({ value: "b c" }) }),
+          ],
+        }),
+      ),
+    ).toBe(
+      '<select><option value="a">A</option><option selected> b\n c </option><select><option value="b c"></option></select></select>',
+    );
+    expect(
+      await renderToString(
+        jsx("select", {
+          value: "1 件",
+          children: [
+            option({ children: [1, " 件"] }),
+            option({ value: undefined, children: "1 件" }),
+          ],
+        }),
+      ),
+    ).toBe("<select><option selected>1 件</option><option selected>1 件</option></select>");
   });
 
   it("空要素は終了タグを出力しない", async () => {

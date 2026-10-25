@@ -248,6 +248,8 @@ interface WalkCtx {
   readonly fallback: boolean;
   /** この位置を囲む `<Errored>` のうち、シェルを送った後の失敗を受け止めるものを、内側から順に列挙する。 */
   readonly catchers: readonly Catcher[];
+  /** `<select>` の子なら、その `<select>` の `value` を返す。値が未解決なら `NotReadyError` を投げる。 */
+  readonly selectValue: ((tracked: boolean) => unknown) | undefined;
 }
 
 /** SSR するフォームの部品のホストの `name` と `disabled` を返す関数を表す。 */
@@ -270,6 +272,25 @@ interface Legend {
 
 /** `disabled` の属性の値 `value` が、無効であることを表すかどうかを返す。 */
 const disables = (value: unknown): boolean => attributeValue("disabled", value) !== null;
+
+/** 文字列、数値、BigInt を文字列にして返す。それ以外の値には `undefined` を返す。 */
+const optionText = (value: unknown): string | undefined =>
+  typeof value === "string" || typeof value === "number" || typeof value === "bigint"
+    ? String(value)
+    : undefined;
+
+/**
+ * `value` の無い `<option>` の値を、テキストの子 `text` から返す。`text` が配列なら、要素を連結する。
+ * HTML と同じく、前後の空白を除き、連続する空白を 1 つにする。文字列、数値、BigInt でない子があれば `undefined` を返す。
+ */
+function optionTextValue(text: unknown): string | undefined {
+  const parts = (Array.isArray(text) ? text : [text]).map(optionText);
+  if (parts.includes(undefined)) return undefined;
+  return parts
+    .join("")
+    .replaceAll(/[\t\n\f\r ]+/g, " ")
+    .trim();
+}
 
 /** 常に無効でないことを返す。 */
 const notDisabled = (): boolean => false;
@@ -713,13 +734,29 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     const attributesOf =
       tag === "form" ? formProps(props) : label ? { ...props, id: label.id } : props;
     if (ctx.owner === null) warnHandlers(tag, props);
+    const { selectValue } = ctx;
     const openTag = (tracked: boolean): string => {
       let attributes = "";
       for (const [name, raw] of Object.entries(attributesOf)) {
         if (name === "children" || name === "ref") continue;
         if (name === "slot" && ctx.slot !== undefined) continue;
         if (isEventProp(name) && isFunction(raw)) continue;
+        if (name === "value" && (tag === "textarea" || tag === "select")) continue;
         attributes += attribute(name, this.value(raw, ctx, tracked));
+      }
+      if (tag === "option" && selectValue && !("selected" in props)) {
+        const value = this.value(props.value, ctx, tracked);
+        const children = this.value(props.children, ctx, tracked);
+        const own =
+          value === undefined || value === null
+            ? optionTextValue(
+                Array.isArray(children)
+                  ? children.map((child: unknown) => this.value(child, ctx, tracked))
+                  : children,
+              )
+            : optionText(value);
+        const selected = optionText(selectValue(tracked));
+        if (own !== undefined && own === selected) attributes += attribute("selected", true);
       }
       if (key !== undefined) attributes += attribute(tagAttributeName("key"), key);
       if (ctx.slot !== undefined) attributes += attribute("slot", ctx.slot);
@@ -741,14 +778,21 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     }
     if (tag === "fieldset")
       disabled = () => outer() || disables(this.value(props.disabled, ctx, true));
+    if (tag === "textarea" && "value" in props) out.push("\n");
     this.walk(
-      asNode(props.children),
+      asNode(tag === "textarea" && "value" in props ? props.value : props.children),
       {
         ...ctx,
         head: childPlacement(tag, ctx.head),
         slot: undefined,
         disabled,
         legend: tag === "fieldset" ? { taken: false, outer } : undefined,
+        selectValue:
+          tag !== "select"
+            ? selectValue
+            : "value" in props
+              ? (tracked) => this.value(props.value, ctx, tracked)
+              : undefined,
       },
       out,
     );
@@ -889,6 +933,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         legend: undefined,
         fallback: ctx.fallback,
         catchers: ctx.catchers,
+        selectValue: undefined,
       };
       if (boundary === ctx.boundary) {
         this.walk(content, light, chunks);
@@ -1007,6 +1052,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       legend: undefined,
       fallback: false,
       catchers: ctx.catchers,
+      selectValue: undefined,
     };
     const read = submitted;
     const input =
@@ -1348,6 +1394,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         legend: undefined,
         fallback: false,
         catchers: [],
+        selectValue: undefined,
       }),
       this.shellOut,
     );
