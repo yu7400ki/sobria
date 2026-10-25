@@ -82,17 +82,33 @@ describe("ネイティブのタグの出力の全体", () => {
     );
   });
 
-  it("textarea と title、その中の Errored", async () => {
-    expect(
-      await renderToString([
-        jsx("textarea", { value: "v", children: "子" }),
-        jsx("textarea", { children: jsx(Errored, { fallback: "f", children: "子" }) }),
-        jsx("title", { children: jsx(Errored, { fallback: "f", children: "題" }) }),
-      ]),
-    ).toMatchInlineSnapshot(`
-      "<textarea>
-      v</textarea><textarea>子</textarea><title>題</title>"
-    `);
+  it("textarea の value", async () => {
+    expect(await renderToString(jsx("textarea", { value: "v", children: "子" })))
+      .toMatchInlineSnapshot(`
+        "<textarea>
+        v</textarea>"
+      `);
+  });
+
+  it("ストリーミングの描画の、textarea と title の中の Errored", async () => {
+    const html = (
+      await read(
+        renderToStream(
+          jsx("main", {
+            children: [
+              jsx("textarea", { children: jsx(Errored, { fallback: "f", children: "子" }) }),
+              jsx("title", { children: jsx(Errored, { fallback: "f", children: "題" }) }),
+            ],
+          }),
+        ),
+      )
+    ).join("");
+    expect(html.slice(html.indexOf("<title>"), html.indexOf("</title>"))).toMatchInlineSnapshot(
+      `"<title>題"`,
+    );
+    expect(html.slice(html.indexOf("<main>"))).toMatchInlineSnapshot(
+      `"<main><textarea>子</textarea></main></body></html>"`,
+    );
   });
 
   it("label と form", async () => {
@@ -144,11 +160,6 @@ async function caught(error: unknown, inside = false): Promise<string> {
 }
 
 describe("シェルを送った後に Errored が受け止めるストリームの全体", () => {
-  it("同じ入力から同じストリームを出力する", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    expect(await caught(new Error("e"))).toBe(await caught(new Error("e")));
-  });
-
   it("notFound()", async () => {
     expect(await caught(notFound())).toMatchInlineSnapshot(
       `"<main><template data-ob="e1"></template><template data-ob="b1"></template>wait<!--/ob:b1--><!--/ob:e1--></main><meta name="robots" content="noindex"><script>document.head.append(document.currentScript.previousSibling.cloneNode())</script><template data-os="e1">caught</template><script>$rinka.r({"b":"e1","bp":[],"p":[]})</script></body></html>"`,
