@@ -101,8 +101,8 @@ export function withContextHeaders(c: Pick<Context, "newResponse">, response: Re
 }
 
 /**
- * `c.res` を `response` に置き換え、置き換えた Response を返す。前の `c.res` のヘッダーは統合しない。
- * `response` が Promise なら、完了を待つ前に `c.res` を空にするので、その Promise の中で作成するレスポンスにも、前の `c.res` のヘッダーは含まれない。
+ * `c.res` を `response` に置換し、置換した Response を返す。前の `c.res` のヘッダーは統合しない。
+ * `response` が Promise なら、完了を待つ前に `c.res` を空にする。
  */
 export function replaceResponse(c: Context, response: Response): Response;
 export function replaceResponse(

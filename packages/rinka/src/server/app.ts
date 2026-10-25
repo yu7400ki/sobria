@@ -301,7 +301,7 @@ function register(
   formErrorOf: (c: Context) => { readonly error: unknown } | undefined,
 ): void {
   const directory = directoryOf(respond, route.middlewares);
-  /** 行の処理 `handler` を、`directory` の後に実行するハンドラーの列を返す。`errorPage` は、フォームの失敗のサブリクエストに描画する `error.tsx` である。 */
+  /** 行の処理 `handler` を、`directory` の後に実行するハンドラーの列を返す。`errorPage` は、フォームの失敗のサブリクエストに描画する `error.tsx` で、`undefined` なら、サーバー関数が投げた値を投げる。 */
   const chain = (handler: MiddlewareHandler, errorPage: Fallback | undefined) =>
     [
       directory,

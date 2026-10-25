@@ -1213,21 +1213,68 @@ describe("c.res を読んだ後のレスポンスの Set-Cookie", () => {
     defineServerFn(
       async (c: Context, next: Next) => {
         setCookie(c, "mw", "1");
+        c.header("vary", "Cookie");
         // c.res を読むと、Hono の Context がレスポンスを保持する
         void c.res;
         await next();
       },
-      () => new Response("ok", { headers: { "set-cookie": "fn=1" } }),
+      () => new Response("ok", { headers: { "set-cookie": "fn=1", vary: "Accept" } }),
     ),
   );
+  /** ページから直接呼び出す、ミドルウェアが c.res を読んでから 302 を返すサーバー関数である。 */
+  const direct = defineServerFn(
+    async (c: Context) => {
+      setCookie(c, "mw", "1");
+      void c.res;
+      return new Response(null, {
+        status: 302,
+        headers: { location: "/next", "set-cookie": "moved=1" },
+      });
+    },
+    () => "unreachable",
+  );
 
-  it("サーバー関数のミドルウェアが c.res を読んだ後に関数が返した Response の Set-Cookie を、1 回ずつ付ける", async () => {
+  it("サーバー関数のミドルウェアが c.res を読んだ後に関数が返した Response の Set-Cookie と Vary を、Context のものとともに付ける", async () => {
     const response = await request({ routes: [] }, rpcPath(peeked), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: "null",
     });
-    expect(response.headers.getSetCookie()).toEqual(["mw=1; Path=/", "fn=1"]);
+    expect([response.headers.getSetCookie(), response.headers.get("vary")]).toEqual([
+      ["mw=1; Path=/", "fn=1"],
+      "Cookie, Accept",
+    ]);
+  });
+
+  it("ページから直接呼び出したサーバー関数のミドルウェアが c.res を読んでも、ミドルウェアが返した Response をそのままページのレスポンスにする", async () => {
+    const response = await request(
+      { routes: [pageRoute("/direct", async () => direct())] },
+      "/direct",
+    );
+    expect([response.status, response.headers.getSetCookie()]).toEqual([302, ["moved=1"]]);
+  });
+
+  it("ディレクトリの middleware.ts が next() の後で投げた notFound() の 404 には、下流の route.ts が返した Response のヘッダーを含めない", async () => {
+    const response = await request(
+      {
+        routes: [
+          apiRoute(
+            "/late-route",
+            {
+              GET: () =>
+                new Response("down", { headers: { "x-down": "1", "set-cookie": "down=1" } }),
+            },
+            [guarded(late, { notFound: fallbackOf(fallback("root")) })],
+          ),
+        ],
+      },
+      "/late-route",
+    );
+    expect([
+      response.status,
+      response.headers.get("x-down"),
+      response.headers.getSetCookie(),
+    ]).toEqual([404, null, []]);
   });
 
   it("ディレクトリの middleware.ts が next() の後で投げた notFound() の 404 にも、ページが Context に設定した Set-Cookie を 1 回付ける", async () => {

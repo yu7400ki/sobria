@@ -258,8 +258,7 @@ export async function runChain(
       failed = true;
     }
     if (value instanceof Response && (!c.finalized || failed)) {
-      if (onError) replaceResponse(c, withContextHeaders(c, value));
-      else c.res = value;
+      replaceResponse(c, onError ? withContextHeaders(c, value) : value);
     }
   };
   await dispatch(0);
