@@ -4,9 +4,13 @@ import { attributeValue } from "../shared/attributes.ts";
 export const escapeText = (text: string): string =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
-/** `text` を、HTML の二重引用符で囲んだ属性の値として出力する文字列にする。 */
+/** `text` を、HTML の二重引用符で囲んだ属性の値として出力する文字列にする。`&`、`"`、`<`、`>` を文字参照にする。 */
 export const escapeAttribute = (text: string): string =>
-  text.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+  text
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 
 /** HTML の属性の名前として使用できる文字列に一致する正規表現である。 */
 const attributeName = /^[^\s"'>/=\p{Cc}]+$/u;

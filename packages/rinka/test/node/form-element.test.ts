@@ -81,7 +81,7 @@ describe("フォームの部品の SSR", () => {
   it("DSD に shadowrootdelegatesfocus を出力し、name のあるホストの Light DOM の先頭に、form.value の文字列の hidden input を出力する", async () => {
     const Field = field("x-field-a", () => 'a"<');
     expect(await renderToString(jsx(Field, { name: "score", children: "子" }))).toBe(
-      '<x-field-a data-oh="h1" name="score"><template shadowrootmode="open" shadowrootdelegatesfocus><button></button></template><input type="hidden" name="score" value="a&quot;<" data-rinka-form>子</x-field-a>',
+      '<x-field-a data-oh="h1" name="score"><template shadowrootmode="open" shadowrootdelegatesfocus><button></button></template><input type="hidden" name="score" value="a&quot;&lt;" data-rinka-form>子</x-field-a>',
     );
   });
 

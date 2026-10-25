@@ -12,7 +12,18 @@ const option = (props: Record<string, unknown>) => jsx("option", props);
 describe("ネイティブのタグ", () => {
   it("テキストと属性の値をエスケープする", async () => {
     expect(await renderToString(jsx("p", { title: 'a"<b&', children: "<x>&" }))).toBe(
-      '<p title="a&quot;<b&amp;">&lt;x&gt;&amp;</p>',
+      '<p title="a&quot;&lt;b&amp;">&lt;x&gt;&amp;</p>',
+    );
+  });
+
+  it("属性の値の < と > をエスケープするので、<noscript> の中の属性の値で </noscript> を閉じられない", async () => {
+    const html = await renderToString(
+      jsx("noscript", {
+        children: jsx("img", { alt: "</noscript><img src=x onerror=alert(1)>", src: "/a.png" }),
+      }),
+    );
+    expect(html).toBe(
+      '<noscript><img alt="&lt;/noscript&gt;&lt;img src=x onerror=alert(1)&gt;" src="/a.png"></noscript>',
     );
   });
 

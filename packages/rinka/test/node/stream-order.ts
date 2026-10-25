@@ -43,7 +43,13 @@ function hostTags(html: string): Map<string, { at: number; keys: string[] }> {
     const id = / data-oh="([^"]*)"/.exec(attributes)?.[1];
     if (id === undefined || tags.has(id)) continue;
     const om = / data-om="([^"]*)"/.exec(attributes)?.[1] ?? "";
-    const keys = om.replaceAll("&quot;", '"').replaceAll("&amp;", "&").split(" ").filter(Boolean);
+    const keys = om
+      .replaceAll("&quot;", '"')
+      .replaceAll("&lt;", "<")
+      .replaceAll("&gt;", ">")
+      .replaceAll("&amp;", "&")
+      .split(" ")
+      .filter(Boolean);
     tags.set(id, { at: tag.index, keys });
   }
   return tags;

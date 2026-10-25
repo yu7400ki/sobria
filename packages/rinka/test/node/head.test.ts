@@ -463,10 +463,18 @@ const rootLayout = (props: LayoutProps) =>
 
 const classPage = () => [jsx("html", { class: "page", children: "page" })];
 
+const scriptLangPage = () => [jsx("html", { lang: "</html><script>", children: "page" })];
+
 describe("<html> と <body>", () => {
   it("<html> と <body> の属性を、文書の <html> と <body> の開始タグに移動し、子は記述した位置に出力する", async () => {
     expect(await documentOfPage(() => jsx("p", { children: "page" }), [rootLayout])).toBe(
       '<!doctype html><html lang="ja" class="root"><head><meta charset="utf-8"></head><body class="app"><p>page</p></body></html>',
+    );
+  });
+
+  it("<html> と <body> の属性の値の < と > は、文字参照にする", async () => {
+    expect(await documentOfPage(scriptLangPage, [rootLayout])).toBe(
+      '<!doctype html><html lang="&lt;/html&gt;&lt;script&gt;" class="root"><head><meta charset="utf-8"></head><body class="app">page</body></html>',
     );
   });
 
