@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { resolveConfig } from "vite";
@@ -10,6 +10,23 @@ import { PREPARED_DIR, PROJECTS, projectConfig } from "./prepare.ts";
 
 /** `value` を、整形した JSON のファイルの内容にする。 */
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
+
+/**
+ * rinka の package.json の、パッケージ `name` の版の範囲 `range` を、雛形の package.json に記述する範囲にする。
+ * `catalog:` は、rinka の node_modules にある `name` の版にする。プレリリースの版はそのまま記述し、それ以外の版は `^` で始まる範囲にする。
+ */
+function templateRange(name: string, range: string): string {
+  if (!range.startsWith("catalog:")) return range;
+  const file = new URL(`../../node_modules/${name}/package.json`, import.meta.url);
+  if (!existsSync(file)) {
+    throw new Error(
+      `rinka の依存の ${name} の版 ${range} を、rinka の node_modules から解決できません。`,
+    );
+  }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  const { version } = JSON.parse(readFileSync(file, "utf8")) as { version: string };
+  return version.includes("-") ? version : `^${version}`;
+}
 
 /** 雛形のファイルの、アプリのルートからの相対パスごとの内容を返す。`name` はアプリの名前である。 */
 function templateFiles(name: string): Record<string, string> {
@@ -27,14 +44,14 @@ function templateFiles(name: string): Record<string, string> {
         typecheck: "rinka prepare && tsc -b",
       },
       dependencies: {
-        "@hono/node-server": dependencies["@hono/node-server"],
-        hono: peerDependencies.hono,
+        "@hono/node-server": templateRange("@hono/node-server", dependencies["@hono/node-server"]),
+        hono: templateRange("hono", peerDependencies.hono),
         rinka: `^${version}`,
       },
       devDependencies: {
-        "@types/node": devDependencies["@types/node"],
-        typescript: devDependencies.typescript,
-        vite: peerDependencies.vite,
+        "@types/node": templateRange("@types/node", devDependencies["@types/node"]),
+        typescript: templateRange("typescript", devDependencies.typescript),
+        vite: templateRange("vite", peerDependencies.vite),
       },
     }),
     "vite.config.ts": `import { rinka } from "${entries.main}/vite";

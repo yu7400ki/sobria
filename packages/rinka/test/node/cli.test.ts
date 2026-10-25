@@ -19,6 +19,12 @@ const temporary = () => {
   return dir;
 };
 
+/** rinka の node_modules にある `name` の版を返す。 */
+const installed = (name: string): string =>
+  JSON.parse(
+    readFileSync(new URL(`../../node_modules/${name}/package.json`, import.meta.url), "utf8"),
+  ).version;
+
 describe("rinka create", () => {
   it("ページ、レイアウト、要素、サーバー関数を 1 つずつ持つアプリの雛形を作成する", () => {
     const dir = join(temporary(), "my-app");
@@ -47,15 +53,17 @@ describe("rinka create", () => {
     expect(pkg.name).toBe("my-app");
     const rinka = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
     expect(pkg.dependencies).toEqual({
-      "@hono/node-server": rinka.dependencies["@hono/node-server"],
-      hono: rinka.peerDependencies.hono,
+      "@hono/node-server": `^${installed("@hono/node-server")}`,
+      hono: installed("hono"),
       rinka: `^${rinka.version}`,
     });
+    expect(installed("hono")).toContain("-");
     expect(pkg.devDependencies).toEqual({
-      "@types/node": rinka.devDependencies["@types/node"],
-      typescript: rinka.devDependencies.typescript,
-      vite: rinka.peerDependencies.vite,
+      "@types/node": `^${installed("@types/node")}`,
+      typescript: `^${installed("typescript")}`,
+      vite: `^${installed("vite")}`,
     });
+    expect(JSON.stringify(pkg)).not.toContain("catalog:");
     expect(pkg.scripts).toEqual({
       dev: "vite",
       build: "vite build",

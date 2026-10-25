@@ -5,7 +5,9 @@ import { entries } from "./entries.ts";
 /** rinka の package.json の欄のうち、版と依存の欄を表す。 */
 export interface RinkaPackage {
   readonly version: string;
-  readonly dependencies: Readonly<Record<string, string>>;
+  readonly dependencies: Readonly<Record<string, string>> & {
+    readonly "@hono/node-server": string;
+  };
   readonly peerDependencies: Readonly<Record<"hono" | "vite", string>>;
   readonly devDependencies: Readonly<Record<"typescript" | "@types/node", string>>;
 }
