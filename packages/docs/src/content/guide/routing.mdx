@@ -142,9 +142,9 @@ export default defineMiddleware(async (c, next) => {
 
 この `middleware.ts` は、`/admin` の配下のページに適用します。ファイルの位置ごとの適用する範囲は、[`middleware`](/reference/files#middleware) に記述しています。
 
-ミドルウェアが Response を返すと、ページの代わりにその Response を返します。`redirect()` を投げるとリダイレクトのレスポンスになり、`notFound()` を投げると `not-found.tsx` を 404 で返します。ミドルウェアが `c.set` で設定した値を、ページで参照する方法は [ページとデータ](/guide/pages-and-data) で説明します。
+ミドルウェアが Response を返すと、ページの代わりにその Response を返します。`redirect()` を投げるとリダイレクトのレスポンスになり、`notFound()` を投げると `not-found.tsx` を 404 で返します（[`not-found` と `error`](/reference/files#not-found-と-error)）。ミドルウェアが `c.set` で設定した値を、ページで参照する方法は [ページとデータ](/guide/pages-and-data) で説明します。
 
-ミドルウェアか `route.ts` が `notFound()` を投げたときは、`not-found.tsx` のディレクトリの `middleware.ts` を実行しません（[`middleware`](/reference/files#middleware)）。そのため、`not-found.tsx` を包むレイアウトは、ディレクトリの `middleware.ts` が設定する値が無くても描画できるように記述します。
+ディレクトリのレイアウト、`not-found.tsx`、`error.tsx` は、そのディレクトリまでのすべての `middleware.ts` を通過したリクエストでだけ描画します。そのため、レイアウトは、ミドルウェアが `c.set` で設定した値と、ミドルウェアが確認した権限を前提にできます。例えば、`src/routes/admin/middleware.ts` が `notFound()` を投げたときは、`src/routes/admin/not-found.tsx` と `src/routes/admin/layout.tsx` を描画せずに、親のディレクトリから探索した `not-found.tsx` を使用します。
 
 ## not-found と error のページ
 
@@ -179,7 +179,7 @@ export default function ErrorPage(props: ErrorProps) {
 
 `not-found.tsx` と `error.tsx` は、ディレクトリごとに配置できます。例えば、存在しない URL の `/users/x/y` には、`src/routes/users/not-found.tsx` があればそれを使用します。使用するファイルを選択する規則と、ファイルが無いときのレスポンスは、[`not-found` と `error`](/reference/files#not-found-と-error) に記述しています。
 
-`error.tsx` は、フォームの送信先のサーバー関数が失敗したときにも使用します。このときは、`error.tsx` のディレクトリの `middleware.ts` を実行しません（[`middleware`](/reference/files#middleware)）。そのため、`error.tsx` を包むレイアウトは、ディレクトリの `middleware.ts` が設定する値が無くても描画できるように記述します。
+`error.tsx` は、フォームの送信先のサーバー関数が失敗したときにも使用します（[フォーム](/guide/forms)）。
 
 ## `<head>` への出力
 
