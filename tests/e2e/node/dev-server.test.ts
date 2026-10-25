@@ -17,6 +17,8 @@ const posix = (path: string) => path.split(sep).join("/");
 
 let server: ViteDevServer;
 let origin: string;
+/** 開発サーバーが出力した警告である。 */
+const warnings: string[] = [];
 
 beforeAll(async () => {
   // e2e のプロジェクトの開発サーバーと依存の事前バンドルを共有しないように、キャッシュのディレクトリを分ける
@@ -24,6 +26,12 @@ beforeAll(async () => {
     server: { port: 0 },
     cacheDir: fileURLToPath(new URL("../node_modules/.vite/node-dev-server", import.meta.url)),
   });
+  const { logger } = server.config;
+  const warn = logger.warn.bind(logger);
+  logger.warn = (message, options) => {
+    warnings.push(message);
+    warn(message, options);
+  };
   await server.listen();
   origin = originOf(server);
 });
@@ -54,6 +62,11 @@ const link = async () => {
 };
 
 describe("開発サーバー", () => {
+  it("ページを描画しても、ページの CSS を読み込む動的 import について警告しない", async () => {
+    await fetch(`${origin}/`);
+    expect(warnings.filter((message) => message.includes("dynamic import"))).toEqual([]);
+  });
+
   it("src/routes の page.tsx を描画したページを返す", async () => {
     const response = await fetch(`${origin}/`);
     expect(response.status).toBe(200);

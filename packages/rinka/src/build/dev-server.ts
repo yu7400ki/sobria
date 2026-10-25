@@ -38,7 +38,7 @@ export const devAppModule = ({ serverFns, trustedOrigins, output }: AppModuleOpt
     ["createApp", "serverFnLoader", "devErrorResponse"],
     [
       `  head: ${JSON.stringify(VITE_CLIENT)},`,
-      `  styles: async (files) => (await import(${JSON.stringify(STYLES_URL)} + encodeURIComponent(JSON.stringify(files)))).default,`,
+      `  styles: async (files) => (await import(/* @vite-ignore */ ${JSON.stringify(STYLES_URL)} + encodeURIComponent(JSON.stringify(files)))).default,`,
       "  onError: devErrorResponse,",
       `  loadServerFn: ${serverFnLoaderCode(serverFns)},`,
       ...(output === "static" ? ['  output: "static",'] : []),
