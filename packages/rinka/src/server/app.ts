@@ -16,7 +16,7 @@ import {
 } from "../shared/routes.ts";
 import { internalPrefix } from "../shared/wire.ts";
 import { isBot } from "./bots.ts";
-import { blockingRenderOf, runInRequest, withContextHeaders } from "./context.ts";
+import { blockingRenderOf, replaceResponse, runInRequest, withContextHeaders } from "./context.ts";
 import {
   callerOf,
   callerResponses,
@@ -72,10 +72,7 @@ const catching =
       const response =
         downstream !== undefined && downstream.error === error ? undefined : handle(c, error);
       if (response === undefined) throw error;
-      // c.res の setter に、next() の後で設定されたレスポンスのヘッダーをマージさせない
-      c.res = undefined;
-      c.res = await response;
-      return c.res;
+      return replaceResponse(c, response);
     }
   };
 
@@ -220,13 +217,6 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     const response = await app.fetch(request, c.env, executionCtxOf(c));
     // error.tsx と onError のどちらにも渡らなかった値は、ここで記録する
     if (formErrors.has(request)) console.error(error);
-    // サブリクエストの Set-Cookie を Context に加え、c.res の setter が Context の Set-Cookie で置き換えても残るようにする
-    const pending = c.newResponse(null).headers.getSetCookie();
-    for (const cookie of response.headers.getSetCookie()) {
-      const index = pending.indexOf(cookie);
-      if (index === -1) c.header("set-cookie", cookie, { append: true });
-      else pending.splice(index, 1);
-    }
     // JS が無いときは、307 と 308 のリダイレクトを 303 に変換する
     const resend = caller === undefined && (response.status === 307 || response.status === 308);
     return withContextHeaders(

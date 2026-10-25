@@ -1180,6 +1180,55 @@ const rootMarking: MiddlewareHandler = async (c, next) => {
 const raw = (status: number, cookie: string) =>
   new Response("raw", { status, headers: { "set-cookie": cookie } });
 
+/** Context に Cookie の `page` を設定するページである。 */
+const setting = () => {
+  const c = getContext();
+  if (c) setCookie(c, "page", "1");
+  return jsx("p", { children: "page" });
+};
+
+describe("c.res を読んだ後のレスポンスの Set-Cookie", () => {
+  const peeked = "src/app-res.ts#peeked";
+  registerServerFn(
+    peeked,
+    defineServerFn(
+      async (c: Context, next: Next) => {
+        setCookie(c, "mw", "1");
+        // c.res を読むと、Hono の Context がレスポンスを保持する
+        void c.res;
+        await next();
+      },
+      () => new Response("ok", { headers: { "set-cookie": "fn=1" } }),
+    ),
+  );
+
+  it("サーバー関数のミドルウェアが c.res を読んだ後に関数が返した Response の Set-Cookie を、1 回ずつ付ける", async () => {
+    const response = await request({ routes: [] }, rpcPath(peeked), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "null",
+    });
+    expect(response.headers.getSetCookie()).toEqual(["mw=1; Path=/", "fn=1"]);
+  });
+
+  it("ディレクトリの middleware.ts が next() の後で投げた notFound() の 404 にも、ページが Context に設定した Set-Cookie を 1 回付ける", async () => {
+    const response = await request(
+      {
+        routes: [
+          pageRoute(
+            "/late-cookie",
+            setting,
+            [],
+            [guarded(late, { notFound: fallbackOf(fallback("root")) })],
+          ),
+        ],
+      },
+      "/late-cookie",
+    );
+    expect([response.status, response.headers.getSetCookie()]).toEqual([404, ["page=1; Path=/"]]);
+  });
+});
+
 describe("Context のヘッダーを加えるレスポンスの出口", () => {
   const returned = "src/app-exits.ts#returned";
   const denied = "src/app-exits.ts#denied";

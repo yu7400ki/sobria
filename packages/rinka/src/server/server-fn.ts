@@ -9,7 +9,7 @@ import {
   type ServerFnMethod,
   type ServerFnRef,
 } from "../shared/server-fn.ts";
-import { currentContext, withContextHeaders } from "./context.ts";
+import { currentContext, replaceResponse, withContextHeaders } from "./context.ts";
 
 type AnyMiddleware = MiddlewareHandler<any, any, any>;
 
@@ -258,7 +258,8 @@ export async function runChain(
       failed = true;
     }
     if (value instanceof Response && (!c.finalized || failed)) {
-      c.res = onError ? withContextHeaders(c, value) : value;
+      if (onError) replaceResponse(c, withContextHeaders(c, value));
+      else c.res = value;
     }
   };
   await dispatch(0);

@@ -17,6 +17,7 @@ import {
   wireHeader,
   type RedirectJson,
 } from "../shared/wire.ts";
+import { replaceResponse } from "./context.ts";
 import { cookieAfter } from "./cookies.ts";
 import { classify, isSafeLocation } from "./errors.ts";
 import { formDataToInput } from "./form-data.ts";
@@ -343,10 +344,7 @@ function replaceJson(c: Context, body: object, from: Headers, status: number): v
   headers.delete("content-length");
   headers.set("content-type", "application/json");
   headers.set(wireHeader, wireFormat.rpc);
-  const json = new Response(JSON.stringify(body), { status, headers });
-  // c.res の setter に前のレスポンスのヘッダーをマージさせない
-  c.res = undefined;
-  c.res = json;
+  replaceResponse(c, new Response(JSON.stringify(body), { status, headers }));
 }
 
 /** リクエスト `c` が、サーバー関数のエンドポイントへのリクエストなら、その種類を返す。それ以外のリクエストでは `undefined` を返す。 */

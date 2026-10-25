@@ -100,6 +100,30 @@ export function withContextHeaders(c: Pick<Context, "newResponse">, response: Re
   return merged;
 }
 
+/**
+ * `c.res` を `response` に置き換え、置き換えた Response を返す。前の `c.res` のヘッダーは統合しない。
+ * `response` が Promise なら、完了を待つ前に `c.res` を空にするので、その Promise の中で作成するレスポンスにも、前の `c.res` のヘッダーは含まれない。
+ */
+export function replaceResponse(c: Context, response: Response): Response;
+export function replaceResponse(
+  c: Context,
+  response: Response | Promise<Response>,
+): Response | Promise<Response>;
+export function replaceResponse(
+  c: Context,
+  response: Response | Promise<Response>,
+): Response | Promise<Response> {
+  c.res = undefined;
+  if (response instanceof Response) {
+    c.res = response;
+    return response;
+  }
+  return response.then((value) => {
+    c.res = value;
+    return value;
+  });
+}
+
 /** リクエストの Context ごとの、すべての `<Loading>` を待って描画するかどうかの指定である。 */
 const blockingRenders = new WeakMap<object, boolean>();
 
