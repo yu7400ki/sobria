@@ -670,3 +670,46 @@ describe("開発中の再登録", () => {
     expect(() => defineElement(tag, empty, { props: {} })).toThrow("既に登録されています");
   });
 });
+
+/** `root` の子孫から取り除かれたノードを記録し、記録した列を返す。 */
+const removals = (root: Node) => {
+  const removed: Node[] = [];
+  new MutationObserver((records) => {
+    for (const record of records) removed.push(...record.removedNodes);
+  }).observe(root, { childList: true, subtree: true });
+  return removed;
+};
+
+/** 静的な `<input>` と、`value` を表示する関数を並べて返す要素の関数を作成する。 */
+const view = (value: () => number) => () => [jsx("input", {}), () => String(value())];
+
+describe("描画の更新の範囲", () => {
+  it("最上位の要素の中身の関数が変化しても、静的なノードを作り直さない", async () => {
+    const tag = nextTag();
+    const [value, setValue] = signal(0);
+    defineElement(tag, view(value), { props: {} });
+    const host = await connect(document.createElement(tag));
+    const removed = removals(host.shadowRoot!);
+    setValue(1);
+    flush();
+    await tick();
+    expect(shadow(host)).toBe("<input>1");
+    expect(removed.map((node) => node.nodeName)).toEqual(["#text"]);
+  });
+
+  it("要素の中で作成した子要素の中身の関数が変化しても、静的なノードを作り直さない", async () => {
+    const tag = nextTag();
+    const [value, setValue] = signal(0);
+    const childTag = nextTag();
+    const Child = defineElement(childTag, view(value), { props: {} });
+    defineElement(tag, () => jsx(Child, {}), { props: {} });
+    const host = await connect(document.createElement(tag));
+    const child = host.shadowRoot?.querySelector(childTag);
+    const removed = removals(child!.shadowRoot!);
+    setValue(1);
+    flush();
+    await tick();
+    expect(shadow(child!)).toBe("<input>1");
+    expect(removed.map((node) => node.nodeName)).toEqual(["#text"]);
+  });
+});

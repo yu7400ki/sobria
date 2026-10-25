@@ -108,6 +108,13 @@ type Takeover =
 
 const instances = new WeakMap<HTMLElement, Instance>();
 
+/** `content` を挿入したノードの列を返す。`content` の中の関数は、それぞれ領域になる。 */
+function build(content: unknown): Node[] {
+  const fragment = document.createDocumentFragment();
+  insert(fragment, content);
+  return [...fragment.childNodes];
+}
+
 /** 登録したタグの状態を表す。 */
 interface Definition {
   /** 描画に使用する要素の関数。 */
@@ -240,7 +247,7 @@ export function registerElement<P, M extends object = object>(
 
   /**
    * `owner` の下に root を作成して要素の関数を描画し、要素への `ref` を呼ぶ。
-   * `owner` が `null` なら、描画の全体を、フォールバックが空の `<Loading>` で包む。
+   * 描画の結果は、ノードにしてから 1 つの領域に挿入する。`owner` が `null` なら、その領域を、フォールバックが空の `<Loading>` にする。
    * 起動していれば、前の起動の root を先に破棄する。
    * root を破棄すると、まだ呼んでいない `onMount` の関数を捨て、`instance.run` を `undefined` にする。
    * SSR したホストの最初の起動では、引き継いだ値を memo の最初の値と props にし、描画を Shadow DOM の外で組み立てて、
@@ -327,7 +334,18 @@ export function registerElement<P, M extends object = object>(
           });
           return content;
         };
-        insert(target, owner ? render() : createLoadingBoundary(render, () => undefined));
+        if (owner) {
+          const nodes = build(render());
+          insert(target, () => nodes);
+        } else {
+          insert(
+            target,
+            createLoadingBoundary(
+              () => build(render()),
+              () => undefined,
+            ),
+          );
+        }
         if (instance.ref) callRef(instance.ref, host);
       }),
     );
