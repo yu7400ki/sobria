@@ -283,7 +283,7 @@ interface ParentTag {
   readonly rawText: boolean;
 }
 
-/** 祖先にネイティブのタグが無い位置の `ParentTag` である。 */
+/** シェルと要素の境界で使用する、`ParentTag` の初期の値である。 */
 const noParentTag: ParentTag = { legend: undefined, selectValue: undefined, rawText: false };
 
 /**
@@ -297,12 +297,14 @@ interface Legend {
 }
 
 /**
- * シェルを送った後に投げられた値の扱いを表す。`navigate` はページを `location` に移動させ、`catch` は `<Errored>` が受け止める。
- * `noindex` は、受け止めたときに `noindex` を出力するかどうかである。`unsafe` は、規則に合わないので移動させない移動先である。
+ * シェルを送った後に投げられた値の扱いを表す。`navigate` はページを `location` に移動させる。
+ * `blocked` は、移動先 `location` が規則に合わないので移動させずに、`<Errored>` が受け止める。
+ * `catch` は `<Errored>` が受け止め、`noindex` が真なら `noindex` を出力する。
  */
 type AfterShell =
   | { readonly kind: "navigate"; readonly location: string }
-  | { readonly kind: "catch"; readonly noindex: boolean; readonly unsafe: string | undefined };
+  | { readonly kind: "blocked"; readonly location: string }
+  | { readonly kind: "catch"; readonly noindex: boolean };
 
 /** シェルを送った後に投げられた値 `error` の扱いを返す。`redirect()` と、規則に合う移動先への移動はページを移動させ、ほかの値は受け止める。 */
 function afterShell(error: unknown): AfterShell {
@@ -310,11 +312,8 @@ function afterShell(error: unknown): AfterShell {
   if (thrown.kind === "redirect" || (thrown.kind === "moved" && thrown.safe)) {
     return { kind: "navigate", location: thrown.location };
   }
-  return {
-    kind: "catch",
-    noindex: thrown.kind === "notFound",
-    unsafe: thrown.kind === "moved" ? thrown.location : undefined,
-  };
+  if (thrown.kind === "moved") return { kind: "blocked", location: thrown.location };
+  return { kind: "catch", noindex: thrown.kind === "notFound" };
 }
 
 /** `disabled` の属性の値 `value` が、無効であることを表すかどうかを返す。 */
@@ -1204,7 +1203,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
           } else {
             const after = afterShell(error);
             if (after.kind === "navigate") throw error;
-            if (after.noindex) flush.noindex = true;
+            if (after.kind === "catch" && after.noindex) flush.noindex = true;
           }
           return this.serialize(this.chunks(node.fallback(error), ctx), out);
         }
@@ -1253,8 +1252,8 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
             );
           } else if (!(await this.replaceAround(boundary, error))) {
             console.error(
-              after.unsafe !== undefined
-                ? `[rinka] 移動先 ${JSON.stringify(after.unsafe)} は、相対 URL でも http や https の URL でもないので、移動させずにフォールバックのまま残します。`
+              after.kind === "blocked"
+                ? `[rinka] 移動先 ${JSON.stringify(after.location)} は、相対 URL でも http や https の URL でもないので、移動させずにフォールバックのまま残します。`
                 : "[rinka] シェルを送った後に、<Loading> の中身の描画に失敗しました。フォールバックのまま残します。",
               error,
             );
@@ -1262,17 +1261,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
           this.abandon(boundary, flush);
           return;
         }
-        const spec: SwapSpec = {
-          b: boundary.id,
-          bp: hostIds(boundary.path),
-          p: patches.map(([patch]) => [patch.id, hostIds(patch.path)]),
-        };
-        this.revealSwap(
-          flush,
-          spec,
-          [region, ...patches.map(([, html]) => html)],
-          [regionOut, ...patches.map(([patch]) => patch.out)],
-        );
+        this.revealSwap(flush, boundary.id, boundary.path, [region, regionOut], patches);
         this.finishBoundary(boundary);
       })(),
     );
@@ -1329,33 +1318,42 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       flush.resolve(false);
       return { ok: false, error: fallbackError };
     }
-    this.revealSwap(flush, { b: catcher.id, bp: [], p: [] }, [html], [fallbackOut]);
+    this.revealSwap(flush, catcher.id, [], [html, fallbackOut], []);
     return { ok: true };
   }
 
   /**
-   * `spec` の境界の中身と差し替えの HTML `htmls` を `<template>` に入れ、`outs` に集めたスクリプトと、差し替えのスクリプトを続けて、`flush` の出力として出力する。
-   * `htmls` の最初は境界の中身で、残りは `spec.p` と同じ順の差し替えである。`flush` が `noindex` を要求していれば、先頭に `noindex` を出力する。
+   * ID が `id` の境界の中身と、境界の中の差し替え `patches` を `<template>` に入れ、それぞれの出力に集めたスクリプトと、差し替えのスクリプトを続けて、`flush` の出力として出力する。
+   * `path` は境界を含む Shadow DOM のホストで、`content` は中身の HTML と、中身を出力した位置である。`flush` が `noindex` を要求していれば、先頭に `noindex` を出力する。
    */
   private revealSwap(
     flush: DeferredFlush,
-    spec: SwapSpec,
-    htmls: readonly string[],
-    outs: readonly Out[],
+    id: string,
+    path: readonly HostRecord[],
+    content: readonly [string, Out],
+    patches: readonly (readonly [Patch, string])[],
   ): void {
     const noindex = this.noindexOnce(flush.noindex);
-    const [region, ...patched] = this.labels.resolve(htmls);
+    const [region, ...patched] = this.labels.resolve([
+      content[0],
+      ...patches.map(([, html]) => html),
+    ]);
+    const spec: SwapSpec = {
+      b: id,
+      bp: hostIds(path),
+      p: patches.map(([patch]) => [patch.id, hostIds(patch.path)]),
+    };
     this.reveal(
       flush,
       noindex +
-        `<template ${BOUNDARY_CONTENT_ATTRIBUTE}="${spec.b}">${region ?? ""}</template>` +
-        spec.p
+        `<template ${BOUNDARY_CONTENT_ATTRIBUTE}="${id}">${region ?? ""}</template>` +
+        patches
           .map(
-            ([id], index) =>
-              `<template ${PATCH_ATTRIBUTE}="${id}">${patched[index] ?? ""}</template>`,
+            ([patch], index) =>
+              `<template ${PATCH_ATTRIBUTE}="${patch.id}">${patched[index] ?? ""}</template>`,
           )
           .join("") +
-        this.tailOf(outs) +
+        this.tailOf([content[1], ...patches.map(([patch]) => patch.out)]) +
         swapScript(spec),
     );
   }
