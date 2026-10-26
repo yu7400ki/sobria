@@ -88,9 +88,10 @@ export function build(content: unknown): Node[] {
     insert(at.parent, content);
     let node = before === null ? at.parent.firstChild : before.nextSibling;
     for (; node !== null && node !== at.next; node = node.nextSibling) {
-      if (!serverOnly(node)) nodes.push(node);
+      if (serverOnly(node)) continue;
+      nodes.push(node);
+      at.hydration.built.add(node);
     }
-    at.hydration.built.add(nodes);
     return nodes;
   }
   const fragment = document.createDocumentFragment();

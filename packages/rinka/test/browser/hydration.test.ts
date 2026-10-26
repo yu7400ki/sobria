@@ -475,6 +475,45 @@ describe("SSR の DOM の引き取り", () => {
       (side: Side) =>
         side.h("table", { children: side.h("tr", { children: side.h("td", { children: "x" }) }) }),
     ],
+    [
+      "関数の領域の値が、SSR よりノードが 1 つ少ない描画",
+      (side: Side) =>
+        side.h("div", {
+          children: () =>
+            side.prefix === serverSide.prefix
+              ? [side.h("i", { children: "x" }), side.h("i", { children: "y" })]
+              : side.h("i", { children: "x" }),
+        }),
+    ],
+    [
+      "<Loading> の中身が、SSR よりノードが 1 つ少ない描画",
+      (side: Side) =>
+        side.h(side.Loading, {
+          fallback: "",
+          children: () =>
+            side.prefix === serverSide.prefix
+              ? [side.h("i", { children: "x" }), side.h("i", { children: "y" })]
+              : side.h("i", { children: "x" }),
+        }),
+    ],
+    [
+      "同じタグの JSX の値を 2 回挿入する描画",
+      (side: Side) => {
+        const bold = side.h("b", { children: "x" });
+        return [bold, bold];
+      },
+    ],
+    [
+      "<Errored> の中身が、SSR よりノードが 1 つ少ない描画",
+      (side: Side) =>
+        side.h(side.Errored, {
+          fallback: "",
+          children: () =>
+            side.prefix === serverSide.prefix
+              ? [side.h("i", { children: "x" }), side.h("i", { children: "y" })]
+              : side.h("i", { children: "x" }),
+        }),
+    ],
   ])("%sは、例外を投げずに作り直し、開発時に警告する", async (_, view) => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { host, boot } = await served((side) => () => view(side));
@@ -780,5 +819,35 @@ describe("SSR の DOM の引き取り", () => {
     await boot();
     expect(textarea.value).toBe("typed");
     expect(select.value).toBe("q");
+  });
+
+  it("<Errored> の中身のノードを引き取る", async () => {
+    const { host, boot } = await served(
+      ({ h, Errored }) =>
+        () =>
+          h(Errored, { fallback: "failed", children: () => h("p", { children: "ok" }) }),
+    );
+    const p = host.shadowRoot!.querySelector("p");
+    await boot();
+    expect(host.shadowRoot!.querySelector("p")).toBe(p);
+  });
+
+  it("フォールバックが空の配列の <Loading> が保留中なら、SSR の表示を残す", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { host, boot } = await served(({ h, Loading, prefix }) => () => {
+      const inner = memo(() =>
+        prefix === serverSide.prefix ? Promise.resolve("s1") : new Promise<string>(() => {}),
+      );
+      return [
+        h("p", {}),
+        h(Loading, { fallback: [], children: () => h("i", { children: inner() }) }),
+      ];
+    });
+    const p = host.shadowRoot!.querySelector("p");
+    await boot();
+    expect(host.shadowRoot!.querySelector("p")).toBe(p);
+    expect(host.shadowRoot!.textContent).toBe("s1");
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

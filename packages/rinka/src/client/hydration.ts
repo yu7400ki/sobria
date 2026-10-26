@@ -12,8 +12,8 @@ export interface Hydration {
   failure: string | undefined;
   /** 引き取ったノードを持つ。 */
   readonly claimed: WeakSet<Node>;
-  /** `build` が引き取りの最中に返したノードの列を持つ。 */
-  readonly built: WeakSet<object>;
+  /** `build` が引き取りの最中に返したノードを持つ。 */
+  readonly built: WeakSet<Node>;
 }
 
 /** 引き取りの位置を表す。`next` は、`parent` の子のうち、次に引き取るノードである。 */
@@ -175,6 +175,8 @@ export function claimNode(at: Cursor, node: Node): void {
   if (!at.hydration.claimed.has(node)) fail(at, describe(node));
 }
 
-/** `value` が、`build` が引き取りの最中に返したノードの列なら `true` を返す。 */
+/** `value` が、`build` が引き取りの最中に返したノードだけの、空でない配列なら `true` を返す。 */
 export const isBuilt = (hydration: Hydration, value: unknown): boolean =>
-  typeof value === "object" && value !== null && hydration.built.has(value);
+  Array.isArray(value) &&
+  value.length > 0 &&
+  value.every((item: unknown) => item instanceof Node && hydration.built.has(item));
