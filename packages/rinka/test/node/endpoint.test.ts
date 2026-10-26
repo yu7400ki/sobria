@@ -578,6 +578,27 @@ describe("async iterable を返すサーバー関数", () => {
     ]);
   });
 
+  it("最初の値をシリアライズできなければ、ストリームでない戻り値と同じく onError のレスポンスにし、iterable の return を呼ぶ", async () => {
+    const onError = vi.fn((_error: unknown) => new Response("failed", { status: 500 }));
+    let finished = false;
+    const id = register(
+      defineServerFn(async function* () {
+        try {
+          yield () => {};
+        } finally {
+          finished = true;
+        }
+      }),
+    );
+    const response = await call(id, post(null), { options: { onError } });
+    expect([response.status, await response.text(), onError.mock.calls.length, finished]).toEqual([
+      500,
+      "failed",
+      1,
+      true,
+    ]);
+  });
+
   it("値をシリアライズできなければ、onError に渡して { error: true } の行を送り、iterable の return を呼ぶ。return が投げても行を送る", async () => {
     const onError = vi.fn((_error: unknown) => new Response(null, { status: 500 }));
     let finished = 0;

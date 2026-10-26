@@ -24,6 +24,7 @@ import { replaceResponse, runInRequest } from "./context.ts";
 import { cookieAfter } from "./cookies.ts";
 import { classify, isSafeLocation } from "./errors.ts";
 import { formDataToInput } from "./form-data.ts";
+import { Relay } from "./relay.ts";
 import { handledMethod } from "./request.ts";
 import { definitionOf, runChain, SchemaError, type Definition } from "./server-fn.ts";
 import { fromRpcInput, toRpcBody } from "./wire.ts";
@@ -107,7 +108,7 @@ async function endpoint(
   } catch {
     return responder.reject(c, 400);
   }
-  const opened: { iterator?: AsyncIterator<unknown>; body?: ReadableStream | null } = {};
+  const opened: { relay?: Relay; body?: ReadableStream | null } = {};
   const response = await runChain(
     c,
     middlewares,
@@ -115,11 +116,11 @@ async function endpoint(
       const value = await handle(c, input);
       if (value instanceof Response) return value;
       if (!isAsyncIterable(value)) return responder.respond(c, { kind: "value", value }, fail);
-      const iterator = value[Symbol.asyncIterator]();
-      opened.iterator = iterator;
+      const relay = new Relay(value, c);
+      opened.relay = relay;
       const streamed = await responder.respond(
         c,
-        { kind: "stream", iterator, first: await iterator.next() },
+        { kind: "stream", relay, first: await relay.first },
         fail,
       );
       opened.body = streamed.body;
@@ -128,12 +129,8 @@ async function endpoint(
     (error) => respondThrown(c, kind, error, fail),
   );
   // ミドルウェアがストリームの本文を使わないレスポンスに置換したら、本文から反復を終えられないので、ここで終える
-  const { iterator, body } = opened;
-  if (iterator && response.body !== body) {
-    await runInRequest(c, async () => {
-      await iterator.return?.();
-    });
-  }
+  const { relay, body } = opened;
+  if (relay && response.body !== body) await relay.close();
   return response;
 }
 
@@ -168,10 +165,10 @@ type Outcome =
   | { readonly kind: "schema"; readonly issues: SchemaError["issues"] }
   | { readonly kind: "error"; readonly error: unknown };
 
-/** handler が返した async iterable の iterator と、その最初の `next()` の結果を表す。 */
+/** handler が返した async iterable の Relay と、その最初の `next()` の結果を表す。 */
 interface Streamed {
   readonly kind: "stream";
-  readonly iterator: AsyncIterator<unknown>;
+  readonly relay: Relay;
   readonly first: IteratorResult<unknown>;
 }
 
@@ -233,12 +230,9 @@ const responders = {
     reject: (c, status) => c.text(rejectionText[status], status),
     respond: async (c, outcome, fail) => {
       switch (outcome.kind) {
-        case "stream": {
-          let result = outcome.first;
-          // oxlint-disable-next-line no-await-in-loop
-          while (result.done !== true) result = await outcome.iterator.next();
+        case "stream":
+          for await (const _ of outcome.relay.values());
           return c.redirect(callerOf(c)?.page?.href ?? c.req.header("referer") ?? "/", 303);
-        }
         case "value":
           return c.redirect(callerOf(c)?.page?.href ?? c.req.header("referer") ?? "/", 303);
         case "notFound":
@@ -491,49 +485,49 @@ const endLine = JSON.stringify({ end: true } satisfies StreamLine);
 const redirectLinePrefix = '{"redirect":';
 
 /**
- * `first` と、`iterator` がその後に返す値を、改行で区切った `StreamLine` の行で送信するレスポンスを返す。値の行の後に `{ end: true }` を送信する。
- * `iterator` が `redirect()` か、`isSafeLocation` が安全と判定する移動先の 3xx の Response を投げたら、移動先を伝える行を送信する。
+ * `first` と、`relay` がその後に返す値を、改行で区切った `StreamLine` の行で送信するレスポンスを返す。値の行の後に `{ end: true }` を送信する。
+ * 最初の値は、レスポンスを作成する前にシリアライズし、シリアライズできなければ例外を投げる。
+ * 2 番目以降の値で `redirect()` か、`isSafeLocation` が安全と判定する移動先の 3xx の Response を投げたら、移動先を伝える行を送信する。
  * それ以外の値を投げたときと、値をシリアライズできないときは、`{ error: true }` を送信する。投げた値が `notFound()`、`HTTPException`、Response でなければ、送信する前に `fail` に渡す。
- * `iterator` の `next()` と `return()` と `fail` は、リクエスト `c` の中で実行する。本文の読み取りが中止されたら、`iterator` の反復を終える。
+ * 最後の行を送信したときと、本文の読み取りが中止されたときは、`relay` を閉じる。
  */
-function stream(c: Context, { iterator, first }: Streamed, fail: Failure): Response {
+function stream(c: Context, { relay, first }: Streamed, fail: Failure): Response {
   const encoder = new TextEncoder();
   const encode = (line: StreamLine) => encoder.encode(`${JSON.stringify(line)}\n`);
   const failed = async (error: unknown): Promise<StreamLine> => {
     const thrown = classify(error);
     if (thrown.kind === "redirect") return { redirect: thrown.location };
     if (thrown.kind === "moved" && thrown.safe) return { redirect: thrown.location };
-    if (thrown.kind === "error" || thrown.kind === "schema") await fail(c, error);
+    if (thrown.kind === "error" || thrown.kind === "schema") {
+      await runInRequest(c, () => fail(c, error));
+    }
     return { error: true };
   };
-  let primed: IteratorResult<unknown> | undefined = first;
+  const firstLine: StreamLine = first.done === true ? { end: true } : toRpcBody(first.value);
+  const lines = (async function* (): AsyncGenerator<StreamLine, void> {
+    yield firstLine;
+    if (first.done === true) return;
+    try {
+      for await (const value of relay.rest()) yield toRpcBody(value);
+      yield { end: true };
+    } catch (error) {
+      yield await failed(error);
+    }
+  })();
   c.header(wireHeader, wireFormat.stream);
   c.header("content-type", "application/x-ndjson; charset=utf-8");
   return c.body(
     new ReadableStream<Uint8Array>({
-      pull: (controller) =>
-        runInRequest(c, async () => {
-          let line: StreamLine;
-          let done = false;
-          try {
-            const result = primed ?? (await iterator.next());
-            primed = undefined;
-            done = result.done === true;
-            line = done ? { end: true } : toRpcBody(result.value);
-          } catch (error) {
-            done = true;
-            line = await failed(error);
-          }
-          controller.enqueue(encode(line));
-          if (!done) return;
-          controller.close();
-          // 値をシリアライズできなかったときは、iterator が値を返した後で止まっている
-          await Promise.resolve(iterator.return?.()).catch(() => {});
-        }),
-      cancel: () =>
-        runInRequest(c, async () => {
-          await iterator.return?.();
-        }),
+      pull: async (controller) => {
+        const result = await lines.next();
+        if (result.done !== true) {
+          controller.enqueue(encode(result.value));
+          return;
+        }
+        controller.close();
+        await relay.close();
+      },
+      cancel: () => relay.close(),
     }),
   );
 }
