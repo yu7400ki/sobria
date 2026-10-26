@@ -578,6 +578,36 @@ describe("ストリームの値の引き継ぎ", () => {
     expect(fetched).toBe(0);
   });
 
+  it("次の値が届く前に memo を計算し直すと、引き継いだストリームの値を待つのをやめる", async () => {
+    const tag = nextTag();
+    const [version, setVersion] = signal(0);
+    const view = (h: H) => () => {
+      const value = memo(
+        () => {
+          const current = version();
+          return Promise.resolve(`v${current}`);
+        },
+        { site: "t:21" },
+      );
+      return h("p", { children: () => value() });
+    };
+    const scripts = await serve(server(defineServer(tag, view(server), { props: {} }), {}));
+    const id = hostOf(scripts, "t:21#0");
+    streamed(scripts, "t:21#0").forEach(run);
+    defineClient(tag, view(client), { props: {} });
+    await tick();
+    const values = (globalThis.$rinka?.v[id] ?? {}) as Record<string, { l: unknown[] }>;
+    const stream = values["t:21#0"]!;
+    const waiting = stream.l.length;
+    setVersion(1);
+    await tick();
+    expect([waiting, stream.l.length, html(document.querySelector(tag)?.shadowRoot)]).toEqual([
+      1,
+      0,
+      "<p>v1</p>",
+    ]);
+  });
+
   it("起動した要素の関数の中で、引き継いだストリームの memo を読み取っても、保留中にならない", async () => {
     const tag = nextTag();
     const read: string[] = [];

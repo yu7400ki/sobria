@@ -14,8 +14,11 @@ export interface SwapSpec {
 /** 起動スクリプトに伝える要素を、タグ名、モジュールの URL、デフォルトの起動タイミングの組で表す。 */
 export type ListedElement = readonly [tag: string, module: string, load: DefaultLoad];
 
-/** ストリームの状態を表す。`0` は値が届く途中、`1` は終わった状態、`2` は失敗した状態である。 */
-export type StreamState = 0 | 1 | 2;
+/** ストリームの状態の値である。`open` は値が届く途中、`done` は終わった状態、`failed` は失敗した状態である。 */
+export const streamState = { open: 0, done: 1, failed: 2 } as const;
+
+/** ストリームの状態を表す。 */
+export type StreamState = (typeof streamState)[keyof typeof streamState];
 
 /** サーバーが反復している async iterable の、最新の値と状態を表す。 */
 export interface TransferStream {

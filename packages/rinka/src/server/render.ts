@@ -39,7 +39,7 @@ import { headKey } from "../shared/head.ts";
 import { isEventProp, propToAttribute, reservedProp } from "../shared/names.ts";
 import type { NavigationProps } from "../shared/navigation.ts";
 import { isAsyncIterable, isFunction, isPromiseLike } from "../shared/objects.ts";
-import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
+import { streamState, type ListedElement, type SwapSpec } from "../shared/receiver.ts";
 import type { RefreshJson, RefreshValues } from "../shared/refresh.ts";
 import {
   createScope,
@@ -1525,14 +1525,14 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       for await (const value of relay.rest()) {
         const script = this.script(value, path);
         if (script === noValue) {
-          this.write(pushScript(host.id, key, 2));
+          this.write(pushScript(host.id, key, streamState.failed));
           return;
         }
-        this.write(pushScript(host.id, key, 0, script));
+        this.write(pushScript(host.id, key, streamState.open, script));
       }
-      if (!relay.closing) this.write(pushScript(host.id, key, 1));
+      if (!relay.closing) this.write(pushScript(host.id, key, streamState.done));
     } catch {
-      if (!relay.closing) this.write(pushScript(host.id, key, 2));
+      if (!relay.closing) this.write(pushScript(host.id, key, streamState.failed));
     }
   }
 

@@ -2,7 +2,7 @@ import type { SourceAccessor } from "@solidjs/signals";
 
 import { AWAITED_ATTRIBUTE, HOST_ATTRIBUTE } from "../shared/attributes.ts";
 import { isPlainObject } from "../shared/objects.ts";
-import type { Receiver, TransferStream } from "../shared/receiver.ts";
+import { streamState, type Receiver, type TransferStream } from "../shared/receiver.ts";
 import { memoOf, runSeeding, type MemoCompute, type ScopedMemo } from "../shared/scope.ts";
 import { isChildKey, isReservedKey, PROPS_KEY } from "../shared/transfer-keys.ts";
 
@@ -164,21 +164,43 @@ function seededMemo<T>(
   }, options);
 }
 
-/** `stream` の最新の値を yield し、その後は、届いた値を届くたびに yield する。ストリームが失敗したら例外を投げる。 */
-async function* follow(stream: TransferStream): AsyncGenerator<unknown, void> {
-  let last = stream.n;
-  yield stream.v;
-  for (;;) {
-    if (stream.n !== last) {
-      last = stream.n;
-      yield stream.v;
-    } else if (stream.d === 1) {
-      return;
-    } else if (stream.d === 2) {
-      throw new Error("サーバーで memo の値を取得できませんでした。");
-    } else {
-      // oxlint-disable-next-line no-await-in-loop
-      await new Promise<void>((resolve) => stream.l.push(resolve));
-    }
-  }
+/**
+ * `stream` の最新の値を返し、その後は、届いた値を届くたびに返す async iterable を返す。ストリームが失敗したら例外を投げる。
+ * `return()` を呼ぶと、次の値を待っているときも、すぐに待つのをやめて終わる。
+ */
+function follow(stream: TransferStream): AsyncIterable<unknown> {
+  const finished: IteratorResult<unknown> = { done: true, value: undefined };
+  let last: number | undefined;
+  let stopped = false;
+  let wake: (() => void) | undefined;
+  const iterator: AsyncIterator<unknown> = {
+    next: async () => {
+      for (;;) {
+        if (stopped) return finished;
+        if (stream.n !== last) {
+          last = stream.n;
+          return { done: false, value: stream.v };
+        }
+        if (stream.d === streamState.done) return finished;
+        if (stream.d === streamState.failed) {
+          throw new Error("サーバーで memo の値を取得できませんでした。");
+        }
+        // oxlint-disable-next-line no-await-in-loop
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+          stream.l.push(resolve);
+        });
+      }
+    },
+    return: async () => {
+      stopped = true;
+      if (wake) {
+        const index = stream.l.indexOf(wake);
+        if (index !== -1) stream.l.splice(index, 1);
+        wake();
+      }
+      return finished;
+    },
+  };
+  return { [Symbol.asyncIterator]: () => iterator };
 }
