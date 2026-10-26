@@ -19,7 +19,8 @@ afterEach(() => {
 });
 
 /** ホストの Shadow DOM の、コメントを除いた HTML を返す。 */
-const shadow = (host: Element) => (host.shadowRoot?.innerHTML ?? "").replaceAll("<!---->", "");
+const shadow = (host: Element) =>
+  (host.shadowRoot?.innerHTML ?? "").replaceAll(/<!--[[\]]-->/g, "");
 
 /** ホストを `document.body` に接続し、起動するまで待つ。 */
 async function connect<T extends Element>(host: T): Promise<T> {

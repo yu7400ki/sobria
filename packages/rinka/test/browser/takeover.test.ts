@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { Loading as ClientLoading } from "../../src/client/control.ts";
 import { defineElement as defineClient } from "../../src/client/element.ts";
 import { jsx as clientJsx } from "../../src/client/jsx-runtime.ts";
 import { bootstrapSource } from "../../src/server/bootstrap.ts";
@@ -28,7 +29,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** ノードの、コメントを除いた HTML を返す。 */
 const html = (node: Element | ShadowRoot | null | undefined) =>
-  node?.innerHTML.replaceAll("<!---->", "") ?? "";
+  node?.innerHTML.replaceAll(/<!--[[\]]-->/g, "") ?? "";
 
 /** スクリプトの本文を実行する。 */
 // oxlint-disable-next-line typescript/no-implied-eval
@@ -185,14 +186,17 @@ describe("値の引き継ぎ", () => {
   it("値が無いキーの memo は、ブラウザで計算し直す", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const tag = nextTag();
+    /** シリアライズできない値である。 */
+    class Unserializable {
+      toString() {
+        return "ssr";
+      }
+    }
     const scripts = await serve(
       server(
         defineServer(
           tag,
-          () => {
-            const view = viewWith(server, "", "t:3", () => Promise.reject(new Error("e")));
-            return server(ServerLoading, { fallback: "", children: () => view() });
-          },
+          viewWith(server, "", "t:3", () => Promise.resolve(new Unserializable() as never)),
           { props: {} },
         ),
         {},
@@ -206,6 +210,41 @@ describe("値の引き継ぎ", () => {
         fetched++;
         return Promise.resolve("again");
       }),
+      { props: {} },
+    );
+    await tick();
+    await tick();
+    expect(fetched).toBe(1);
+    expect(html(document.querySelector(tag)?.shadowRoot)).toBe("<p> again</p>");
+  });
+
+  it("サーバーで失敗した memo は、ブラウザで計算し直す", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const tag = nextTag();
+    const scripts = await serve(
+      server(
+        defineServer(
+          tag,
+          () => {
+            const view = viewWith(server, "", "t:3f", () => Promise.reject(new Error("e")));
+            return server(ServerLoading, { fallback: "", children: () => view() });
+          },
+          { props: {} },
+        ),
+        {},
+      ),
+    );
+    scripts.forEach(run);
+    let fetched = 0;
+    defineClient(
+      tag,
+      () => {
+        const view = viewWith(client, "", "t:3f", () => {
+          fetched++;
+          return Promise.resolve("again");
+        });
+        return client(ClientLoading, { fallback: "", children: () => view() });
+      },
       { props: {} },
     );
     await tick();
@@ -244,7 +283,7 @@ describe("値の引き継ぎ", () => {
 });
 
 describe("Shadow DOM の中の子要素", () => {
-  it("起動していない SSR した親の中の子要素は、自分で起動せず、親が作り直す", async () => {
+  it("起動していない SSR した親の中の子要素は、自分で起動せず、親が引き取って起動する", async () => {
     const parentTag = nextTag();
     const childTag = nextTag();
     const childServer = defineServer(childTag, viewWith(server, "server", "t:5", fetchAnn), {
@@ -267,7 +306,7 @@ describe("Shadow DOM の中の子要素", () => {
     await tick();
     await tick();
     const child = document.querySelector(parentTag)?.shadowRoot?.querySelector(childTag);
-    expect(child).not.toBe(ssrChild);
+    expect(child).toBe(ssrChild);
     expect(html(child?.shadowRoot)).toBe("<p>client ann</p>");
   });
 });
@@ -439,7 +478,7 @@ describe("入れ子の子要素の引き継ぎ", () => {
     rest.forEach(run);
     await tick();
     const child = document.querySelector(parentTag)?.shadowRoot?.querySelector(childTag);
-    expect(child).not.toBe(ssrChild);
+    expect(child).toBe(ssrChild);
     expect(html(child?.shadowRoot)).toBe("<p>client ann</p>");
   });
 
@@ -469,7 +508,7 @@ describe("入れ子の子要素の引き継ぎ", () => {
     childValues.forEach(run);
     await tick();
     const child = document.querySelector(parentTag)?.shadowRoot?.querySelector(childTag);
-    expect(child).not.toBe(ssrChild);
+    expect(child).toBe(ssrChild);
     expect(html(child?.shadowRoot)).toBe("<p>client ann</p>");
   });
 });

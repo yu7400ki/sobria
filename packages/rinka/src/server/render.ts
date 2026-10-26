@@ -20,6 +20,9 @@ import {
   HOST_ATTRIBUTE,
   LOAD_ATTRIBUTE,
   PATCH_ATTRIBUTE,
+  REGION_END,
+  REGION_FALLBACK,
+  REGION_START,
   propertiesOf,
   tagAttributeName,
   type PropertyOutput,
@@ -430,8 +433,14 @@ const voidTags: ReadonlySet<string> = new Set([
   "wbr",
 ]);
 
-/** クライアントが関数の値を囲む領域の、開始と終了の目印である。 */
-const REGION_MARK = "<!---->";
+/** クライアントが関数の値を囲む領域の、開始の目印である。 */
+const REGION_START_MARK = `<!--${REGION_START}-->`;
+
+/** クライアントが関数の値を囲む領域の、終了の目印である。 */
+const REGION_END_MARK = `<!--${REGION_END}-->`;
+
+/** `<Errored>` のフォールバックを出力した領域の先頭に置くコメントである。 */
+const REGION_FALLBACK_MARK = `<!--${REGION_FALLBACK}-->`;
 
 /** 目印の開始と終了の HTML を返す。 */
 const marker = (id: string, inner = ""): string =>
@@ -635,9 +644,9 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /** `region` なら、`write` が `out` に出力するものを、領域の開始と終了の目印で囲む。 */
   private enclose(region: boolean, out: Chunk[], write: () => void): void {
-    if (region) out.push(REGION_MARK);
+    if (region) out.push(REGION_START_MARK);
     write();
-    if (region) out.push(REGION_MARK);
+    if (region) out.push(REGION_END_MARK);
   }
 
   /** クライアントが、この位置の関数の値を 2 つのコメントで囲む領域にするなら `true` を返す。 */
@@ -1242,7 +1251,8 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
                 break;
             }
           }
-          return this.serialize(this.chunks(node.fallback(error), ctx), out);
+          const fallback = await this.serialize(this.chunks(node.fallback(error), ctx), out);
+          return this.region(ctx) ? REGION_FALLBACK_MARK + fallback : fallback;
         }
       }
     }

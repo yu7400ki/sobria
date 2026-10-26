@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 /** ホストの Light DOM の、コメントを除いた HTML を返す。 */
-const light = (host: Element) => host.innerHTML.replaceAll("<!---->", "");
+const light = (host: Element) => host.innerHTML.replaceAll(/<!--[[\]]-->/g, "");
 
 type CardProps = { header?: unknown; children?: unknown };
 

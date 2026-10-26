@@ -45,6 +45,14 @@ import {
 import { formControls, formElementClass } from "./form-element.ts";
 import { handleSubmit } from "./form.ts";
 import {
+  claimChildren,
+  createHydration,
+  currentCursor,
+  fail,
+  takeElement,
+  within,
+} from "./hydration.ts";
+import {
   activateInSlot,
   addChild,
   createHostSlots,
@@ -108,7 +116,7 @@ interface Instance {
  * 値の引き継ぎの段階を表す。
  * `waiting` はまだ起動していない段階で、SSR したホストは、最初の起動でだけサーバーから値を引き継ぐ。`from` は、親が作り直した子要素が値を引き継ぐ SSR したホストの ID である。
  * `activation` は、SSR したホストが起動スクリプトに起動の条件を問い合わせていれば `requested`、条件を満たしたと通知されていれば `granted` である。
- * `building` は、引き継いだ値で描画を組み立てている段階で、`done` は、Shadow DOM の中身を描画の結果に置き換えた後の段階である。
+ * `building` は、引き継いだ値で、SSR の DOM を引き取っているか描画を組み立てている段階で、`done` は、最初の内容を表示できる状態になった後の段階である。
  */
 type Takeover =
   | { readonly phase: "waiting"; from?: string; activation?: "requested" | "granted" }
@@ -116,6 +124,24 @@ type Takeover =
   | { readonly phase: "done" };
 
 const instances = new WeakMap<HTMLElement, Instance>();
+
+/**
+ * Shadow DOM の先頭にある、サーバーが `css` の値から出力した `<style>` と `<link rel="stylesheet">` を返す。
+ * サーバーは、描画した内容を領域の目印で囲んで、スタイルの後に出力する。
+ */
+function serverStyles(shadow: ShadowRoot): Element[] {
+  const styles: Element[] = [];
+  for (const node of shadow.childNodes) {
+    if (
+      !(node instanceof Element) ||
+      (node.localName !== "style" &&
+        !(node.localName === "link" && node.getAttribute("rel") === "stylesheet"))
+    )
+      break;
+    styles.push(node);
+  }
+  return styles;
+}
 
 /** 登録したタグの状態を表す。 */
 interface Definition {
@@ -252,15 +278,30 @@ export function registerElement<P, M extends object = object>(
    * 描画の結果は、ノードにしてから 1 つの領域に挿入する。`owner` が `null` なら、その領域を、フォールバックが空の `<Loading>` にする。
    * 起動していれば、前の起動の root を先に破棄する。
    * root を破棄すると、まだ呼んでいない `onMount` の関数を捨て、`instance.run` を `undefined` にする。
-   * SSR したホストの最初の起動では、引き継いだ値を memo の最初の値と props にし、描画を Shadow DOM の外で組み立てて、
-   * 最初の内容を表示できる状態になってから、Shadow DOM の中身と置き換える。
+   * SSR したホストの最初の起動では、引き継いだ値を memo の最初の値と props にし、Shadow DOM のノードを引き取る。
+   * 引き取れなければ、描画を Shadow DOM の外で組み立て直し、最初の内容を表示できる状態になってから、Shadow DOM の中身と置換する。
    */
   function activate(host: HTMLElement, instance: Instance, owner: Owner | null): void {
+    const id = transferId(host, instance);
+    const ssr = id !== null && id === host.getAttribute(HOST_ATTRIBUTE) && host.shadowRoot !== null;
+    start(host, instance, owner, id, id === null ? "direct" : ssr ? "claim" : "build");
+  }
+
+  /**
+   * `mode` の方法で要素を起動する。`direct` は Shadow DOM に直接描画し、`build` は描画を Shadow DOM の外で組み立てて置き換え、
+   * `claim` は SSR した Shadow DOM のノードを引き取る。引き取りに失敗したら、開発時に警告して `build` で起動し直す。
+   */
+  function start(
+    host: HTMLElement,
+    instance: Instance,
+    owner: Owner | null,
+    id: string | null,
+    mode: "direct" | "build" | "claim",
+  ): void {
     instance.run?.dispose();
     const shadow =
       host.shadowRoot ?? host.attachShadow({ mode: "open", delegatesFocus: options.form === true });
     shadow.addEventListener("submit", handleSubmit);
-    const id = transferId(host, instance);
     const transferred = beginTakeover(id, tag);
     for (const [name, value] of Object.entries(transferred.props)) {
       const prop = instance.props.get(name);
@@ -268,13 +309,14 @@ export function registerElement<P, M extends object = object>(
     }
     const scope = createScope(transferred.memo, transferred.values);
     let target: ParentNode = shadow;
-    if (id === null) {
+    if (mode === "direct") {
       shadow.replaceChildren();
       instance.takeover = { phase: "done" };
     } else {
-      target = document.createDocumentFragment();
+      if (mode === "build") target = document.createDocumentFragment();
       instance.takeover = { phase: "building" };
     }
+    const hydration = mode === "claim" ? createHydration() : undefined;
     runWithOwner(owner, () =>
       createRoot((dispose) => {
         const run: Run = { dispose, mounts: [], settled: false, owner };
@@ -324,7 +366,11 @@ export function registerElement<P, M extends object = object>(
           if (target === shadow) shadow.adoptedStyleSheets = sheets;
           onSettled(() => {
             removeServerAria(host);
-            if (target !== shadow) {
+            if (hydration) {
+              for (const style of serverStyles(shadow)) style.remove();
+              instance.takeover = { phase: "done" };
+              transferred.finish();
+            } else if (target !== shadow) {
               shadow.adoptedStyleSheets = sheets;
               shadow.replaceChildren(target);
               target = shadow;
@@ -336,21 +382,32 @@ export function registerElement<P, M extends object = object>(
           });
           return content;
         };
-        if (owner) {
-          const nodes = build(render());
-          insert(target, () => nodes);
-        } else {
-          insert(
-            target,
-            createLoadingBoundary(
+        const root = new Deferred(() => {
+          if (!owner)
+            return createLoadingBoundary(
               () => build(render()),
               () => undefined,
-            ),
-          );
+            );
+          const nodes = build(render());
+          return () => nodes;
+        }, "loading");
+        if (hydration) {
+          const first = serverStyles(shadow).at(-1)?.nextSibling ?? shadow.firstChild;
+          claimChildren(shadow, first, hydration, () => insert(shadow, root));
+        } else {
+          insert(target, root);
         }
-        if (instance.ref) callRef(instance.ref, host);
+        if (instance.ref && hydration?.failure === undefined) callRef(instance.ref, host);
       }),
     );
+    if (hydration?.failure !== undefined) {
+      if (import.meta.env?.DEV) {
+        console.warn(
+          `[rinka] <${tag}> の SSR の DOM を引き取れません。${hydration.failure}。Shadow DOM の中身を作り直します。`,
+        );
+      }
+      start(host, instance, owner, id, "build");
+    }
   }
 
   class RinkaElement extends HTMLElement {
@@ -453,7 +510,7 @@ function locate(el: HTMLElement): Position {
  * SSR したホストは、自分の `data-om` のキーと、`@c:キー` の値が指す子要素のホストの `data-om` のキーの値が、すべて届くまで起動しない。
  * 表示されている位置の上に定義済みの要素があれば、そのスロットの `<slot>` の owner の下で起動する。
  * `<slot>` が無ければ、その `<slot>` を作成した時点で、接続していれば起動する。その時点でスロットの位置が変わっていれば、今の位置のスロットに登録し直す。
- * SSR したホストの Shadow DOM の中にあり、そのホストが Shadow DOM の中身をまだ置き換えていなければ、起動しない。そのホストが中身を置き換えるときに、子要素も作り直す。
+ * SSR したホストの Shadow DOM の中にあり、そのホストの最初の内容がまだ表示できる状態になっていなければ、起動しない。そのホストが起動するときに、子要素のホストを引き取るか作り直して、子要素も起動する。
  * それ以外の Shadow DOM の中にあるか、上に定義済みの要素が無ければ、最上位の要素として起動する。
  * 前の待機とスロットへの登録は取り消し、新しく待機か登録をしたら、取り消す関数を `instance.cancel` に設定する。
  */
@@ -553,31 +610,47 @@ function createHost(
   key: string | undefined,
   child: ScopedChild | undefined,
 ): HTMLElement {
-  const host = document.createElement(component[elementInfo].tag);
+  const { tag } = component[elementInfo];
+  const at = currentCursor();
+  const claimed = at && takeElement(at, tag);
+  const host =
+    claimed instanceof HTMLElement && instances.has(claimed)
+      ? claimed
+      : document.createElement(tag);
+  if (at && claimed && claimed !== host) fail(at, `<${tag}>の定義`);
+  if (at && host !== claimed) return host;
   const instance = instances.get(host)!;
   const transfer: unknown =
     child?.data instanceof Map ? child.data.get(childKey(child.key)) : undefined;
   if (typeof transfer === "string") instance.takeover = { phase: "waiting", from: transfer };
   const owner = getOwner();
   const derive = (read: () => unknown): Source => ({ read: owner ? createMemo(read) : read });
-  for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(props))) {
-    if (name === "ref") continue;
-    const getter = descriptor.get;
-    const read = getter ? () => getter.call(props) as unknown : undefined;
-    const value: unknown = read ?? descriptor.value;
-    const prop = instance.props.get(name);
-    if (instance.kinds.slots.has(name)) {
-      placeInSlot(instance.slots, name, (place) => insert(host, value, place));
-    } else if (prop) {
-      const reactive = read ?? (instance.kinds.isReader(name, value) ? value : undefined);
-      write(prop, reactive ? derive(reactive) : { value });
-    } else if (read && isEventProp(name)) {
-      const listener = untrack(read);
-      if (isFunction(listener)) applyAttribute(host, name, listener);
-      else bind(read, setter(host, name, false));
-    } else {
-      applyAttribute(host, name, value);
+  const assign = () => {
+    for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(props))) {
+      if (name === "ref") continue;
+      const getter = descriptor.get;
+      const read = getter ? () => getter.call(props) as unknown : undefined;
+      const value: unknown = read ?? descriptor.value;
+      const prop = instance.props.get(name);
+      if (instance.kinds.slots.has(name)) {
+        placeInSlot(instance.slots, name, (place) => insert(host, value, place));
+      } else if (prop) {
+        const reactive = read ?? (instance.kinds.isReader(name, value) ? value : undefined);
+        write(prop, reactive ? derive(reactive) : { value });
+      } else if (read && isEventProp(name)) {
+        const listener = untrack(read);
+        if (isFunction(listener)) applyAttribute(host, name, listener);
+        else bind(read, setter(host, name, false));
+      } else {
+        applyAttribute(host, name, value);
+      }
     }
+  };
+  if (at) {
+    claimChildren(host, host.firstChild, at.hydration, assign);
+    if (at.hydration.failure !== undefined) return host;
+  } else {
+    within(undefined, assign);
   }
   if (key !== undefined) setter(host, "key", false)(key);
   if (isFunction(props.ref)) instance.ref = props.ref;

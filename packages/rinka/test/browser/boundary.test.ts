@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 /** ノードの、コメントを除いた HTML を返す。 */
-const html = (node: Element | ShadowRoot) => node.innerHTML.replaceAll("<!---->", "");
+const html = (node: Element | ShadowRoot) => node.innerHTML.replaceAll(/<!--[[\]]-->/g, "");
 
 /** 値が解決するまで保留中になる要素を登録する。 */
 function definePending() {

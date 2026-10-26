@@ -52,7 +52,7 @@ describe("SSR の ARIA 属性", () => {
 
   it("internals に設定した role と aria* を、ホストの属性として出力し、名前を data-rinka-aria に列挙する", async () => {
     expect(await renderToString(jsx(Rating, {}))).toBe(
-      '<x-rating data-oh="h1" role="radiogroup" aria-valuenow="3" data-rinka-aria="role aria-valuenow"><template shadowrootmode="open"><!----><!----></template></x-rating>',
+      '<x-rating data-oh="h1" role="radiogroup" aria-valuenow="3" data-rinka-aria="role aria-valuenow"><template shadowrootmode="open"><!--[--><!--]--></template></x-rating>',
     );
   });
 
@@ -72,7 +72,7 @@ describe("SSR の ARIA 属性", () => {
 
   it("ページの側で同じ名前の属性を記述していれば、ページの値を出力し、data-rinka-aria に列挙しない", async () => {
     expect(await renderToString(jsx(Rating, { role: "group" }))).toBe(
-      '<x-rating data-oh="h1" role="group" aria-valuenow="3" data-rinka-aria="aria-valuenow"><template shadowrootmode="open"><!----><!----></template></x-rating>',
+      '<x-rating data-oh="h1" role="group" aria-valuenow="3" data-rinka-aria="aria-valuenow"><template shadowrootmode="open"><!--[--><!--]--></template></x-rating>',
     );
   });
 });
@@ -81,7 +81,7 @@ describe("フォームの部品の SSR", () => {
   it("DSD に shadowrootdelegatesfocus を出力し、name のあるホストの Light DOM の先頭に、form.value の文字列の hidden input を出力する", async () => {
     const Field = field("x-field-a", () => 'a"<');
     expect(await renderToString(jsx(Field, { name: "score", children: "子" }))).toBe(
-      '<x-field-a data-oh="h1" name="score"><template shadowrootmode="open" shadowrootdelegatesfocus><!----><button></button><!----></template><input type="hidden" name="score" value="a&quot;&lt;" data-rinka-form>子</x-field-a>',
+      '<x-field-a data-oh="h1" name="score"><template shadowrootmode="open" shadowrootdelegatesfocus><!--[--><button></button><!--]--></template><input type="hidden" name="score" value="a&quot;&lt;" data-rinka-form>子</x-field-a>',
     );
   });
 
@@ -198,7 +198,7 @@ describe("フォームの部品の SSR", () => {
     };
     const html = await renderToString(jsx(Page, {}));
     expect(html).toContain(
-      '<button disabled></button><!----></template><input type="hidden" name="a" value="遅い" data-rinka-form disabled>',
+      '<button disabled></button><!--]--></template><input type="hidden" name="a" value="遅い" data-rinka-form disabled>',
     );
     expect(html).toContain('<input type="hidden" name="n" value="遅い" data-rinka-form disabled>');
   });

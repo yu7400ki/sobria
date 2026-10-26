@@ -11,11 +11,13 @@ const read = (value: Child): Child => (isFunction(value) ? value() : value);
 /** 内側の非同期の値が初めて解決するまで、`fallback` を表示する。 */
 export function Loading(props: { fallback?: Child; children?: Child }): ClientNode {
   return asClientNode(
-    new Deferred(() =>
-      createLoadingBoundary(
-        () => build(read(props.children)),
-        () => read(props.fallback),
-      ),
+    new Deferred(
+      () =>
+        createLoadingBoundary(
+          () => build(read(props.children)),
+          () => read(props.fallback),
+        ),
+      "loading",
     ),
   );
 }
@@ -31,14 +33,16 @@ export function Errored(props: {
   status?: number;
 }): ClientNode {
   return asClientNode(
-    new Deferred(() =>
-      createErrorBoundary(
-        () => build(read(props.children)),
-        (error, retry) => {
-          const { fallback } = props;
-          return typeof fallback === "function" ? fallback(error(), retry) : fallback;
-        },
-      ),
+    new Deferred(
+      () =>
+        createErrorBoundary(
+          () => build(read(props.children)),
+          (error, retry) => {
+            const { fallback } = props;
+            return typeof fallback === "function" ? fallback(error(), retry) : fallback;
+          },
+        ),
+      "errored",
     ),
   );
 }

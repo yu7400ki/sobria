@@ -564,7 +564,7 @@ describe("<html> と <body>", () => {
     const html = await (await renderToResponse(jsx(Rooted, {}))).text();
     expect(html).toContain('<html><head><meta charset="utf-8">');
     expect(html).toContain("<body><x-rooted");
-    expect(html).toContain('<template shadowrootmode="open"><!---->abc<!----></template>');
+    expect(html).toContain('<template shadowrootmode="open"><!--[-->abc<!--]--></template>');
     expect(warn).toHaveBeenCalledTimes(3);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("要素の中"));
   });

@@ -188,14 +188,32 @@ describe("要素の SSR", () => {
   it("Shadow DOM の中身を DSD として出力し、ホストに data-oh、プリミティブの props とホストの属性を出力する", async () => {
     const html = await renderToString(jsx(Card, { label: "hi", count: 2, id: "c" }));
     expect(html).toBe(
-      '<x-card data-oh="h1" label="hi" count="2" id="c"><template shadowrootmode="open"><!----><p><!---->hi<!----></p><!----></template></x-card>',
+      '<x-card data-oh="h1" label="hi" count="2" id="c"><template shadowrootmode="open"><!--[--><p><!--[-->hi<!--]--></p><!--]--></template></x-card>',
+    );
+  });
+
+  it("Shadow DOM の中の <Errored> がフォールバックを出力したら、領域の先頭に目印を出力する", async () => {
+    const Failing = defineElement(
+      "x-failing",
+      () =>
+        jsx(Errored, {
+          fallback: () => jsx("b", { children: "failed" }),
+          children: () => {
+            throw new Error("boom");
+          },
+        }),
+      { props: {} },
+    );
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await renderToString(jsx(Failing, {}))).toBe(
+      '<x-failing data-oh="h1"><template shadowrootmode="open"><!--[--><!--[--><!--!--><b>failed</b><!--]--><!--]--></template></x-failing>',
     );
   });
 
   it("属性にできない props があれば、data-om に @p を列挙する", async () => {
     const html = await renderToString(jsx(Card, { data: { a: 1 } }));
     expect(html).toBe(
-      '<x-card data-oh="h1" data-om="@p"><template shadowrootmode="open"><!----><p><!----><!----></p><!----></template></x-card>',
+      '<x-card data-oh="h1" data-om="@p"><template shadowrootmode="open"><!--[--><p><!--[--><!--]--></p><!--]--></template></x-card>',
     );
   });
 
@@ -213,7 +231,7 @@ describe("要素の SSR", () => {
       }),
     );
     expect(html).toBe(
-      '<x-card data-oh="h1"><template shadowrootmode="open"><!----><p><!----><!----></p><!----></template><span slot="header">見出し</span><h1 slot="header">a</h1><p>本文</p></x-card>',
+      '<x-card data-oh="h1"><template shadowrootmode="open"><!--[--><p><!--[--><!--]--></p><!--]--></template><span slot="header">見出し</span><h1 slot="header">a</h1><p>本文</p></x-card>',
     );
   });
 
@@ -227,14 +245,14 @@ describe("要素の SSR", () => {
       { props: {} },
     );
     expect(await renderToString(jsx(User, {}))).toBe(
-      '<x-user data-oh="h1"><template shadowrootmode="open"><!----><b title="ann"><!---->ann<!----></b><!----></template></x-user>',
+      '<x-user data-oh="h1"><template shadowrootmode="open"><!--[--><b title="ann"><!--[-->ann<!--]--></b><!--]--></template></x-user>',
     );
   });
 
   it("要素の中の要素は、それぞれの ID のホストとして出力する", async () => {
     const Outer = defineElement("x-outer", () => jsx(Card, { label: "in" }), { props: {} });
     expect(await renderToString(jsx(Outer, {}))).toBe(
-      '<x-outer data-oh="h1"><template shadowrootmode="open"><!----><x-card data-oh="h2" label="in"><template shadowrootmode="open"><!----><p><!---->in<!----></p><!----></template></x-card><!----></template></x-outer>',
+      '<x-outer data-oh="h1"><template shadowrootmode="open"><!--[--><x-card data-oh="h2" label="in"><template shadowrootmode="open"><!--[--><p><!--[-->in<!--]--></p><!--]--></template></x-card><!--]--></template></x-outer>',
     );
   });
 });
@@ -254,19 +272,19 @@ describe("要素の props とホストの属性", () => {
     const html = await renderToString(jsx(Card, { onClick: () => called++ }));
     expect(called).toBe(0);
     expect(html).toBe(
-      '<x-card data-oh="h1"><template shadowrootmode="open"><!----><p><!----><!----></p><!----></template></x-card>',
+      '<x-card data-oh="h1"><template shadowrootmode="open"><!--[--><p><!--[--><!--]--></p><!--]--></template></x-card>',
     );
   });
 
   it("値の無い onX の props は、関数の props だけを何もしない関数にする", async () => {
     expect(await renderToString(jsx(Sale, {}))).toContain(
-      "<p><!---->normal function undefined<!----></p>",
+      "<p><!--[-->normal function undefined<!--]--></p>",
     );
   });
 
   it("関数の props でない props に渡した関数は、呼び出した値にする", async () => {
     expect(await renderToString(jsx(Sale, { label: () => "x" }))).toBe(
-      '<x-sale data-oh="h1" label="x"><template shadowrootmode="open"><!----><p><!---->normal function x<!----></p><!----></template></x-sale>',
+      '<x-sale data-oh="h1" label="x"><template shadowrootmode="open"><!--[--><p><!--[-->normal function x<!--]--></p><!--]--></template></x-sale>',
     );
   });
 
@@ -284,7 +302,7 @@ describe("要素の props とホストの属性", () => {
       { props: {} },
     );
     expect(await renderToString(jsx(Outer, {}))).toBe(
-      '<x-outer-pending data-oh="h1"><template shadowrootmode="open"><!----><x-card data-oh="h2" label="ann"><template shadowrootmode="open"><!----><p><!---->ann<!----></p><!----></template></x-card><!----></template></x-outer-pending>',
+      '<x-outer-pending data-oh="h1"><template shadowrootmode="open"><!--[--><x-card data-oh="h2" label="ann"><template shadowrootmode="open"><!--[--><p><!--[-->ann<!--]--></p><!--]--></template></x-card><!--]--></template></x-outer-pending>',
     );
   });
 

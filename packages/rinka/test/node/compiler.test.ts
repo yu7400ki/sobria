@@ -639,7 +639,7 @@ export default function Page() { return <main><Card heading={"h" + 1}>body</Card
         "page.js",
       );
       expect(await renderToString(jsx(Page as () => unknown, {}))).toBe(
-        '<main><app-card data-oh="h1" heading="h1"><template shadowrootmode="open"><!----><section><h2><!---->h1<!----></h2><p><!---->4<!----></p><div><slot></slot></div></section><!----></template>body</app-card></main>',
+        '<main><app-card data-oh="h1" heading="h1"><template shadowrootmode="open"><!--[--><section><h2><!--[-->h1<!--]--></h2><p><!--[-->4<!--]--></p><div><slot></slot></div></section><!--]--></template>body</app-card></main>',
       );
     } finally {
       await rm(dir, { recursive: true, force: true });

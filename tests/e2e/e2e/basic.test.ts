@@ -25,7 +25,7 @@ it("開発サーバーで描画したページの要素が、サーバーの mem
   await until(() => root.querySelector("button")!.textContent === "clicks: 3");
 });
 
-it("要素の中で作成した子要素は、親が起動して Shadow DOM を作り直した後も、サーバーの memo の値を引き継ぐ", async () => {
+it("要素の中で作成した子要素は、親が起動した後も SSR したホストとノードのまま、サーバーの memo の値を引き継ぐ", async () => {
   const origin = inject("basicOrigin");
   const served = inject("nestedPage");
   // クライアントで計算し直すと 6 になる子要素の memo の値を、サーバーから送る値だけ 7 にする
@@ -36,7 +36,12 @@ it("要素の中で作成した子要素は、親が起動して Shadow DOM を�
   document.body.append(frame);
 
   const outer = () => frame.contentDocument?.querySelector("app-outer");
+  const ssrInner = () => outer()?.shadowRoot?.querySelector("app-inner");
+  await until(() => ssrInner()?.shadowRoot?.querySelector("p") != null);
+  const inner = ssrInner()!;
+  const p = inner.shadowRoot!.querySelector("p")!;
   await until(() => outer()?.hasAttribute("data-started") === true);
-  const inner = outer()!.shadowRoot!.querySelector("app-inner")!;
-  expect(inner.shadowRoot!.querySelector("p")!.textContent).toBe("7");
+  expect(outer()!.shadowRoot!.querySelector("app-inner")).toBe(inner);
+  expect(inner.shadowRoot!.querySelector("p")).toBe(p);
+  expect(p.textContent).toBe("7");
 });

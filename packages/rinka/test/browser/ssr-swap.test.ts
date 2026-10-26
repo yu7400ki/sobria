@@ -157,7 +157,7 @@ describe("サーバーの出力", () => {
     );
     const doc = await render(jsx(Container, { children: jsx(Slow, {}) }));
     const host = doc.querySelector('[data-oh="h1"]');
-    expect(host?.shadowRoot?.innerHTML).toBe("<!----><!----><slot></slot><!----><!---->");
+    expect(host?.shadowRoot?.innerHTML).toBe("<!--[--><!--[--><slot></slot><!--]--><!--]-->");
     expect(host?.innerHTML).toBe("<b>late</b>");
     expect(values(doc).h1).toEqual({ "@b": 1 });
   });

@@ -39,6 +39,15 @@ export const BOUNDARY_ATTRIBUTE = "data-ob";
 /** 後送りの境界の終わりに置くコメントの、境界の ID の前の文字列である。 */
 export const BOUNDARY_END = "/ob:";
 
+/** 値が変化するたびに中身を置換する領域の、開始の目印のコメントの文字列である。 */
+export const REGION_START = "[";
+
+/** サーバーが `<Errored>` のフォールバックを出力した領域の、先頭に置く目印のコメントの文字列である。 */
+export const REGION_FALLBACK = "!";
+
+/** 値が変化するたびに中身を置換する領域の、終了の目印のコメントの文字列である。 */
+export const REGION_END = "]";
+
 /** 後送りにした境界の中身を入れて送る `<template>` に、境界の ID を出力する属性の名前である。 */
 export const BOUNDARY_CONTENT_ATTRIBUTE = "data-os";
 

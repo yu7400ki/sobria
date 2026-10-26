@@ -14,7 +14,7 @@ function mount(render: () => unknown): { node: Node; dispose: () => void } {
 function html(node: unknown): string {
   const div = document.createElement("div");
   div.append((node as Node).cloneNode(true));
-  return div.innerHTML.replaceAll("<!---->", "");
+  return div.innerHTML.replaceAll(/<!--[[\]]-->/g, "");
 }
 
 describe("ネイティブのタグ", () => {
