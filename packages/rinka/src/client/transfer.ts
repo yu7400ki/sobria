@@ -1,9 +1,9 @@
-import { createMemo, type SourceAccessor } from "@solidjs/signals";
+import type { SourceAccessor } from "@solidjs/signals";
 
 import { AWAITED_ATTRIBUTE, HOST_ATTRIBUTE } from "../shared/attributes.ts";
 import { isPlainObject } from "../shared/objects.ts";
-import type { Receiver } from "../shared/receiver.ts";
-import { runSeeding, type ScopedMemo } from "../shared/scope.ts";
+import type { Receiver, TransferStream } from "../shared/receiver.ts";
+import { memoOf, runSeeding, type MemoCompute, type ScopedMemo } from "../shared/scope.ts";
 import { isChildKey, isReservedKey, PROPS_KEY } from "../shared/transfer-keys.ts";
 
 declare global {
@@ -113,11 +113,14 @@ export function beginTakeover(id: string | null, tag: string): Transferred {
   return {
     values,
     props: isPlainObject(passed) ? passed : {},
-    memo: <T>(key: string, compute: (prev: T | undefined) => T | PromiseLike<T>) => {
-      if (!values.has(key)) return createMemo(compute);
+    memo: <T>(key: string, compute: MemoCompute<T>) => {
+      if (!values.has(key)) return memoOf(compute);
       used.add(key);
+      const value = values.get(key);
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      return seededMemo(values.get(key) as T, compute);
+      if (!isStream(store, value)) return seededMemo(value as T, compute);
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+      return seededMemo(follow(value) as AsyncIterable<T>, compute, { loadingValue: value.v as T });
     },
     finish: () => {
       if (!import.meta.env?.DEV) return;
@@ -131,25 +134,51 @@ export function beginTakeover(id: string | null, tag: string): Transferred {
   };
 }
 
+/** `value` が、`$rinka.s` で作成したストリームなら `true` を返す。 */
+function isStream(store: Receiver | undefined, value: unknown): value is TransferStream {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  return store?.t.has(value as TransferStream) ?? false;
+}
+
 /**
- * 引き継いだ `value` を最初の値にする memo を作成する。最初の計算では、`compute` に直前の値として `undefined` を渡してシードとして 1 回呼び、
- * 戻り値と、投げた値を使用しない。2 回目以降の計算では、`compute` の戻り値を使用する。
+ * 最初の計算で `first` を返す memo を作成する。最初の計算では、`compute` に直前の値として `undefined` を渡してシードとして 1 回呼び、
+ * 戻り値は使用せず、投げた値は無視する。2 回目以降の計算では、`compute` の戻り値を使用する。`options` は `memoOf` に渡す。
  */
 function seededMemo<T>(
-  value: T,
-  compute: (prev: T | undefined) => T | PromiseLike<T>,
+  first: T | AsyncIterable<T>,
+  compute: MemoCompute<T>,
+  options?: { readonly loadingValue: T },
 ): SourceAccessor<T> {
   let seeding = true;
-  return createMemo<T>((prev) => {
+  return memoOf<T>((prev) => {
     if (!seeding) return compute(prev);
     seeding = false;
     let result: unknown;
     try {
       result = runSeeding(() => compute(undefined));
     } catch {
-      return value;
+      return first;
     }
     void Promise.resolve(result).catch(() => {});
-    return value;
-  });
+    return first;
+  }, options);
+}
+
+/** `stream` の最新の値を yield し、その後は、届いた値を届くたびに yield する。ストリームが失敗したら例外を投げる。 */
+async function* follow(stream: TransferStream): AsyncGenerator<unknown, void> {
+  let last = stream.n;
+  yield stream.v;
+  for (;;) {
+    if (stream.n !== last) {
+      last = stream.n;
+      yield stream.v;
+    } else if (stream.d === 1) {
+      return;
+    } else if (stream.d === 2) {
+      throw new Error("サーバーで memo の値を取得できませんでした。");
+    } else {
+      // oxlint-disable-next-line no-await-in-loop
+      await new Promise<void>((resolve) => stream.l.push(resolve));
+    }
+  }
 }

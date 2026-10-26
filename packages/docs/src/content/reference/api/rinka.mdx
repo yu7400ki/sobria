@@ -63,10 +63,14 @@ const isPending: (target: Accessor<unknown>) => boolean;
 
 ## memo
 
-ほかの signal や memo から計算する値を作成する。関数は Promise を返してもよい。要素の描画の範囲の中では、`options` の `key` か、Vite プラグインが付与する呼び出し箇所の ID で memo を識別する。
+ほかの signal や memo から計算する値を作成する。関数は Promise か async iterable を返してもよい。async iterable を返すと、memo は値が届くたびにその値に置き換わる。要素の描画の範囲の中では、`options` の `key` か、Vite プラグインが付与する呼び出し箇所の ID で memo を識別する。
 
 ```ts
-const memo: <T>(fn: (prev: T | undefined) => T | PromiseLike<T>, options?: MemoOptions) => Memo<T>;
+const memo: <T>(fn: MemoCompute<T>, options?: MemoOptions) => Memo<T>;
+
+type MemoCompute<T> = (
+  prev: T | undefined,
+) => T | PromiseLike<T> | AsyncIterable<T> | PromiseLike<AsyncIterable<T>>;
 
 interface MemoOptions {
   /** 描画の範囲の中で、memo を識別するキーを表す。 */

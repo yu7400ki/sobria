@@ -26,7 +26,9 @@ const watch=el=>{const e=E[el.localName];if(!e||e.s||Q.has(el))return;Q.add(el);
 when(el,e.l,()=>{if(!e.s){e.s=1;import(e.u)}})};
 const scan=root=>{for(const t in E)if(!E[t].s)for(const el of root.querySelectorAll(t))watch(el)};
 const F={};
-window.$rinka=Object.assign(R,{v:R.v||{},l:R.l||{},n:R.n||{},c:R.c,
+window.$rinka=Object.assign(R,{v:R.v||{},l:R.l||{},n:R.n||{},t:R.t||new WeakSet(),c:R.c,
+s(v){const x={v,n:0,d:0,l:[]};this.t.add(x);return x},
+p(id,k,d,v){const x=(this.v[id]||{})[k];if(!x||!this.t.has(x))return;if(d)x.d=d;else{x.v=v;x.n++}x.l.splice(0).forEach(f=>f())},
 f(id,m){const k=m+' '+id;return F[k]||(F[k]=Object.defineProperty((...a)=>this.c(id,m)(...a),Symbol.for(${scriptJson(serverFnRefName)}),{value:{id,method:m}}))},
 d(id,o){Object.assign(this.v[id]||(this.v[id]={}),o);(this.l[id]||[]).slice().forEach(f=>f())},
 r(s){const me=document.currentScript;me&&me.remove();

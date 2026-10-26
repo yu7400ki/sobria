@@ -35,3 +35,17 @@ test("yield* wait(promise) の値は、promise の値の型になる", () => {
     expectTypeOf(user).toEqualTypeOf<{ name: string }>();
   });
 });
+
+async function* numbers() {
+  yield 1;
+}
+
+async function* letters() {
+  yield "a";
+}
+
+test("memo の関数が async iterable を返すと、memo の値は iterable が yield する値の型になる", () => {
+  expectTypeOf(memo(() => numbers())).returns.toEqualTypeOf<number>();
+  expectTypeOf(memo(() => Promise.resolve(letters()))).returns.toEqualTypeOf<string>();
+  expectTypeOf(memo(() => Promise.resolve(1))).returns.toEqualTypeOf<number>();
+});

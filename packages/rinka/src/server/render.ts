@@ -1,5 +1,4 @@
 import {
-  createMemo,
   createRoot,
   getOwner,
   NotReadyError,
@@ -42,7 +41,13 @@ import type { NavigationProps } from "../shared/navigation.ts";
 import { isFunction } from "../shared/objects.ts";
 import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
 import type { RefreshJson, RefreshValues } from "../shared/refresh.ts";
-import { createScope, withScope, type ScopedChild } from "../shared/scope.ts";
+import {
+  createScope,
+  memoOf,
+  withScope,
+  type MemoCompute,
+  type ScopedChild,
+} from "../shared/scope.ts";
 import { BOUNDARIES_KEY, childKey, PROPS_KEY, REFRESH_PROPS_KEY } from "../shared/transfer-keys.ts";
 import { checkSerializable, formProps } from "../shared/wire.ts";
 import { ariaAttributes } from "./aria.ts";
@@ -1132,8 +1137,8 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       internals: internals as ElementInternals,
     };
     const scope = createScope(
-      <T>(memoKey: string, fn: (prev: T | undefined) => T | PromiseLike<T>) =>
-        createMemo<T>((prev) => {
+      <T>(memoKey: string, fn: MemoCompute<T>) =>
+        memoOf<T>((prev) => {
           const result = fn(prev);
           if (isPromiseLike(result) && record.listMemo(memoKey)) {
             this.sendMemo(record, `<${tag}> の memo ${memoKey}`, memoKey, result);
@@ -1428,7 +1433,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /**
    * `promise` が解決した値を、シェルを出力した後に `$rinka.d` でホストに送る。
-   * 失敗した値とシリアライズできない値の代わりに、値が無いことを表す `$rinka.n` を送る。シリアライズできない値は記録する。
+   * 失敗した値と、async iterable と、シリアライズできない値の代わりに、値が無いことを表す `$rinka.n` を送る。シリアライズできない値は記録する。
    */
   private sendMemo(
     host: HostRecord,
@@ -1446,6 +1451,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         } catch {
           return noValue;
         }
+        if (isAsyncIterable(resolved)) return noValue;
         try {
           return toScript(resolved, path);
         } catch (error) {
@@ -1632,3 +1638,7 @@ function warnHandlers(tag: string, props: Record<string, unknown>): void {
 /** `value` が、`then` を持つ値かどうかを返す。 */
 const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
   typeof value === "object" && value !== null && "then" in value && isFunction(value.then);
+
+/** `value` が async iterable なら真を返す。 */
+const isAsyncIterable = (value: unknown): value is AsyncIterable<unknown> =>
+  typeof value === "object" && value !== null && Symbol.asyncIterator in value;

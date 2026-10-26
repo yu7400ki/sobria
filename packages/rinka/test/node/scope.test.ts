@@ -1,7 +1,7 @@
-import { createMemo, createRoot } from "@solidjs/signals";
+import { createRoot, createSignal, flush } from "@solidjs/signals";
 import { describe, expect, it } from "vitest";
 
-import { createScope, isSeeding, runSeeding, withScope } from "../../src/shared/scope.ts";
+import { createScope, isSeeding, memoOf, runSeeding, withScope } from "../../src/shared/scope.ts";
 import { siteMemo as memo } from "../../src/shared/signals.ts";
 
 /** memo を作成するたびにキーを記録する描画の範囲を作成する。 */
@@ -9,7 +9,7 @@ function recordingScope() {
   const keys: string[] = [];
   const scope = createScope((key, fn) => {
     keys.push(key);
-    return createMemo(fn);
+    return memoOf(fn);
   });
   return { scope, keys };
 }
@@ -84,5 +84,107 @@ describe("シード", () => {
     runSeeding(() => seen.push(isSeeding()));
     seen.push(isSeeding());
     expect(seen).toEqual([false, true, false]);
+  });
+});
+
+/** 値を 1 つずつ渡すと yield する async iterable と、反復を終えたかどうかを返す。 */
+function channel<T>() {
+  const pending: PromiseWithResolvers<T>[] = [Promise.withResolvers<T>()];
+  const state = { closed: false };
+  async function* values(): AsyncGenerator<T> {
+    try {
+      for (let i = 0; ; i++) {
+        // oxlint-disable-next-line no-await-in-loop
+        yield await pending[i]!.promise;
+      }
+    } finally {
+      state.closed = true;
+    }
+  }
+  const send = (value: T) => {
+    pending.at(-1)!.resolve(value);
+    pending.push(Promise.withResolvers<T>());
+  };
+  return { values, send, state };
+}
+
+/** マイクロタスクとタイマーを進めてから flush する。 */
+const settle = async () => {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  flush();
+};
+
+/** `read` が返す値か、投げた値の名前を返す。 */
+const peek = (read: () => unknown): unknown => {
+  try {
+    return read();
+  } catch (error) {
+    return (error as Error).constructor.name;
+  }
+};
+
+describe("memoOf", () => {
+  it("async iterable と、async iterable に解決する Promise は、yield した値に置き換わる", async () => {
+    const direct = channel<number>();
+    const wrapped = channel<number>();
+    let first!: () => number;
+    let second!: () => number;
+    createRoot(() => {
+      first = memoOf(() => direct.values());
+      second = memoOf(() => Promise.resolve(wrapped.values()));
+    });
+    flush();
+    expect([peek(first), peek(second)]).toEqual(["NotReadyError", "NotReadyError"]);
+    direct.send(1);
+    wrapped.send(1);
+    await settle();
+    expect([peek(first), peek(second)]).toEqual([1, 1]);
+    direct.send(2);
+    wrapped.send(2);
+    await settle();
+    expect([peek(first), peek(second)]).toEqual([2, 2]);
+  });
+
+  it("loadingValue を渡すと、保留中にならずにその値を返し、その後に yield した値に置き換わる", async () => {
+    const source = channel<number>();
+    let read!: () => number;
+    createRoot(() => {
+      read = memoOf(() => source.values(), { loadingValue: 1 });
+    });
+    flush();
+    expect(peek(read)).toBe(1);
+    await settle();
+    expect(peek(read)).toBe(1);
+    source.send(2);
+    await settle();
+    expect(peek(read)).toBe(2);
+  });
+
+  it("memo を計算し直すか破棄すると、iterable の return を呼ぶ", async () => {
+    const sources = [channel<number>(), channel<number>()];
+    const [version, setVersion] = createSignal(0);
+    let dispose!: () => void;
+    let read!: () => number;
+    createRoot((d) => {
+      dispose = d;
+      read = memoOf(() => sources[version()]!.values());
+    });
+    flush();
+    sources[0]!.send(1);
+    await settle();
+    expect(peek(read)).toBe(1);
+    setVersion(1);
+    flush();
+    sources[0]!.send(9);
+    await settle();
+    expect(sources[0]!.state.closed).toBe(true);
+    sources[1]!.send(2);
+    await settle();
+    expect(peek(read)).toBe(2);
+    expect(sources[1]!.state.closed).toBe(false);
+    dispose();
+    sources[1]!.send(3);
+    await settle();
+    expect(sources[1]!.state.closed).toBe(true);
   });
 });

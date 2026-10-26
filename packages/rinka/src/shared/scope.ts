@@ -1,12 +1,27 @@
-import type { SourceAccessor } from "@solidjs/signals";
+import { createMemo, type ComputeFunction, type SourceAccessor } from "@solidjs/signals";
 
 import { isReservedKey } from "./transfer-keys.ts";
 
-/** キーで識別する memo を作成する関数を表す。`fn` は、直前の値を受け取って、memo の新しい値を返す。 */
-export type ScopedMemo = <T>(
-  key: string,
-  fn: (prev: T | undefined) => T | PromiseLike<T>,
-) => SourceAccessor<T>;
+/**
+ * memo の関数を表す。直前の値を受け取って、memo の新しい値を返す。Promise を返すと、解決した値が memo の値になる。
+ * async iterable を返すと、yield した値が届くたびに memo の値になる。
+ */
+export type MemoCompute<T> = (
+  prev: T | undefined,
+) => T | PromiseLike<T> | AsyncIterable<T> | PromiseLike<AsyncIterable<T>>;
+
+/** `fn` の memo を作成する。`options` は `@solidjs/signals` の `createMemo` のオプションである。 */
+export function memoOf<T>(
+  fn: MemoCompute<T>,
+  options?: Parameters<typeof createMemo<T>>[1],
+): SourceAccessor<T> {
+  // `createMemo` は、関数が返した Promise が async iterable に解決すると、その iterable を反復する。`createMemo` の引数の型には、async iterable に解決する Promise を含めない。
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  return createMemo(fn as ComputeFunction<T | undefined, T>, options);
+}
+
+/** キーで識別する memo を作成する関数を表す。 */
+export type ScopedMemo = <T>(key: string, fn: MemoCompute<T>) => SourceAccessor<T>;
 
 /** 要素のインスタンスの描画の範囲を表す。範囲の中で作成する、キーのある memo の作り方を決定する。 */
 export interface MemoScope {
@@ -84,7 +99,7 @@ function checkKey(scope: MemoScope, key: string): void {
  * 範囲の外か、キーも呼び出し箇所も無ければ `undefined` を返す。
  */
 export function scopedMemo<T>(
-  fn: (prev: T | undefined) => T | PromiseLike<T>,
+  fn: MemoCompute<T>,
   options: SiteMemoOptions | undefined,
 ): SourceAccessor<T> | undefined {
   if (!current || !options) return undefined;
