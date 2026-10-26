@@ -154,6 +154,39 @@ export function applyAttribute(el: Element, name: string, value: unknown): void 
   el.addEventListener(type, value);
 }
 
+/** 最初の呼び出しを無視し、2 回目以降の値を `set` に渡す関数を返す。 */
+function afterFirst(set: (value: unknown) => void): (value: unknown) => void {
+  let first = true;
+  return (value) => {
+    if (first) first = false;
+    else set(value);
+  };
+}
+
+/** `el` の今の属性と中身を解析し直した要素を返す。返す要素の状態は、利用者の操作を含まない。 */
+function reparse(el: Element): Element | null {
+  const template = document.createElement("template");
+  template.innerHTML = el.outerHTML;
+  return template.content.firstElementChild;
+}
+
+/** フォームの部品の値を、利用者が文書を読み込んだ後に変更していれば `true` を返す。`<option>` は、親の `<select>` の選択で判定する。 */
+function edited(el: Element): boolean {
+  const part = el instanceof HTMLOptionElement ? el.closest("select") : el;
+  if (part instanceof HTMLTextAreaElement) return part.value !== part.defaultValue;
+  if (part === null) return false;
+  const initial = reparse(part);
+  if (part instanceof HTMLSelectElement && initial instanceof HTMLSelectElement) {
+    return [...part.options].some(
+      (option, index) => option.selected !== initial.options[index]?.selected,
+    );
+  }
+  if (part instanceof HTMLInputElement && initial instanceof HTMLInputElement) {
+    return part.value !== initial.value || part.checked !== initial.checked;
+  }
+  return false;
+}
+
 /** 中身を引き取らずに作成し直すタグである。中身は、サーバーが出力したテキストで、コメントを含められない。 */
 const rawTextTags: ReadonlySet<string> = new Set(["title", "textarea", "script", "style"]);
 
@@ -183,8 +216,11 @@ function createTag(tag: string, given: Record<string, unknown>): Element {
     if (name === "children" || name === "ref" || outputs.has(name)) continue;
     applyAttribute(el, name, value);
   }
+  const kept = claimed !== undefined && outputs.size > 0 && edited(el);
   for (const name of outputs.keys()) {
-    if (name in props) bind(props[name], setter(el, name, true));
+    if (!(name in props)) continue;
+    const set = setter(el, name, true);
+    bind(props[name], kept ? afterFirst(set) : set);
   }
   if (tag === "slot") registerSlot(typeof props.name === "string" ? props.name : "");
   if (isFunction(props.ref) && at?.hydration.failure === undefined) callRef(props.ref, el);

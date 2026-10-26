@@ -691,4 +691,94 @@ describe("SSR の DOM の引き取り", () => {
     await tick();
     expect(host.shadowRoot!.textContent).toBe("s1c2");
   });
+
+  it("起動の前に変更したフォームの部品の値は、props の最初の値で上書きしない", async () => {
+    const [text, setText] = signal("server");
+    const [on] = signal(false);
+    const [choice] = signal("a");
+    const { host, boot } = await served(({ h }) => () => [
+      h("input", { value: () => text() }),
+      h("input", { type: "checkbox", checked: () => on() }),
+      h("select", {
+        value: () => choice(),
+        children: [
+          h("option", { value: "a", children: "A" }),
+          h("option", { value: "b", children: "B" }),
+        ],
+      }),
+      h("input", { value: "kept" }),
+    ]);
+    const [input, checkbox, untouched] = host.shadowRoot!.querySelectorAll("input");
+    const select = host.shadowRoot!.querySelector("select")!;
+    input!.value = "typed";
+    checkbox!.checked = true;
+    select.value = "b";
+    await boot();
+    expect(input!.value).toBe("typed");
+    expect(checkbox!.checked).toBe(true);
+    expect(select.value).toBe("b");
+    expect(untouched!.value).toBe("kept");
+    setText("next");
+    await tick();
+    expect(input!.value).toBe("next");
+  });
+
+  it("変更していないフォームの部品には、クライアントの最初の値を設定する", async () => {
+    const { host, boot } = await served(({ h, prefix }) => () => {
+      const server = prefix === serverSide.prefix;
+      return [
+        h("input", { value: () => (server ? "s" : "c") }),
+        h("input", { type: "number", value: () => (server ? "1x" : "5") }),
+        h("input", { type: "checkbox", checked: () => !server }),
+        h("input", { type: "range", value: () => (server ? "150" : "160"), max: 200 }),
+        h("textarea", { value: () => (server ? "s" : "c") }),
+        h("textarea", { value: () => (server ? "\ns" : "\nc") }),
+        h("select", {
+          value: () => (server ? "zzz" : "b"),
+          children: [
+            h("optgroup", { disabled: true, children: h("option", { value: "x", children: "X" }) }),
+            h("option", { value: "a", children: "A" }),
+            h("option", { value: "b", children: "B" }),
+          ],
+        }),
+        h("select", {
+          children: [
+            h("option", { value: "p", children: "P" }),
+            h("option", { value: "q", selected: () => !server, children: "Q" }),
+          ],
+        }),
+      ];
+    });
+    await boot();
+    const [text, number, checkbox, range] = host.shadowRoot!.querySelectorAll("input");
+    const [select, other] = host.shadowRoot!.querySelectorAll("select");
+    expect(text!.value).toBe("c");
+    expect(number!.value).toBe("5");
+    expect(checkbox!.checked).toBe(true);
+    expect(range!.value).toBe("160");
+    const [textarea, multiline] = host.shadowRoot!.querySelectorAll("textarea");
+    expect(textarea!.value).toBe("c");
+    expect(multiline!.value).toBe("\nc");
+    expect(select!.value).toBe("b");
+    expect(other!.value).toBe("q");
+  });
+
+  it("起動の前に変更した <textarea> と、<option> の選択は残る", async () => {
+    const { host, boot } = await served(({ h }) => () => [
+      h("textarea", { value: "init" }),
+      h("select", {
+        children: [
+          h("option", { value: "p", selected: true, children: "P" }),
+          h("option", { value: "q", children: "Q" }),
+        ],
+      }),
+    ]);
+    const textarea = host.shadowRoot!.querySelector("textarea")!;
+    const select = host.shadowRoot!.querySelector("select")!;
+    textarea.value = "typed";
+    select.value = "q";
+    await boot();
+    expect(textarea.value).toBe("typed");
+    expect(select.value).toBe("q");
+  });
 });
