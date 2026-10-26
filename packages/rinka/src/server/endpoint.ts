@@ -13,7 +13,7 @@ import {
   internalPrefix,
   rpcPrefix,
   rpcQuery,
-  isClosingLineText,
+  isEndOrRedirectLineText,
   isRedirectJson,
   splitLines,
   streamLineText,
@@ -118,7 +118,7 @@ async function endpoint(
       const value = await handle(c, input);
       if (value instanceof Response) return value;
       if (!isAsyncIterable(value)) return responder.respond(c, { kind: "value", value }, fail);
-      const relay = new Relay(value, c);
+      const relay = new Relay(value);
       opened.relay = relay;
       const streamed = await responder.respond(
         c,
@@ -233,7 +233,7 @@ const responders = {
     respond: async (c, outcome, fail) => {
       switch (outcome.kind) {
         case "stream":
-          for await (const _ of outcome.relay.values());
+          for await (const _ of outcome.relay.rest());
           return c.redirect(callerOf(c)?.page?.href ?? c.req.header("referer") ?? "/", 303);
         case "value":
           return c.redirect(callerOf(c)?.page?.href ?? c.req.header("referer") ?? "/", 303);
@@ -340,7 +340,7 @@ async function refreshedPage(
  */
 function withPageAtEnd(c: Context, response: Response, page: URL, fetchPage: FetchPage): Response {
   const terminal = async (text: string): Promise<string> => {
-    if (!isClosingLineText(text)) return text;
+    if (!isEndOrRedirectLineText(text)) return text;
     const line: unknown = JSON.parse(text);
     if (!isPlainObject(line)) return text;
     if (isRedirectJson(line) && !sameDocument(locationOf(line.redirect, c, page), page))

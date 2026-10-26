@@ -1,10 +1,10 @@
 import type { Context } from "hono";
 
 import { closeIterator } from "../shared/objects.ts";
-import { runInRequest } from "./context.ts";
+import { getContext, runInRequest } from "./context.ts";
 
 /**
- * サーバーで、handler や memo の関数が返した async iterable を反復する。iterator の `next()` と `return()` は、`context` があればその Context の中で呼ぶ。
+ * サーバーで、handler や memo の関数が返した async iterable を反復する。iterator の `next()` と `return()` は、作成した時点のリクエストの Context の中で呼ぶ。
  * 最初の値は `first` で受け取る。2 番目以降の値は `rest` で受け取る。`close` を呼ぶと、反復を終える。
  */
 export class Relay {
@@ -18,8 +18,8 @@ export class Relay {
   /** 最初の `next()` の結果である。 */
   readonly first: Promise<IteratorResult<unknown>>;
 
-  constructor(source: AsyncIterable<unknown>, context: Context | undefined) {
-    this.context = context;
+  constructor(source: AsyncIterable<unknown>) {
+    this.context = getContext();
     this.iterator = source[Symbol.asyncIterator]();
     this.first = this.next();
     this.first.catch(() => {});
@@ -38,16 +38,9 @@ export class Relay {
     await this.closed.promise;
   }
 
-  /** 最初の値と、2 番目以降の値を順に yield する。`close` を呼んだ後は、値を yield せずに終わる。 */
-  async *values(): AsyncGenerator<unknown, void> {
-    const result = await this.first;
-    if (result.done === true || this.closing) return;
-    yield result.value;
-    yield* this.rest();
-  }
-
-  /** 2 番目以降の値を yield する。`close` を呼んだ後は、値を yield せずに終わる。 */
+  /** 2 番目以降の値を yield する。最初の `next()` で終わったときと、`close` を呼んだ後は、値を yield せずに終わる。 */
   async *rest(): AsyncGenerator<unknown, void> {
+    if ((await this.first).done === true) return;
     while (!this.closing) {
       // oxlint-disable-next-line no-await-in-loop
       const result = await this.next();
@@ -79,7 +72,7 @@ export class Relay {
     }
   }
 
-  /** `fn` を、`context` があればその Context の中で実行する。 */
+  /** `fn` を、作成した時点のリクエストの Context の中で実行する。リクエストの外で作成したときは、そのまま実行する。 */
   private run<T>(fn: () => Promise<T>): Promise<T> {
     return this.context ? runInRequest(this.context, fn) : fn();
   }

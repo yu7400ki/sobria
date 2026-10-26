@@ -12,9 +12,11 @@ export const isAsyncIterable = (value: unknown): value is AsyncIterable<unknown>
 
 /** `iterator` の `return()` を呼ぶ。`return()` が投げた値と、reject した値は無視する。 */
 export async function closeIterator(iterator: AsyncIterator<unknown>): Promise<void> {
-  await Promise.resolve()
-    .then(() => iterator.return?.())
-    .catch(() => {});
+  try {
+    await iterator.return?.();
+  } catch {
+    // return() が投げた値は無視する
+  }
 }
 
 /** プロトタイプが `Object.prototype` か `null` のオブジェクトかどうかを返す。 */

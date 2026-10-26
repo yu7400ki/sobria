@@ -7,7 +7,7 @@ import { defineServerFn } from "../../src/server/server-fn.ts";
 import { fromRpcInput, toRpcBody, toScript } from "../../src/server/wire.ts";
 import {
   checkSerializable,
-  isClosingLineText,
+  isEndOrRedirectLineText,
   isJson,
   streamLineText,
   type StreamLine,
@@ -161,7 +161,7 @@ describe("RPC の値", () => {
 });
 
 describe("ストリームの行の文字列", () => {
-  it("streamLineText で作成した行のうち、{ end: true } と移動先を伝える行だけを isClosingLineText が真にする", () => {
+  it("streamLineText で作成した行のうち、{ end: true } と移動先を伝える行だけを isEndOrRedirectLineText が真にする", () => {
     const lines = [
       [toRpcBody(1), false],
       [toRpcBody({ redirect: "/x" }), false],
@@ -170,7 +170,7 @@ describe("ストリームの行の文字列", () => {
       [{ redirect: "/x" }, true],
       [{ error: true }, false],
     ] satisfies [StreamLine, boolean][];
-    expect(lines.map(([line]) => isClosingLineText(streamLineText(line)))).toEqual(
+    expect(lines.map(([line]) => isEndOrRedirectLineText(streamLineText(line)))).toEqual(
       lines.map(([, closing]) => closing),
     );
   });

@@ -61,7 +61,6 @@ import {
   streamExpression,
   swapScript,
 } from "./bootstrap.ts";
-import { getContext } from "./context.ts";
 import {
   attributesText,
   documentTags,
@@ -1507,7 +1506,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /** `source` を反復する Relay を作成する。`closeRelays` を呼んだ後なら、作成した Relay をすぐに閉じる。 */
   private relay(source: AsyncIterable<unknown>): Relay {
-    const relay = new Relay(source, getContext());
+    const relay = new Relay(source);
     if (this.relays) this.relays.add(relay);
     else void relay.close();
     return relay;

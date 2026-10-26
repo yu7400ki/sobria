@@ -46,8 +46,8 @@ export type StreamLine = RpcBody | { end: true } | RedirectJson | { error: true 
 /** `line` を、ストリームのレスポンスの 1 行の文字列にする。改行は含めない。 */
 export const streamLineText = (line: StreamLine): string => JSON.stringify(line);
 
-/** `streamLineText` で作成した行の文字列 `text` が、`{ end: true }` か移動先を伝える行かどうかを、JSON として解析せずに返す。 */
-export const isClosingLineText = (text: string): boolean =>
+/** `streamLineText` で作成した行の文字列 `text` が、`{ end: true }` か移動先を伝える行かどうかを返す。 */
+export const isEndOrRedirectLineText = (text: string): boolean =>
   text === endLineText || text.startsWith('{"redirect":');
 
 const endLineText = streamLineText({ end: true });
