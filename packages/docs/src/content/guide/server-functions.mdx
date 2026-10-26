@@ -195,6 +195,47 @@ rinka は、サーバー関数の結果をキャッシュしません。GET の�
 
 GET のサーバー関数は、データを変更しない処理にだけ使用してください。rinka はこれを検査しません。
 
+## 値を順に返す
+
+handler を async generator 関数（`async function*`）にすると、値を yield するたびに、その値を呼び出し元に送信します。
+
+```ts
+// src/lib/jobs.ts
+import { defineServerFn } from "rinka/server";
+import { z } from "zod";
+
+import { jobs } from "./jobs-store.ts";
+
+export const watchJob = defineServerFn({ method: "GET", input: z.string() })(async function* (
+  _c,
+  { input },
+) {
+  for await (const progress of jobs.progress(input)) yield progress;
+});
+```
+
+要素から呼び出すと、呼び出しが返す Promise は、yield した値を順に返す async iterable に解決します。memo の関数がこの Promise を返すと、memo の値は、yield した値が届くたびに、その値に置換されます（[リアクティビティ](/guide/reactivity)）。
+
+```tsx
+// src/elements/job-progress.tsx
+import { memo } from "rinka";
+
+import { watchJob } from "../lib/jobs.ts";
+
+export default function JobProgress(props: { jobId: string }) {
+  const progress = memo(() => watchJob(props.jobId));
+  return <progress value={progress().done} max={progress().total} />;
+}
+```
+
+- memo は、最後に届いた値だけを保持します。生成した文章を少しずつ表示するときは、handler で、それまでに生成した全文を yield してください
+- 依存する値が変化して memo を計算し直すと、前の呼び出しの通信は中止されます。サーバーでは、handler の `finally` が実行されます
+- サーバーは、handler が最初の値を yield してから、レスポンスのステータスとヘッダーを送信します。最初の値より後に `c.header()` や `setCookie()` で設定した値は送信されません
+- handler が最初の値より前に投げた例外は、ほかのサーバー関数と同じく扱います。例えば、`redirect()` ではブラウザが移動し、`notFound()` では呼び出しが 404 の `ServerFnError` を投げます。最初の値より後に `redirect()` を投げたときも、ブラウザが移動します。それ以外の例外を最初の値より後に投げたときは、呼び出しが返した async iterable の反復で、ステータスが 500 の `ServerFnError` が投げられます
+- GET 以外のサーバー関数では、最後の値を送信した後に、現在のページを描き直します
+- memo の関数で呼び出すと、SSR では、async iterable が終了するまでページの読み込みが完了しません（[読み込み](/guide/loading#サーバーで取得した値を引き継ぐ)）
+- フォームの送信では、最後まで反復してから、ほかのサーバー関数と同じく、フォームを送信したページにリダイレクトします
+
 ## ミドルウェアで保護する
 
 定義したサーバー関数は、export していなくても、すべて公開のエンドポイントになります。UI のボタンを表示しないだけでは、呼び出しを防止できません。

@@ -38,7 +38,7 @@ const like = () => {
 
 `memo` は、ほかの Signal や memo から計算する値を作成します。読み取った値が変化したときだけ計算し直します。
 
-memo の関数は Promise を返してもかまいません。この章では、Promise を返す memo を非同期の memo と呼びます。サーバーのデータを取得するときは、memo の中で [サーバー関数](/guide/server-functions) を呼び出します。
+memo の関数は Promise を返してもかまいません。この章では、Promise を返す memo を非同期の memo と呼びます。memo の関数が async iterable を返すと、memo の値は、iterable が yield するたびにその値に置換されます（[サーバー関数](/guide/server-functions#値を順に返す)）。サーバーのデータを取得するときは、memo の中で [サーバー関数](/guide/server-functions) を呼び出します。
 
 ```tsx
 // src/elements/user-name.tsx
