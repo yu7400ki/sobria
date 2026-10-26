@@ -1,5 +1,6 @@
-import { action, memo, refresh, wait } from "rinka";
 import { expectTypeOf, test } from "vitest";
+
+import { action, memo, refresh, wait } from "../../../src/shared/signals.ts";
 
 test("action は async 関数を受け付けない", () => {
   // @ts-expect-error action が受け付けるのは generator 関数だけである
