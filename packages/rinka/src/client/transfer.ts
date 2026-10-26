@@ -183,6 +183,7 @@ function follow(stream: TransferStream): AsyncIterable<unknown> {
         }
         if (stream.d === streamState.done) return finished;
         if (stream.d === streamState.failed) {
+          stopped = true;
           throw new Error("サーバーで memo の値を取得できませんでした。");
         }
         // oxlint-disable-next-line no-await-in-loop
