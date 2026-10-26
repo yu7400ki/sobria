@@ -60,19 +60,19 @@ export interface CallOptions {
   refresh?: boolean;
 }
 
-/** クライアントから呼び出したサーバー関数が、2xx 以外のレスポンスを返したことを表す。 */
+/** クライアントから呼び出したサーバー関数が、2xx 以外のレスポンスを返したか、ストリームの途中で失敗したことを表す。 */
 export class ServerFnError extends Error {
-  /** レスポンスのステータスである。 */
+  /** レスポンスのステータスである。ストリームの途中で失敗したときは 500 である。 */
   readonly status: number;
   /** パースしたレスポンスの本文である。JSON でなければ `null` である。 */
   readonly data: unknown;
   /** 受け取ったレスポンスである。 */
   readonly response: Response;
 
-  constructor(response: Response, data: unknown) {
-    super(`サーバー関数の呼び出しが、ステータス ${response.status} で失敗しました。`);
+  constructor(response: Response, data: unknown, status: number = response.status) {
+    super(`サーバー関数の呼び出しが、ステータス ${status} で失敗しました。`);
     this.name = "ServerFnError";
-    this.status = response.status;
+    this.status = status;
     this.data = data;
     this.response = response;
   }

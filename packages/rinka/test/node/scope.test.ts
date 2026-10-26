@@ -160,6 +160,38 @@ describe("memoOf", () => {
     expect(peek(read)).toBe(2);
   });
 
+  it("Promise が async iterable に解決する前に memo を計算し直すか破棄すると、解決した iterable の return を呼ぶ", async () => {
+    const returned: number[] = [];
+    const iterableOf = (index: number): AsyncIterable<number> => ({
+      [Symbol.asyncIterator]: () => ({
+        next: () => new Promise(() => {}),
+        return: async () => {
+          returned.push(index);
+          return { done: true, value: undefined };
+        },
+      }),
+    });
+    const pending = [
+      Promise.withResolvers<AsyncIterable<number>>(),
+      Promise.withResolvers<AsyncIterable<number>>(),
+    ];
+    const [version, setVersion] = createSignal(0);
+    let dispose!: () => void;
+    createRoot((d) => {
+      dispose = d;
+      memoOf(() => pending[version()]!.promise);
+    });
+    flush();
+    setVersion(1);
+    flush();
+    pending[0]!.resolve(iterableOf(0));
+    await settle();
+    dispose();
+    pending[1]!.resolve(iterableOf(1));
+    await settle();
+    expect(returned).toEqual([0, 1]);
+  });
+
   it("memo を計算し直すか破棄すると、iterable の return を呼ぶ", async () => {
     const sources = [channel<number>(), channel<number>()];
     const [version, setVersion] = createSignal(0);

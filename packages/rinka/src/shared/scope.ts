@@ -1,5 +1,6 @@
-import { createMemo, type ComputeFunction, type SourceAccessor } from "@solidjs/signals";
+import { createMemo, onCleanup, type ComputeFunction, type SourceAccessor } from "@solidjs/signals";
 
+import { isAsyncIterable, isPromiseLike } from "./objects.ts";
 import { isReservedKey } from "./transfer-keys.ts";
 
 /**
@@ -10,14 +11,34 @@ export type MemoCompute<T> = (
   prev: T | undefined,
 ) => T | PromiseLike<T> | AsyncIterable<T> | PromiseLike<AsyncIterable<T>>;
 
-/** `fn` の memo を作成する。`options` は `@solidjs/signals` の `createMemo` のオプションである。 */
+/**
+ * `fn` の memo を作成する。`options` は `@solidjs/signals` の `createMemo` のオプションである。
+ * `fn` が返した Promise が解決する前に memo を計算し直すか破棄すると、Promise が解決した async iterable の `return()` を呼ぶ。
+ */
 export function memoOf<T>(
   fn: MemoCompute<T>,
   options?: Parameters<typeof createMemo<T>>[1],
 ): SourceAccessor<T> {
+  const compute: MemoCompute<T> = (prev) => {
+    const result = fn(prev);
+    if (!isPromiseLike(result)) return result;
+    let disposed = false;
+    onCleanup(() => {
+      disposed = true;
+    });
+    result.then(
+      (value) => {
+        if (disposed && isAsyncIterable(value)) {
+          void Promise.resolve(value[Symbol.asyncIterator]().return?.()).catch(() => {});
+        }
+      },
+      () => {},
+    );
+    return result;
+  };
   // `createMemo` は、関数が返した Promise が async iterable に解決すると、その iterable を反復する。`createMemo` の引数の型には、async iterable に解決する Promise を含めない。
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-  return createMemo(fn as ComputeFunction<T | undefined, T>, options);
+  return createMemo(compute as ComputeFunction<T | undefined, T>, options);
 }
 
 /** キーで識別する memo を作成する関数を表す。 */

@@ -7,8 +7,11 @@ import { serverFnRefOf } from "./server-fn.ts";
 /** RPC のリクエストとレスポンスで、値の形式を示すヘッダーの名前。 */
 export const wireHeader = "x-rinka-wire";
 
-/** `wireHeader` に設定する値。`rpc` は rinka が構築したレスポンスを示し、`seroval` は本文が seroval の JSON の形式であることを示す。 */
-export const wireFormat = { rpc: "rpc", seroval: "seroval" } as const;
+/**
+ * `wireHeader` に設定する値。`rpc` は rinka が構築したレスポンスを示し、`seroval` は本文が seroval の JSON の形式であることを示す。
+ * `stream` は、本文が改行で区切った `StreamLine` の JSON の行であることを示す。
+ */
+export const wireFormat = { rpc: "rpc", seroval: "seroval", stream: "stream" } as const;
 
 /** サーバー関数のレスポンスで移動先を伝える JSON を表す。`redirect` は `Location` の値で、相対の URL はエンドポイントの URL を基準にする。 */
 export interface RedirectJson {
@@ -33,6 +36,24 @@ export const rpcPath = (id: string): string => rpcPrefix + encodeURIComponent(id
 
 /** rinka が構築した RPC のレスポンスのうち、値を返すときの本文を表す。 */
 export type RpcBody = { ok: unknown } | { s: SerovalJSON };
+
+/**
+ * ストリームのレスポンスの 1 行を表す。値の行は `RpcBody` で、最後の行は、終わったことを示す `{ end: true }`、移動先を伝える JSON、
+ * 失敗したことを示す `{ error: true }` のどれかである。
+ */
+export type StreamLine = RpcBody | { end: true } | RedirectJson | { error: true };
+
+/** 受け取った文字列をつなげて改行で区切り、改行を除いた 1 行ずつを送り出す TransformStream を返す。最後の改行より後の文字列は送り出さない。 */
+export function splitLines(): TransformStream<string, string> {
+  let rest = "";
+  return new TransformStream({
+    transform: (chunk, controller) => {
+      const lines = (rest + chunk).split("\n");
+      rest = lines.pop() ?? "";
+      for (const line of lines) controller.enqueue(line);
+    },
+  });
+}
 
 /** `value` が、seroval の JSON の形式の外側の形を持つかどうかを返す。 */
 export const isSerovalJson = (value: unknown): value is SerovalJSON =>

@@ -55,10 +55,13 @@ type ServerFnHandler<M extends AnyMiddleware[], In, R> = (
   args: { input: In },
 ) => R;
 
+/** handler の戻り値の型 `R` から導出する、呼び出しが解決する値の型である。async iterable は、yield する値の async iterable になる。 */
+type Returned<R> = Awaited<R> extends AsyncIterable<infer T> ? AsyncIterable<T> : Awaited<R>;
+
 /** 入力の型が `undefined` なら、入力を省略して呼び出せる。 */
 export type ServerFn<In, R, M extends ServerFnMethod = ServerFnMethod> = ([In] extends [undefined]
-  ? (input?: In, options?: CallOptions) => Promise<Awaited<R>>
-  : (input: In, options?: CallOptions) => Promise<Awaited<R>>) & {
+  ? (input?: In, options?: CallOptions) => Promise<Returned<R>>
+  : (input: In, options?: CallOptions) => Promise<Returned<R>>) & {
   readonly [serverFnRef]: ServerFnRef<M>;
 };
 

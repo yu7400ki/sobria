@@ -216,10 +216,12 @@ type StandardSchemaIssues = Extract<
 
 ```ts
 type ServerFn<In, R, M extends ServerFnMethod = ServerFnMethod> = ([In] extends [undefined]
-  ? (input?: In, options?: CallOptions) => Promise<Awaited<R>>
-  : (input: In, options?: CallOptions) => Promise<Awaited<R>>) & {
+  ? (input?: In, options?: CallOptions) => Promise<Returned<R>>
+  : (input: In, options?: CallOptions) => Promise<Returned<R>>) & {
   readonly [serverFnRef]: ServerFnRef<M>;
 };
+
+type Returned<R> = Awaited<R> extends AsyncIterable<infer T> ? AsyncIterable<T> : Awaited<R>;
 ```
 
 ## ServerFnOptions

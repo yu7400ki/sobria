@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import { fromJSON, toJSON } from "seroval";
 import { describe, expect, it, vi } from "vitest";
 
+import { getContext } from "../../src/server/context.ts";
 import type { OutcomeKind } from "../../src/server/endpoint.ts";
 import { notFound, redirect } from "../../src/server/errors.ts";
 import { createApp, registerServerFn, serverFnModule } from "../../src/server/internal.ts";
@@ -388,6 +389,9 @@ describe("CSRF の判定", () => {
 describe("リクエストの種類ごとのレスポンス", () => {
   const handlers = {
     value: defineServerFn(() => 1),
+    stream: defineServerFn(async function* () {
+      yield 1;
+    }),
     redirect: defineServerFn(() => {
       throw redirect("/done");
     }),
@@ -412,11 +416,13 @@ describe("リクエストの種類ごとのレスポンス", () => {
   };
   const table: [keyof typeof requests, keyof typeof handlers, number, boolean, string][] = [
     ["rpc", "value", 200, true, '{"ok":1}'],
+    ["rpc", "stream", 200, true, '{"ok":1}\n{"end":true}\n'],
     ["rpc", "redirect", 200, true, '{"redirect":"/done"}'],
     ["rpc", "notFound", 404, true, ""],
     ["rpc", "schema", 422, true, issues],
     ["rpc", "http", 418, false, "teapot"],
     ["form", "value", 303, false, ""],
+    ["form", "stream", 303, false, ""],
     ["form", "redirect", 303, false, ""],
     ["form", "notFound", 404, false, "Not Found"],
     ["form", "schema", 422, false, issues],
@@ -466,5 +472,220 @@ describe("リクエストの種類ごとのレスポンス", () => {
       ok: "new",
     });
     expect(await (await call("src/other.ts#other", post(null))).json()).toEqual({ ok: "other" });
+  });
+});
+
+/** レスポンスの本文を、改行で区切った JSON の行として読む。 */
+const lines = async (response: Response) =>
+  (await response.text())
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as unknown);
+
+describe("async iterable を返すサーバー関数", () => {
+  it("x-rinka-wire: stream のレスポンスで、値ごとに { ok } か { s } の行を送り、最後に { end: true } を送る", async () => {
+    const id = register(
+      defineServerFn(async function* () {
+        yield 1;
+        yield new Date(0);
+      }),
+    );
+    const response = await call(id, post(null));
+    expect([response.status, response.headers.get(wireHeader)]).toEqual([200, "stream"]);
+    const [first, second, last] = await lines(response);
+    expect(first).toEqual({ ok: 1 });
+    expect(fromJSON((second as { s: Parameters<typeof fromJSON>[0] }).s)).toEqual(new Date(0));
+    expect(last).toEqual({ end: true });
+  });
+
+  it("最初の値を得てからレスポンスを作るので、それまでに設定したステータス、ヘッダー、Cookie を付ける", async () => {
+    const id = register(
+      defineServerFn(async function* (c) {
+        c.status(201);
+        await Promise.resolve();
+        c.header("x-made", "yes");
+        c.header("set-cookie", "a=1");
+        yield 1;
+      }),
+    );
+    const response = await call(id, post(null));
+    expect([
+      response.status,
+      response.headers.get("x-made"),
+      response.headers.get("set-cookie"),
+      await lines(response),
+    ]).toEqual([201, "yes", "a=1", [{ ok: 1 }, { end: true }]]);
+  });
+
+  it("async 関数の handler が設定したヘッダーを、返した async iterable のレスポンスで送る", async () => {
+    const id = register(
+      defineServerFn(async (c) => {
+        c.header("cache-control", "no-store");
+        return (async function* () {
+          yield 1;
+        })();
+      }),
+    );
+    const response = await call(id, post(null));
+    expect([response.headers.get("cache-control"), await lines(response)]).toEqual([
+      "no-store",
+      [{ ok: 1 }, { end: true }],
+    ]);
+  });
+
+  it("最初の値を得た後で、ミドルウェアがストリームでないレスポンスに置換したら、iterable の return を呼ぶ", async () => {
+    let finished = false;
+    const replace = defineMiddleware(async (c, next) => {
+      await next();
+      c.res = c.text("Forbidden", 403);
+    });
+    const id = register(
+      defineServerFn(replace, async function* () {
+        try {
+          yield 1;
+          yield 2;
+        } finally {
+          finished = true;
+        }
+      }),
+    );
+    const response = await call(id, post(null));
+    expect([response.status, await response.text(), finished]).toEqual([403, "Forbidden", true]);
+  });
+
+  it("最初の値の前に投げた値は、ストリームでないサーバー関数と同じレスポンスにする", async () => {
+    const missing = register(
+      // oxlint-disable-next-line require-yield
+      defineServerFn(async function* () {
+        throw notFound();
+      }),
+    );
+    const moved = register(
+      // oxlint-disable-next-line require-yield
+      defineServerFn(async function* () {
+        throw redirect("/login");
+      }),
+    );
+    const notFoundResponse = await call(missing, post(null));
+    expect([notFoundResponse.status, notFoundResponse.headers.get(wireHeader)]).toEqual([
+      404,
+      "rpc",
+    ]);
+    const movedResponse = await call(moved, post(null));
+    expect([movedResponse.headers.get(wireHeader), await movedResponse.json()]).toEqual([
+      "rpc",
+      { redirect: "/login" },
+    ]);
+  });
+
+  it("値をシリアライズできなければ、onError に渡して { error: true } の行を送り、iterable の return を呼ぶ。return が投げても行を送る", async () => {
+    const onError = vi.fn((_error: unknown) => new Response(null, { status: 500 }));
+    let finished = 0;
+    const id = register(
+      defineServerFn(async function* () {
+        try {
+          yield 1;
+          yield () => {};
+        } finally {
+          finished++;
+          // oxlint-disable-next-line no-unsafe-finally
+          throw new Error("finally");
+        }
+      }),
+    );
+    const response = await call(id, post(null), { options: { onError } });
+    expect([await lines(response), onError.mock.calls.length, finished]).toEqual([
+      [{ ok: 1 }, { error: true }],
+      1,
+      1,
+    ]);
+  });
+
+  it("generator の本体と finally と onError で、リクエストの Context を参照できる", async () => {
+    const seen: boolean[] = [];
+    const closed = Promise.withResolvers<void>();
+    let request: unknown;
+    const id = register(
+      defineServerFn(async function* (c) {
+        request = c;
+        try {
+          for (;;) {
+            seen.push(getContext() === c);
+            yield 1;
+            // oxlint-disable-next-line no-await-in-loop
+            await new Promise((resolve) => setTimeout(resolve, 1));
+          }
+        } finally {
+          seen.push(getContext() === c);
+          closed.resolve();
+        }
+      }),
+    );
+    let failingRequest: unknown;
+    const failing = register(
+      defineServerFn(async function* (c) {
+        failingRequest = c;
+        yield 1;
+        throw new Error("boom");
+      }),
+    );
+    const reader = (await call(id, post(null))).body!.getReader();
+    await reader.read();
+    await reader.read();
+    await reader.cancel();
+    await closed.promise;
+    let failedContext: unknown;
+    const onError = vi.fn((_error: unknown) => {
+      failedContext = getContext();
+      return new Response(null, { status: 500 });
+    });
+    await (await call(failing, post(null), { options: { onError } })).text();
+    expect([seen, request !== undefined, failedContext === failingRequest]).toEqual([
+      [true, true, true],
+      true,
+      true,
+    ]);
+  });
+
+  it("途中で redirect() を投げたら { redirect } の行を、それ以外の例外はアプリの onError に渡して { error: true } の行を送って終わる", async () => {
+    const boom = new Error("boom");
+    const onError = vi.fn((_error: unknown) => new Response(null, { status: 500 }));
+    const moved = register(
+      defineServerFn(async function* () {
+        yield 1;
+        throw redirect("/done");
+      }),
+    );
+    const failed = register(
+      defineServerFn(async function* () {
+        yield 1;
+        throw boom;
+      }),
+    );
+    expect(await lines(await call(moved, post(null)))).toEqual([{ ok: 1 }, { redirect: "/done" }]);
+    const response = await call(failed, post(null), { options: { onError } });
+    expect([response.status, await lines(response)]).toEqual([200, [{ ok: 1 }, { error: true }]]);
+    expect(onError.mock.calls).toEqual([[boom]]);
+  });
+
+  it("レスポンスの本文の読み取りを中止すると、handler の iterable の return を呼ぶ", async () => {
+    const closed = Promise.withResolvers<void>();
+    const id = register(
+      defineServerFn(async function* () {
+        try {
+          for (let n = 0; ; n++) {
+            yield n;
+            // oxlint-disable-next-line no-await-in-loop
+            await new Promise((resolve) => setTimeout(resolve, 1));
+          }
+        } finally {
+          closed.resolve();
+        }
+      }),
+    );
+    const reader = (await call(id, post(null))).body!.getReader();
+    await reader.read();
+    await reader.cancel();
+    await closed.promise;
   });
 });

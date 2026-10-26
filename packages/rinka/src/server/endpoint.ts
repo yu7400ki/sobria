@@ -1,6 +1,6 @@
 import type { Context, MiddlewareHandler } from "hono";
 
-import { isPlainObject } from "../shared/objects.ts";
+import { isAsyncIterable, isPlainObject } from "../shared/objects.ts";
 import { PAGE_HEADER, REFRESH_HEADER, sameDocument } from "../shared/refresh.ts";
 import type { AppOptions } from "../shared/routes.ts";
 import {
@@ -13,11 +13,14 @@ import {
   internalPrefix,
   rpcPrefix,
   rpcQuery,
+  isRedirectJson,
+  splitLines,
   wireFormat,
   wireHeader,
   type RedirectJson,
+  type StreamLine,
 } from "../shared/wire.ts";
-import { replaceResponse } from "./context.ts";
+import { replaceResponse, runInRequest } from "./context.ts";
 import { cookieAfter } from "./cookies.ts";
 import { classify, isSafeLocation } from "./errors.ts";
 import { formDataToInput } from "./form-data.ts";
@@ -104,17 +107,34 @@ async function endpoint(
   } catch {
     return responder.reject(c, 400);
   }
-  return runChain(
+  const opened: { iterator?: AsyncIterator<unknown>; body?: ReadableStream | null } = {};
+  const response = await runChain(
     c,
     middlewares,
     async () => {
       const value = await handle(c, input);
-      return value instanceof Response
-        ? value
-        : responder.respond(c, { kind: "value", value }, fail);
+      if (value instanceof Response) return value;
+      if (!isAsyncIterable(value)) return responder.respond(c, { kind: "value", value }, fail);
+      const iterator = value[Symbol.asyncIterator]();
+      opened.iterator = iterator;
+      const streamed = await responder.respond(
+        c,
+        { kind: "stream", iterator, first: await iterator.next() },
+        fail,
+      );
+      opened.body = streamed.body;
+      return streamed;
     },
     (error) => respondThrown(c, kind, error, fail),
   );
+  // ミドルウェアがストリームの本文を使わないレスポンスに置換したら、本文から反復を終えられないので、ここで終える
+  const { iterator, body } = opened;
+  if (iterator && response.body !== body) {
+    await runInRequest(c, async () => {
+      await iterator.return?.();
+    });
+  }
+  return response;
 }
 
 /** リクエストの種類が `kind` のリクエスト `c` で投げられた値 `error` から、レスポンスを作成する。`redirect()` は、リクエストの種類にかかわらず 303 にする。 */
@@ -143,9 +163,17 @@ function respondThrown(
 /** handler の戻り値と、handler が投げた値のうち、レスポンスの形をリクエストの種類で決めるものを表す。 */
 type Outcome =
   | { readonly kind: "value"; readonly value: unknown }
+  | Streamed
   | { readonly kind: "notFound" }
   | { readonly kind: "schema"; readonly issues: SchemaError["issues"] }
   | { readonly kind: "error"; readonly error: unknown };
+
+/** handler が返した async iterable の iterator と、その最初の `next()` の結果を表す。 */
+interface Streamed {
+  readonly kind: "stream";
+  readonly iterator: AsyncIterator<unknown>;
+  readonly first: IteratorResult<unknown>;
+}
 
 /** handler の結果の分類の名前である。 */
 export type OutcomeKind = Outcome["kind"];
@@ -187,6 +215,8 @@ const responders = {
       switch (outcome.kind) {
         case "value":
           return rpc(c, toRpcBody(outcome.value));
+        case "stream":
+          return stream(c, outcome, fail);
         case "notFound":
           return rpc(c, null, 404);
         case "schema":
@@ -201,8 +231,14 @@ const responders = {
   form: {
     read: async (c) => formDataToInput(await c.req.formData()),
     reject: (c, status) => c.text(rejectionText[status], status),
-    respond: (c, outcome, fail) => {
+    respond: async (c, outcome, fail) => {
       switch (outcome.kind) {
+        case "stream": {
+          let result = outcome.first;
+          // oxlint-disable-next-line no-await-in-loop
+          while (result.done !== true) result = await outcome.iterator.next();
+          return c.redirect(callerOf(c)?.page?.href ?? c.req.header("referer") ?? "/", 303);
+        }
         case "value":
           return c.redirect(callerOf(c)?.page?.href ?? c.req.header("referer") ?? "/", 303);
         case "notFound":
@@ -230,6 +266,7 @@ export type FetchPage = (c: Context, request: Request) => Response | Promise<Res
  * JS から呼び出したサーバー関数のレスポンスを、クライアントが反映する形にする Hono のミドルウェアを返す。対象は、`callerOf` が呼び出し元を返すリクエストである。
  * 3xx で安全な `Location` を持つレスポンスは、`Location` の値を持つ `{ redirect }` の 200 の JSON に置換し、移動先（相対 URL は呼び出し元のページの URL のオリジンで解決する）が hash を除いて呼び出し元のページと一致するときは、そのページの描き直しを含める。
  * それ以外のレスポンスは、呼び出し元のページがあり、`x-rinka-wire: rpc` を持つ 2xx で、本文がオブジェクトの JSON のときに、ステータスを保って描き直しを含める。
+ * 呼び出し元のページがあり、`x-rinka-wire: stream` を持つ 2xx のレスポンスは、`withPageAtEnd` で終わりの行に描き直しを含める。
  * 描き直しは `fetchPage` で作成し、描き直しの JSON を `page` に含める。描き直しのレスポンスが JSON として読めなければ、`page` を含めない。
  * 描き直しのサブリクエストの `Cookie` は、サーバー関数のレスポンスの `Set-Cookie` を反映した値にし、描き直しのレスポンスの `Set-Cookie` はレスポンスに追加する。
  */
@@ -251,9 +288,12 @@ export function callerResponses(fetchPage: FetchPage): MiddlewareHandler {
       await replaceWithPage(c, body, same ? page : undefined, fetchPage, 200);
       return;
     }
-    if (page === undefined || !c.res.ok || c.res.headers.get(wireHeader) !== wireFormat.rpc) {
+    if (page === undefined || !c.res.ok) return;
+    if (c.res.headers.get(wireHeader) === wireFormat.stream) {
+      replaceResponse(c, withPageAtEnd(c, c.res, page, fetchPage));
       return;
     }
+    if (c.res.headers.get(wireHeader) !== wireFormat.rpc) return;
     const body: unknown = await c.res
       .clone()
       .json()
@@ -273,9 +313,10 @@ async function replaceWithPage(
   fetchPage: FetchPage,
   status: number,
 ): Promise<void> {
-  const response = page === undefined ? undefined : await fetchPage(c, pageRequest(c, page, true));
-  const json = response?.headers.get("content-type")?.startsWith("application/json") ?? false;
-  const refreshed: unknown = json ? await response?.json().catch(() => undefined) : undefined;
+  const { response, refreshed } =
+    page === undefined
+      ? { response: undefined, refreshed: undefined }
+      : await refreshedPage(c, page, fetchPage);
   const headers = new Headers(c.res.headers);
   if (response === undefined || refreshed === undefined) {
     replaceJson(c, body, headers, status);
@@ -283,6 +324,47 @@ async function replaceWithPage(
   }
   for (const cookie of response.headers.getSetCookie()) headers.append("set-cookie", cookie);
   replaceJson(c, { ...body, page: refreshed }, headers, status);
+}
+
+/** `fetchPage` でページ `page` を描き直したレスポンスと、その本文の描き直しの JSON を返す。レスポンスが JSON でないときと、本文を JSON として解析できないときは、`refreshed` は `undefined` である。 */
+async function refreshedPage(
+  c: Context,
+  page: URL,
+  fetchPage: FetchPage,
+): Promise<{ response: Response; refreshed: unknown }> {
+  const response = await fetchPage(c, pageRequest(c, page, true));
+  const json = response.headers.get("content-type")?.startsWith("application/json") ?? false;
+  return { response, refreshed: json ? await response.json().catch(() => undefined) : undefined };
+}
+
+/**
+ * ストリームのレスポンス `response` の行を、そのまま送信するレスポンスを返す。
+ * `{ end: true }` の行と、移動先（相対 URL は `page` のオリジンで解決する）が hash を除いて `page` と一致する移動先の行には、
+ * `fetchPage` で描き直したページの JSON を `page` に含める。描き直しのレスポンスの `Set-Cookie` は送信しない。
+ */
+function withPageAtEnd(c: Context, response: Response, page: URL, fetchPage: FetchPage): Response {
+  const terminal = async (text: string): Promise<string> => {
+    // 値の行は、JSON として解析せずにそのまま送る
+    if (text !== endLine && !text.startsWith(redirectLinePrefix)) return text;
+    const line: unknown = JSON.parse(text);
+    if (!isPlainObject(line)) return text;
+    if (isRedirectJson(line) && !sameDocument(locationOf(line.redirect, c, page), page))
+      return text;
+    const { refreshed } = await refreshedPage(c, page, fetchPage);
+    return refreshed === undefined ? text : JSON.stringify({ ...line, page: refreshed });
+  };
+  const body = response.body
+    ?.pipeThrough(new TextDecoderStream())
+    .pipeThrough(splitLines())
+    .pipeThrough(
+      new TransformStream<string, string>({
+        transform: async (line, controller) => {
+          controller.enqueue(`${await terminal(line)}\n`);
+        },
+      }),
+    )
+    .pipeThrough(new TextEncoderStream());
+  return new Response(body, response);
 }
 
 /** JS からサーバー関数を呼び出したリクエストの呼び出し元を表す。`page` は、描き直す呼び出し元のページの URL である。 */
@@ -401,6 +483,60 @@ async function readInput(c: Context): Promise<unknown> {
 }
 
 const parseJson = (text: string): unknown => JSON.parse(text);
+
+/** `{ end: true }` の行の文字列である。 */
+const endLine = JSON.stringify({ end: true } satisfies StreamLine);
+
+/** 移動先を伝える行の文字列の先頭である。 */
+const redirectLinePrefix = '{"redirect":';
+
+/**
+ * `first` と、`iterator` がその後に返す値を、改行で区切った `StreamLine` の行で送信するレスポンスを返す。値の行の後に `{ end: true }` を送信する。
+ * `iterator` が `redirect()` か、`isSafeLocation` が安全と判定する移動先の 3xx の Response を投げたら、移動先を伝える行を送信する。
+ * それ以外の値を投げたときと、値をシリアライズできないときは、`{ error: true }` を送信する。投げた値が `notFound()`、`HTTPException`、Response でなければ、送信する前に `fail` に渡す。
+ * `iterator` の `next()` と `return()` と `fail` は、リクエスト `c` の中で実行する。本文の読み取りが中止されたら、`iterator` の反復を終える。
+ */
+function stream(c: Context, { iterator, first }: Streamed, fail: Failure): Response {
+  const encoder = new TextEncoder();
+  const encode = (line: StreamLine) => encoder.encode(`${JSON.stringify(line)}\n`);
+  const failed = async (error: unknown): Promise<StreamLine> => {
+    const thrown = classify(error);
+    if (thrown.kind === "redirect") return { redirect: thrown.location };
+    if (thrown.kind === "moved" && thrown.safe) return { redirect: thrown.location };
+    if (thrown.kind === "error" || thrown.kind === "schema") await fail(c, error);
+    return { error: true };
+  };
+  let primed: IteratorResult<unknown> | undefined = first;
+  c.header(wireHeader, wireFormat.stream);
+  c.header("content-type", "application/x-ndjson; charset=utf-8");
+  return c.body(
+    new ReadableStream<Uint8Array>({
+      pull: (controller) =>
+        runInRequest(c, async () => {
+          let line: StreamLine;
+          let done = false;
+          try {
+            const result = primed ?? (await iterator.next());
+            primed = undefined;
+            done = result.done === true;
+            line = done ? { end: true } : toRpcBody(result.value);
+          } catch (error) {
+            done = true;
+            line = await failed(error);
+          }
+          controller.enqueue(encode(line));
+          if (!done) return;
+          controller.close();
+          // 値をシリアライズできなかったときは、iterator が値を返した後で止まっている
+          await Promise.resolve(iterator.return?.()).catch(() => {});
+        }),
+      cancel: () =>
+        runInRequest(c, async () => {
+          await iterator.return?.();
+        }),
+    }),
+  );
+}
 
 /** `body` を JSON にし、`x-rinka-wire: rpc` を付けたレスポンスを返す。`status` が無ければ、`c.status` で設定したステータスにする。 */
 function rpc(c: Context, body: unknown, status?: 200 | Rejection | 422): Response {

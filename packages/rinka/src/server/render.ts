@@ -38,7 +38,7 @@ import {
 import { headKey } from "../shared/head.ts";
 import { isEventProp, propToAttribute, reservedProp } from "../shared/names.ts";
 import type { NavigationProps } from "../shared/navigation.ts";
-import { isFunction } from "../shared/objects.ts";
+import { isAsyncIterable, isFunction, isPromiseLike } from "../shared/objects.ts";
 import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
 import type { RefreshJson, RefreshValues } from "../shared/refresh.ts";
 import {
@@ -1634,11 +1634,3 @@ function warnHandlers(tag: string, props: Record<string, unknown>): void {
     }
   }
 }
-
-/** `value` が、`then` を持つ値かどうかを返す。 */
-const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
-  typeof value === "object" && value !== null && "then" in value && isFunction(value.then);
-
-/** `value` が async iterable なら真を返す。 */
-const isAsyncIterable = (value: unknown): value is AsyncIterable<unknown> =>
-  typeof value === "object" && value !== null && Symbol.asyncIterator in value;

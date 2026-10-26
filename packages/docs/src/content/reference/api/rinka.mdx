@@ -379,17 +379,17 @@ type Props<T extends CheckedProps<T>> = T;
 
 ## ServerFnError
 
-クライアントから呼び出したサーバー関数が、2xx 以外のレスポンスを返したことを表す。
+クライアントから呼び出したサーバー関数が、2xx 以外のレスポンスを返したか、ストリームの途中で失敗したことを表す。
 
 ```ts
 class ServerFnError extends Error {
-  /** レスポンスのステータスである。 */
+  /** レスポンスのステータスである。ストリームの途中で失敗したときは 500 である。 */
   readonly status: number;
   /** パースしたレスポンスの本文である。JSON でなければ `null` である。 */
   readonly data: unknown;
   /** 受け取ったレスポンスである。 */
   readonly response: Response;
-  constructor(response: Response, data: unknown);
+  constructor(response: Response, data: unknown, status?: number);
 }
 ```
 

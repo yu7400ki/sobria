@@ -73,6 +73,24 @@ describe("JS が無いときのフォームの送信", () => {
     expect(received).toEqual({ title: "a", tags: ["x"] });
   });
 
+  it("handler が async iterable を返したら、最後まで反復してから Referer に 303 でリダイレクトする", async () => {
+    const steps: number[] = [];
+    const { id } = register(
+      defineServerFn(async function* () {
+        for (const step of [1, 2, 3]) {
+          steps.push(step);
+          yield step;
+        }
+      }),
+    );
+    const response = await submit(id, new FormData(), { referer: "http://localhost/posts/1" });
+    expect([response.status, response.headers.get("location")]).toEqual([
+      303,
+      "http://localhost/posts/1",
+    ]);
+    expect(steps).toEqual([1, 2, 3]);
+  });
+
   it("Referer が無ければ / に 303 でリダイレクトし、urlencoded の送信も受け付ける", async () => {
     const { id } = register(defineServerFn(() => null));
     const response = await submit(id, new URLSearchParams({ title: "a" }));

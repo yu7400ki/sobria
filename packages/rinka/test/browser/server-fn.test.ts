@@ -244,6 +244,214 @@ describe("RPC の描き直し", () => {
   });
 });
 
+const streamHeaders = { "content-type": "application/x-ndjson", "x-rinka-wire": "stream" };
+
+/** `line` を JSON の行にしたバイト列を返す。 */
+const encodeLine = (line: unknown) => new TextEncoder().encode(`${JSON.stringify(line)}\n`);
+
+/** `lines` を JSON の行にして、行と文字の境界にかかわらず 5 バイトずつ送るストリームのレスポンスを返す。 */
+const streamOf = (lines: unknown[]) =>
+  new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        const bytes = new TextEncoder().encode(
+          lines.map((line) => `${JSON.stringify(line)}\n`).join(""),
+        );
+        for (let at = 0; at < bytes.length; at += 5) controller.enqueue(bytes.slice(at, at + 5));
+        controller.close();
+      },
+    }),
+    { headers: streamHeaders },
+  );
+
+/** `iterable` の値をすべて配列にして返す。 */
+async function collect(iterable: unknown): Promise<unknown[]> {
+  const values: unknown[] = [];
+  for await (const value of iterable as AsyncIterable<unknown>) values.push(value);
+  return values;
+}
+
+describe("serverFn のストリーム", () => {
+  let titleBefore = "";
+  beforeEach(() => {
+    titleBefore = document.title;
+    // oxlint-disable-next-line typescript/no-implied-eval
+    new Function(bootstrapSource)();
+  });
+  afterEach(() => {
+    document.title = titleBefore;
+    delete (globalThis as { $rinka?: unknown }).$rinka;
+  });
+
+  it("x-rinka-wire: stream のレスポンスは、行の値を yield する async iterable に解決し、{ end: true } の page を最後に反映する", async () => {
+    document.title = "before";
+    stubFetch(() =>
+      streamOf([
+        { ok: 1 },
+        { ok: "値" },
+        { s: toJSON(new Date(0)) },
+        { end: true, page: pageTitled("streamed") },
+      ]),
+    );
+    const values: unknown[] = [];
+    const titles: string[] = [];
+    for await (const value of (await serverFn(
+      "src/fns.ts#stream",
+      "POST",
+    )()) as AsyncIterable<unknown>) {
+      values.push(value);
+      titles.push(document.title);
+    }
+    expect(values).toEqual([1, "値", new Date(0)]);
+    expect([...titles, document.title]).toEqual(["before", "before", "before", "streamed"]);
+  });
+
+  it("{ error: true } の行を受け取ったら、ステータスが 500 の ServerFnError を投げる", async () => {
+    stubFetch(() => streamOf([{ ok: 1 }, { error: true }]));
+    const values: unknown[] = [];
+    const error = await (async () => {
+      try {
+        for await (const value of (await serverFn(
+          "src/fns.ts#stream",
+          "GET",
+        )()) as AsyncIterable<unknown>) {
+          values.push(value);
+        }
+      } catch (thrown) {
+        return thrown;
+      }
+      return undefined;
+    })();
+    expect(values).toEqual([1]);
+    expect(error).toBeInstanceOf(ServerFnError);
+    expect((error as ServerFnError).status).toBe(500);
+  });
+
+  it("反復を途中で終えると、レスポンスの本文の読み取りを中止する", async () => {
+    const cancelled = Promise.withResolvers<void>();
+    stubFetch(
+      () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(`${JSON.stringify({ ok: 1 })}\n`));
+            },
+            cancel() {
+              cancelled.resolve();
+            },
+          }),
+          { headers: streamHeaders },
+        ),
+    );
+    for await (const value of (await serverFn(
+      "src/fns.ts#stream",
+      "GET",
+    )()) as AsyncIterable<unknown>) {
+      expect(value).toBe(1);
+      break;
+    }
+    await cancelled.promise;
+  });
+
+  it("次の値を待っている間に return を呼ぶと、すぐにレスポンスの本文の読み取りを中止し、待っている next は終わりを返す", async () => {
+    const cancelled = Promise.withResolvers<void>();
+    stubFetch(
+      () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(encodeLine({ ok: 1 }));
+            },
+            cancel() {
+              cancelled.resolve();
+            },
+          }),
+          { headers: streamHeaders },
+        ),
+    );
+    const iterable = (await serverFn("src/fns.ts#stream", "GET")()) as AsyncIterable<unknown>;
+    const iterator = iterable[Symbol.asyncIterator]();
+    expect(await iterator.next()).toEqual({ done: false, value: 1 });
+    const waiting = iterator.next();
+    const returned = iterator.return?.();
+    await cancelled.promise;
+    expect([await waiting, await returned]).toEqual([
+      { done: true, value: undefined },
+      { done: true, value: undefined },
+    ]);
+  });
+
+  it("page を含む現在のページへの { redirect } の行は、移動せずに page を反映して反復を終える", async () => {
+    const before = location.href;
+    stubFetch(() =>
+      streamOf([
+        { ok: 1 },
+        { redirect: `${location.pathname}${location.search}`, page: pageTitled("moved") },
+      ]),
+    );
+    expect(await collect(await serverFn("src/fns.ts#move", "POST")())).toEqual([1]);
+    expect([document.title, location.href]).toEqual(["moved", before]);
+  });
+
+  it("移動する { redirect } の行を受け取ったら、移動を始めた後に反復を止めたままにする", async () => {
+    const before = location.href;
+    stubFetch(() =>
+      streamOf([{ ok: 1 }, { redirect: `${location.pathname}${location.search}#streamed-away` }]),
+    );
+    const values: unknown[] = [];
+    const iterated = (async () => {
+      for await (const value of (await serverFn(
+        "src/fns.ts#move",
+        "GET",
+      )()) as AsyncIterable<unknown>) {
+        values.push(value);
+      }
+      return "finished";
+    })();
+    const settled = await Promise.race([
+      iterated,
+      new Promise((resolve) => setTimeout(() => resolve("pending"), 50)),
+    ]);
+    const { hash } = location;
+    history.replaceState(null, "", before);
+    expect([settled, values, hash]).toEqual(["pending", [1], "#streamed-away"]);
+  });
+
+  it("{ end: true } の page は、反復の途中で始まった別の呼び出しの page より後に反映する", async () => {
+    const ended = Promise.withResolvers<void>();
+    let calls = 0;
+    stubFetch(() => {
+      calls++;
+      if (calls === 2) {
+        return new Response(JSON.stringify({ ok: "other", page: pageTitled("other") }), {
+          headers: { "content-type": "application/json", "x-rinka-wire": "rpc" },
+        });
+      }
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          async start(controller) {
+            controller.enqueue(encodeLine({ ok: 1 }));
+            await ended.promise;
+            controller.enqueue(encodeLine({ end: true, page: pageTitled("streamed") }));
+            controller.close();
+          },
+        }),
+        { headers: streamHeaders },
+      );
+    });
+    const values: unknown[] = [];
+    for await (const value of (await serverFn(
+      "src/fns.ts#stream",
+      "POST",
+    )()) as AsyncIterable<unknown>) {
+      values.push(value);
+      values.push(await serverFn("src/fns.ts#other", "POST")());
+      ended.resolve();
+    }
+    expect([values, document.title]).toEqual([[1, "other"], "streamed"]);
+  });
+});
+
 describe("クライアントの form の action に渡したサーバー関数", () => {
   it("action をエンドポイントの URL に、method を post に、enctype を multipart/form-data にする", () => {
     const save = serverFn("src/fns.ts#save", "POST");

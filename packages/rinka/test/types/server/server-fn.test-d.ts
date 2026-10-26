@@ -82,3 +82,10 @@ test("サーバー関数の型が持つ symbol のキーは、ID とメソッド
   const fn = defineServerFn(() => null);
   expectTypeOf<IsUnion<Extract<keyof typeof fn, symbol>>>().toEqualTypeOf<false>();
 });
+
+test("handler が async iterable を返すと、呼び出しは yield する値の async iterable に解決する", () => {
+  const stream = defineServerFn(async function* () {
+    for (const n of [1, 2]) yield n;
+  });
+  expectTypeOf(stream()).toEqualTypeOf<Promise<AsyncIterable<number>>>();
+});

@@ -607,7 +607,37 @@ describe("JS からのサーバー関数の呼び出し", () => {
     guarded: "src/app-test.ts#guarded",
     flashing: "src/app-test.ts#flashing",
     scripted: "src/app-test.ts#scripted",
+    streamed: "src/app-test.ts#streamed",
+    readStreamed: "src/app-test.ts#readStreamed",
+    streamedHere: "src/app-test.ts#streamedHere",
+    streamedAway: "src/app-test.ts#streamedAway",
   };
+  registerServerFn(
+    ids.streamedHere,
+    defineServerFn(async function* () {
+      yield 1;
+      throw redirect("/form?x=1#top");
+    }),
+  );
+  registerServerFn(
+    ids.streamedAway,
+    defineServerFn(async function* () {
+      yield 1;
+      throw redirect("/elsewhere");
+    }),
+  );
+  registerServerFn(
+    ids.streamed,
+    defineServerFn(async function* () {
+      yield 1;
+    }),
+  );
+  registerServerFn(
+    ids.readStreamed,
+    defineServerFn({ method: "GET" })(async function* () {
+      yield 1;
+    }),
+  );
   registerServerFn(
     ids.saved,
     defineServerFn(() => "saved"),
@@ -805,6 +835,40 @@ describe("JS からのサーバー関数の呼び出し", () => {
       [200, { ok: "saved", page: refreshedTo("<p>undefined undefined undefined</p>") }],
       [200, { s: expect.anything(), page: refreshedTo("<p>undefined undefined undefined</p>") }],
       [200, { redirect: "/form?x=1", page: refreshedTo("<p>1 undefined undefined</p>") }],
+    ]);
+  });
+
+  /** `/form?x=1` のページから、`id` のサーバー関数を `method` の RPC で呼び出し、本文の行を JSON として返す。 */
+  const lines = async (id: string, method: string) => {
+    const response = await request(routes, rpcPath(id), {
+      method,
+      headers: {
+        ...(method === "POST" && { "content-type": "application/json" }),
+        "x-rinka-page": "http://localhost/form?x=1",
+      },
+      ...(method === "POST" && { body: "null" }),
+    });
+    return (await response.text())
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as unknown);
+  };
+
+  it("async iterable のストリームでは、最後の { end: true } の行にページの描き直しを含め、GET では含めない", async () => {
+    expect(await lines(ids.streamed, "POST")).toEqual([
+      { ok: 1 },
+      { end: true, page: refreshedTo("<p>undefined undefined undefined</p>") },
+    ]);
+    expect(await lines(ids.readStreamed, "GET")).toEqual([{ ok: 1 }, { end: true }]);
+  });
+
+  it("ストリームの移動先を伝える行には、移動先が呼び出し元のページのときだけ、ページの描き直しを含める", async () => {
+    expect([await lines(ids.streamedHere, "POST"), await lines(ids.streamedAway, "POST")]).toEqual([
+      [
+        { ok: 1 },
+        { redirect: "/form?x=1#top", page: refreshedTo("<p>undefined undefined undefined</p>") },
+      ],
+      [{ ok: 1 }, { redirect: "/elsewhere" }],
     ]);
   });
 

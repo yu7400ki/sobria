@@ -1,3 +1,4 @@
+import { isPlainObject } from "../shared/objects.ts";
 import { PAGE_HEADER, sameDocument } from "../shared/refresh.ts";
 import { isSeeding } from "../shared/scope.ts";
 import type { CallOptions, ServerFnMethod } from "../shared/server-fn.ts";
@@ -8,8 +9,10 @@ import {
   isSerovalJson,
   rpcPath,
   rpcQuery,
+  splitLines,
   wireFormat,
   wireHeader,
+  type RedirectJson,
 } from "../shared/wire.ts";
 import { reflectPage, startRewrite, type Reflect } from "./refresh.ts";
 
@@ -28,6 +31,7 @@ const never = (): Promise<never> => new Promise(() => {});
  * rinka が組み立てたレスポンスなら、`{ ok }` と `{ s }` の値を返す。`x-rinka-page` を送ったときは、値を返す前にレスポンスの `page` を反映し、`page` が描き直しの JSON でなければページを読み込み直す。
  * `{ redirect }` は、`x-rinka-page` を送り、移動先が現在のページ（hash を除く）なら、`page` を反映して `undefined` を返す。`page` が描き直しの JSON でなければ、ページを読み込み直す。
  * それ以外の `{ redirect }` では、その URL に移動する。`{ redirect }` でページを読み込み直すときと移動するときは、返す Promise は解決しない。
+ * `x-rinka-wire: stream` のレスポンスでは、行の値を yield する async iterable を返す。
  * 2xx 以外のレスポンスは `ServerFnError` として投げ、rinka が組み立てていない 2xx のレスポンスは Response のまま返す。
  */
 export function serverFn(id: string, method: ServerFnMethod): RpcFn {
@@ -69,7 +73,7 @@ export function installRpc(): void {
 }
 
 /**
- * RPC の `response` から値を返す。`reflect` があれば、値を返す前に、レスポンスの `page` を `reflect` で反映する。
+ * RPC の `response` から値を返す。`reflect` があれば、値を返す前に、レスポンスの `page` を `reflect` で反映する。ストリームのレスポンスでは、`streamed` の async iterable を返す。
  * 移動先を伝える JSON は、`endpoint` を基準に解決する。`reflect` があり、移動先が現在のページなら `page` を反映し、それ以外では移動先に移動する。
  */
 async function read(
@@ -79,6 +83,9 @@ async function read(
 ): Promise<unknown> {
   const built = response.headers.get(wireHeader) === wireFormat.rpc;
   if (!response.ok) throw new ServerFnError(response, await parsed(response.clone()));
+  if (response.headers.get(wireHeader) === wireFormat.stream) {
+    return streamed(response, endpoint, reflect !== undefined);
+  }
   if (!built) return response;
   const body: unknown = await response.json();
   if (typeof body === "object" && body !== null) {
@@ -91,16 +98,96 @@ async function read(
       if (reflect) reflectPage(reflect, page);
       return (await codec()).fromJSON(body.s);
     }
-    if (isRedirectJson(body)) {
-      const target = new URL(body.redirect, endpoint);
-      if (reflect && sameDocument(target, new URL(location.href))) {
-        return reflectPage(reflect, page) ? never() : undefined;
-      }
-      location.assign(target);
-      return never();
-    }
+    if (isRedirectJson(body))
+      return redirected(body, page, endpoint, reflect) ? never() : undefined;
   }
   throw new TypeError("サーバー関数のレスポンスの本文が、rinka の RPC の形式ではありません。");
+}
+
+/**
+ * 移動先を伝える JSON `body` を反映する。`reflect` があり、移動先が現在のページなら `page` を反映し、それ以外では移動先に移動する。
+ * `reflect` でページを読み込み直したときと、移動したときは真を返す。
+ */
+function redirected(
+  body: RedirectJson,
+  page: unknown,
+  endpoint: URL,
+  reflect: Reflect | undefined,
+): boolean {
+  const target = new URL(body.redirect, endpoint);
+  if (reflect && sameDocument(target, new URL(location.href))) return reflectPage(reflect, page);
+  location.assign(target);
+  return true;
+}
+
+/**
+ * ストリームの `response` から値の行を読み、その値を、行を受信するたびに yield する。`{ end: true }` の行を受信したら、`refresh` が真なら `page` を反映して終わる。
+ * 移動先を伝える行は、`{ redirect }` の本文と同じく、`refresh` が真で移動先が現在のページなら `page` を反映して終わる。
+ * それ以外の移動先と、ページを読み込み直すときは、移動を始めた後に反復を止めたままにする。
+ * `page` は、終わりの行を受信した時点で始めた描き直しとして反映する。
+ * `{ error: true }` の行を受信したら、ステータスが 500 の `ServerFnError` を投げる。
+ * `return()` を呼ぶと、次の行を待っているときも、すぐに本文の読み取りを中止する。待っている `next()` は終わりを返す。
+ */
+function streamed(response: Response, endpoint: URL, refresh: boolean): AsyncIterable<unknown> {
+  const reader = (response.body ?? new ReadableStream<Uint8Array<ArrayBuffer>>())
+    .pipeThrough(new TextDecoderStream())
+    .pipeThrough(splitLines())
+    .getReader();
+  const state = { cancelled: false };
+  const values = valuesOf(reader, state, response, endpoint, refresh);
+  return {
+    [Symbol.asyncIterator]: () => ({
+      next: () => values.next(),
+      return: async () => {
+        state.cancelled = true;
+        await reader.cancel().catch(() => {});
+        return values.return();
+      },
+    }),
+  };
+}
+
+/** `streamed` の行を `reader` から読み、値を yield する。`state.cancelled` が真のときに本文が終わったら、反復を終える。 */
+async function* valuesOf(
+  reader: ReadableStreamDefaultReader<string>,
+  state: { readonly cancelled: boolean },
+  response: Response,
+  endpoint: URL,
+  refresh: boolean,
+): AsyncGenerator<unknown, void> {
+  try {
+    for (;;) {
+      // oxlint-disable-next-line no-await-in-loop
+      const { done, value: text } = await reader.read();
+      if (done) {
+        if (state.cancelled) return;
+        break;
+      }
+      const parsedLine: unknown = JSON.parse(text);
+      const line = isPlainObject(parsedLine) ? parsedLine : {};
+      const page = "page" in line ? line.page : undefined;
+      if ("ok" in line) {
+        yield line.ok;
+      } else if ("s" in line && isSerovalJson(line.s)) {
+        // oxlint-disable-next-line no-await-in-loop
+        yield (await codec()).fromJSON(line.s);
+      } else if ("end" in line) {
+        if (refresh) reflectPage(startRewrite(), page);
+        return;
+      } else if (isRedirectJson(line)) {
+        // oxlint-disable-next-line no-await-in-loop
+        if (redirected(line, page, endpoint, refresh ? startRewrite() : undefined)) await never();
+        return;
+      } else if ("error" in line) {
+        throw new ServerFnError(response, null, 500);
+      } else {
+        throw new TypeError("サーバー関数のストリームの行が、rinka の形式ではありません。");
+      }
+    }
+    throw new TypeError("サーバー関数のストリームが、終わりを伝える行の前に途切れました。");
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
 }
 
 /** レスポンスの本文を JSON として読む。JSON でなければ `null` を返す。 */
