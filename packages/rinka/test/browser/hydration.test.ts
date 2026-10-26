@@ -2,13 +2,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Errored as ClientErrored, Loading as ClientLoading } from "../../src/client/control.ts";
 import { defineElement as defineClient } from "../../src/client/element.ts";
+import { serverOnly, serverStyles } from "../../src/client/hydration.ts";
 import { jsx as clientJsx } from "../../src/client/jsx-runtime.ts";
 import { bootstrapSource } from "../../src/server/bootstrap.ts";
 import { Errored as ServerErrored, Loading as ServerLoading } from "../../src/server/control.ts";
 import { defineElement as defineServer } from "../../src/server/element.ts";
 import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
 import { renderToStream } from "../../src/server/response.ts";
-import { BOUNDARY_ATTRIBUTE, BOUNDARY_END, REGION_FALLBACK } from "../../src/shared/attributes.ts";
+import {
+  BOUNDARY_ATTRIBUTE,
+  BOUNDARY_END,
+  rawTextTags,
+  REGION_FALLBACK,
+} from "../../src/shared/attributes.ts";
 import { siteMemo as memo, signal } from "../../src/shared/signals.ts";
 
 afterEach(() => {
@@ -56,7 +62,7 @@ const run = (script: string) => new Function(script)();
 /**
  * `root` の子を、ノードの種類、タグ名、テキスト、コメントの列にした文字列を返す。
  * 隣り合うテキストは 1 つにまとめ、空のテキストは除く。要素の Shadow DOM は、その要素の後に続けて列挙する。
- * サーバーだけが出力する、Shadow DOM の直下の `<style>` と `<link>`、フォームの部品の hidden input、`<textarea>` の中身、後送りの境界の目印、`<Errored>` のフォールバックの目印は除く。
+ * サーバーだけが出力する、Shadow DOM の先頭のスタイル、フォームの部品の hidden input、後送りの境界の目印、`<Errored>` のフォールバックの目印は除く。中身をテキストとして解析するタグの中身も除く。
  * 属性は比較しない。引き取ったノードの属性は、クライアントが設定し直すからである。
  * 要素のタグ名は、テストの接頭辞を除いた名前にする。
  */
@@ -78,14 +84,12 @@ function shape(root: Node): string {
         out.push(`<!--${node.data}-->`);
       }
     } else if (node instanceof Element) {
-      if ((node.localName === "style" || node.localName === "link") && root instanceof ShadowRoot) {
-        continue;
-      }
+      if (root instanceof ShadowRoot && serverStyles(root).includes(node)) continue;
       if (node.localName === "template" && node.hasAttribute(BOUNDARY_ATTRIBUTE)) continue;
-      if (node.localName === "input" && node.hasAttribute("data-rinka-form")) continue;
+      if (serverOnly(node)) continue;
       const tag = node.localName.replace(/^test-hy-[sc]-/, "host-");
       const shadow = node.shadowRoot ? `#shadow(${shape(node.shadowRoot)})` : "";
-      const inner = node.localName === "textarea" ? "" : shape(node);
+      const inner = rawTextTags.has(node.localName) ? "" : shape(node);
       out.push(`<${tag}>${inner}</${tag}>${shadow}`);
     }
   }
@@ -689,16 +693,22 @@ describe("SSR の DOM の引き取り", () => {
     warn.mockRestore();
   });
 
-  it("<textarea> は要素を引き取り、中身のテキストを作り直す", async () => {
-    const { host, boot } = await served(
-      ({ h }) =>
-        () =>
-          h("textarea", { children: "init" }),
-    );
-    const textarea = host.shadowRoot!.querySelector("textarea")!;
+  it("中身をテキストとして解析するタグは、要素を引き取り、中身を作り直す", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { host, boot } = await served(({ h }) => () => [
+      h("textarea", { children: "init" }),
+      h("textarea", { children: () => "x" }),
+      h("p", { children: "after" }),
+    ]);
+    const [textarea, computed] = host.shadowRoot!.querySelectorAll("textarea");
+    const p = host.shadowRoot!.querySelector("p");
     await boot();
-    expect(host.shadowRoot!.querySelector("textarea")).toBe(textarea);
-    expect(textarea.value).toBe("init");
+    expect([...host.shadowRoot!.querySelectorAll("textarea")]).toEqual([textarea, computed]);
+    expect(host.shadowRoot!.querySelector("p")).toBe(p);
+    expect(textarea!.value).toBe("init");
+    expect(computed!.value).toBe("x");
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it("フォールバックで置換した領域は、兄弟の保留中の値が解決した後も残る", async () => {

@@ -29,6 +29,11 @@ export interface Cursor {
 /** 引き取りの状態を作成する。 */
 export const createHydration = (): Hydration => ({ state: "claiming" });
 
+/** 最初の描画の引き取りを終えたことを記録する。失敗していれば、失敗の状態のままにする。 */
+export function complete(hydration: Hydration): void {
+  if (claiming(hydration)) hydration.state = "done";
+}
+
 /** 引き取りの最中で、失敗していなければ `true` を返す。 */
 export const claiming = (hydration: Hydration): boolean => hydration.state === "claiming";
 
@@ -44,7 +49,7 @@ export const childCursor = (
 ): Cursor => ({ parent, next: first, until: null, hydration });
 
 /** サーバーだけが出力し、クライアントが作成しないノードなら `true` を返す。 */
-const serverOnly = (node: Node): boolean =>
+export const serverOnly = (node: Node): boolean =>
   node instanceof HTMLInputElement && node.hasAttribute(FORM_VALUE_ATTRIBUTE);
 
 /** 次に引き取るノードを返す。サーバーだけが出力するノードは飛ばす。範囲の終わりに達していれば `null` を返す。 */
@@ -72,9 +77,38 @@ export function fail(at: Cursor, expected: string): void {
   };
 }
 
-/** 位置が範囲の終わりに達していなければ、失敗にする。 */
-export function finish(at: Cursor): void {
+/**
+ * `at` の位置で `fill` を実行し、位置が範囲の終わりに達していなければ失敗にする。
+ * 引き取りの最中で、失敗していなければ `true` を返す。
+ */
+export function claimWithin(at: Cursor, fill: (at: Cursor) => void): boolean {
+  fill(at);
   if (peek(at) !== null) fail(at, "範囲の末尾");
+  return claiming(at.hydration);
+}
+
+/**
+ * Shadow DOM の先頭にある、サーバーが `css` の値から出力した `<style>` と `<link rel="stylesheet">` を返す。
+ * サーバーは、描画した内容を領域の目印で囲んで、スタイルの後に出力する。
+ */
+export function serverStyles(shadow: ShadowRoot): Element[] {
+  const styles: Element[] = [];
+  for (const node of shadow.childNodes) {
+    if (
+      !(node instanceof Element) ||
+      (node.localName !== "style" &&
+        !(node.localName === "link" && node.getAttribute("rel") === "stylesheet"))
+    )
+      break;
+    styles.push(node);
+  }
+  return styles;
+}
+
+/** Shadow DOM の子を、サーバーが出力したスタイルの後から子の末尾まで引き取る位置を作成する。 */
+export function shadowCursor(shadow: ShadowRoot, hydration: Hydration): Cursor {
+  const last = serverStyles(shadow).at(-1);
+  return childCursor(shadow, hydration, last ? last.nextSibling : shadow.firstChild);
 }
 
 /** 位置にある `tag` の要素を引き取る。無ければ失敗にして、`undefined` を返す。 */

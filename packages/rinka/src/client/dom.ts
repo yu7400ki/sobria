@@ -24,9 +24,9 @@ import {
   atServerFallback,
   childCursor,
   claiming,
+  claimWithin,
   describe,
   fail,
-  finish,
   takeElement,
   takeRegion,
   takeText,
@@ -97,9 +97,7 @@ export class DeferredRegion extends Lazy<() => unknown> {
 export function build(content: unknown, at: Cursor | undefined): Node[] {
   if (at && at.hydration.state !== "done") {
     const before = at.next === null ? at.parent.lastChild : at.next.previousSibling;
-    insert(at, content);
-    finish(at);
-    if (!claiming(at.hydration)) return [];
+    if (!claimWithin(at, (inner) => insert(inner, content))) return [];
     const nodes: Node[] = [];
     let node = before === null ? at.parent.firstChild : before.nextSibling;
     for (; node !== null && node !== at.next; node = node.nextSibling) nodes.push(node);
@@ -209,9 +207,9 @@ function createTag(tag: string, given: Record<string, unknown>, at: Cursor | und
   if (at && !claimed) return document.createElement(tag);
   const el = claimed ?? document.createElement(tag);
   if (at && !rawTextTags.has(tag)) {
-    const inner = childCursor(el, at.hydration);
-    if (props.children !== undefined) insert(inner, props.children);
-    finish(inner);
+    claimWithin(childCursor(el, at.hydration), (inner) => {
+      if (props.children !== undefined) insert(inner, props.children);
+    });
   } else if (props.children !== undefined) {
     if (at) el.replaceChildren();
     insert(el, props.children);
@@ -331,8 +329,7 @@ function claimRegion(
   if (!region) return;
   const { start, end, inner } = region;
   updateRegion(start, end, value, place, () => {
-    insert(inner, outsideScope(value), place);
-    finish(inner);
+    claimWithin(inner, (within) => insert(within, outsideScope(value), place));
     return true;
   });
 }
@@ -367,9 +364,7 @@ function claimText(at: Cursor, text: string, place: (node: Node) => Node): void 
   }
   const wrapper = takeElement(at, wrapped.localName);
   if (!wrapper) return;
-  const inner = childCursor(wrapper, at.hydration);
-  takeText(inner, text);
-  finish(inner);
+  claimWithin(childCursor(wrapper, at.hydration), (inner) => takeText(inner, text));
 }
 
 /** ネイティブのタグは、挿入するときにノードを作成する `Deferred` を返す。コンポーネントは props を渡して、読み取った値を追跡せずに 1 回だけ呼ぶ。 */

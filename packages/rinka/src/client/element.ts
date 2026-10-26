@@ -47,11 +47,13 @@ import { formControls, formElementClass } from "./form-element.ts";
 import { handleSubmit } from "./form.ts";
 import {
   childCursor,
-  claiming,
+  claimWithin,
+  complete,
   createHydration,
   failureOf,
   fail,
-  finish,
+  serverStyles,
+  shadowCursor,
   takeElement,
   type Cursor,
 } from "./hydration.ts";
@@ -127,24 +129,6 @@ type Takeover =
   | { readonly phase: "done" };
 
 const instances = new WeakMap<HTMLElement, Instance>();
-
-/**
- * Shadow DOM の先頭にある、サーバーが `css` の値から出力した `<style>` と `<link rel="stylesheet">` を返す。
- * サーバーは、描画した内容を領域の目印で囲んで、スタイルの後に出力する。
- */
-function serverStyles(shadow: ShadowRoot): Element[] {
-  const styles: Element[] = [];
-  for (const node of shadow.childNodes) {
-    if (
-      !(node instanceof Element) ||
-      (node.localName !== "style" &&
-        !(node.localName === "link" && node.getAttribute("rel") === "stylesheet"))
-    )
-      break;
-    styles.push(node);
-  }
-  return styles;
-}
 
 /** 登録したタグの状態を表す。 */
 interface Definition {
@@ -395,18 +379,17 @@ export function registerElement<P, M extends object = object>(
           return () => nodes;
         }, "loading");
         if (hydration) {
-          const first = serverStyles(shadow).at(-1)?.nextSibling ?? shadow.firstChild;
-          const at = childCursor(shadow, hydration, first);
           try {
-            insert(at, root);
-            finish(at);
+            claimWithin(shadowCursor(shadow, hydration), (at) => insert(at, root));
           } finally {
-            if (claiming(hydration)) hydration.state = "done";
+            complete(hydration);
           }
         } else {
           insert(target, root);
         }
-        if (instance.ref && (!hydration || hydration.state === "done")) callRef(instance.ref, host);
+        if (instance.ref && (!hydration || failureOf(hydration) === undefined)) {
+          callRef(instance.ref, host);
+        }
       }),
     );
     const failure = hydration && failureOf(hydration);
@@ -635,30 +618,29 @@ function createHost(
   if (typeof transfer === "string") instance.takeover = { phase: "waiting", from: transfer };
   const owner = getOwner();
   const derive = (read: () => unknown): Source => ({ read: owner ? createMemo(read) : read });
-  const inner = at && childCursor(host, at.hydration);
-  for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(props))) {
-    if (name === "ref") continue;
-    const getter = descriptor.get;
-    const read = getter ? () => getter.call(props) as unknown : undefined;
-    const value: unknown = read ?? descriptor.value;
-    const prop = instance.props.get(name);
-    if (instance.kinds.slots.has(name)) {
-      placeInSlot(instance.slots, name, (place) => insert(inner ?? host, value, place));
-    } else if (prop) {
-      const reactive = read ?? (instance.kinds.isReader(name, value) ? value : undefined);
-      write(prop, reactive ? derive(reactive) : { value });
-    } else if (read && isEventProp(name)) {
-      const listener = untrack(read);
-      if (isFunction(listener)) applyAttribute(host, name, listener);
-      else bind(read, setter(host, name, false));
-    } else {
-      applyAttribute(host, name, value);
+  const assign = (target: ParentNode | Cursor) => {
+    for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(props))) {
+      if (name === "ref") continue;
+      const getter = descriptor.get;
+      const read = getter ? () => getter.call(props) as unknown : undefined;
+      const value: unknown = read ?? descriptor.value;
+      const prop = instance.props.get(name);
+      if (instance.kinds.slots.has(name)) {
+        placeInSlot(instance.slots, name, (place) => insert(target, value, place));
+      } else if (prop) {
+        const reactive = read ?? (instance.kinds.isReader(name, value) ? value : undefined);
+        write(prop, reactive ? derive(reactive) : { value });
+      } else if (read && isEventProp(name)) {
+        const listener = untrack(read);
+        if (isFunction(listener)) applyAttribute(host, name, listener);
+        else bind(read, setter(host, name, false));
+      } else {
+        applyAttribute(host, name, value);
+      }
     }
-  }
-  if (inner) {
-    finish(inner);
-    if (!claiming(inner.hydration)) return host;
-  }
+  };
+  if (!at) assign(host);
+  else if (!claimWithin(childCursor(host, at.hydration), assign)) return host;
   if (key !== undefined) setter(host, "key", false)(key);
   if (isFunction(props.ref)) instance.ref = props.ref;
   if (owner) {
