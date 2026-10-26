@@ -6,6 +6,13 @@ type Call =
       readonly at: number;
       readonly host: string;
       readonly values: Record<string, unknown>;
+    }
+  | {
+      readonly kind: "p";
+      readonly at: number;
+      readonly host: string;
+      readonly key: string;
+      readonly state: number;
     };
 
 /** `$rinka.r` の引数を表す。 */
@@ -28,6 +35,9 @@ function calls(html: string): Call[] {
       r: (spec: Spec) => found.push({ kind: "r", at, spec }),
       d: (host: string, values: Record<string, unknown>) =>
         found.push({ kind: "d", at, host, values }),
+      s: (value: unknown) => ({ stream: value }),
+      p: (host: string, key: string, state: number) =>
+        found.push({ kind: "p", at, host, key, state }),
     };
     // oxlint-disable-next-line typescript/no-implied-eval
     new Function("$rinka", match[1] ?? "")(receiver);
@@ -83,6 +93,7 @@ function checkLateChild(
  * `@b` が、そのホストを含むすべての `$rinka.r` より後にあることである。
  * 送るキーは、そのホストの `data-om` に列挙したキーか、開始タグの後に作成した子要素の `@c:キー` である。
  * `@c:キー` は、値がページに出力したホストの ID であり、送る先のホストの `@b` より前に送るときだけ受け入れる。
+ * `$rinka.p` は、同じホストとキーのストリームを `$rinka.d` で送った後にあり、終わりか失敗を伝えた後には無いことを前提にする。
  */
 export function checkOrder(chunks: readonly string[]): void {
   if (!chunks[0]?.startsWith("<!doctype html>")) {
@@ -92,7 +103,19 @@ export function checkOrder(chunks: readonly string[]): void {
   const found = calls(html);
   const tags = hostTags(html);
   const sent = new Set<string>();
+  const streams = new Map<string, number>();
   for (const call of found) {
+    if (call.kind === "p") {
+      const id = `${call.host} ${call.key}`;
+      const state = streams.get(id);
+      if (state !== 0) {
+        throw new Error(
+          `$rinka.p（${call.at}）の前に、ホスト ${call.host} のキー ${call.key} の届く途中のストリームがありません。`,
+        );
+      }
+      streams.set(id, call.state);
+      continue;
+    }
     if (call.kind === "r") {
       const marker = html.indexOf(`<template data-ob="${call.spec.b}">`);
       if (marker === -1 || marker > call.at) {
@@ -113,6 +136,10 @@ export function checkOrder(chunks: readonly string[]): void {
         throw new Error(`ホスト ${call.host} のキー ${key} の値を、2 回以上送りました。`);
       }
       sent.add(`${call.host} ${key}`);
+      const value = call.values[key];
+      if (typeof value === "object" && value !== null && "stream" in value) {
+        streams.set(`${call.host} ${key}`, 0);
+      }
       if (!tag.keys.includes(key)) checkLateChild(call, key, found, tags);
       if (key !== "@b") continue;
       const later = found.find(

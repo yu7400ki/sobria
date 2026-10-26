@@ -24,9 +24,10 @@ export function renderToStream(
   options: RenderOptions = {},
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
+  let renderer: Renderer<"document"> | undefined;
   return new ReadableStream({
     async start(controller) {
-      const renderer = new Renderer({
+      renderer = new Renderer({
         kind: "document",
         write: (text) => controller.enqueue(encoder.encode(text)),
         blocking: options.blocking ?? false,
@@ -38,6 +39,9 @@ export function renderToStream(
         renderer.dispose();
         controller.error(error);
       }
+    },
+    cancel() {
+      renderer?.cancel();
     },
   });
 }
@@ -107,6 +111,9 @@ async function respond(
   const body = new ReadableStream<Uint8Array>({
     start: (c) => {
       controller = c;
+    },
+    cancel: () => {
+      renderer.cancel();
     },
   });
   const renderer = new Renderer({

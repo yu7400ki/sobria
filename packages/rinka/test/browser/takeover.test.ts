@@ -601,7 +601,30 @@ describe("ストリームの値の引き継ぎ", () => {
     expect(read).toEqual(["b"]);
   });
 
-  it("サーバーの memo が async iterable に解決する Promise を返したら、値を送らずに、ブラウザで計算し直す", async () => {
+  it("サーバーの memo が返した async iterable の値をすべて受け取ってから起動すると、最後の値で起動し、memo の取得を繰り返さない", async () => {
+    const tag = nextTag();
+    let fetched = 0;
+    const view = (h: H) => () => {
+      const value = memo(
+        () => {
+          if (!isSeeding()) fetched++;
+          return letters();
+        },
+        { site: "t:23" },
+      );
+      return h("p", { children: () => value() });
+    };
+    const scripts = await serve(server(defineServer(tag, view(server), { props: {} }), {}));
+    expect(scripts.some((script) => script.includes("$rinka.s("))).toBe(true);
+    scripts.forEach(run);
+    fetched = 0;
+    defineClient(tag, view(client), { props: {} });
+    await tick();
+    expect(html(document.querySelector(tag)?.shadowRoot)).toBe("<p>b</p>");
+    expect(fetched).toBe(0);
+  });
+
+  it("サーバーの memo が async iterable に解決する Promise を返しても、最初の値で描画し、続きの値を送る", async () => {
     const tag = nextTag();
     let fetched = 0;
     const view = (h: H) => () => {
@@ -619,9 +642,8 @@ describe("ストリームの値の引き継ぎ", () => {
     fetched = 0;
     defineClient(tag, view(client), { props: {} });
     await tick();
-    await tick();
     expect(html(document.querySelector(tag)?.shadowRoot)).toBe("<p>b</p>");
-    expect(fetched).toBe(1);
+    expect(fetched).toBe(0);
   });
 
   it("起動する前にストリームが終わっていれば、最後の値で起動する", async () => {

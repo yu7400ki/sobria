@@ -57,6 +57,8 @@ import {
   listScript,
   loadAttributeValue,
   noValue,
+  pushScript,
+  streamExpression,
   swapScript,
 } from "./bootstrap.ts";
 import {
@@ -85,6 +87,7 @@ import {
   type Flush,
   type ShellFlush,
 } from "./out.ts";
+import { Relay } from "./relay.ts";
 import { scriptJson } from "./script.ts";
 import { elementCss } from "./styles.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
@@ -509,6 +512,10 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   private readonly hosts = new Set<HostRecord>();
   /** ホストに値を送る処理のうち、終わっていないものを保持する。 */
   private readonly values = new Set<Promise<void>>();
+  /** 反復している SSR の memo の async iterable を保持する。`closeRelays` を呼んだ後は `undefined` である。 */
+  private relays: Set<Relay> | undefined = new Set();
+  /** 出力の読み取りが中止されたときに真になる。 */
+  private cancelled = false;
   /** 要素を描画したか、`<Loading>` の中身を後送りにしたときに真になる。真になったページにだけ、起動スクリプトを出力する。 */
   private interactive = false;
   /** `noindex` の `<meta>` を出力したことを表す。 */
@@ -1140,10 +1147,15 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       <T>(memoKey: string, fn: MemoCompute<T>) =>
         memoOf<T>((prev) => {
           const result = fn(prev);
-          if (isPromiseLike(result) && record.listMemo(memoKey)) {
-            this.sendMemo(record, `<${tag}> の memo ${memoKey}`, memoKey, result);
-          }
-          return result;
+          if (!isPromiseLike(result) && !isAsyncIterable(result)) return result;
+          if (!record.listMemo(memoKey)) return result;
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+          return this.sendMemo(
+            record,
+            `<${tag}> の memo ${memoKey}`,
+            memoKey,
+            result,
+          ) as PromiseLike<T>;
         }),
       record,
     );
@@ -1432,34 +1444,121 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   }
 
   /**
-   * `promise` が解決した値を、シェルを出力した後に `$rinka.d` でホストに送る。
-   * 失敗した値と、async iterable と、シリアライズできない値の代わりに、値が無いことを表す `$rinka.n` を送る。シリアライズできない値は記録する。
+   * memo の関数が返した `result` の値を、シェルを出力した後に `$rinka.d` でホストに送り、memo の値として使用する値を返す。
+   * `result` が失敗したときと、値をシリアライズできないときは、値が無いことを表す `$rinka.n` を送る。シリアライズできない値は `console.error` に出力する。
+   * `result` が async iterable か、async iterable に解決するなら、その最初の値で描画する。最初の値は `$rinka.s` のストリームとして送り、
+   * 2 番目以降の値と、終わったことと、失敗したことは `$rinka.p` で送る。`blocking` では、最初の値だけを送って反復を終える。
    */
   private sendMemo(
     host: HostRecord,
     path: string,
     key: string,
-    promise: PromiseLike<unknown>,
-  ): void {
-    this.send(
-      host,
-      key,
-      (async () => {
-        let resolved: unknown;
-        try {
-          resolved = await promise;
-        } catch {
-          return noValue;
-        }
-        if (isAsyncIterable(resolved)) return noValue;
-        try {
-          return toScript(resolved, path);
-        } catch (error) {
-          console.error("[rinka] memo の値を送れないので、要素がブラウザで計算し直します。", error);
-          return noValue;
-        }
-      })(),
+    result: PromiseLike<unknown> | AsyncIterable<unknown>,
+  ): PromiseLike<unknown> {
+    const relayed = Promise.resolve(result).then((value) =>
+      isAsyncIterable(value) ? this.relay(value) : value,
     );
+    this.values.add(this.transfer(host, path, key, relayed));
+    return relayed.then((value) => (value instanceof Relay ? value.view() : value));
+  }
+
+  /** `sendMemo` の `relayed` の値を、ホストの `key` に送る。 */
+  private async transfer(
+    host: HostRecord,
+    path: string,
+    key: string,
+    relayed: Promise<unknown>,
+  ): Promise<void> {
+    let value: unknown;
+    try {
+      value = await relayed;
+    } catch {
+      await this.deliver(host, key, noValue);
+      return;
+    }
+    if (!(value instanceof Relay)) {
+      await this.deliver(host, key, this.script(value, path));
+      return;
+    }
+    const relay = value;
+    try {
+      let first: IteratorResult<unknown>;
+      try {
+        first = await relay.first;
+      } catch {
+        await this.deliver(host, key, noValue);
+        return;
+      }
+      if (first.done === true) {
+        await this.deliver(host, key, noValue);
+        return;
+      }
+      const script = this.script(first.value, path);
+      if (this.blocking || script === noValue) {
+        await this.deliver(host, key, script);
+        return;
+      }
+      if (!(await this.deliver(host, key, streamExpression(script)))) return;
+      await this.push(host, path, key, relay);
+    } finally {
+      relay.close();
+      this.relays?.delete(relay);
+    }
+  }
+
+  /** `source` を反復する Relay を作成する。`closeRelays` を呼んだ後なら、作成した Relay をすぐに閉じる。 */
+  private relay(source: AsyncIterable<unknown>): Relay {
+    const relay = new Relay(source);
+    if (this.relays) this.relays.add(relay);
+    else relay.close();
+    return relay;
+  }
+
+  /** 反復しているすべての Relay を閉じ、それより後に作成する Relay も閉じる。 */
+  private closeRelays(): void {
+    for (const relay of this.relays ?? []) relay.close();
+    this.relays = undefined;
+  }
+
+  /** `relay` の 2 番目以降の値と、終わったことか失敗したことを、`$rinka.p` でホストの `key` に送る。出力の読み取りが中止されたら、送るのをやめる。 */
+  private async push(host: HostRecord, path: string, key: string, relay: Relay): Promise<void> {
+    try {
+      for await (const value of relay.rest()) {
+        if (this.cancelled) return;
+        const script = this.script(value, path);
+        if (script === noValue) {
+          this.write(pushScript(host.id, key, 2));
+          return;
+        }
+        this.write(pushScript(host.id, key, 0, script));
+      }
+      if (!this.cancelled) this.write(pushScript(host.id, key, 1));
+    } catch {
+      if (!this.cancelled) this.write(pushScript(host.id, key, 2));
+    }
+  }
+
+  /** `value` を JS の式にする。シリアライズできなければ `console.error` に出力して、`$rinka.n` を返す。 */
+  private script(value: unknown, path: string): string {
+    try {
+      return toScript(value, path);
+    } catch (error) {
+      console.error("[rinka] memo の値をシリアライズできないので、ブラウザに送れません。", error);
+      return noValue;
+    }
+  }
+
+  /** ホストをページに出力した後に、JS の式 `value` を `$rinka.d` でホストの `key` の値として送る。送ったら真を返す。 */
+  private async deliver(host: HostRecord, key: string, value: string): Promise<boolean> {
+    if (!(await host.take(key))) return false;
+    this.write(dataScript(host.id, key, value));
+    return true;
+  }
+
+  /** 出力の読み取りが中止されたので、反復している SSR の memo の async iterable を閉じる。 */
+  cancel(): void {
+    this.cancelled = true;
+    this.closeRelays();
   }
 
   /**
@@ -1468,9 +1567,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
    */
   private send(host: HostRecord, key: string, expression: Promise<string>): void {
     const task = (async () => {
-      const value = await expression;
-      if (!(await host.take(key))) return;
-      this.write(dataScript(host.id, key, value));
+      await this.deliver(host, key, await expression);
     })();
     this.values.add(task);
   }
@@ -1619,9 +1716,10 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     };
   }
 
-  /** 要素の描画の範囲を破棄する。 */
+  /** 要素の描画の範囲を破棄し、SSR の memo の async iterable の反復を終える。 */
   dispose(): void {
     for (const dispose of this.disposers.splice(0)) dispose();
+    this.closeRelays();
   }
 }
 

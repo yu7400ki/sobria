@@ -7,7 +7,7 @@ import {
   PATCH_ATTRIBUTE,
 } from "../shared/attributes.ts";
 import { loadTimings } from "../shared/names.ts";
-import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
+import type { ListedElement, StreamState, SwapSpec } from "../shared/receiver.ts";
 import { serverFnRefName } from "../shared/server-fn.ts";
 import { scriptJson } from "./script.ts";
 
@@ -64,6 +64,16 @@ export const noValue = "$rinka.n";
 /** JS の式 `value` を、ID が `id` のホストの `key` の値として送るスクリプトを返す。 */
 export const dataScript = (id: string, key: string, value: string): string =>
   `<script>$rinka.d(${scriptJson(id)},{${scriptJson(key)}:${value}})</script>`;
+
+/**
+ * ID が `id` のホストの `key` のストリームを更新するスクリプトを返す。`state` が `0` なら JS の式 `value` の値を追加し、
+ * `1` なら終わった状態に、`2` なら失敗した状態にする。
+ */
+export const pushScript = (id: string, key: string, state: StreamState, value?: string): string =>
+  `<script>$rinka.p(${scriptJson(id)},${scriptJson(key)},${state}${value === undefined ? "" : `,${value}`})</script>`;
+
+/** JS の式 `value` を最初の値にするストリームを作成する JS の式を返す。 */
+export const streamExpression = (value: string): string => `$rinka.s(${value})`;
 
 /** 要素の一覧を起動スクリプトに伝えるスクリプトを返す。一覧が空なら空の文字列を返す。 */
 export const listScript = (list: readonly ListedElement[]): string =>

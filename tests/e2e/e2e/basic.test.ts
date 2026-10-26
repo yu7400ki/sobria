@@ -45,3 +45,16 @@ it("要素の中で作成した子要素は、親が起動した後も SSR し�
   expect(inner.shadowRoot!.querySelector("p")).toBe(p);
   expect(p.textContent).toBe("7");
 });
+
+it("SSR の memo が返した async iterable の続きの値を、ページの続きから受け取って起動する", async () => {
+  const origin = inject("basicOrigin");
+  const served = inject("streamPage");
+  expect(served).toContain("$rinka.p(");
+  const frame = document.createElement("iframe");
+  frame.srcdoc = served.replace("<head>", `<head><base href="${origin}/">`);
+  document.body.append(frame);
+
+  const host = () => frame.contentDocument?.querySelector("app-streamer");
+  await until(() => host()?.hasAttribute("data-started") === true);
+  await until(() => host()?.shadowRoot?.querySelector("p")?.textContent === "c");
+});
