@@ -1,6 +1,6 @@
 import { createMemo, onCleanup, type ComputeFunction, type SourceAccessor } from "@solidjs/signals";
 
-import { isAsyncIterable, isPromiseLike } from "./objects.ts";
+import { closeIterator, isAsyncIterable, isPromiseLike } from "./objects.ts";
 import { isReservedKey } from "./transfer-keys.ts";
 
 /**
@@ -29,7 +29,7 @@ export function memoOf<T>(
     result.then(
       (value) => {
         if (disposed && isAsyncIterable(value)) {
-          void Promise.resolve(value[Symbol.asyncIterator]().return?.()).catch(() => {});
+          void closeIterator(value[Symbol.asyncIterator]());
         }
       },
       () => {},

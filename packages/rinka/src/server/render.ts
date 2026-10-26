@@ -61,6 +61,7 @@ import {
   streamExpression,
   swapScript,
 } from "./bootstrap.ts";
+import { getContext } from "./context.ts";
 import {
   attributesText,
   documentTags,
@@ -514,8 +515,6 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   private readonly values = new Set<Promise<void>>();
   /** 反復している SSR の memo の async iterable を保持する。`closeRelays` を呼んだ後は `undefined` である。 */
   private relays: Set<Relay> | undefined = new Set();
-  /** 出力の読み取りが中止されたときに真になる。 */
-  private cancelled = false;
   /** 要素を描画したか、`<Loading>` の中身を後送りにしたときに真になる。真になったページにだけ、起動スクリプトを出力する。 */
   private interactive = false;
   /** `noindex` の `<meta>` を出力したことを表す。 */
@@ -1501,22 +1500,22 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       if (!(await this.deliver(host, key, streamExpression(script)))) return;
       await this.push(host, path, key, relay);
     } finally {
-      relay.close();
+      void relay.close();
       this.relays?.delete(relay);
     }
   }
 
   /** `source` を反復する Relay を作成する。`closeRelays` を呼んだ後なら、作成した Relay をすぐに閉じる。 */
   private relay(source: AsyncIterable<unknown>): Relay {
-    const relay = new Relay(source);
+    const relay = new Relay(source, getContext());
     if (this.relays) this.relays.add(relay);
-    else relay.close();
+    else void relay.close();
     return relay;
   }
 
   /** 反復しているすべての Relay を閉じ、それより後に作成する Relay も閉じる。 */
   private closeRelays(): void {
-    for (const relay of this.relays ?? []) relay.close();
+    for (const relay of this.relays ?? []) void relay.close();
     this.relays = undefined;
   }
 
@@ -1524,7 +1523,6 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   private async push(host: HostRecord, path: string, key: string, relay: Relay): Promise<void> {
     try {
       for await (const value of relay.rest()) {
-        if (this.cancelled) return;
         const script = this.script(value, path);
         if (script === noValue) {
           this.write(pushScript(host.id, key, 2));
@@ -1532,9 +1530,9 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         }
         this.write(pushScript(host.id, key, 0, script));
       }
-      if (!this.cancelled) this.write(pushScript(host.id, key, 1));
+      if (!relay.closing) this.write(pushScript(host.id, key, 1));
     } catch {
-      if (!this.cancelled) this.write(pushScript(host.id, key, 2));
+      if (!relay.closing) this.write(pushScript(host.id, key, 2));
     }
   }
 
@@ -1557,7 +1555,6 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /** 出力の読み取りが中止されたので、反復している SSR の memo の async iterable を閉じる。 */
   cancel(): void {
-    this.cancelled = true;
     this.closeRelays();
   }
 

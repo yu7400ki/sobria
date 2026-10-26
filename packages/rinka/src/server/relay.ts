@@ -1,21 +1,33 @@
+import type { Context } from "hono";
+
+import { closeIterator } from "../shared/objects.ts";
+import { runInRequest } from "./context.ts";
+
 /**
- * SSR の memo が返した async iterable を反復する。最初の値は、描画のための `view` と、ホストに送る処理の両方が受け取る。
- * 2 番目以降の値は `rest` だけが受け取る。`close` を呼ぶと、反復を終える。
+ * サーバーで、handler や memo の関数が返した async iterable を反復する。iterator の `next()` と `return()` は、`context` があればその Context の中で呼ぶ。
+ * 最初の値は `first` で受け取る。2 番目以降の値は `rest` で受け取る。`close` を呼ぶと、反復を終える。
  */
 export class Relay {
   private readonly iterator: AsyncIterator<unknown>;
+  private readonly context: Context | undefined;
   private readonly closed = Promise.withResolvers<void>();
   /** iterator が終わったか失敗したら真である。 */
   private finished = false;
-  /** `close` を呼んだら真である。 */
-  private closing = false;
+  /** `close` が返す Promise である。`close` を呼ぶまでは `undefined` である。 */
+  private returned: Promise<void> | undefined;
   /** 最初の `next()` の結果である。 */
   readonly first: Promise<IteratorResult<unknown>>;
 
-  constructor(source: AsyncIterable<unknown>) {
+  constructor(source: AsyncIterable<unknown>, context: Context | undefined) {
+    this.context = context;
     this.iterator = source[Symbol.asyncIterator]();
     this.first = this.next();
     this.first.catch(() => {});
+  }
+
+  /** `close` を呼んだら真である。 */
+  get closing(): boolean {
+    return this.returned !== undefined;
   }
 
   /** 最初の値を yield し、`close` が呼ばれるまで終わらない async iterable を返す。最初の値の前に失敗したら、その例外を投げる。 */
@@ -24,6 +36,14 @@ export class Relay {
     if (result.done === true) return;
     yield result.value;
     await this.closed.promise;
+  }
+
+  /** 最初の値と、2 番目以降の値を順に yield する。`close` を呼んだ後は、値を yield せずに終わる。 */
+  async *values(): AsyncGenerator<unknown, void> {
+    const result = await this.first;
+    if (result.done === true || this.closing) return;
+    yield result.value;
+    yield* this.rest();
   }
 
   /** 2 番目以降の値を yield する。`close` を呼んだ後は、値を yield せずに終わる。 */
@@ -36,24 +56,31 @@ export class Relay {
     }
   }
 
-  /** 反復を終え、`view` にも終わりを伝える。iterator が終わっていなければ、`return()` を 1 回だけ呼ぶ。 */
-  close(): void {
-    if (this.closing) return;
-    this.closing = true;
-    this.closed.resolve();
-    if (this.finished) return;
-    void Promise.resolve(this.iterator.return?.()).catch(() => {});
+  /** 反復を終え、`view` にも終わりを伝える。iterator が終わっていなければ、`return()` を 1 回だけ呼ぶ。返す Promise は、`return()` が終わると解決する。 */
+  close(): Promise<void> {
+    if (this.returned === undefined) {
+      this.closed.resolve();
+      this.returned = this.finished
+        ? Promise.resolve()
+        : this.run(() => closeIterator(this.iterator));
+    }
+    return this.returned;
   }
 
   /** iterator の `next()` を呼び、iterator が終わったか失敗したことを記録する。 */
   private async next(): Promise<IteratorResult<unknown>> {
     try {
-      const result = await this.iterator.next();
+      const result = await this.run(() => this.iterator.next());
       if (result.done === true) this.finished = true;
       return result;
     } catch (error) {
       this.finished = true;
       throw error;
     }
+  }
+
+  /** `fn` を、`context` があればその Context の中で実行する。 */
+  private run<T>(fn: () => Promise<T>): Promise<T> {
+    return this.context ? runInRequest(this.context, fn) : fn();
   }
 }

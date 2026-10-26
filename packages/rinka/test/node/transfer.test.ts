@@ -1,5 +1,7 @@
+import { Context } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { getContext, runInRequest } from "../../src/server/context.ts";
 import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { registerServerFn } from "../../src/server/internal.ts";
@@ -687,6 +689,31 @@ describe("ストリームの memo", () => {
         ["next", "return"],
       ]),
     );
+  });
+
+  it("HTML のストリームの読み取りを中止すると、描画したリクエストの Context の中で iterable の return を呼ぶ", async () => {
+    const c = new Context(new Request("http://localhost/"));
+    const seen = Promise.withResolvers<unknown>();
+    async function* waiting() {
+      try {
+        yield "a";
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        yield "b";
+      } finally {
+        seen.resolve(getContext());
+      }
+    }
+    const Card = defineStreamed("x-st13", "s.tsx:13:1", () => waiting());
+    const stream = await runInRequest(c, () => renderToStream(jsx(Card, {})));
+    const reader = stream.getReader();
+    let html = "";
+    while (!html.includes("$rinka.s(")) {
+      // oxlint-disable-next-line no-await-in-loop
+      const { value } = await reader.read();
+      html += new TextDecoder().decode(value);
+    }
+    await reader.cancel();
+    expect(await seen.promise).toBe(c);
   });
 
   it("$rinka.p は、ホストのストリームの値を送った後に出力する", async () => {

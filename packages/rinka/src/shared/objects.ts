@@ -10,6 +10,13 @@ export const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
 export const isAsyncIterable = (value: unknown): value is AsyncIterable<unknown> =>
   typeof value === "object" && value !== null && Symbol.asyncIterator in value;
 
+/** `iterator` の `return()` を呼ぶ。`return()` が投げた値と、reject した値は無視する。 */
+export async function closeIterator(iterator: AsyncIterator<unknown>): Promise<void> {
+  await Promise.resolve()
+    .then(() => iterator.return?.())
+    .catch(() => {});
+}
+
 /** プロトタイプが `Object.prototype` か `null` のオブジェクトかどうかを返す。 */
 export function isPlainObject(value: unknown): value is object {
   if (typeof value !== "object" || value === null) return false;
