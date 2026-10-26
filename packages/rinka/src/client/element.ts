@@ -30,9 +30,18 @@ import { reloadEvent } from "../shared/hmr.ts";
 import { customEventName, isEventProp } from "../shared/names.ts";
 import type { ClientNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
-import { createScope, scopedChild, withScope } from "../shared/scope.ts";
+import { createScope, scopedChild, withScope, type ScopedChild } from "../shared/scope.ts";
 import { childKey } from "../shared/transfer-keys.ts";
-import { applyAttribute, asClientNode, bind, callRef, insert, setter } from "./dom.ts";
+import {
+  applyAttribute,
+  asClientNode,
+  bind,
+  build,
+  callRef,
+  insert,
+  Deferred,
+  setter,
+} from "./dom.ts";
 import { formControls, formElementClass } from "./form-element.ts";
 import { handleSubmit } from "./form.ts";
 import {
@@ -107,13 +116,6 @@ type Takeover =
   | { readonly phase: "done" };
 
 const instances = new WeakMap<HTMLElement, Instance>();
-
-/** `content` を挿入したノードの列を返す。`content` の中の関数は、それぞれ領域になる。 */
-function build(content: unknown): Node[] {
-  const fragment = document.createDocumentFragment();
-  insert(fragment, content);
-  return [...fragment.childNodes];
-}
 
 /** 登録したタグの状態を表す。 */
 interface Definition {
@@ -532,6 +534,7 @@ const instanceOf = (node: Node): Instance | undefined =>
  * スロットに配置する内容でなければ、owner があればその owner の下で同期的に起動する。owner が無ければ、接続した後に、表示されている位置から探索した定義済みの要素の下で起動する。見つからなければ、最上位の要素として起動する。
  * 要素への `ref` は、起動した後に呼ぶ。
  * 引き継いだ値のある要素の描画で、呼び出し箇所 `site` を指定して作成した子要素は、同じキーの SSR した子要素の値を引き継ぐ。
+ * ホストは、`insert` が挿入するときに作成する。
  */
 export function createElementInstance(
   component: ElementComponent<unknown>,
@@ -539,9 +542,19 @@ export function createElementInstance(
   key?: string,
   site?: string,
 ): ClientNode {
+  const child = scopedChild(site);
+  return asClientNode(new Deferred(() => createHost(component, props, key, child)));
+}
+
+/** `createElementInstance` のホストを作成する。`child` は、描画の範囲で作成した子要素のキーである。 */
+function createHost(
+  component: ElementComponent<unknown>,
+  props: Record<string, unknown>,
+  key: string | undefined,
+  child: ScopedChild | undefined,
+): HTMLElement {
   const host = document.createElement(component[elementInfo].tag);
   const instance = instances.get(host)!;
-  const child = scopedChild(site);
   const transfer: unknown =
     child?.data instanceof Map ? child.data.get(childKey(child.key)) : undefined;
   if (typeof transfer === "string") instance.takeover = { phase: "waiting", from: transfer };
@@ -572,5 +585,5 @@ export function createElementInstance(
     instance.owned = true;
     if (!activateInSlot((slotOwner) => instance.activate(slotOwner))) instance.activate(owner);
   }
-  return asClientNode(host);
+  return host;
 }

@@ -1,11 +1,13 @@
 import { createEffect, createRoot, flush, onCleanup } from "@solidjs/signals";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { Loading } from "../../src/client/control.ts";
 import { defineElement, registerElement } from "../../src/client/element.ts";
 import { jsx } from "../../src/client/jsx-runtime.ts";
 import type { Ctx, ElementOptions } from "../../src/shared/element.ts";
 import { reloadEvent } from "../../src/shared/hmr.ts";
 import { memo, signal } from "../../src/shared/signals.ts";
+import { toNode, toNodes } from "./nodes.ts";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -106,7 +108,7 @@ describe("props と属性", () => {
     const [a, b] = [nextTag(), nextTag()];
     const A = defineElement(a, empty, { props: {} });
     const B = defineElement(b, empty, { props: {} });
-    const [elA, elB] = createRoot(() => [jsx(A, {}), jsx(B, {})]) as unknown as Element[];
+    const [elA, elB] = createRoot(() => toNodes<Element>([jsx(A, {}), jsx(B, {})]));
     expect(elA!.localName).toBe(a);
     expect(elB!.localName).toBe(b);
   });
@@ -151,8 +153,8 @@ describe("関数の props", () => {
     const calls: number[] = [];
     const { component } = define();
     const el = createRoot(() =>
-      jsx(component, { onLikeClick: (n: number) => calls.push(n) }),
-    ) as unknown as HTMLElement;
+      toNode(jsx(component, { onLikeClick: (n: number) => calls.push(n) })),
+    );
     el.shadowRoot!.querySelector("button")!.click();
     expect(calls).toEqual([7]);
   });
@@ -169,13 +171,15 @@ describe("JSX から使う要素", () => {
     const [n, setN] = signal(1);
     let evaluated = 0;
     const el = createRoot(() =>
-      jsx(Counter, {
-        count: () => {
-          evaluated++;
-          return n();
-        },
-      }),
-    ) as unknown as HTMLElement & CounterProps;
+      toNode<HTMLElement & CounterProps>(
+        jsx(Counter, {
+          count: () => {
+            evaluated++;
+            return n();
+          },
+        }),
+      ),
+    );
     flush();
     expect(shadow(el)).toBe("<p>1</p>");
     const before = evaluated;
@@ -195,18 +199,20 @@ describe("JSX から使う要素", () => {
     );
     const [n, setN] = signal(1);
     const el = createRoot(() =>
-      jsx(Counter, {
-        get count() {
-          return n();
-        },
-        get title() {
-          return `t${n()}`;
-        },
-        get onSale() {
-          return n() > 1;
-        },
-      }),
-    ) as unknown as HTMLElement;
+      toNode(
+        jsx(Counter, {
+          get count() {
+            return n();
+          },
+          get title() {
+            return `t${n()}`;
+          },
+          get onSale() {
+            return n() > 1;
+          },
+        }),
+      ),
+    );
     flush();
     setN(2);
     flush();
@@ -228,10 +234,12 @@ describe("JSX から使う要素", () => {
       { props: { count: "unknown" } },
     );
     const [n, setN] = signal(1);
-    const el = jsx(Toast, {
-      count: () => n(),
-      ref: (host: HTMLElement) => refs.push(shadow(host)),
-    }) as unknown as HTMLElement;
+    const el = toNode(
+      jsx(Toast, {
+        count: () => n(),
+        ref: (host: HTMLElement) => refs.push(shadow(host)),
+      }),
+    );
     await connect(el);
     expect(shadow(el)).toBe("<p>1</p>");
     expect(refs).toEqual(["<p>1</p>"]);
@@ -254,8 +262,7 @@ describe("JSX から使う要素", () => {
     let el: HTMLElement | undefined;
     createRoot(() =>
       createEffect(show, (visible) => {
-        if (visible)
-          document.body.append((el = jsx(El, { count: () => 3 }) as unknown as HTMLElement));
+        if (visible) document.body.append((el = toNode(jsx(El, { count: () => 3 }))));
       }),
     );
     setShow(true);
@@ -279,8 +286,8 @@ describe("JSX から使う要素", () => {
     let resolve!: (value: number) => void;
     const el = createRoot(() => {
       const value = memo(() => new Promise<number>((r) => (resolve = r)));
-      return jsx(Counter, { count: () => value() });
-    }) as unknown as HTMLElement;
+      return toNode(jsx(Counter, { count: () => value() }));
+    });
     await connect(el);
     expect(shadow(el)).toBe("<p></p>");
     expect(mounted).toEqual([]);
@@ -298,20 +305,22 @@ describe("JSX から使う要素", () => {
     const clicks: string[] = [];
     let reads = 0;
     const el = createRoot(() =>
-      jsx(
-        Box,
-        {
-          id: "b",
-          class: { on: true },
-          onClick: (e: Event) => clicks.push(e.type),
-          get onDblClick() {
-            reads++;
-            return (e: Event) => clicks.push(e.type);
+      toNode(
+        jsx(
+          Box,
+          {
+            id: "b",
+            class: { on: true },
+            onClick: (e: Event) => clicks.push(e.type),
+            get onDblClick() {
+              reads++;
+              return (e: Event) => clicks.push(e.type);
+            },
           },
-        },
-        "k1",
+          "k1",
+        ),
       ),
-    ) as unknown as HTMLElement;
+    );
     expect(el.getAttribute("id")).toBe("b");
     expect(el.getAttribute("class")).toBe("on");
     expect(el.getAttribute("data-ok")).toBe("k1");
@@ -333,9 +342,11 @@ describe("JSX から使う要素", () => {
     );
     const seen: string[] = [];
     createRoot(() =>
-      jsx(Dialog, {
-        ref: (el: HTMLElement & { open?: () => string }) => seen.push(el.open?.() ?? "none"),
-      }),
+      toNode(
+        jsx(Dialog, {
+          ref: (el: HTMLElement & { open?: () => string }) => seen.push(el.open?.() ?? "none"),
+        }),
+      ),
     );
     expect(seen).toEqual(["opened"]);
   });
@@ -387,7 +398,7 @@ describe("ctx", () => {
       },
       { props: {} },
     );
-    const el = createRoot(() => jsx(El, {})) as unknown as HTMLElement;
+    const el = createRoot(() => toNode(jsx(El, {})));
     flush();
     expect(seen).toEqual([]);
     document.body.append(el);
@@ -446,7 +457,7 @@ describe("起動と破棄", () => {
       { props: {} },
     );
     const { el, dispose } = createRoot((d) => ({
-      el: jsx(Child, {}) as unknown as HTMLElement,
+      el: toNode(jsx(Child, {})),
       dispose: d,
     }));
     document.body.append(el);
@@ -469,7 +480,7 @@ describe("起動と破棄", () => {
       { props: {} },
     );
     const { el, dispose } = createRoot((d) => ({
-      el: jsx(Child, {}) as unknown as HTMLElement,
+      el: toNode(jsx(Child, {})),
       dispose: d,
     }));
     document.body.append(el);
@@ -694,6 +705,21 @@ describe("描画の更新の範囲", () => {
     flush();
     await tick();
     expect(shadow(host)).toBe("<input>1");
+    expect(removed.map((node) => node.nodeName)).toEqual(["#text"]);
+  });
+
+  it("<Loading> の中身の関数が変化しても、静的なノードを作り直さない", async () => {
+    const tag = nextTag();
+    const [value, setValue] = signal(0);
+    defineElement(tag, () => jsx("div", { children: jsx(Loading, { children: view(value) }) }), {
+      props: {},
+    });
+    const host = await connect(document.createElement(tag));
+    const removed = removals(host.shadowRoot!);
+    setValue(1);
+    flush();
+    await tick();
+    expect(shadow(host)).toBe("<div><input>1</div>");
     expect(removed.map((node) => node.nodeName)).toEqual(["#text"]);
   });
 

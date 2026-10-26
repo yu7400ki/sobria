@@ -1,4 +1,11 @@
-import { createRenderEffect, onCleanup, runWithOwner, untrack } from "@solidjs/signals";
+import {
+  createRenderEffect,
+  getOwner,
+  onCleanup,
+  runWithOwner,
+  untrack,
+  type Owner,
+} from "@solidjs/signals";
 
 import { attributeValue, propertiesOf, tagAttributeName } from "../shared/attributes.ts";
 import { isEventProp, listenerEventName } from "../shared/names.ts";
@@ -7,6 +14,43 @@ import { isFunction } from "../shared/objects.ts";
 import { outsideScope } from "../shared/scope.ts";
 import { formProps } from "../shared/wire.ts";
 import { registerSlot } from "./slots.ts";
+
+/**
+ * JSX が作成した、まだ挿入する値にしていないタグ、要素、境界を表す。
+ * `insert` が最初に挿入するときに、JSX を評価した時点の owner の下で `make` を呼ぶ。
+ * 2 回目以降の挿入では、最初に作成した値を挿入する。ノードなら、そのノードを移動する。`make` が投げた値は、挿入するたびに投げ直す。
+ */
+export class Deferred {
+  readonly #owner: Owner | null = getOwner();
+  readonly #make: () => unknown;
+  #result: { readonly value: unknown } | { readonly error: unknown } | undefined;
+
+  constructor(make: () => unknown) {
+    this.#make = make;
+  }
+
+  /** 挿入する値を返す。まだ作成していなければ作成する。 */
+  value(): unknown {
+    this.#result ??= this.#create();
+    if ("error" in this.#result) throw this.#result.error;
+    return this.#result.value;
+  }
+
+  #create(): { readonly value: unknown } | { readonly error: unknown } {
+    try {
+      return { value: runWithOwner(this.#owner, this.#make) };
+    } catch (error) {
+      return { error };
+    }
+  }
+}
+
+/** `content` を挿入したノードの列を返す。`content` の中の関数は、それぞれ領域になる。 */
+export function build(content: unknown): Node[] {
+  const fragment = document.createDocumentFragment();
+  insert(fragment, content);
+  return [...fragment.childNodes];
+}
 
 /** DOM に挿入できる値を表す。関数は、値が変化するたびに挿入し直す領域になる。 */
 export type Child =
@@ -81,7 +125,7 @@ function createTag(tag: string, given: Record<string, unknown>): Element {
 /**
  * `value` を `parent` の末尾に挿入する。配列は要素ごとに挿入する。
  * 関数の値は、2 つのコメントで囲んだ領域になり、値が変化するたびに領域の中身を置換する。
- * 文字列、数値、bigint、ノードは、`place` で変換してから挿入する。
+ * `Deferred` は、作成した値を挿入する。文字列、数値、bigint、ノードは、`place` で変換してから挿入する。
  */
 export function insert(
   parent: ParentNode,
@@ -109,17 +153,20 @@ export function insert(
     parent.append(place(document.createTextNode(String(value))));
   } else if (value instanceof Node) {
     parent.append(place(value));
+  } else if (value instanceof Deferred) {
+    insert(parent, value.value(), place);
   }
 }
 
-/** ネイティブのタグはノードを作成し、コンポーネントは props を渡して、読み取った値を追跡せずに 1 回だけ呼ぶ。 */
+/** ネイティブのタグは、挿入するときにノードを作成する `Deferred` を返す。コンポーネントは props を渡して、読み取った値を追跡せずに 1 回だけ呼ぶ。 */
 export function createNode(
   type: string | Component<Record<string, unknown>>,
   props: Record<string, unknown>,
   key?: string,
 ): ClientNode {
   if (typeof type === "string") {
-    return asClientNode(createTag(type, key === undefined ? props : { ...props, key }));
+    const given = key === undefined ? props : { ...props, key };
+    return asClientNode(new Deferred(() => createTag(type, given)));
   }
   return asClientNode(untrack(() => outsideScope(() => type(props))));
 }

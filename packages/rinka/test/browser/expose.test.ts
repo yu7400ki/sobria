@@ -5,6 +5,7 @@ import { defineElement } from "../../src/client/element.ts";
 import { jsx } from "../../src/client/jsx-runtime.ts";
 import type { Ctx, ElementOptions } from "../../src/shared/element.ts";
 import { signal } from "../../src/shared/signals.ts";
+import { toNode } from "./nodes.ts";
 
 let count = 0;
 const nextTag = () => `test-expose-${++count}`;
@@ -23,7 +24,7 @@ function mountExposing(members: object, props: ElementOptions["props"] = {}): HT
     },
     { props },
   );
-  return createRoot(() => jsx(El, {})) as unknown as HTMLElement;
+  return createRoot(() => toNode(jsx(El, {})));
 }
 
 describe("ctx.expose", () => {

@@ -2,7 +2,7 @@ declare const client: unique symbol;
 declare const server: unique symbol;
 declare const slot: unique symbol;
 
-/** 要素のファイルの JSX を評価した値の型を表す。実行時の値は、DOM のノードである。 */
+/** 要素のファイルの JSX を評価した値の型を表す。実行時の値は、挿入するときに DOM のノードを作成する記述か、関数のコンポーネントが返した値である。 */
 export interface ClientNode {
   readonly [client]: true;
 }

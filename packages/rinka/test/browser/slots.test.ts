@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { defineElement } from "../../src/client/element.ts";
 import { jsx, jsxs } from "../../src/client/jsx-runtime.ts";
 import { signal } from "../../src/shared/signals.ts";
+import { toNode } from "./nodes.ts";
 
 let count = 0;
 const nextTag = () => `test-slot-${++count}`;
@@ -33,11 +34,13 @@ describe("Light DOM への配置", () => {
   it("children は属性を付与せずに配置し、名前付きのスロットは最上位の要素に slot 属性を付与し、テキストを span で包む", () => {
     const Card = defineCard();
     const el = createRoot(() =>
-      jsx(Card, {
-        header: ["見出し", jsx("h1", { children: "a" })],
-        children: [jsx("p", { children: "本文" }), "追記"],
-      }),
-    ) as unknown as HTMLElement & CardProps;
+      toNode<HTMLElement & CardProps>(
+        jsx(Card, {
+          header: ["見出し", jsx("h1", { children: "a" })],
+          children: [jsx("p", { children: "本文" }), "追記"],
+        }),
+      ),
+    );
     expect(light(el)).toBe(
       '<span slot="header">見出し</span><h1 slot="header">a</h1><p>本文</p>追記',
     );
@@ -49,8 +52,8 @@ describe("Light DOM への配置", () => {
     const Card = defineCard();
     const [rich, setRich] = signal(false);
     const el = createRoot(() =>
-      jsx(Card, { header: () => (rich() ? jsx("b", { children: "B" }) : "plain") }),
-    ) as unknown as HTMLElement;
+      toNode(jsx(Card, { header: () => (rich() ? jsx("b", { children: "B" }) : "plain") })),
+    );
     expect(light(el)).toBe('<span slot="header">plain</span>');
     setRich(true);
     flush();
@@ -60,8 +63,8 @@ describe("Light DOM への配置", () => {
   it("スロットに割り当てた内容が、要素の <slot> に表示される", () => {
     const Card = defineCard();
     const el = createRoot(() =>
-      jsx(Card, { header: jsx("h1", {}), children: jsx("p", {}) }),
-    ) as unknown as HTMLElement;
+      toNode(jsx(Card, { header: jsx("h1", {}), children: jsx("p", {}) })),
+    );
     document.body.append(el);
     const [header, main] = el.shadowRoot!.querySelectorAll("slot");
     expect(header!.assignedElements().map((e) => e.localName)).toEqual(["h1"]);
@@ -89,12 +92,14 @@ describe("スロットに配置した子要素の起動", () => {
     const [show, setShow] = signal(false);
     const Card = defineCard(show);
     const el = createRoot(() =>
-      jsx(Card, {
-        get header() {
-          return jsx(Child, {});
-        },
-      }),
-    ) as unknown as HTMLElement;
+      toNode(
+        jsx(Card, {
+          get header() {
+            return jsx(Child, {});
+          },
+        }),
+      ),
+    );
     const child = el.querySelector("[slot=header]")!;
     expect(runs.count).toBe(0);
     expect(child.shadowRoot).toBeNull();
@@ -109,11 +114,13 @@ describe("スロットに配置した子要素の起動", () => {
     const Card = defineCard();
     const [more, setMore] = signal(false);
     createRoot(() =>
-      jsx(Card, {
-        get children() {
-          return () => (more() ? jsx(Child, {}) : null);
-        },
-      }),
+      toNode(
+        jsx(Card, {
+          get children() {
+            return () => (more() ? jsx(Child, {}) : null);
+          },
+        }),
+      ),
     );
     expect(runs.count).toBe(0);
     setMore(true);
@@ -125,14 +132,16 @@ describe("スロットに配置した子要素の起動", () => {
     const { Child, runs } = defineChild();
     const Card = defineCard(() => false);
     createRoot(() =>
-      jsx(Card, {
-        get header() {
-          return jsx(Child, {});
-        },
-        get children() {
-          return jsx(Child, {});
-        },
-      }),
+      toNode(
+        jsx(Card, {
+          get header() {
+            return jsx(Child, {});
+          },
+          get children() {
+            return jsx(Child, {});
+          },
+        }),
+      ),
     );
     expect(runs.count).toBe(1);
   });
@@ -154,11 +163,13 @@ describe("スロットの owner", () => {
     const [show, setShow] = signal(true);
     const Card = defineCard(show);
     createRoot(() =>
-      jsx(Card, {
-        get header() {
-          return jsx(Child, {});
-        },
-      }),
+      toNode(
+        jsx(Card, {
+          get header() {
+            return jsx(Child, {});
+          },
+        }),
+      ),
     );
     expect([runs, cleanups]).toEqual([1, 0]);
     setShow(false);
@@ -173,12 +184,14 @@ describe("スロットの owner", () => {
     const { Child, runs } = defineChild();
     const Card = defineCard(() => false);
     const el = createRoot(() =>
-      jsx(Card, {
-        get header() {
-          return jsx(Child, {});
-        },
-      }),
-    ) as unknown as HTMLElement;
+      toNode(
+        jsx(Card, {
+          get header() {
+            return jsx(Child, {});
+          },
+        }),
+      ),
+    );
     document.body.append(el);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(runs.count).toBe(0);
@@ -190,11 +203,13 @@ describe("スロットの owner", () => {
     const [more, setMore] = signal(false);
     const Card = defineCard(show);
     createRoot(() =>
-      jsx(Card, {
-        get header() {
-          return () => (more() ? jsx(Child, {}) : null);
-        },
-      }),
+      toNode(
+        jsx(Card, {
+          get header() {
+            return () => (more() ? jsx(Child, {}) : null);
+          },
+        }),
+      ),
     );
     setShow(false);
     flush();
@@ -212,11 +227,13 @@ describe("スロットの owner", () => {
     const [more, setMore] = signal(true);
     const Card = defineCard(show);
     createRoot(() =>
-      jsx(Card, {
-        get header() {
-          return () => (more() ? jsx(Child, {}) : null);
-        },
-      }),
+      toNode(
+        jsx(Card, {
+          get header() {
+            return () => (more() ? jsx(Child, {}) : null);
+          },
+        }),
+      ),
     );
     setMore(false);
     flush();
@@ -240,11 +257,13 @@ describe("スロットの owner", () => {
       { props: { children: "slot" } },
     );
     createRoot(() =>
-      jsx(Outer, {
-        get children() {
-          return jsx(Child, {});
-        },
-      }),
+      toNode(
+        jsx(Outer, {
+          get children() {
+            return jsx(Child, {});
+          },
+        }),
+      ),
     );
     expect(runs.count).toBe(1);
   });
@@ -262,11 +281,13 @@ describe("スロットの owner", () => {
       { props: { children: "slot" } },
     );
     createRoot(() =>
-      jsx(Card, {
-        get children() {
-          return () => (more() ? jsx(Child, {}) : null);
-        },
-      }),
+      toNode(
+        jsx(Card, {
+          get children() {
+            return () => (more() ? jsx(Child, {}) : null);
+          },
+        }),
+      ),
     );
     setVersion(1);
     flush();

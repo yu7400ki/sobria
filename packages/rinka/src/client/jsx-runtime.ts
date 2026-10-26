@@ -15,7 +15,7 @@ import { asClientNode, createNode, type Child, type Component } from "./dom.ts";
 import { createElementInstance } from "./element.ts";
 
 /**
- * JSX の要素を作成する。要素コンポーネントはインスタンスを作成し、ほかの型は DOM のノードを作成する。
+ * JSX の要素を作成する。タグと要素コンポーネントは、挿入するときにノードを作成する記述を返し、関数のコンポーネントはその場で呼ぶ。
  * `site` は、要素を作成する呼び出し箇所の ID である。
  */
 export function jsx<P, M extends object>(

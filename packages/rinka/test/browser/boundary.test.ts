@@ -6,6 +6,7 @@ import { defineElement } from "../../src/client/element.ts";
 import { jsx } from "../../src/client/jsx-runtime.ts";
 import { elementInfo } from "../../src/shared/element.ts";
 import { memo, signal } from "../../src/shared/signals.ts";
+import { toNode } from "./nodes.ts";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -52,15 +53,17 @@ describe("Loading と Errored", () => {
     const { promise, resolve } = Promise.withResolvers<string>();
     const node = createRoot(() => {
       const value = memo(() => promise);
-      return jsx("p", {
-        children: jsx(Loading, {
-          fallback: "loading",
-          get children() {
-            return jsx("b", { children: () => value() });
-          },
+      return toNode(
+        jsx("p", {
+          children: jsx(Loading, {
+            fallback: "loading",
+            get children() {
+              return jsx("b", { children: () => value() });
+            },
+          }),
         }),
-      });
-    }) as unknown as HTMLElement;
+      );
+    });
     flush();
     expect(html(node)).toBe("loading");
     resolve("done");
@@ -73,23 +76,25 @@ describe("Loading と Errored", () => {
     const [broken, setBroken] = signal(true);
     let retry!: () => void;
     const node = createRoot(() =>
-      jsx("p", {
-        children: jsx(Errored, {
-          fallback: (error: unknown, reset: () => void) => {
-            retry = reset;
-            return `error: ${(error as Error).message}`;
-          },
-          get children() {
-            return jsx("b", {
-              children: () => {
-                if (broken()) throw new Error("x");
-                return "ok";
-              },
-            });
-          },
+      toNode(
+        jsx("p", {
+          children: jsx(Errored, {
+            fallback: (error: unknown, reset: () => void) => {
+              retry = reset;
+              return `error: ${(error as Error).message}`;
+            },
+            get children() {
+              return jsx("b", {
+                children: () => {
+                  if (broken()) throw new Error("x");
+                  return "ok";
+                },
+              });
+            },
+          }),
         }),
-      }),
-    ) as unknown as HTMLElement;
+      ),
+    );
     flush();
     expect(html(node)).toBe("error: x");
     setBroken(false);
@@ -113,7 +118,7 @@ describe("境界を探す規則", () => {
         }),
       { props: {} },
     );
-    const el = createRoot(() => jsx(Parent, {})) as unknown as HTMLElement;
+    const el = createRoot(() => toNode(jsx(Parent, {})));
     document.body.append(el);
     flush();
     expect(html(el.shadowRoot!)).toBe("wait");
@@ -128,12 +133,14 @@ describe("境界を探す規則", () => {
     const { Pending, resolve } = definePending();
     const Card = defineCard();
     const el = createRoot(() =>
-      jsx(Card, {
-        get children() {
-          return jsx(Pending, {});
-        },
-      }),
-    ) as unknown as HTMLElement;
+      toNode(
+        jsx(Card, {
+          get children() {
+            return jsx(Pending, {});
+          },
+        }),
+      ),
+    );
     document.body.append(el);
     flush();
     expect(html(el.shadowRoot!)).toBe("wait");
@@ -310,7 +317,7 @@ describe("owner の無い場所で作成した要素の境界", () => {
   it("起動した要素の Shadow DOM に DOM の API で追加した要素は、最上位の要素として、値が解決するまで何も描画しない", async () => {
     const Host = defineElement(nextTag(), () => jsx("div", {}), { props: {} });
     const { Pending, resolve } = definePending();
-    const host = jsx(Host, {}) as unknown as HTMLElement;
+    const host = toNode(jsx(Host, {}));
     document.body.append(host);
     await tick();
     const child = document.createElement(tagOf(Pending));
@@ -336,7 +343,7 @@ describe("owner の無い場所で作成した要素の境界", () => {
       },
       { props: {} },
     );
-    const el = jsx(Top, {}) as unknown as HTMLElement;
+    const el = toNode(jsx(Top, {}));
     document.body.append(el);
     await tick();
     flush();

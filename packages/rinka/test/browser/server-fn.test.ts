@@ -7,6 +7,7 @@ import { serverFn } from "../../src/client/server-fn.ts";
 import { bootstrapSource } from "../../src/server/bootstrap.ts";
 import { runSeeding } from "../../src/shared/scope.ts";
 import { ServerFnError } from "../../src/shared/server-fn.ts";
+import { toNode } from "./nodes.ts";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -246,14 +247,16 @@ describe("RPC の描き直し", () => {
 describe("クライアントの form の action に渡したサーバー関数", () => {
   it("action をエンドポイントの URL に、method を post に、enctype を multipart/form-data にする", () => {
     const save = serverFn("src/fns.ts#save", "POST");
-    const form = clientJsx("form", { action: save }) as unknown as HTMLFormElement;
+    const form = toNode<HTMLFormElement>(clientJsx("form", { action: save }));
     expect(form.getAttribute("action")).toBe("/_rinka/fn/src%2Ffns.ts%23save");
     expect(form.getAttribute("method")).toBe("post");
     expect(form.getAttribute("enctype")).toBe("multipart/form-data");
-    const encoded = clientJsx("form", {
-      action: save,
-      enctype: "application/x-www-form-urlencoded",
-    }) as unknown as HTMLFormElement;
+    const encoded = toNode<HTMLFormElement>(
+      clientJsx("form", {
+        action: save,
+        enctype: "application/x-www-form-urlencoded",
+      }),
+    );
     expect(encoded.getAttribute("enctype")).toBe("application/x-www-form-urlencoded");
   });
 });

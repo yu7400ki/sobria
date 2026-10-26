@@ -254,12 +254,6 @@ interface WalkCtx {
   readonly catchers: readonly Catcher[];
   /** 祖先のネイティブのタグが子孫に渡す状態である。要素の境界では `noParentTag` に戻す。 */
   readonly parent: ParentTag;
-  /**
-   * クライアントが、この位置の値を `flatten`（`@solidjs/signals`）で解決するなら `true` である。
-   * `flatten` は、関数を呼び出して値に置き換え、入れ子の配列を 1 つの配列にするので、この位置の関数は領域にならない。
-   * 境界の中身で `true` にし、ネイティブのタグの子と、要素の Shadow DOM の中身と、ホストの Light DOM の内容で `false` に戻す。
-   */
-  readonly flat: boolean;
 }
 
 /** `outputs` で、出力する形が `output` の props の名前を返す。 */
@@ -593,9 +587,10 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         return;
       case "loading": {
         const boundary = this.newBoundary(`b${++this.seq}`, ctx.path, ctx.catchers);
-        this.walk(
+        // クライアントの境界は、中身の関数を領域にせずに 1 回呼び出し、戻り値をノードにする。
+        this.thunk(
           node.children,
-          { ...ctx, boundary, head: restrict(ctx.head, "loading"), flat: true },
+          { ...ctx, boundary, head: restrict(ctx.head, "loading") },
           boundary.region,
         );
         this.enclose(this.region(ctx), out, () =>
@@ -647,7 +642,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /** クライアントが、この位置の関数の値を 2 つのコメントで囲む領域にするなら `true` を返す。 */
   private region(ctx: WalkCtx): boolean {
-    return ctx.owner !== null && !ctx.flat && !ctx.parent.rawText;
+    return ctx.owner !== null && !ctx.parent.rawText;
   }
 
   /** 関数を呼び出した値を描画する。関数が未解決の値を参照すると、値が解決してから描画する穴にする。 */
@@ -858,7 +853,6 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         ...ctx,
         head: childPlacement(tag, ctx.head),
         slot: undefined,
-        flat: false,
         ...this.childScope(tag, props, outputs, ctx),
       },
       out,
@@ -906,10 +900,10 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       ctx.path.length === 0 && !this.blocking && !ctx.parent.rawText
         ? { id: `e${++this.erroredSeq}`, node, ctx, replaced: undefined }
         : undefined;
-    const inner = { ...ctx, flat: true, ...(catcher && { catchers: [catcher, ...ctx.catchers] }) };
+    const inner = catcher ? { ...ctx, catchers: [catcher, ...ctx.catchers] } : ctx;
     let chunks: Chunk[] = [];
     try {
-      this.walk(node.children, inner, chunks);
+      this.thunk(node.children, inner, chunks);
     } catch (error) {
       chunks = [{ kind: "fail", fail: error }];
     }
@@ -1037,7 +1031,6 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         fallback: ctx.fallback,
         catchers: ctx.catchers,
         parent: noParentTag,
-        flat: false,
       };
       // クライアントは、getter の props を関数として挿入するので、getter の内容は領域になる。
       const region = descriptors[name]?.get !== undefined && this.region(light);
@@ -1159,7 +1152,6 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       fallback: false,
       catchers: ctx.catchers,
       parent: noParentTag,
-      flat: false,
     };
     const read = submitted;
     const input =
@@ -1518,7 +1510,6 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         fallback: false,
         catchers: [],
         parent: noParentTag,
-        flat: false,
       }),
       this.shellOut,
     );

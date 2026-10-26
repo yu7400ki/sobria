@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest";
 
 import { Fragment, jsx, jsxs } from "../../src/client/jsx-runtime.ts";
 import { signal } from "../../src/shared/signals.ts";
+import { toNode } from "./nodes.ts";
 
-/** `render` を root の中で実行し、結果のノードと root を破棄する関数を返す。 */
-function mount<T>(render: () => T): { node: T; dispose: () => void } {
-  return createRoot((dispose) => ({ node: render(), dispose }));
+/** `render` を root の中で実行し、結果をノードにしたものと root を破棄する関数を返す。 */
+function mount(render: () => unknown): { node: Node; dispose: () => void } {
+  return createRoot((dispose) => ({ node: toNode<Node>(render()), dispose }));
 }
 
 /** ノードを `div` に挿入して、コメントを除いた HTML の文字列を返す。 */
@@ -246,5 +247,41 @@ describe("コンポーネント", () => {
       jsx("p", { children: jsxs(Fragment, { children: ["a", jsx("b", {})] }) }),
     );
     expect(html(node)).toBe("<p>a<b></b></p>");
+  });
+});
+
+describe("ノードの作成", () => {
+  it("ノードと ref は、JSX を挿入した時点で作成して呼ぶ", () => {
+    const refs: string[] = [];
+    createRoot(() => {
+      const node = jsx("p", { ref: (el: Element) => refs.push(el.localName) });
+      expect(refs).toEqual([]);
+      toNode(node);
+      expect(refs).toEqual(["p"]);
+    });
+  });
+
+  it("同じ JSX を 2 回挿入すると、最初に作成したノードを移動する", () => {
+    createRoot(() => {
+      const node = jsx("p", {});
+      const first = toNode(node);
+      expect(toNode(node)).toBe(first);
+    });
+  });
+
+  it("ノードの作成が投げた値は、挿入するたびに投げ直し、作成を繰り返さない", () => {
+    let calls = 0;
+    const error = new Error("ref");
+    createRoot(() => {
+      const node = jsx("p", {
+        ref: () => {
+          calls++;
+          throw error;
+        },
+      });
+      expect(() => toNode(node)).toThrow(error);
+      expect(() => toNode(node)).toThrow(error);
+    });
+    expect(calls).toBe(1);
   });
 });

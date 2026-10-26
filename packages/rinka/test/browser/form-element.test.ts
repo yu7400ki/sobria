@@ -10,6 +10,7 @@ import { renderToStream } from "../../src/server/response.ts";
 import type { Ctx, ElementOptions } from "../../src/shared/element.ts";
 import type { Receiver } from "../../src/shared/receiver.ts";
 import { memo, signal } from "../../src/shared/signals.ts";
+import { toNode } from "./nodes.ts";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -218,15 +219,17 @@ describe("フォームの部品", () => {
     const [name, setName] = signal("a");
     const [disabled, setDisabled] = signal(false);
     const host = createRoot(() =>
-      jsx(Field, {
-        get name() {
-          return name();
-        },
-        get disabled() {
-          return disabled();
-        },
-      }),
-    ) as unknown as HTMLElement & { name?: string; disabled?: boolean };
+      toNode<HTMLElement & { name?: string; disabled?: boolean }>(
+        jsx(Field, {
+          get name() {
+            return name();
+          },
+          get disabled() {
+            return disabled();
+          },
+        }),
+      ),
+    );
     await place("<form></form>");
     const form = document.querySelector("form")!;
     form.append(host);
