@@ -13,8 +13,10 @@ import {
   internalPrefix,
   rpcPrefix,
   rpcQuery,
+  isClosingLineText,
   isRedirectJson,
   splitLines,
+  streamLineText,
   wireFormat,
   wireHeader,
   type RedirectJson,
@@ -338,8 +340,7 @@ async function refreshedPage(
  */
 function withPageAtEnd(c: Context, response: Response, page: URL, fetchPage: FetchPage): Response {
   const terminal = async (text: string): Promise<string> => {
-    // 値の行は、JSON として解析せずにそのまま送る
-    if (text !== endLine && !text.startsWith(redirectLinePrefix)) return text;
+    if (!isClosingLineText(text)) return text;
     const line: unknown = JSON.parse(text);
     if (!isPlainObject(line)) return text;
     if (isRedirectJson(line) && !sameDocument(locationOf(line.redirect, c, page), page))
@@ -478,12 +479,6 @@ async function readInput(c: Context): Promise<unknown> {
 
 const parseJson = (text: string): unknown => JSON.parse(text);
 
-/** `{ end: true }` の行の文字列である。 */
-const endLine = JSON.stringify({ end: true } satisfies StreamLine);
-
-/** 移動先を伝える行の文字列の先頭である。 */
-const redirectLinePrefix = '{"redirect":';
-
 /**
  * `first` と、`relay` がその後に返す値を、改行で区切った `StreamLine` の行で送信するレスポンスを返す。値の行の後に `{ end: true }` を送信する。
  * 最初の値は、レスポンスを作成する前にシリアライズし、シリアライズできなければ例外を投げる。
@@ -493,7 +488,7 @@ const redirectLinePrefix = '{"redirect":';
  */
 function stream(c: Context, { relay, first }: Streamed, fail: Failure): Response {
   const encoder = new TextEncoder();
-  const encode = (line: StreamLine) => encoder.encode(`${JSON.stringify(line)}\n`);
+  const encode = (line: StreamLine) => encoder.encode(`${streamLineText(line)}\n`);
   const failed = async (error: unknown): Promise<StreamLine> => {
     const thrown = classify(error);
     if (thrown.kind === "redirect") return { redirect: thrown.location };

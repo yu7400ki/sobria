@@ -90,13 +90,10 @@ async function read(
   const body: unknown = await response.json();
   if (typeof body === "object" && body !== null) {
     const page = "page" in body ? body.page : undefined;
-    if ("ok" in body) {
+    const decoded = await decode(body);
+    if (decoded) {
       if (reflect) reflectPage(reflect, page);
-      return body.ok;
-    }
-    if ("s" in body && isSerovalJson(body.s)) {
-      if (reflect) reflectPage(reflect, page);
-      return (await codec()).fromJSON(body.s);
+      return decoded.value;
     }
     if (isRedirectJson(body))
       return redirected(body, page, endpoint, reflect) ? never() : undefined;
@@ -166,11 +163,10 @@ async function* valuesOf(
       const parsedLine: unknown = JSON.parse(text);
       const line = isPlainObject(parsedLine) ? parsedLine : {};
       const page = "page" in line ? line.page : undefined;
-      if ("ok" in line) {
-        yield line.ok;
-      } else if ("s" in line && isSerovalJson(line.s)) {
-        // oxlint-disable-next-line no-await-in-loop
-        yield (await codec()).fromJSON(line.s);
+      // oxlint-disable-next-line no-await-in-loop
+      const decoded = await decode(line);
+      if (decoded) {
+        yield decoded.value;
       } else if ("end" in line) {
         if (refresh) reflectPage(startRewrite(), page);
         return;
@@ -188,6 +184,13 @@ async function* valuesOf(
   } finally {
     await reader.cancel().catch(() => {});
   }
+}
+
+/** `body` が `{ ok }` か `{ s }` なら、その値を `value` に持つオブジェクトを返し、そうでなければ `undefined` を返す。 */
+async function decode(body: object): Promise<{ readonly value: unknown } | undefined> {
+  if ("ok" in body) return { value: body.ok };
+  if ("s" in body && isSerovalJson(body.s)) return { value: (await codec()).fromJSON(body.s) };
+  return undefined;
 }
 
 /** レスポンスの本文を JSON として読む。JSON でなければ `null` を返す。 */

@@ -5,7 +5,13 @@ import { registerServerFn } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
 import { fromRpcInput, toRpcBody, toScript } from "../../src/server/wire.ts";
-import { checkSerializable, isJson } from "../../src/shared/wire.ts";
+import {
+  checkSerializable,
+  isClosingLineText,
+  isJson,
+  streamLineText,
+  type StreamLine,
+} from "../../src/shared/wire.ts";
 
 /** toScript が出力した JS の式を評価する。 */
 // oxlint-disable-next-line typescript/no-implied-eval
@@ -151,5 +157,21 @@ describe("RPC の値", () => {
       from: new Date(10),
       seen: new Set([1]),
     });
+  });
+});
+
+describe("ストリームの行の文字列", () => {
+  it("streamLineText で作成した行のうち、{ end: true } と移動先を伝える行だけを isClosingLineText が真にする", () => {
+    const lines = [
+      [toRpcBody(1), false],
+      [toRpcBody({ redirect: "/x" }), false],
+      [toRpcBody(new Date(0)), false],
+      [{ end: true }, true],
+      [{ redirect: "/x" }, true],
+      [{ error: true }, false],
+    ] satisfies [StreamLine, boolean][];
+    expect(lines.map(([line]) => isClosingLineText(streamLineText(line)))).toEqual(
+      lines.map(([, closing]) => closing),
+    );
   });
 });
