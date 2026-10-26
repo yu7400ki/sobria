@@ -9,7 +9,7 @@ import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
 import { renderRefresh, renderToStream } from "../../src/server/response.ts";
 import type { ElementOptions } from "../../src/shared/element.ts";
 import type { RefreshJson } from "../../src/shared/refresh.ts";
-import { action, memo, optimistic, refresh, signal } from "../../src/shared/signals.ts";
+import { action, memo, optimistic, refresh, signal, wait } from "../../src/shared/signals.ts";
 
 /** テストの前の `<head>` の子と、文書のタイトルである。 */
 let headBefore: Element[] = [];
@@ -189,19 +189,20 @@ describe("applyRefresh", () => {
     expect(document.querySelector(tag)?.shadowRoot?.textContent).toBe("B");
   });
 
-  it("action の中で、props の値が変わらない描き直しを反映した後に refresh(memo) を待つと、action が終わる", async () => {
+  it("action の中で、props の値が変わらない描き直しを反映した後に refresh(memo) を yield で待つと、action が終わる", async () => {
     const tag = nextTag();
     const options: ElementOptions = { props: { id: "number" } };
     let send: (() => Promise<void>) | undefined;
     const view = (h: H) => (props: { id: number }) => {
       const user = memo(async () => ({ likes: props.id }));
       const [likes, setLikes] = optimistic(() => user().likes);
-      send = action(async () => {
+      send = action(function* () {
         setLikes(likes() + 1);
-        await tick();
-        applyRefresh((await (await renderRefresh(page(1))).json()) as RefreshJson);
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        await refresh(user);
+        yield tick();
+        const response = yield* wait(renderRefresh(page(1)));
+        applyRefresh((yield* wait(response.json())) as RefreshJson);
+        yield new Promise((resolve) => setTimeout(resolve, 20));
+        yield refresh(user);
       });
       return h("span", { children: () => String(likes()) });
     };

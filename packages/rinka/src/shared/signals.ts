@@ -92,22 +92,28 @@ export type Action<Args extends unknown[], R> = ((...args: Args) => Promise<R>) 
   pending(): boolean;
 };
 
-type ActionBody<Args extends unknown[], R> = (
-  ...args: Args
-) => Promise<R> | Generator<unknown, R, unknown>;
-
 /**
- * 1 つのトランザクションとして実行する書き込みを作成する。
- * async 関数では、最初の `await` より前の書き込みが action の終わりまで保留される。
- * generator では、`yield` の後の書き込みも保留される。同時に呼び出した action は、すべてが終わったときに一緒に終わる。
+ * generator 関数の中の書き込みを、1 つのトランザクションとして実行する関数を作成する。
+ * action は、generator が yield した Promise が解決するまで待ってから、generator を再開する。
+ * generator の中の普通の signal への書き込みは、`yield` の前後にかかわらず action の終わりまで保留される。
+ * 同時に呼び出した action は、すべてが終わったときに一緒に終わる。
  */
-export function action<Args extends unknown[], R>(fn: ActionBody<Args, R>): Action<Args, R> {
+export function action<Args extends unknown[], R>(
+  fn: (...args: Args) => Generator<PromiseLike<unknown>, R, unknown>,
+): Action<Args, R> {
   const [pending, setPending] = createOptimistic(false);
-  const run = solidAction(function* (...args: Args): Generator<unknown, R, R> {
+  const run = solidAction(function* (...args: Args): Generator<PromiseLike<unknown>, R, unknown> {
     setPending(true);
-    const result = fn(...args);
-    if (result instanceof Promise) return yield result;
-    return yield* result;
+    return yield* fn(...args);
   });
   return Object.assign((...args: Args) => run(...args), { pending });
+}
+
+/**
+ * action の generator の中で `yield* wait(promise)` と記述すると、その式の値は Promise が解決した値になる。
+ * Promise が reject すると、その理由が `yield*` の位置で投げられる。
+ */
+export function* wait<T>(promise: PromiseLike<T>): Generator<PromiseLike<T>, T, unknown> {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  return (yield promise) as T;
 }

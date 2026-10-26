@@ -85,9 +85,49 @@ describe("effect", () => {
     flush();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
-    const like = action(async () => {
+    const like = action(function* () {
       setLiked(true);
-      await gate;
+      setCount(1);
+      yield gate;
+    });
+    const done = like();
+    flush();
+    await Promise.resolve();
+    flush();
+    expect(seen).toEqual([
+      [false, 0],
+      [true, 0],
+    ]);
+    release();
+    await done;
+    await tick();
+    flush();
+    expect(seen).toEqual([
+      [false, 0],
+      [true, 0],
+      [false, 1],
+    ]);
+  });
+
+  // @solidjs/signals 2.0.0-rc.15 の createEffect は、確定した値で apply を 2 回呼ぶ
+  it.fails("action の中で optimistic に書き込み、yield の後で signal に書き込んでも、action が終わったときに確定した値で apply を 1 回だけ呼ぶ", async () => {
+    const seen: unknown[] = [];
+    const [liked, setLiked] = optimistic(false);
+    const [count, setCount] = signal(0);
+    createRoot(() => {
+      effect(
+        () => [liked(), count()],
+        (pair) => {
+          seen.push(pair);
+        },
+      );
+    });
+    flush();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const like = action(function* () {
+      setLiked(true);
+      yield gate;
       setCount(1);
     });
     const done = like();
@@ -105,7 +145,6 @@ describe("effect", () => {
     expect(seen).toEqual([
       [false, 0],
       [true, 0],
-      [true, 1],
       [false, 1],
     ]);
   });

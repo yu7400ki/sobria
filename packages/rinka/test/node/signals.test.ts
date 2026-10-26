@@ -2,7 +2,15 @@ import { createRoot, flush } from "@solidjs/signals";
 import { describe, expect, it } from "vitest";
 
 import { effect } from "../../src/client/effect.ts";
-import { action, isPending, memo, optimistic, refresh, signal } from "../../src/shared/signals.ts";
+import {
+  action,
+  isPending,
+  memo,
+  optimistic,
+  refresh,
+  signal,
+  wait,
+} from "../../src/shared/signals.ts";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -88,9 +96,9 @@ describe("action と optimistic", () => {
       const [value, setShown] = optimistic(() => count());
       shown = value;
       seen = watch(shown);
-      save = action(async () => {
+      save = action(function* () {
         setShown(10);
-        await done.promise;
+        yield done.promise;
       });
     });
     flush();
@@ -104,28 +112,7 @@ describe("action と optimistic", () => {
     expect(seen).toEqual([1, 10, 1]);
   });
 
-  it("async 関数の await の後の書き込みは、すぐに反映される", async () => {
-    const step = Promise.withResolvers<void>();
-    const finish = Promise.withResolvers<void>();
-    const [count, setCount] = signal(0);
-    let run!: () => Promise<void>;
-    createRoot(() => {
-      run = action(async () => {
-        await step.promise;
-        setCount(1);
-        await finish.promise;
-      });
-    });
-    const running = run();
-    step.resolve();
-    await tick();
-    flush();
-    expect(count()).toBe(1);
-    finish.resolve();
-    await running;
-  });
-
-  it("generator の yield の後の書き込みは、action が終わるまで保留される", async () => {
+  it("yield の後の書き込みも、action が終わるまで保留される", async () => {
     const step = Promise.withResolvers<void>();
     const finish = Promise.withResolvers<void>();
     const [count, setCount] = signal(0);
@@ -153,13 +140,13 @@ describe("action と optimistic", () => {
     const second = Promise.withResolvers<void>();
     const [likes] = signal(0);
     let shown!: () => number;
-    let like!: (wait: Promise<void>) => Promise<void>;
+    let like!: (gate: Promise<void>) => Promise<void>;
     createRoot(() => {
       const [value, setShown] = optimistic(() => likes());
       shown = value;
-      like = action(async (wait: Promise<void>) => {
+      like = action(function* (gate: Promise<void>) {
         setShown((n) => n + 1);
-        await wait;
+        yield gate;
       });
     });
     flush();
@@ -177,27 +164,7 @@ describe("action と optimistic", () => {
     expect(shown()).toBe(0);
   });
 
-  it("async 関数の最初の await より前の書き込みは、action が終わるまで保留される", async () => {
-    const finish = Promise.withResolvers<void>();
-    const [count, setCount] = signal(0);
-    let run!: () => Promise<void>;
-    createRoot(() => {
-      run = action(async () => {
-        setCount(1);
-        await finish.promise;
-      });
-    });
-    const running = run();
-    await tick();
-    flush();
-    expect(count()).toBe(0);
-    finish.resolve();
-    await running;
-    flush();
-    expect(count()).toBe(1);
-  });
-
-  it("action の中で refresh を await すると、memo が解決するまで optimistic の値を保つ", async () => {
+  it("action の中で refresh を yield で待つと、memo が解決するまで optimistic の値を保つ", async () => {
     let server = 1;
     let fetching = Promise.withResolvers<void>();
     let shown!: () => number;
@@ -211,10 +178,10 @@ describe("action と optimistic", () => {
       });
       const [value, setShown] = optimistic(() => user());
       shown = value;
-      save = action(async (n: number) => {
+      save = action(function* (n: number) {
         setShown(n);
         server = n;
-        await refresh(user);
+        yield refresh(user);
       });
     });
     flush();
@@ -245,9 +212,9 @@ describe("action と optimistic", () => {
     createRoot(() => {
       const [value, setShown] = optimistic(() => count());
       shown = value;
-      save = action(async () => {
+      save = action(function* () {
         setShown(10);
-        await fail.promise;
+        yield fail.promise;
       });
     });
     flush();
@@ -260,13 +227,39 @@ describe("action と optimistic", () => {
     expect(shown()).toBe(1);
   });
 
+  it("wait は、Promise が解決した値を返す", async () => {
+    let run!: () => Promise<number>;
+    createRoot(() => {
+      run = action(function* () {
+        const value = yield* wait(Promise.resolve(2));
+        return value * 10;
+      });
+    });
+    expect(await run()).toBe(20);
+  });
+
+  it("wait は、Promise が reject した値を generator の中に投げる", async () => {
+    let run!: () => Promise<string>;
+    createRoot(() => {
+      run = action(function* () {
+        try {
+          yield* wait(Promise.reject(new Error("失敗")));
+          return "解決";
+        } catch (error) {
+          return (error as Error).message;
+        }
+      });
+    });
+    expect(await run()).toBe("失敗");
+  });
+
   it("pending() は呼び出しの実行中だけ true を返す", async () => {
     const done = Promise.withResolvers<void>();
     let save!: ReturnType<typeof action<[], void>>;
     let seen: boolean[] = [];
     createRoot(() => {
-      save = action(async () => {
-        await done.promise;
+      save = action(function* () {
+        yield done.promise;
       });
       seen = watch(() => save.pending());
     });
