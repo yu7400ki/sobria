@@ -145,10 +145,10 @@ import { getUser, like } from "../lib/users.ts";
 export default function LikeCount(props: { userId: number }) {
   const user = memo(() => getUser(props.userId));
   const [likes, setLikes] = optimistic(() => user().likes);
-  const send = action(async () => {
+  const send = action(function* () {
     setLikes(likes() + 1);
-    await like(props.userId, { refresh: false });
-    await refresh(user);
+    yield like(props.userId, { refresh: false });
+    yield refresh(user);
   });
   return (
     <button disabled={send.pending()} onClick={() => void send()}>
@@ -160,19 +160,33 @@ export default function LikeCount(props: { userId: number }) {
 
 ボタンを押すと、`likes` はすぐに 1 増えます。`like` はいいねを保存するサーバー関数です。GET 以外のサーバー関数を呼び出すと、rinka は呼び出し元のページを描き直します。いいねの数は要素の memo が取得し直すので、`{ refresh: false }` を指定して、ページの描き直しを省略します（[サーバー関数](/guide/server-functions)）。action が `refresh(user)` を待っている間は、`likes` は書き込んだ値を保持します。action が終わると、`likes` は `user().likes` の値に戻ります。取得し直した `user().likes` は書き込んだ値と同じなので、表示される数は変化しません。
 
+`action` には generator 関数（`function*`）を渡し、Promise は `await` の代わりに `yield` で待ちます。action の中の普通の Signal への書き込みは、`yield` の前後にかかわらず、action が終わるまで保留されます。async 関数の中で `await` の後に実行する処理は、action の外で実行されます。そのため、action に async 関数は渡せません。generator の中で呼び出して、その Promise を `yield` で待つ async 関数の中でも、`await` の後に `refresh` を待たないでください。action と `refresh` が互いの完了を待ち、どちらも完了しなくなることがあります。`refresh` は、action の generator の中で直接 `yield` で待ちます。
+
 - `send.pending()` は、action を実行している間、`true` を返します
 - action が失敗したときも、`optimistic` の値は元に戻ります
 - 同時に呼び出した action は、すべてが終わったときに一緒に終わります。例えば、`send` を続けて 2 回呼び出すと、表示は 2 増え、両方の action が終わるまでその値を保持します
 
-action の中の普通の Signal への書き込みは、async 関数の最初の `await` より前に実行したものだけが、action が終わるまで保留されます。`await` の後の書き込みは、すぐに反映されます。`await` の後の書き込みも保留するときは、async 関数の代わりに generator 関数を渡し、Promise を `yield` で待ちます。
+`yield` の式の型は `unknown` になります。Promise が解決した値を使用するときは、`yield* wait(promise)` と記述します。この式の型は、Promise が解決する値の型になります。
 
 ```tsx
-// src/elements/like-count.tsx
-const send = action(function* () {
-  setLikes(likes() + 1);
-  yield like(props.userId, { refresh: false });
-  yield refresh(user);
-});
+// src/elements/rename-user.tsx
+import { action, signal, wait } from "rinka";
+
+import { updateUser } from "../lib/users.ts";
+
+export default function RenameUser(props: { userId: number }) {
+  const [message, setMessage] = signal("");
+  const rename = action(function* (name: string) {
+    const user = yield* wait(updateUser({ id: props.userId, name }));
+    setMessage(`${user.name} に変更しました`);
+  });
+  return (
+    <p>
+      <button onClick={() => void rename("rinka")}>名前を変更</button>
+      {message()}
+    </p>
+  );
+}
 ```
 
 ## サーバーで描画するときの振る舞い
