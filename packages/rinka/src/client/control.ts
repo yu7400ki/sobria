@@ -3,7 +3,7 @@ import { createErrorBoundary, createLoadingBoundary } from "@solidjs/signals";
 import type { NavigationProps } from "../shared/navigation.ts";
 import type { ClientNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
-import { asClientNode, build, Deferred, type Child } from "./dom.ts";
+import { asClientNode, build, DeferredRegion, type Child } from "./dom.ts";
 
 /** 関数で渡された内容は、境界の中で呼び出して評価する。 */
 const read = (value: Child): Child => (isFunction(value) ? value() : value);
@@ -11,10 +11,10 @@ const read = (value: Child): Child => (isFunction(value) ? value() : value);
 /** 内側の非同期の値が初めて解決するまで、`fallback` を表示する。 */
 export function Loading(props: { fallback?: Child; children?: Child }): ClientNode {
   return asClientNode(
-    new Deferred(
-      () =>
+    new DeferredRegion(
+      (at) =>
         createLoadingBoundary(
-          () => build(read(props.children)),
+          () => build(read(props.children), at),
           () => read(props.fallback),
         ),
       "loading",
@@ -33,10 +33,10 @@ export function Errored(props: {
   status?: number;
 }): ClientNode {
   return asClientNode(
-    new Deferred(
-      () =>
+    new DeferredRegion(
+      (at) =>
         createErrorBoundary(
-          () => build(read(props.children)),
+          () => build(read(props.children), at),
           (error, retry) => {
             const { fallback } = props;
             return typeof fallback === "function" ? fallback(error(), retry) : fallback;

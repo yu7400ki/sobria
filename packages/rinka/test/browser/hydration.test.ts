@@ -514,6 +514,16 @@ describe("SSR の DOM の引き取り", () => {
               : side.h("i", { children: "x" }),
         }),
     ],
+    [
+      "同じ <Loading> の JSX の値を 2 回挿入する描画",
+      (side: Side) => {
+        const loading = side.h(side.Loading, {
+          fallback: "",
+          children: () => side.h("i", { children: "x" }),
+        });
+        return [loading, loading];
+      },
+    ],
   ])("%sは、例外を投げずに作り直し、開発時に警告する", async (_, view) => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { host, boot } = await served((side) => () => view(side));
@@ -848,6 +858,31 @@ describe("SSR の DOM の引き取り", () => {
     expect(host.shadowRoot!.querySelector("p")).toBe(p);
     expect(host.shadowRoot!.textContent).toBe("s1");
     expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("<Errored> の中身が SSR と一致しなければ、作り直すまで SSR の表示を残す", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { promise, resolve } = Promise.withResolvers<string>();
+    const { host, boot } = await served(({ h, Errored, prefix }) => () => {
+      const server = prefix === serverSide.prefix;
+      const value = memo(() => (server ? Promise.resolve("ssr") : promise));
+      return [
+        h(Errored, {
+          fallback: "f",
+          children: () =>
+            server
+              ? [h("i", { children: "x" }), h("i", { children: "y" })]
+              : h("i", { children: "x" }),
+        }),
+        h("p", { children: () => value() }),
+      ];
+    });
+    await boot();
+    expect(host.shadowRoot!.textContent).toBe("xyssr");
+    resolve("client");
+    await tick();
+    expect(host.shadowRoot!.textContent).toBe("xclient");
     warn.mockRestore();
   });
 });

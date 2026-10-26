@@ -6,75 +6,128 @@ import {
   REGION_START,
 } from "../shared/attributes.ts";
 
-/** 1 つの要素の Shadow DOM を引き取る状態を表す。 */
+/**
+ * 1 つの要素の Shadow DOM を引き取る状態を表す。
+ * `state` は、最初の描画の引き取りの最中なら `"claiming"`、引き取りを終えたら `"done"` である。引き取りに失敗したら、期待したノードと実際のノードを説明する文を `failure` に持つ。
+ * `"done"` の後に再び実行した計算は、ノードを引き取らずに作成する。
+ */
 export interface Hydration {
-  /** 引き取りに失敗したときに、期待したノードと実際のノードを説明する文を持つ。 */
-  failure: string | undefined;
-  /** 引き取ったノードを持つ。 */
-  readonly claimed: WeakSet<Node>;
-  /** `build` が引き取りの最中に返したノードを持つ。 */
-  readonly built: WeakSet<Node>;
-}
-
-/** 引き取りの位置を表す。`next` は、`parent` の子のうち、次に引き取るノードである。 */
-export interface Cursor {
-  readonly parent: ParentNode;
-  next: ChildNode | null;
-  readonly hydration: Hydration;
-}
-
-let cursor: Cursor | undefined;
-
-/** 引き取りの状態を作成する。 */
-export const createHydration = (): Hydration => ({
-  failure: undefined,
-  claimed: new WeakSet(),
-  built: new WeakSet(),
-});
-
-/** 今の引き取りの位置を返す。 */
-export const currentCursor = (): Cursor | undefined => cursor;
-
-/** `parent` に挿入する値を引き取るなら、今の位置を返す。 */
-export const cursorOf = (parent: ParentNode): Cursor | undefined =>
-  cursor?.parent === parent ? cursor : undefined;
-
-/** 引き取りの位置を `at` にして `fn` を実行する。`at` が `undefined` なら、引き取らずに実行する。 */
-export function within<T>(at: Cursor | undefined, fn: () => T): T {
-  const previous = cursor;
-  cursor = at;
-  try {
-    return fn();
-  } finally {
-    cursor = previous;
-  }
-}
-
-/** `parent` の子を `first` から順に引き取りながら `fn` を実行する。`fn` の後に引き取っていないノードが残れば、失敗にする。 */
-export function claimChildren<T>(
-  parent: ParentNode,
-  first: ChildNode | null,
-  hydration: Hydration,
-  fn: () => T,
-): T {
-  const at: Cursor = { parent, next: first, hydration };
-  const result = within(at, fn);
-  if (peek(at) !== null) fail(at, "子の末尾");
-  return result;
-}
-
-/** サーバーだけが出力し、クライアントが作成しないノードなら `true` を返す。 */
-export const serverOnly = (node: Node): boolean =>
-  node instanceof HTMLInputElement && node.hasAttribute(FORM_VALUE_ATTRIBUTE);
-
-/** 次に引き取るノードを返す。サーバーだけが出力するノードは飛ばす。 */
-function peek(at: Cursor): ChildNode | null {
-  while (at.next !== null && serverOnly(at.next)) at.next = at.next.nextSibling;
-  return at.next;
+  state: "claiming" | "done" | { readonly failure: string };
 }
 
 /**
- * 境界の領域の開始の目印の直後で、サーバーが境界の中身を出力しなかったことを表す目印があれば `true` を返す。
+ * 引き取りの位置を表す。`next` は `parent` の子のうち次に引き取るノードで、`until` は範囲の終わりのノードである。
+ * `until` が `null` なら、`parent` の子の末尾までを範囲にする。
+ */
+export interface Cursor {
+  readonly parent: ParentNode;
+  next: ChildNode | null;
+  readonly until: ChildNode | null;
+  readonly hydration: Hydration;
+}
+
+/** 引き取りの状態を作成する。 */
+export const createHydration = (): Hydration => ({ state: "claiming" });
+
+/** 引き取りの最中で、失敗していなければ `true` を返す。 */
+export const claiming = (hydration: Hydration): boolean => hydration.state === "claiming";
+
+/** 引き取りに失敗していれば、期待したノードと実際のノードを説明する文を返す。 */
+export const failureOf = (hydration: Hydration): string | undefined =>
+  typeof hydration.state === "object" ? hydration.state.failure : undefined;
+
+/** `parent` の子を、`first` から子の末尾まで引き取る位置を作成する。 */
+export const childCursor = (
+  parent: ParentNode,
+  hydration: Hydration,
+  first: ChildNode | null = parent.firstChild,
+): Cursor => ({ parent, next: first, until: null, hydration });
+
+/** サーバーだけが出力し、クライアントが作成しないノードなら `true` を返す。 */
+const serverOnly = (node: Node): boolean =>
+  node instanceof HTMLInputElement && node.hasAttribute(FORM_VALUE_ATTRIBUTE);
+
+/** 次に引き取るノードを返す。サーバーだけが出力するノードは飛ばす。範囲の終わりに達していれば `null` を返す。 */
+function peek(at: Cursor): ChildNode | null {
+  while (at.next !== null && at.next !== at.until && serverOnly(at.next)) {
+    at.next = at.next.nextSibling;
+  }
+  return at.next === at.until ? null : at.next;
+}
+
+/** `node` を説明する文を返す。 */
+export function describe(node: Node | null): string {
+  if (node === null) return "ノードの無い位置";
+  if (node instanceof Element) return `<${node.localName}>`;
+  if (node instanceof Text) return `テキスト ${JSON.stringify(node.data)}`;
+  if (node instanceof Comment) return `コメント ${JSON.stringify(node.data)}`;
+  return node.nodeName;
+}
+
+/** 引き取りに失敗したことを記録する。最初の失敗だけを記録する。 */
+export function fail(at: Cursor, expected: string): void {
+  if (!claiming(at.hydration)) return;
+  at.hydration.state = {
+    failure: `${expected}を引き取る位置に、${describe(peek(at))}がありました`,
+  };
+}
+
+/** 位置が範囲の終わりに達していなければ、失敗にする。 */
+export function finish(at: Cursor): void {
+  if (peek(at) !== null) fail(at, "範囲の末尾");
+}
+
+/** 位置にある `tag` の要素を引き取る。無ければ失敗にして、`undefined` を返す。 */
+export function takeElement(at: Cursor, tag: string): Element | undefined {
+  if (!claiming(at.hydration)) return undefined;
+  const node = peek(at);
+  if (node instanceof Element && node.localName === tag) {
+    at.next = node.nextSibling;
+    return node;
+  }
+  fail(at, `<${tag}>`);
+  return undefined;
+}
+
+/** 引き取った領域を表す。`inner` は、領域の中身を引き取る位置である。 */
+export interface Region {
+  readonly start: Comment;
+  readonly end: Comment;
+  readonly inner: Cursor;
+}
+
+/**
+ * 位置にある領域の開始の目印を引き取り、入れ子の目印を数えて、対応する終了の目印を探索する。位置は、終了の目印の次に進める。
+ * 目印が無ければ失敗にして、`undefined` を返す。
+ */
+export function takeRegion(at: Cursor): Region | undefined {
+  if (!claiming(at.hydration)) return undefined;
+  const start = peek(at);
+  if (!(start instanceof Comment) || start.data !== REGION_START) {
+    fail(at, `領域の目印 ${JSON.stringify(REGION_START)}`);
+    return undefined;
+  }
+  let depth = 0;
+  for (let node = start.nextSibling; node !== null && node !== at.until; node = node.nextSibling) {
+    if (!(node instanceof Comment)) continue;
+    if (node.data === REGION_START) depth++;
+    else if (node.data === REGION_END && depth-- === 0) {
+      at.next = node.nextSibling;
+      const inner = {
+        parent: at.parent,
+        next: start.nextSibling,
+        until: node,
+        hydration: at.hydration,
+      };
+      return { start, end: node, inner };
+    }
+  }
+  fail(at, `領域の目印 ${JSON.stringify(REGION_END)}`);
+  return undefined;
+}
+
+/**
+ * 境界の領域の中身の先頭に、サーバーが境界の中身を出力しなかったことを表す目印があれば `true` を返す。
  * 目印は、中身を送らなかった後送りの境界の `<template>` と、`<Errored>` のフォールバックを出力した領域のコメントである。
  */
 export const atServerFallback = (at: Cursor): boolean => {
@@ -85,77 +138,15 @@ export const atServerFallback = (at: Cursor): boolean => {
   );
 };
 
-/** `node` を説明する文を返す。 */
-function describe(node: Node | null): string {
-  if (node === null) return "ノードの無い位置";
-  if (node instanceof Element) return `<${node.localName}>`;
-  if (node instanceof Text) return `テキスト ${JSON.stringify(node.data)}`;
-  if (node instanceof Comment) return `コメント ${JSON.stringify(node.data)}`;
-  return node.nodeName;
-}
-
-/** 引き取りに失敗したことを記録する。最初の失敗だけを記録する。 */
-export function fail(at: Cursor, expected: string): void {
-  at.hydration.failure ??= `${expected}を引き取る位置に、${describe(peek(at))}がありました`;
-}
-
-/** 位置にあるノードを引き取って、位置を進める。 */
-function take<T extends ChildNode>(at: Cursor, node: T): T {
-  at.next = node.nextSibling;
-  at.hydration.claimed.add(node);
-  return node;
-}
-
-/** 位置にある `tag` の要素を引き取る。無ければ失敗にして、`undefined` を返す。 */
-export function takeElement(at: Cursor, tag: string): Element | undefined {
-  if (at.hydration.failure !== undefined) return undefined;
-  const node = peek(at);
-  if (node instanceof Element && node.localName === tag) return take(at, node);
-  fail(at, `<${tag}>`);
-  return undefined;
-}
-
-/** 位置にある、`mark` の領域の目印のコメントを引き取る。無ければ失敗にして、`undefined` を返す。 */
-export function takeComment(
-  at: Cursor,
-  mark: typeof REGION_START | typeof REGION_END,
-): Comment | undefined {
-  if (at.hydration.failure !== undefined) return undefined;
-  const node = peek(at);
-  if (node instanceof Comment && node.data === mark) return take(at, node);
-  fail(at, `領域の目印 ${JSON.stringify(mark)}`);
-  return undefined;
-}
-
-/**
- * `start` の領域の終了の目印までの中身を引き取らずに残し、終了の目印を引き取る。
- * 入れ子の領域の目印を数えて、対応する終了の目印を探す。見つからなければ失敗にして、`undefined` を返す。
- */
-export function skipRegion(at: Cursor, start: Comment): Comment | undefined {
-  let depth = 0;
-  for (let node = start.nextSibling; node !== null; node = node.nextSibling) {
-    if (!(node instanceof Comment)) continue;
-    if (node.data === REGION_START) depth++;
-    else if (node.data === REGION_END && depth-- === 0) {
-      at.next = node;
-      return take(at, node);
-    }
-  }
-  fail(at, "領域の終了の目印");
-  return undefined;
-}
-
 /**
  * 位置にあるテキストを引き取り、内容を `text` にする。位置のテキストが `text` で始まり、`text` より長ければ、分割して先頭を引き取る。
  * `text` が空なら、テキストを作成して位置の前に挿入する。
  */
 export function takeText(at: Cursor, text: string): void {
-  if (at.hydration.failure !== undefined) return;
+  if (!claiming(at.hydration)) return;
   const node = peek(at);
   if (text === "") {
-    const empty = document.createTextNode("");
-    at.parent.insertBefore(empty, node);
-    at.hydration.claimed.add(empty);
+    at.parent.insertBefore(document.createTextNode(""), at.next);
     return;
   }
   if (node instanceof Text) {
@@ -164,19 +155,8 @@ export function takeText(at: Cursor, text: string): void {
     } else {
       node.data = text;
     }
-    take(at, node);
+    at.next = node.nextSibling;
     return;
   }
   fail(at, `テキスト ${JSON.stringify(text)}`);
 }
-
-/** `node` が引き取ったノードでなければ、失敗にする。 */
-export function claimNode(at: Cursor, node: Node): void {
-  if (!at.hydration.claimed.has(node)) fail(at, describe(node));
-}
-
-/** `value` が、`build` が引き取りの最中に返したノードだけの、空でない配列なら `true` を返す。 */
-export const isBuilt = (hydration: Hydration, value: unknown): boolean =>
-  Array.isArray(value) &&
-  value.length > 0 &&
-  value.every((item: unknown) => item instanceof Node && hydration.built.has(item));

@@ -40,17 +40,20 @@ import {
   callRef,
   insert,
   Deferred,
+  DeferredRegion,
   setter,
 } from "./dom.ts";
 import { formControls, formElementClass } from "./form-element.ts";
 import { handleSubmit } from "./form.ts";
 import {
-  claimChildren,
+  childCursor,
+  claiming,
   createHydration,
-  currentCursor,
+  failureOf,
   fail,
+  finish,
   takeElement,
-  within,
+  type Cursor,
 } from "./hydration.ts";
 import {
   activateInSlot,
@@ -382,28 +385,35 @@ export function registerElement<P, M extends object = object>(
           });
           return content;
         };
-        const root = new Deferred(() => {
+        const root = new DeferredRegion((at) => {
           if (!owner)
             return createLoadingBoundary(
-              () => build(render()),
+              () => build(render(), at),
               () => undefined,
             );
-          const nodes = build(render());
+          const nodes = build(render(), at);
           return () => nodes;
         }, "loading");
         if (hydration) {
           const first = serverStyles(shadow).at(-1)?.nextSibling ?? shadow.firstChild;
-          claimChildren(shadow, first, hydration, () => insert(shadow, root));
+          const at = childCursor(shadow, hydration, first);
+          try {
+            insert(at, root);
+            finish(at);
+          } finally {
+            if (claiming(hydration)) hydration.state = "done";
+          }
         } else {
           insert(target, root);
         }
-        if (instance.ref && hydration?.failure === undefined) callRef(instance.ref, host);
+        if (instance.ref && (!hydration || hydration.state === "done")) callRef(instance.ref, host);
       }),
     );
-    if (hydration?.failure !== undefined) {
+    const failure = hydration && failureOf(hydration);
+    if (failure !== undefined) {
       if (import.meta.env?.DEV) {
         console.warn(
-          `[rinka] <${tag}> の SSR の DOM を引き取れません。${hydration.failure}。Shadow DOM の中身を作り直します。`,
+          `[rinka] <${tag}> の SSR の DOM を引き取れません。${failure}。Shadow DOM の中身を作り直します。`,
         );
       }
       start(host, instance, owner, id, "build");
@@ -600,7 +610,7 @@ export function createElementInstance(
   site?: string,
 ): ClientNode {
   const child = scopedChild(site);
-  return asClientNode(new Deferred(() => createHost(component, props, key, child)));
+  return asClientNode(new Deferred((at) => createHost(component, props, key, child, at)));
 }
 
 /** `createElementInstance` のホストを作成する。`child` は、描画の範囲で作成した子要素のキーである。 */
@@ -609,9 +619,9 @@ function createHost(
   props: Record<string, unknown>,
   key: string | undefined,
   child: ScopedChild | undefined,
+  at: Cursor | undefined,
 ): HTMLElement {
   const { tag } = component[elementInfo];
-  const at = currentCursor();
   const claimed = at && takeElement(at, tag);
   const host =
     claimed instanceof HTMLElement && instances.has(claimed)
@@ -625,32 +635,29 @@ function createHost(
   if (typeof transfer === "string") instance.takeover = { phase: "waiting", from: transfer };
   const owner = getOwner();
   const derive = (read: () => unknown): Source => ({ read: owner ? createMemo(read) : read });
-  const assign = () => {
-    for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(props))) {
-      if (name === "ref") continue;
-      const getter = descriptor.get;
-      const read = getter ? () => getter.call(props) as unknown : undefined;
-      const value: unknown = read ?? descriptor.value;
-      const prop = instance.props.get(name);
-      if (instance.kinds.slots.has(name)) {
-        placeInSlot(instance.slots, name, (place) => insert(host, value, place));
-      } else if (prop) {
-        const reactive = read ?? (instance.kinds.isReader(name, value) ? value : undefined);
-        write(prop, reactive ? derive(reactive) : { value });
-      } else if (read && isEventProp(name)) {
-        const listener = untrack(read);
-        if (isFunction(listener)) applyAttribute(host, name, listener);
-        else bind(read, setter(host, name, false));
-      } else {
-        applyAttribute(host, name, value);
-      }
+  const inner = at && childCursor(host, at.hydration);
+  for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(props))) {
+    if (name === "ref") continue;
+    const getter = descriptor.get;
+    const read = getter ? () => getter.call(props) as unknown : undefined;
+    const value: unknown = read ?? descriptor.value;
+    const prop = instance.props.get(name);
+    if (instance.kinds.slots.has(name)) {
+      placeInSlot(instance.slots, name, (place) => insert(inner ?? host, value, place));
+    } else if (prop) {
+      const reactive = read ?? (instance.kinds.isReader(name, value) ? value : undefined);
+      write(prop, reactive ? derive(reactive) : { value });
+    } else if (read && isEventProp(name)) {
+      const listener = untrack(read);
+      if (isFunction(listener)) applyAttribute(host, name, listener);
+      else bind(read, setter(host, name, false));
+    } else {
+      applyAttribute(host, name, value);
     }
-  };
-  if (at) {
-    claimChildren(host, host.firstChild, at.hydration, assign);
-    if (at.hydration.failure !== undefined) return host;
-  } else {
-    within(undefined, assign);
+  }
+  if (inner) {
+    finish(inner);
+    if (!claiming(inner.hydration)) return host;
   }
   if (key !== undefined) setter(host, "key", false)(key);
   if (isFunction(props.ref)) instance.ref = props.ref;

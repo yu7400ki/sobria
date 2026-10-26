@@ -24,6 +24,7 @@ import {
   REGION_FALLBACK,
   REGION_START,
   propertiesOf,
+  rawTextTags,
   tagAttributeName,
   type PropertyOutput,
 } from "../shared/attributes.ts";
@@ -285,9 +286,6 @@ interface ParentTag {
   /** 中身をテキストとして解析する要素（`<title>`、`<textarea>`、`<script>`、`<style>`）の中なら `true` である。 */
   readonly rawText: boolean;
 }
-
-/** 中身をテキストとして解析する要素のタグ名である。この中には目印を出力できない。 */
-const rawTextTags: ReadonlySet<string> = new Set(["title", "textarea", "script", "style"]);
 
 /** シェルと要素の境界で使用する、`ParentTag` の初期の値である。 */
 const noParentTag: ParentTag = { legend: undefined, selectValue: undefined, rawText: false };

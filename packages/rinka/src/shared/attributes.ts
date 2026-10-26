@@ -39,6 +39,9 @@ export const BOUNDARY_ATTRIBUTE = "data-ob";
 /** 後送りの境界の終わりに置くコメントの、境界の ID の前の文字列である。 */
 export const BOUNDARY_END = "/ob:";
 
+/** 中身をテキストとして解析する要素のタグ名である。サーバーはこの中に領域の目印を出力せず、クライアントは中身を引き取らずに作成し直す。 */
+export const rawTextTags: ReadonlySet<string> = new Set(["title", "textarea", "script", "style"]);
+
 /** 値が変化するたびに中身を置換する領域の、開始の目印のコメントの文字列である。 */
 export const REGION_START = "[";
 
