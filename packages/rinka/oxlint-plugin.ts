@@ -297,6 +297,22 @@ export default {
         };
       },
     },
+    /** `src/shared/objects.ts` の外で、`return` という名前のメソッドの呼び出しを報告する。 */
+    "no-iterator-return": {
+      create(context: Context) {
+        if (packagePath(context) === "src/shared/objects.ts") return {};
+        return {
+          CallExpression(node: CallNode) {
+            if (node.callee.type !== "MemberExpression" || methodName(node) !== "return") return;
+            context.report({
+              node,
+              message:
+                "iterator の return() は、src/shared/objects.ts の closeIterator で呼んでください。",
+            });
+          },
+        };
+      },
+    },
     /** `src/build/ast.ts` の外で、MagicString の、挿入する位置の左右を選ぶメソッドの呼び出しを報告する。 */
     "no-directional-insert": {
       create(context: Context) {

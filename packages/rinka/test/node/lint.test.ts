@@ -33,6 +33,7 @@ const rules = new Map([
   ["rinka(no-constant-literal)", "literal"],
   ["rinka(no-string-record-literal)", "record"],
   ["rinka(no-res-assignment)", "res"],
+  ["rinka(no-iterator-return)", "iterator-return"],
 ]);
 
 type Diagnostic = { code: string; labels: { span: { line: number } }[] };
@@ -338,6 +339,34 @@ describe("c.res への代入", () => {
         "export const a = (c: { res: unknown }) => { c.res = undefined; };",
       ]),
     ).toEqual([]);
+  });
+});
+
+describe("iterator の return() の呼び出し", () => {
+  it("src/server/ と src/shared/ では、return という名前のメソッドの呼び出しを報告する", () => {
+    const lines = [
+      "export const a = (i: AsyncIterator<unknown>) => i.return?.();",
+      'export const b = (i: AsyncIterator<unknown>) => i["return"]?.();',
+      "export const c = (i: AsyncIterator<unknown>) => i.next();",
+    ];
+    expect([reports("src/server/probe.ts", lines), reports("src/shared/probe.ts", lines)]).toEqual([
+      [
+        [1, "iterator-return"],
+        [2, "iterator-return"],
+      ],
+      [
+        [1, "iterator-return"],
+        [2, "iterator-return"],
+      ],
+    ]);
+  });
+
+  it("src/shared/objects.ts と src/client/ では報告しない", () => {
+    const lines = ["export const a = (i: AsyncIterator<unknown>) => i.return?.();"];
+    expect([
+      reports("src/shared/objects.ts", lines),
+      reports("src/client/probe.ts", lines),
+    ]).toEqual([[], []]);
   });
 });
 

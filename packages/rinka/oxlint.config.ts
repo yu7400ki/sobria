@@ -97,7 +97,11 @@ export default defineConfig({
     {
       files: ["src/shared/**"],
       env: { "shared-node-browser": true },
-      rules: { ...restrict(...shared, seroval), "no-undef": "error" },
+      rules: {
+        ...restrict(...shared, seroval),
+        "no-undef": "error",
+        "rinka/no-iterator-return": "error",
+      },
     },
     {
       files: ["src/shared/prop-names.ts"],
@@ -124,6 +128,7 @@ export default defineConfig({
         ...restrict(...server, seroval, pageHeader),
         "no-undef": "error",
         "rinka/no-res-assignment": "error",
+        "rinka/no-iterator-return": "error",
       },
     },
     { files: ["src/server/wire.ts"], rules: restrict(...server, pageHeader) },
