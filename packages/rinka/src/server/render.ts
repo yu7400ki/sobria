@@ -39,7 +39,7 @@ import { headKey } from "../shared/head.ts";
 import { isEventProp, propToAttribute, reservedProp } from "../shared/names.ts";
 import type { NavigationProps } from "../shared/navigation.ts";
 import { isAsyncIterable, isFunction, isPromiseLike } from "../shared/objects.ts";
-import { streamState, type ListedElement, type SwapSpec } from "../shared/receiver.ts";
+import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
 import type { RefreshJson, RefreshValues } from "../shared/refresh.ts";
 import {
   createScope,
@@ -57,7 +57,6 @@ import {
   listScript,
   loadAttributeValue,
   noValue,
-  pushScript,
   streamExpression,
   swapScript,
 } from "./bootstrap.ts";
@@ -1444,8 +1443,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   /**
    * memo の関数が返した `result` の値を、シェルを出力した後に `$rinka.d` でホストに送り、memo の値として使用する値を返す。
    * `result` が失敗したときと、値をシリアライズできないときは、値が無いことを表す `$rinka.n` を送る。シリアライズできない値は `console.error` に出力する。
-   * `result` が async iterable か、async iterable に解決するなら、その最初の値で描画する。最初の値は `$rinka.s` のストリームとして送り、
-   * 2 番目以降の値と、終わったことと、失敗したことは `$rinka.p` で送る。`blocking` では、最初の値だけを送って反復を終える。
+   * `result` が async iterable か、async iterable に解決するなら、その最初の値で描画し、最初の値を `$rinka.s` のストリームとして送ってから iterable を閉じる。
    */
   private sendMemo(
     host: HostRecord,
@@ -1492,12 +1490,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         return;
       }
       const script = this.script(first.value, path);
-      if (this.blocking || script === noValue) {
-        await this.deliver(host, key, script);
-        return;
-      }
-      if (!(await this.deliver(host, key, streamExpression(script)))) return;
-      await this.push(host, path, key, relay);
+      await this.deliver(host, key, script === noValue ? script : streamExpression(script));
     } finally {
       void relay.close();
       this.relays?.delete(relay);
@@ -1516,23 +1509,6 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   private closeRelays(): void {
     for (const relay of this.relays ?? []) void relay.close();
     this.relays = undefined;
-  }
-
-  /** `relay` の 2 番目以降の値と、終わったことか失敗したことを、`$rinka.p` でホストの `key` に送る。出力の読み取りが中止されたら、送るのをやめる。 */
-  private async push(host: HostRecord, path: string, key: string, relay: Relay): Promise<void> {
-    try {
-      for await (const value of relay.rest()) {
-        const script = this.script(value, path);
-        if (script === noValue) {
-          this.write(pushScript(host.id, key, streamState.failed));
-          return;
-        }
-        this.write(pushScript(host.id, key, streamState.open, script));
-      }
-      if (!relay.closing) this.write(pushScript(host.id, key, streamState.done));
-    } catch {
-      if (!relay.closing) this.write(pushScript(host.id, key, streamState.failed));
-    }
   }
 
   /** `value` を JS の式にする。シリアライズできなければ `console.error` に出力して、`$rinka.n` を返す。 */

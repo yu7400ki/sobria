@@ -7,7 +7,7 @@ import {
   PATCH_ATTRIBUTE,
 } from "../shared/attributes.ts";
 import { loadTimings } from "../shared/names.ts";
-import type { ListedElement, StreamState, SwapSpec } from "../shared/receiver.ts";
+import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
 import { serverFnRefName } from "../shared/server-fn.ts";
 import { scriptJson } from "./script.ts";
 
@@ -27,8 +27,7 @@ when(el,e.l,()=>{if(!e.s){e.s=1;import(e.u)}})};
 const scan=root=>{for(const t in E)if(!E[t].s)for(const el of root.querySelectorAll(t))watch(el)};
 const F={};
 window.$rinka=Object.assign(R,{v:R.v||{},l:R.l||{},n:R.n||{},t:R.t||new WeakSet(),c:R.c,
-s(v){const x={v,n:0,d:0,l:[]};this.t.add(x);return x},
-p(id,k,d,v){const x=(this.v[id]||{})[k];if(!x||!this.t.has(x))return;if(d)x.d=d;else{x.v=v;x.n++}x.l.splice(0).forEach(f=>f())},
+s(v){const x={v};this.t.add(x);return x},
 f(id,m){const k=m+' '+id;return F[k]||(F[k]=Object.defineProperty((...a)=>this.c(id,m)(...a),Symbol.for(${scriptJson(serverFnRefName)}),{value:{id,method:m}}))},
 d(id,o){Object.assign(this.v[id]||(this.v[id]={}),o);(this.l[id]||[]).slice().forEach(f=>f())},
 r(s){const me=document.currentScript;me&&me.remove();
@@ -64,13 +63,6 @@ export const noValue = "$rinka.n";
 /** JS の式 `value` を、ID が `id` のホストの `key` の値として送るスクリプトを返す。 */
 export const dataScript = (id: string, key: string, value: string): string =>
   `<script>$rinka.d(${scriptJson(id)},{${scriptJson(key)}:${value}})</script>`;
-
-/**
- * ID が `id` のホストの `key` のストリームを更新するスクリプトを返す。`state` が `0` なら JS の式 `value` の値を追加し、
- * `1` なら終わった状態に、`2` なら失敗した状態にする。
- */
-export const pushScript = (id: string, key: string, state: StreamState, value?: string): string =>
-  `<script>$rinka.p(${scriptJson(id)},${scriptJson(key)},${state}${value === undefined ? "" : `,${value}`})</script>`;
 
 /** JS の式 `value` を最初の値にするストリームを作成する JS の式を返す。 */
 export const streamExpression = (value: string): string => `$rinka.s(${value})`;

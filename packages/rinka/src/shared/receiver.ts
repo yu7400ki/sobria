@@ -14,22 +14,10 @@ export interface SwapSpec {
 /** 起動スクリプトに伝える要素を、タグ名、モジュールの URL、デフォルトの起動タイミングの組で表す。 */
 export type ListedElement = readonly [tag: string, module: string, load: DefaultLoad];
 
-/** ストリームの状態の値である。`open` は値が届く途中、`done` は終わった状態、`failed` は失敗した状態である。 */
-export const streamState = { open: 0, done: 1, failed: 2 } as const;
-
-/** ストリームの状態を表す。 */
-export type StreamState = (typeof streamState)[keyof typeof streamState];
-
-/** サーバーが反復している async iterable の、最新の値と状態を表す。 */
+/** SSR の memo の関数が返した async iterable の、最初の値を保持する記録を表す。 */
 export interface TransferStream {
-  /** 最新の値である。 */
-  v: unknown;
-  /** 値が届くたびに 1 増加する。 */
-  n: number;
-  /** ストリームの状態である。 */
-  d: StreamState;
-  /** 値か状態が変化したときに 1 回だけ呼ぶ関数を保持する。 */
-  readonly l: (() => void)[];
+  /** 最初の値である。 */
+  readonly v: unknown;
 }
 
 /** 起動スクリプトが `window.$rinka` に定義する受け口を表す。 */
@@ -44,8 +32,6 @@ export interface Receiver {
   readonly t: WeakSet<TransferStream>;
   /** 最初の値が `value` のストリームを作成する。 */
   readonly s: (value: unknown) => TransferStream;
-  /** ホストの `key` のストリームに、`state` が `0` なら値 `value` を追加し、それ以外なら状態を `state` にする。 */
-  readonly p: (id: string, key: string, state: StreamState, value?: unknown) => void;
   /** ホストに引き継ぐ値を保持して、そのホストで値を待っている関数に通知する。 */
   readonly d: (id: string, values: Record<string, unknown>) => void;
   /** 1 つの境界の中身と、その境界の中の差し替えを適用する。開始と終了の目印がそろわない差し替えは、適用せずに除去する。 */
@@ -70,7 +56,6 @@ export const receiverKeys = [
   "n",
   "t",
   "s",
-  "p",
   "d",
   "r",
   "m",

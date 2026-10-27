@@ -9,7 +9,7 @@ import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToStream, renderToString } from "../../src/server/response.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
 import { siteMemo as memo } from "../../src/shared/signals.ts";
-import { checkOrder, read } from "./stream-order.ts";
+import { read } from "./stream-order.ts";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -19,18 +19,16 @@ afterEach(() => {
 const missing = { missing: true };
 
 /**
- * `node` を文書として描画し、HTML と、出力したスクリプトが `$rinka.d` と `$rinka.p` に渡した値を返す。
+ * `node` を文書として描画し、HTML と、出力したスクリプトが `$rinka.d` に渡した値を返す。
  * `$rinka.s` で作成したストリームは、`{ stream: 最初の値 }` にする。
  */
 async function render(node: unknown, options: { blocking?: boolean } = {}) {
   const html = (await read(renderToStream(node, options))).join("");
   const sent: [string, Record<string, unknown>][] = [];
-  const pushed: unknown[][] = [];
   const rinka = {
     n: missing,
     d: (id: string, values: Record<string, unknown>) => sent.push([id, values]),
     s: (value: unknown) => ({ stream: value }),
-    p: (...args: unknown[]) => pushed.push(args),
     f: (id: string, method: string) => ({ serverFn: [id, method] }),
     r: () => {},
   };
@@ -39,7 +37,7 @@ async function render(node: unknown, options: { blocking?: boolean } = {}) {
     // oxlint-disable-next-line typescript/no-implied-eval
     new Function("$rinka", script)(rinka);
   }
-  return { html, sent, pushed };
+  return { html, sent };
 }
 
 /** 呼び出し箇所 `site` の非同期の memo の値を表示する要素を登録する。 */
@@ -522,12 +520,6 @@ const defineStreamed = (tag: string, site: string, compute: () => unknown) =>
     { props: {} },
   );
 
-/** "a" を yield してから失敗する。 */
-async function* failsAfterFirst() {
-  yield "a";
-  throw new Error("e");
-}
-
 /** 値を yield する前に失敗する。 */
 // oxlint-disable-next-line require-yield
 async function* failsFirst() {
@@ -535,18 +527,19 @@ async function* failsFirst() {
 }
 
 /**
- * "a" と "b" を返して終わり、`next` と `return` の呼び出しを `calls` に記録する async iterable を返す。
- * `hold` が真なら、2 回目の `next` は解決しない。
+ * `values` を順に返して終わり、`next` と `return` の呼び出しを `calls` に記録する async iterable を返す。
+ * 0 から数えて `hold` 回目の `next` は解決しない。
  */
-function recorded(hold = false) {
+function recorded(values: readonly string[], hold?: number) {
   const calls: string[] = [];
-  const values = ["a", "b"];
+  let index = 0;
   const iterable: AsyncIterable<string> = {
     [Symbol.asyncIterator]: () => ({
       next: async () => {
         calls.push("next");
-        if (hold && values.length === 1) return new Promise(() => {});
-        const value = values.shift();
+        const at = index++;
+        if (at === hold) return new Promise(() => {});
+        const value = values[at];
         return value === undefined ? { done: true, value: undefined } : { done: false, value };
       },
       return: async () => {
@@ -564,117 +557,56 @@ const Thrower = () => {
 };
 
 describe("ストリームの memo", () => {
-  it("最初の値で描画して $rinka.s で送り、後の値と終わりを $rinka.p で送る。async iterable に解決する Promise も同じである", async () => {
-    const direct = lettersOf();
-    const wrapped = lettersOf();
-    const Direct = defineStreamed("x-st1", "s.tsx:1:1", () => direct.letters());
-    const Wrapped = defineStreamed("x-st2", "s.tsx:2:1", () => Promise.resolve(wrapped.letters()));
-    const { html, sent, pushed } = await render([jsx(Direct, {}), jsx(Wrapped, {})]);
+  it("最初の値で描画して $rinka.s で送り、iterable を閉じる。async iterable に解決する Promise も同じである", async () => {
+    const direct = recorded(["a", "b"], 1);
+    const wrapped = recorded(["a", "b"], 1);
+    const ended = recorded([]);
+    const Direct = defineStreamed("x-st1", "s.tsx:1:1", () => direct.iterable);
+    const Wrapped = defineStreamed("x-st2", "s.tsx:2:1", () => Promise.resolve(wrapped.iterable));
+    const Ended = defineStreamed("x-st3", "s.tsx:3:1", () => ended.iterable);
+    const { html, sent } = await render([jsx(Direct, {}), jsx(Wrapped, {}), jsx(Ended, {})]);
     expect(html.split("<p><!--[-->a<!--]--></p>")).toHaveLength(3);
     expect(sent).toContainEqual(["h1", { "s.tsx:1:1#0": { stream: "a" } }]);
     expect(sent).toContainEqual(["h2", { "s.tsx:2:1#0": { stream: "a" } }]);
-    for (const [host, key] of [
-      ["h1", "s.tsx:1:1#0"],
-      ["h2", "s.tsx:2:1#0"],
-    ]) {
-      expect(pushed.filter(([id]) => id === host)).toEqual([
-        [host, key, 0, "b"],
-        [host, key, 0, "c"],
-        [host, key, 1],
-      ]);
-    }
-    expect(html.indexOf("</body></html>")).toBeGreaterThan(html.lastIndexOf("$rinka.p("));
-    expect([direct.state.closed, wrapped.state.closed]).toEqual([true, true]);
-  });
-
-  it("最初の値の後に失敗したら、失敗を $rinka.p で送る", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const Card = defineStreamed("x-st3", "s.tsx:3:1", () => failsAfterFirst());
-    const { html, pushed } = await render(jsx(Card, {}));
-    expect(html).toContain("<p><!--[-->a<!--]--></p>");
-    expect(pushed).toEqual([["h1", "s.tsx:3:1#0", 2]]);
+    expect(sent).toContainEqual(["h3", { "s.tsx:3:1#0": missing }]);
+    expect(html).not.toContain("$rinka.p(");
+    expect([direct.calls, wrapped.calls, ended.calls]).toEqual([
+      ["next", "return"],
+      ["next", "return"],
+      ["next"],
+    ]);
   });
 
   it("最初の値の前に失敗したら、値が無いことを送る", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const Card = defineStreamed("x-st4", "s.tsx:4:1", () => failsFirst());
-    const { sent, pushed } = await render(jsx(Card, {}));
+    const { sent } = await render(jsx(Card, {}));
     expect(sent).toContainEqual(["h1", { "s.tsx:4:1#0": missing }]);
-    expect(pushed).toEqual([]);
   });
 
-  it("ボット向けの描画では、最初の値を送り、iterable を閉じる", async () => {
+  it("すべての <Loading> を待つ描画でも、最初の値を $rinka.s で送り、iterable を閉じる", async () => {
     const { letters, state } = lettersOf();
     const Card = defineStreamed("x-st5", "s.tsx:5:1", () => letters());
-    const { sent, pushed } = await render(jsx(Card, {}), { blocking: true });
-    expect(sent).toContainEqual(["h1", { "s.tsx:5:1#0": "a" }]);
-    expect([pushed, state.closed]).toEqual([[], true]);
+    const { html, sent } = await render(jsx(Card, {}), { blocking: true });
+    expect(sent).toContainEqual(["h1", { "s.tsx:5:1#0": { stream: "a" } }]);
+    expect(html).not.toContain("$rinka.p(");
+    expect(state.closed).toBe(true);
   });
 
-  it("HTML のストリームの読み取りを中止すると、iterable を閉じる", async () => {
-    const closed = Promise.withResolvers<void>();
-    async function* endless() {
-      try {
-        for (let n = 0; ; n++) {
-          yield String(n);
-          // oxlint-disable-next-line no-await-in-loop
-          await new Promise((resolve) => setTimeout(resolve, 1));
-        }
-      } finally {
-        closed.resolve();
-      }
-    }
-    const Card = defineStreamed("x-st6", "s.tsx:6:1", () => endless());
-    const reader = renderToStream(jsx(Card, {})).getReader();
+  it("最初の値を待っている間に HTML のストリームの読み取りを中止すると、iterable を閉じる", async () => {
+    const { iterable, calls } = recorded(["a"], 0);
+    const Card = defineStreamed("x-st6", "s.tsx:6:1", () => iterable);
+    const reader = renderToStream(
+      jsx(Loading, { fallback: "loading", children: jsx(Card, {}) }),
+    ).getReader();
     await reader.read();
     await reader.cancel();
-    await closed.promise;
-  });
-
-  it("終わるまで反復した iterable と、ボット向けの描画で最初の値を送った iterable の return は、それぞれ 0 回と 1 回だけ呼ぶ", async () => {
-    const ended = recorded();
-    const blocked = recorded();
-    await render(
-      jsx(
-        defineStreamed("x-st7", "s.tsx:7:1", () => ended.iterable),
-        {},
-      ),
-    );
-    await render(
-      jsx(
-        defineStreamed("x-st8", "s.tsx:8:1", () => blocked.iterable),
-        {},
-      ),
-      {
-        blocking: true,
-      },
-    );
-    expect([ended.calls, blocked.calls]).toEqual([
-      ["next", "next", "next"],
-      ["next", "return"],
-    ]);
-  });
-
-  it("HTML のストリームの読み取りを中止すると、次の値を待っている iterable の return を呼ぶ", async () => {
-    const { iterable, calls } = recorded(true);
-    const Card = defineStreamed("x-st9", "s.tsx:9:1", () => iterable);
-    const reader = renderToStream(jsx(Card, {})).getReader();
-    let html = "";
-    while (!html.includes("$rinka.s(")) {
-      // oxlint-disable-next-line no-await-in-loop
-      const { value } = await reader.read();
-      html += new TextDecoder().decode(value);
-    }
-    await reader.cancel();
-    await vi.waitFor(() => expect(calls.at(-1)).toBe("return"));
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(calls.filter((call) => call === "return")).toEqual(["return"]);
-    expect(calls.at(-1)).toBe("return");
+    await vi.waitFor(() => expect(calls).toEqual(["next", "return"]));
   });
 
   it("レスポンスを返さずに描画を終えたら、iterable の return を呼ぶ", async () => {
-    const rendered = recorded(true);
-    const failed = recorded(true);
+    const rendered = recorded(["a", "b"], 1);
+    const failed = recorded(["a", "b"], 1);
     await renderToString(
       jsx(
         defineStreamed("x-st10", "s.tsx:10:1", () => rendered.iterable),
@@ -691,36 +623,25 @@ describe("ストリームの memo", () => {
     );
   });
 
-  it("HTML のストリームの読み取りを中止すると、描画したリクエストの Context の中で iterable の return を呼ぶ", async () => {
+  it("最初の値を待っている間に HTML のストリームの読み取りを中止すると、描画したリクエストの Context の中で iterable の return を呼ぶ", async () => {
     const c = new Context(new Request("http://localhost/"));
     const seen = Promise.withResolvers<unknown>();
-    async function* waiting() {
-      try {
-        yield "a";
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        yield "b";
-      } finally {
-        seen.resolve(getContext());
-      }
-    }
-    const Card = defineStreamed("x-st13", "s.tsx:13:1", () => waiting());
-    const stream = await runInRequest(c, () => renderToStream(jsx(Card, {})));
+    const iterable: AsyncIterable<string> = {
+      [Symbol.asyncIterator]: () => ({
+        next: () => new Promise(() => {}),
+        return: async () => {
+          seen.resolve(getContext());
+          return { done: true, value: undefined };
+        },
+      }),
+    };
+    const Card = defineStreamed("x-st13", "s.tsx:13:1", () => iterable);
+    const stream = await runInRequest(c, () =>
+      renderToStream(jsx(Loading, { fallback: "loading", children: jsx(Card, {}) })),
+    );
     const reader = stream.getReader();
-    let html = "";
-    while (!html.includes("$rinka.s(")) {
-      // oxlint-disable-next-line no-await-in-loop
-      const { value } = await reader.read();
-      html += new TextDecoder().decode(value);
-    }
+    await reader.read();
     await reader.cancel();
     expect(await seen.promise).toBe(c);
-  });
-
-  it("$rinka.p は、ホストのストリームの値を送った後に出力する", async () => {
-    const { letters } = lettersOf();
-    const Card = defineStreamed("x-st12", "s.tsx:12:1", () => letters());
-    const chunks = await read(renderToStream(jsx(Card, {})));
-    expect(chunks.join("")).toContain("$rinka.p(");
-    expect(() => checkOrder(chunks)).not.toThrow();
   });
 });

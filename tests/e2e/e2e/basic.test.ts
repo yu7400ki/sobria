@@ -46,10 +46,11 @@ it("要素の中で作成した子要素は、親が起動した後も SSR し�
   expect(p.textContent).toBe("7");
 });
 
-it("SSR の memo が返した async iterable の続きの値を、ページの続きから受け取って起動する", async () => {
+it("SSR の memo が返した async iterable の最初の値で描画し、起動するとブラウザで memo の関数を実行し直して最後の値を表示する", async () => {
   const origin = inject("basicOrigin");
   const served = inject("streamPage");
-  expect(served).toContain("$rinka.p(");
+  expect(served).toContain("$rinka.s(");
+  expect(served).not.toContain("$rinka.p(");
   const frame = document.createElement("iframe");
   frame.srcdoc = served.replace("<head>", `<head><base href="${origin}/">`);
   document.body.append(frame);
