@@ -156,12 +156,15 @@ function createProp(source: Source): Prop {
   return { source, track, trigger: () => trigger(undefined) };
 }
 
-/** `prop` に `source` を書き込む。書き込む前と後の source がどちらも値で、`Object.is` で等しければ、何もしない。 */
-function write(prop: Prop, source: Source): void {
+/**
+ * `instance` の `prop` に `source` を書き込み、`instance` が起動していれば変化を通知する。
+ * 書き込む前と後の source がどちらも値で、`Object.is` で等しければ、何もしない。
+ */
+function write(instance: Instance, prop: Prop, source: Source): void {
   const before = prop.source;
   if ("value" in before && "value" in source && Object.is(before.value, source.value)) return;
   prop.source = source;
-  prop.trigger();
+  if (instance.run) prop.trigger();
 }
 
 /** ホストのプロパティとして、props の値を追跡せずに読み取る。値が未解決なら `undefined` を返す。 */
@@ -283,10 +286,9 @@ export function registerElement<P, M extends object = object>(
       host.shadowRoot ?? host.attachShadow({ mode: "open", delegatesFocus: options.form === true });
     shadow.addEventListener("submit", handleSubmit);
     const transferred = beginTakeover(id, tag);
-    // 値の変化を通知せずに設定する
     for (const [name, value] of Object.entries(transferred.props)) {
       const prop = instance.props.get(name);
-      if (prop) prop.source = { value };
+      if (prop) write(instance, prop, { value });
     }
     const scope = createScope(transferred.memo, transferred.values);
     let target: ParentNode = shadow;
@@ -411,7 +413,7 @@ export function registerElement<P, M extends object = object>(
           enumerable: true,
           get: () => peek(prop),
           set: (value: unknown) => {
-            write(prop, { value });
+            write(instances.get(this)!, prop, { value });
           },
         });
       }
@@ -431,9 +433,10 @@ export function registerElement<P, M extends object = object>(
     attributeChangedCallback(attribute: string, _old: string | null, value: string | null): void {
       const entry = propOfAttribute.get(attribute);
       if (entry === undefined) return;
-      const prop = instances.get(this)!.props.get(entry.name)!;
+      const instance = instances.get(this)!;
+      const prop = instance.props.get(entry.name)!;
       if (reflects.has(entry.name) && attributeValue(attribute, peek(prop)) === value) return;
-      write(prop, { value: fromAttribute(value, entry.type) });
+      write(instance, prop, { value: fromAttribute(value, entry.type) });
     }
 
     connectedCallback(): void {
@@ -615,7 +618,7 @@ function createHost(
         placeInSlot(instance.slots, name, (place) => insert(target, value, place));
       } else if (prop) {
         const reactive = read ?? (instance.kinds.isReader(name, value) ? value : undefined);
-        write(prop, reactive ? derive(reactive) : { value });
+        write(instance, prop, reactive ? derive(reactive) : { value });
       } else if (read && isEventProp(name)) {
         const listener = untrack(read);
         if (isFunction(listener)) applyAttribute(host, name, listener);
