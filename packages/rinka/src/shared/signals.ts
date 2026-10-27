@@ -44,6 +44,16 @@ export interface Memo<T> {
 /** `read` が読み取った値が変化するたびに、`read` の戻り値を `apply` に渡して呼ぶ関数を表す。 */
 export type Effect = <T>(read: () => T, apply: (value: T) => void | (() => void)) => void;
 
+/**
+ * 外部の状態を読み取る関数を作成する関数を表す。`subscribe` は、状態が変化したときに呼ぶ関数を受け取り、購読を解除する関数を返す。
+ * `getSnapshot` はクライアントの状態を返し、`getServerSnapshot` は SSR と、SSR した要素が起動するときに使用する値を返す。
+ */
+export type External = <T>(
+  subscribe: (notify: () => void) => () => void,
+  getSnapshot: () => T,
+  getServerSnapshot?: () => T,
+) => Accessor<T>;
+
 /** 読み取りの関数と書き込みの関数の組を作成する。書き込んだ値は、次の flush の時点で読み取りに反映される。 */
 export const signal: {
   <T>(): Signal<T | undefined>;

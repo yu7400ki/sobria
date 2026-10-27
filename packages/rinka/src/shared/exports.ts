@@ -10,6 +10,7 @@ export {
   type Accessor,
   type Action,
   type Effect,
+  type External,
   type Memo,
   type Setter,
   type Signal,

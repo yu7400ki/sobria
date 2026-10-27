@@ -30,6 +30,7 @@ import {
   takeElement,
   takeRegion,
   takeText,
+  withHydrating,
   type Cursor,
   type Region,
 } from "./hydration.ts";
@@ -66,7 +67,11 @@ class Lazy<T> {
 
   #create(at: Cursor | undefined): { readonly value: T } | { readonly error: unknown } {
     try {
-      return { value: runWithOwner(this.#owner, () => this.#make(at)) };
+      return {
+        value: runWithOwner(this.#owner, () =>
+          withHydrating(at !== undefined, () => this.#make(at)),
+        ),
+      };
     } catch (error) {
       return { error };
     }

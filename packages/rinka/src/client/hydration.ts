@@ -77,6 +77,23 @@ export function fail(at: Cursor, expected: string): void {
   };
 }
 
+/** SSR した DOM を引き取る位置で、描画の内容を作成している途中かどうかである。 */
+let hydrating = false;
+
+/** SSR した DOM を引き取る位置で、描画の内容を作成している途中かどうかを返す。 */
+export const isHydrating = (): boolean => hydrating;
+
+/** `fn` を、SSR した DOM を引き取る位置で作成しているかどうかを `value` にして実行する。 */
+export function withHydrating<T>(value: boolean, fn: () => T): T {
+  const previous = hydrating;
+  hydrating = value;
+  try {
+    return fn();
+  } finally {
+    hydrating = previous;
+  }
+}
+
 /**
  * `at` の位置で `fill` を実行し、位置が範囲の終わりに達していなければ失敗にする。
  * 引き取りの最中で、失敗していなければ `true` を返す。

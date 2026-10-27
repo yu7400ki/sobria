@@ -4,6 +4,7 @@ import type { NavigationProps } from "../shared/navigation.ts";
 import type { ClientNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
 import { asClientNode, build, DeferredRegion, type Child } from "./dom.ts";
+import { withHydrating } from "./hydration.ts";
 
 /** 関数で渡された内容は、境界の中で呼び出して評価する。 */
 const read = (value: Child): Child => (isFunction(value) ? value() : value);
@@ -37,10 +38,12 @@ export function Errored(props: {
       (at) =>
         createErrorBoundary(
           () => build(read(props.children), at),
-          (error, retry) => {
-            const { fallback } = props;
-            return typeof fallback === "function" ? fallback(error(), retry) : fallback;
-          },
+          // フォールバックは SSR のノードを引き取らずに表示する
+          (error, retry) =>
+            withHydrating(false, () => {
+              const { fallback } = props;
+              return typeof fallback === "function" ? fallback(error(), retry) : fallback;
+            }),
         ),
       "errored",
     ),

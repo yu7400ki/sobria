@@ -144,6 +144,18 @@ type Action<Args extends unknown[], R> = ((...args: Args) => Promise<R>) & {
 type Effect = <T>(read: () => T, apply: (value: T) => void | (() => void)) => void;
 ```
 
+## External
+
+外部の状態を読み取る関数を作成する関数を表す。`subscribe` は、状態が変化したときに呼ぶ関数を受け取り、購読を解除する関数を返す。`getSnapshot` はクライアントの状態を返し、`getServerSnapshot` は SSR と、SSR した要素が起動するときに使用する値を返す。
+
+```ts
+type External = <T>(
+  subscribe: (notify: () => void) => () => void,
+  getSnapshot: () => T,
+  getServerSnapshot?: () => T,
+) => Accessor<T>;
+```
+
 ## Memo
 
 memo の読み取りの関数を表す。`refresh` に渡すと、値を取り直す。
@@ -400,6 +412,15 @@ class ServerFnError extends Error {
 
 ```ts
 const effect: Effect;
+```
+
+## external
+
+- 要素のファイル：外部の状態を読み取る関数を返す。SSR した要素が起動するときは `getServerSnapshot` の値を最初の値にし、起動した後に `getSnapshot` の値に切り替える。それ以外では、最初から `getSnapshot` の値を使用する。`subscribe` の通知を受けるたびに、`getSnapshot` で値を読み直す。作成した要素やコンポーネントが破棄されると、購読を解除する。
+- サーバーのファイル：`getServerSnapshot` の値を返す関数を返す。`getServerSnapshot` が無ければ、エラーを投げる。
+
+```ts
+const external: External;
 ```
 
 ## Errored
