@@ -538,17 +538,9 @@ function attach(el: HTMLElement, instance: Instance): void {
     }
   }
   const position = locate(el);
-  if (position.kind === "shadow") {
-    if (
-      position.host.hasAttribute(HOST_ATTRIBUTE) &&
-      instanceOf(position.host)?.takeover.phase !== "done"
-    ) {
-      return;
-    }
-    instance.activate(null);
-    return;
-  }
-  if (position.kind === "top") {
+  if (position.kind !== "slot") {
+    const host = position.kind === "shadow" ? position.host : undefined;
+    if (host?.hasAttribute(HOST_ATTRIBUTE) && instanceOf(host)?.takeover.phase !== "done") return;
     instance.activate(null);
     return;
   }
