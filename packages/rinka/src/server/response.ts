@@ -69,15 +69,11 @@ export function renderToResponse(
   node: unknown,
   { notFound, error, ...options }: ResponseOptions = {},
 ): Promise<Response> {
-  return respond(
-    withoutHead(node),
-    {
-      ...options,
-      ...(notFound && { notFound: () => Promise.resolve(withoutHead(notFound())) }),
-      ...(error && { error: (thrown: unknown) => Promise.resolve(withoutHead(error(thrown))) }),
-    },
-    200,
-  );
+  return renderDocument(withoutHead(node), {
+    ...options,
+    ...(notFound && { notFound: () => Promise.resolve(withoutHead(notFound())) }),
+    ...(error && { error: (thrown: unknown) => Promise.resolve(withoutHead(error(thrown))) }),
+  });
 }
 
 /** 文書として描画するノードと、文書の `<head>` の末尾に出力するマークアップを表す。 */
@@ -95,16 +91,12 @@ export type DocumentOptions = PageOptions<Promise<DocumentPage>>;
 /**
  * `renderToResponse` と同じ規則で、`page` のノードを描画し、`page` のマークアップを `<head>` の末尾に出力した Response を返す。
  * `notFound` と `error` のページは、そのページのマークアップを `<head>` の末尾に出力する。エラーのページの Promise が reject した値は、シェルの中で投げた値と同じ規則で扱う。
+ * ステータスは、`status` と、シェルの中の `<Errored>` が決めたステータスのうち大きいほうである。
  */
-export function renderDocument(page: DocumentPage, options: DocumentOptions): Promise<Response> {
-  return respond(page, options, 200);
-}
-
-/** `page` を描画した Response を返す。ステータスは、`status` と、シェルの中の `<Errored>` が決めたステータスのうち大きいほうである。 */
-async function respond(
+export async function renderDocument(
   page: DocumentPage | Promise<DocumentPage>,
   options: DocumentOptions,
-  status: number,
+  status = 200,
 ): Promise<Response> {
   const encoder = new TextEncoder();
   let controller!: ReadableStreamDefaultController<Uint8Array>;
@@ -128,7 +120,7 @@ async function respond(
     shell = await renderer.shell(asNode(resolved.node));
   } catch (error) {
     renderer.dispose();
-    return failure(error, options, respond);
+    return failure(error, options, renderDocument);
   }
   renderer.finish(shell, resolved.head).then(
     () => controller.close(),
@@ -143,16 +135,12 @@ async function respond(
 /**
  * `node` を描き直して、`refreshPage()` のレスポンスの JSON を返す。`<Loading>` の内側も含めて、すべて揃えてから返す。
  * シェルの中で投げた値は、`renderToResponse` と同じ規則で扱い、`notFound` と `error` のページも描き直しの JSON で返す。
+ * ステータスは、`status` と、シェルの中の `<Errored>` が決めたステータスのうち大きいほうである。
  */
-export function renderRefresh(node: unknown, options: ResponseOptions = {}): Promise<Response> {
-  return refreshed(node, options, 200);
-}
-
-/** `node` を描き直した Response を返す。ステータスは、`status` と、シェルの中の `<Errored>` が決めたステータスのうち大きいほうである。 */
-async function refreshed(
+export async function renderRefresh(
   node: unknown,
-  options: ResponseOptions,
-  status: number,
+  options: ResponseOptions = {},
+  status = 200,
 ): Promise<Response> {
   const renderer = new Renderer({ kind: "refresh" });
   try {
@@ -160,7 +148,7 @@ async function refreshed(
     try {
       shell = await renderer.shell(asNode(node));
     } catch (error) {
-      return await failure(error, options, refreshed);
+      return await failure(error, options, renderRefresh);
     }
     return Response.json(await renderer.refresh(shell), {
       status: Math.max(status, renderer.status),
