@@ -11,6 +11,7 @@ import {
 import {
   forEachReference,
   importedNames,
+  keyName,
   surround,
   topLevelVariables,
   withoutTypes,
@@ -113,10 +114,7 @@ function methodOf(
   let method: ServerFnMethod = defaultServerFnMethod;
   for (const property of options.properties) {
     if (property.type === "SpreadElement" || property.computed) throw error();
-    const { key } = property;
-    const keyName =
-      key.type === "Identifier" ? key.name : key.type === "Literal" ? key.value : undefined;
-    if (keyName !== "method") continue;
+    if (keyName(property.key) !== "method") continue;
     const value = withoutTypes(property.value);
     if (value.type !== "Literal" || !isServerFnMethod(value.value)) throw error();
     method = value.value;

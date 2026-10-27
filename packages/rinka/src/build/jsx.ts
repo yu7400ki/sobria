@@ -7,6 +7,7 @@ import {
   follow,
   importedNames,
   isFunction,
+  keyName,
   parseModule,
   surround,
   unwrap,
@@ -92,7 +93,7 @@ function applyRules(
   const multiple = call.callee.type === "Identifier" && runtime.multiple.has(call.callee.name);
   for (const [index, property] of props.properties.entries()) {
     if (property.type !== "Property" || property.computed || property.kind !== "init") continue;
-    const name = propertyName(property.key);
+    const name = keyName(property.key);
     if (name === undefined) continue;
     if (name === SITE_PROP) {
       moveSite(call, props, index, property, output, code);
@@ -138,12 +139,6 @@ function moveSite(
   const key = call.arguments[2];
   if (key) follow(output, key, `, ${value}`);
   else follow(output, props, `, void 0, ${value}`);
-}
-
-/** プロパティのキーが表す名前を返す。 */
-function propertyName(key: ESTree.PropertyKey): string | undefined {
-  if (key.type === "Identifier") return key.name;
-  return key.type === "Literal" && typeof key.value === "string" ? key.value : undefined;
 }
 
 /** `expression` を `() => (expression)` にする。 */

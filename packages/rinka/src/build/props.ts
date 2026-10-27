@@ -2,7 +2,7 @@ import type { ESTree } from "vite";
 
 import type { ElementOptions, PropKind } from "../shared/element.ts";
 import { checkPropNames } from "../shared/prop-names.ts";
-import { importedNames } from "./ast.ts";
+import { importedNames, keyName } from "./ast.ts";
 import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 
@@ -185,9 +185,7 @@ export function memberName(member: ESTree.TSSignature): string | undefined {
   if (member.type !== "TSPropertySignature" && member.type !== "TSMethodSignature") {
     return undefined;
   }
-  const { key } = member;
-  if (!member.computed && key.type === "Identifier") return key.name;
-  return key.type === "Literal" && typeof key.value === "string" ? key.value : undefined;
+  return keyName(member.key, member.computed);
 }
 
 /** `rinka` から import した `Props` と `Slot` と `Ctx` の、ファイルの中の名前と、ファイルで宣言した type と interface を返す。 */

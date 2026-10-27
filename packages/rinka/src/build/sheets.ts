@@ -1,7 +1,7 @@
 import type { MagicString } from "magic-string";
 import type { ESTree } from "vite";
 
-import { walk } from "./ast.ts";
+import { keyName, walk } from "./ast.ts";
 import { importInternal } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 import { directUrl } from "./paths.ts";
@@ -58,7 +58,7 @@ export function rewriteSheetImports(
 
 /** import の属性が `type: 'css'` かどうかを返す。 */
 const isCssType = ({ key, value }: ESTree.ImportAttribute): boolean =>
-  (key.type === "Identifier" ? key.name : key.value) === "type" && value.value === "css";
+  keyName(key) === "type" && value.value === "css";
 
 /** `?inline` の指定子 `inline` の CSS から作成したシートを default export し、CSS が更新されたら同じシートを差し替える、クライアントのシートのモジュールのコードを返す。 */
 function clientSheetModule(inline: string): string {

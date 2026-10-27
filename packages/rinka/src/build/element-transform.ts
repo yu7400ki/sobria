@@ -13,6 +13,7 @@ import {
   binds,
   children,
   isFunction,
+  keyName,
   moduleExportName,
   topLevelVariables,
   unwrap,
@@ -160,13 +161,7 @@ function convertSlots(
       return node.id.type === "ObjectPattern" ? patternSlot(node.id, names) : undefined;
     }
     if (node.type !== "MemberExpression" || !isParam(node.object)) return undefined;
-    const key = node.computed ? unwrap(node.property) : node.property;
-    const name =
-      key.type === "Identifier" && !node.computed
-        ? key.name
-        : key.type === "Literal" && typeof key.value === "string"
-          ? key.value
-          : undefined;
+    const name = keyName(node.computed ? unwrap(node.property) : node.property, node.computed);
     return name !== undefined && names.has(name) ? name : undefined;
   };
   const placed = new Set<string>();

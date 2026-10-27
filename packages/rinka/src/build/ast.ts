@@ -63,6 +63,15 @@ export function children(node: Node): Node[] {
   return childEntries(node).map(([, child]) => child);
 }
 
+/**
+ * プロパティのキー `key` が表す名前を返す。`computed` が偽なら識別子の名前を返し、文字列のリテラルなら `computed` に関わらずその値を返す。
+ * ほかのキーでは `undefined` を返す。
+ */
+export function keyName(key: Node, computed = false): string | undefined {
+  if (key.type === "Identifier" && !computed) return key.name;
+  return key.type === "Literal" && typeof key.value === "string" ? key.value : undefined;
+}
+
 /** `node` と、その子孫のノードを、親から順に `visit` に渡す。`skip` が真を返すノードと、その子孫は渡さない。 */
 export function walk(
   node: Node,
