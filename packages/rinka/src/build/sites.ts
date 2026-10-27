@@ -15,52 +15,38 @@ import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 import { SITE_PROP } from "./jsx.ts";
 
-/** `rinka` から import した `memo` の呼び出しに、`{ site: "ファイル:行:列" }` を付与する。 */
-export function addMemoSites(
-  program: ESTree.Program,
-  output: MagicString,
-  code: string,
-  file: string,
-  replaced: ReadonlySet<Node>,
-): void {
-  const names = importedNames(program, entries.main).get("memo");
-  if (!names) return;
-  const starts = lineStarts(code);
-  walk(
-    program,
-    (node) => {
-      if (node.type !== "CallExpression") return;
-      if (node.callee.type !== "Identifier" || !names.has(node.callee.name)) return;
-      const [fn, options] = node.arguments;
-      if (!fn || fn.type === "SpreadElement" || options?.type === "SpreadElement") return;
-      const site = `site: ${JSON.stringify(`${file}:${lineColumn(starts, node.start)}`)}`;
-      if (!options) {
-        follow(output, fn, `, { ${site} }`);
-      } else if (options.type === "ObjectExpression") {
-        insertInside(output, options, options.properties.length > 0 ? ` ${site},` : ` ${site} `);
-      } else {
-        surround(output, options, "{ ...", `, ${site} }`);
-      }
-    },
-    (node) => replaced.has(node),
-  );
-}
-
 /**
+ * `rinka` から import した `memo` の呼び出しに、`{ site: "ファイル:行:列" }` を付与する。
  * コンポーネントの JSX のタグに、呼び出し箇所の ID `"ファイル:行:列"` を値に持つ属性 `__rinka_site` を付与する。
  * JSX の規則を適用する変換が、この属性を `jsx` の第 4 引数に移動する。
  */
-export function addElementSites(
+export function addSites(
   program: ESTree.Program,
   output: MagicString,
   code: string,
   file: string,
   replaced: ReadonlySet<Node>,
 ): void {
+  const memos = importedNames(program, entries.main).get("memo");
   const starts = lineStarts(code);
+  const siteOf = (node: Node) => JSON.stringify(`${file}:${lineColumn(starts, node.start)}`);
   walk(
     program,
     (node) => {
+      if (node.type === "CallExpression") {
+        if (node.callee.type !== "Identifier" || !memos?.has(node.callee.name)) return;
+        const [fn, options] = node.arguments;
+        if (!fn || fn.type === "SpreadElement" || options?.type === "SpreadElement") return;
+        const site = `site: ${siteOf(node)}`;
+        if (!options) {
+          follow(output, fn, `, { ${site} }`);
+        } else if (options.type === "ObjectExpression") {
+          insertInside(output, options, options.properties.length > 0 ? ` ${site},` : ` ${site} `);
+        } else {
+          surround(output, options, "{ ...", `, ${site} }`);
+        }
+        return;
+      }
       if (node.type !== "JSXElement") return;
       const { name, attributes, typeArguments } = node.openingElement;
       for (const attribute of attributes) {
@@ -76,8 +62,7 @@ export function addElementSites(
       }
       if (name.type === "JSXNamespacedName") return;
       if (name.type === "JSXIdentifier" && /^[a-z]|-/.test(name.name)) return;
-      const site = JSON.stringify(`${file}:${lineColumn(starts, node.start)}`);
-      follow(output, typeArguments ?? name, ` ${SITE_PROP}={${site}}`);
+      follow(output, typeArguments ?? name, ` ${SITE_PROP}={${siteOf(node)}}`);
     },
     (node) => replaced.has(node),
   );

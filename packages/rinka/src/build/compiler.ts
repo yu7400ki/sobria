@@ -13,7 +13,7 @@ import {
   serverFnNames,
 } from "./server-fn-transform.ts";
 import { rewriteSheetImports } from "./sheets.ts";
-import { addElementSites, addMemoSites } from "./sites.ts";
+import { addSites } from "./sites.ts";
 
 export { CompileError } from "./errors.ts";
 
@@ -50,8 +50,7 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
   const replaced = new Set<Node>(
     options.client ? definitions.map((definition) => definition.init) : [],
   );
-  addMemoSites(program, output, code, options.file, replaced);
-  addElementSites(program, output, code, options.file, replaced);
+  addSites(program, output, code, options.file, replaced);
   rewriteSheetImports(program, output, code, options.file);
   const element =
     options.element &&
