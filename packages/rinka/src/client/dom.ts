@@ -15,7 +15,7 @@ import {
   REGION_START,
   tagAttributeName,
 } from "../shared/attributes.ts";
-import { isEventProp, listenerEventName } from "../shared/names.ts";
+import { isEventProp, listenerEventName, slotNameOf } from "../shared/names.ts";
 import type { ClientNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
 import { outsideScope } from "../shared/scope.ts";
@@ -222,7 +222,7 @@ function createTag(tag: string, given: Record<string, unknown>, at: Cursor | und
     };
     bind(props[name], kept ? afterFirst(set) : set);
   }
-  if (tag === "slot") registerSlot(typeof props.name === "string" ? props.name : "");
+  if (tag === "slot") registerSlot(slotNameOf(props.name));
   if (isFunction(props.ref) && (!at || claiming(at.hydration))) callRef(props.ref, el);
   return el;
 }

@@ -151,3 +151,6 @@ export const customEventName = (prop: string): string => toKebabCase(prop.slice(
 
 /** ネイティブのタグと、要素のホストに登録するリスナーのイベント名を、イベントの props の名前から返す。`onClick` は `click`、`onDblClick` は `dblclick` になる。 */
 export const listenerEventName = (prop: string): string => prop.slice(2).toLowerCase();
+
+/** `<slot>` の `name` の値 `value` を、スロットの名前にする。文字列でない値は、名前の無いスロットの `""` にする。 */
+export const slotNameOf = (value: unknown): string => (typeof value === "string" ? value : "");

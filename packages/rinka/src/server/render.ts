@@ -36,7 +36,7 @@ import {
   unsupportedFormControls,
 } from "../shared/element.ts";
 import { headKey } from "../shared/head.ts";
-import { isEventProp, propToAttribute, reservedProp } from "../shared/names.ts";
+import { isEventProp, propToAttribute, reservedProp, slotNameOf } from "../shared/names.ts";
 import type { NavigationProps } from "../shared/navigation.ts";
 import { isAsyncIterable, isFunction, isPromiseLike } from "../shared/objects.ts";
 import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
@@ -853,7 +853,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     };
     if (tag === "slot") {
       const name = this.value(props.name, ctx, false);
-      ctx.slots?.set(typeof name === "string" ? name : "", ctx.boundary);
+      ctx.slots?.set(slotNameOf(name), ctx.boundary);
     }
     const open = this.settle(ctx, openTag);
     out.push(this.chunkOf(open, (text) => text));
