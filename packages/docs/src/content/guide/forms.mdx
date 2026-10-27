@@ -62,7 +62,7 @@ handler がそれ以外の例外を投げたときは、送信したページへ
 
 handler が例外を投げたときに `error.tsx` が無ければ、500 を返します。本番のサーバーは `Internal Server Error` のテキストを返し、開発サーバーはエラーの画面を返します。
 
-Referer を送信しない設定（`Referrer-Policy: no-referrer`）のページでは、handler が値を返したときのリダイレクト先が `/` になります。
+Referer を送信しない設定（`Referrer-Policy: no-referrer`）のページから送信したときと、Referer が別のホストの URL のときは、handler が値を返したときのリダイレクト先が `/` になります。
 
 ## JS があるときの送信
 
