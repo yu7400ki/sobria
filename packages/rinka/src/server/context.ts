@@ -134,3 +134,12 @@ export function setBlockingRender(c: Context, value: boolean): void {
 
 /** リクエスト `c` に `setBlockingRender` で指定した値を返す。指定していなければ undefined を返す。 */
 export const blockingRenderOf = (c: object): boolean | undefined => blockingRenders.get(c);
+
+/** リクエスト `c` の `executionCtx` を返す。無ければ `undefined` を返す。 */
+export function executionCtxOf(c: Context): Context["executionCtx"] | undefined {
+  try {
+    return c.executionCtx;
+  } catch {
+    return undefined;
+  }
+}

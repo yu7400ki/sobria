@@ -15,7 +15,13 @@ import {
   type Routes,
 } from "../shared/routes.ts";
 import { isBot } from "./bots.ts";
-import { blockingRenderOf, replaceResponse, runInRequest, withContextHeaders } from "./context.ts";
+import {
+  blockingRenderOf,
+  executionCtxOf,
+  replaceResponse,
+  runInRequest,
+  withContextHeaders,
+} from "./context.ts";
 import {
   callerResponses,
   pageRequest,
@@ -107,15 +113,6 @@ const fallbackNode = (page: Fallback, props: object): unknown =>
 const throwing = (error: unknown) => (): never => {
   throw error;
 };
-
-/** リクエスト `c` の `executionCtx` を返す。無ければ `undefined` を返す。 */
-function executionCtxOf(c: Context): Context["executionCtx"] | undefined {
-  try {
-    return c.executionCtx;
-  } catch {
-    return undefined;
-  }
-}
 
 /** `notFound()` を投げるページである。 */
 const missing = (): never => {

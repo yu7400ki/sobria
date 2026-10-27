@@ -9,7 +9,7 @@ import {
   type ServerFnMethod,
   type ServerFnRef,
 } from "../shared/server-fn.ts";
-import { currentContext, replaceResponse, withContextHeaders } from "./context.ts";
+import { currentContext, executionCtxOf, replaceResponse, withContextHeaders } from "./context.ts";
 
 type AnyMiddleware = MiddlewareHandler<any, any, any>;
 
@@ -175,12 +175,7 @@ async function callDirectly(
 
 /** `page` のリクエスト、環境、変数を受け継いだ、新しい Context を返す。 */
 function scopedContext(page: Context): Context {
-  let executionCtx: Context["executionCtx"] | undefined;
-  try {
-    executionCtx = page.executionCtx;
-  } catch {
-    executionCtx = undefined;
-  }
+  const executionCtx = executionCtxOf(page);
   const env: unknown = page.env;
   const c = new Context(page.req.raw, {
     env,
