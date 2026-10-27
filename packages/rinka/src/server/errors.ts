@@ -76,6 +76,12 @@ export type Thrown =
   | { readonly kind: "schema"; readonly issues: SchemaError["issues"] }
   | { readonly kind: "error" };
 
+/** `thrown` が `redirect()` か、移動先が安全な 3xx の Response なら、ページの移動先を返す。 */
+export const navigableLocation = (thrown: Thrown): string | undefined =>
+  thrown.kind === "redirect" || (thrown.kind === "moved" && thrown.safe)
+    ? thrown.location
+    : undefined;
+
 /** 投げられた値の種類を返す。`HTTPException` は、`getResponse()` が返す Response として扱う。 */
 export function classify(error: unknown): Thrown {
   if (error instanceof HTTPException) return classify(error.getResponse());

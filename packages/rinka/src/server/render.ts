@@ -73,7 +73,7 @@ import {
   type HeadOutput,
   type Hoisted,
 } from "./document-head.ts";
-import { classify } from "./errors.ts";
+import { classify, navigableLocation } from "./errors.ts";
 import { HostRecord, hostIds } from "./host-record.ts";
 import { attribute, checkAttributeName, escapeAttribute, escapeText } from "./html.ts";
 import { Labels } from "./labels.ts";
@@ -326,9 +326,8 @@ type Around =
 /** シェルを送った後に投げられた値 `error` の扱いを返す。`redirect()` と、規則に合う移動先への移動はページを移動させ、ほかの値は受け止める。 */
 function afterShell(error: unknown): AfterShell {
   const thrown = classify(error);
-  if (thrown.kind === "redirect" || (thrown.kind === "moved" && thrown.safe)) {
-    return { kind: "navigate", location: thrown.location };
-  }
+  const location = navigableLocation(thrown);
+  if (location !== undefined) return { kind: "navigate", location };
   if (thrown.kind === "moved") return { kind: "blocked", location: thrown.location };
   return { kind: "catch", noindex: thrown.kind === "notFound" };
 }

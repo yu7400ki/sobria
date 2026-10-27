@@ -24,7 +24,7 @@ import {
 } from "../shared/wire.ts";
 import { replaceResponse, runInRequest } from "./context.ts";
 import { cookieAfter } from "./cookies.ts";
-import { classify, isSafeLocation } from "./errors.ts";
+import { classify, isSafeLocation, navigableLocation } from "./errors.ts";
 import { formDataToInput } from "./form-data.ts";
 import { Relay } from "./relay.ts";
 import { handledMethod } from "./request.ts";
@@ -491,8 +491,8 @@ function stream(c: Context, { relay, first }: Streamed, fail: Failure): Response
   const encode = (line: StreamLine) => encoder.encode(`${streamLineText(line)}\n`);
   const failed = async (error: unknown): Promise<StreamLine> => {
     const thrown = classify(error);
-    if (thrown.kind === "redirect") return { redirect: thrown.location };
-    if (thrown.kind === "moved" && thrown.safe) return { redirect: thrown.location };
+    const location = navigableLocation(thrown);
+    if (location !== undefined) return { redirect: location };
     if (thrown.kind === "error" || thrown.kind === "schema") {
       await runInRequest(c, () => fail(c, error));
     }
