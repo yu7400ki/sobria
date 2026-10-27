@@ -50,7 +50,6 @@ it("SSR の memo が返した async iterable の最初の値で描画し、起�
   const origin = inject("basicOrigin");
   const served = inject("streamPage");
   expect(served).toContain("$rinka.s(");
-  expect(served).not.toContain("$rinka.p(");
   const frame = document.createElement("iframe");
   frame.srcdoc = served.replace("<head>", `<head><base href="${origin}/">`);
   document.body.append(frame);

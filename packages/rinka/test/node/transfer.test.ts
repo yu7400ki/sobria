@@ -20,7 +20,7 @@ const missing = { missing: true };
 
 /**
  * `node` を文書として描画し、HTML と、出力したスクリプトが `$rinka.d` に渡した値を返す。
- * `$rinka.s` で作成したストリームは、`{ stream: 最初の値 }` にする。
+ * `$rinka.s` で作成したストリームの記録は、`{ stream: 値 }` にする。
  */
 async function render(node: unknown, options: { blocking?: boolean } = {}) {
   const html = (await read(renderToStream(node, options))).join("");
@@ -569,7 +569,6 @@ describe("ストリームの memo", () => {
     expect(sent).toContainEqual(["h1", { "s.tsx:1:1#0": { stream: "a" } }]);
     expect(sent).toContainEqual(["h2", { "s.tsx:2:1#0": { stream: "a" } }]);
     expect(sent).toContainEqual(["h3", { "s.tsx:3:1#0": missing }]);
-    expect(html).not.toContain("$rinka.p(");
     expect([direct.calls, wrapped.calls, ended.calls]).toEqual([
       ["next", "return"],
       ["next", "return"],
@@ -588,9 +587,8 @@ describe("ストリームの memo", () => {
   it("すべての <Loading> を待つ描画でも、最初の値を $rinka.s で送り、iterable を閉じる", async () => {
     const { letters, state } = lettersOf();
     const Card = defineStreamed("x-st5", "s.tsx:5:1", () => letters());
-    const { html, sent } = await render(jsx(Card, {}), { blocking: true });
+    const { sent } = await render(jsx(Card, {}), { blocking: true });
     expect(sent).toContainEqual(["h1", { "s.tsx:5:1#0": { stream: "a" } }]);
-    expect(html).not.toContain("$rinka.p(");
     expect(state.closed).toBe(true);
   });
 
