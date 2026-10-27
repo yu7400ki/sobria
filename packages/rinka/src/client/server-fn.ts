@@ -62,7 +62,7 @@ export function serverFn(id: string, method: ServerFnMethod): RpcFn {
       ...(body !== undefined && { body }),
       ...(signal !== undefined && { signal }),
     });
-    return read(response, new URL(url, location.href), reflect);
+    return read(response, new URL(url, document.baseURI), reflect);
   };
   return withServerFnRef(call, { id, method });
 }
