@@ -362,16 +362,17 @@ export function callerOf(c: Context): Caller | undefined {
   const kind = requestKind(c);
   const value = c.req.header(PAGE_HEADER);
   if (kind === undefined || (kind === "form" && value === undefined)) return undefined;
-  if (handledMethod(c) === "GET" || value === undefined || !URL.canParse(value)) {
-    return { page: undefined };
-  }
-  const url = new URL(value);
-  return { page: isLocalPage(url, c) ? url : undefined };
+  return { page: handledMethod(c) === "GET" ? undefined : localPageOf(value, c) };
 }
 
-/** URL `url` のホストがリクエスト `c` の URL と同じで、パスが `/_rinka/` の下にないかどうかを返す。 */
-const isLocalPage = (url: URL, c: Context): boolean =>
-  url.host === new URL(c.req.url).host && !url.pathname.startsWith(internalPrefix);
+/** `value` が、ホストがリクエスト `c` の URL と同じで、パスが `/_rinka/` の下にない URL なら、その URL を返す。 */
+function localPageOf(value: string | undefined, c: Context): URL | undefined {
+  if (value === undefined || !URL.canParse(value)) return undefined;
+  const url = new URL(value);
+  return url.host === new URL(c.req.url).host && !url.pathname.startsWith(internalPrefix)
+    ? url
+    : undefined;
+}
 
 /**
  * フォームの送信 `c` が JS からの送信かどうかを `js` に、送信したページの URL を `page` に返す。JS があるときは `x-rinka-page` の URL を、JS が無いときは Referer の URL を使用する。
@@ -383,10 +384,7 @@ export function submittedPage(c: Context): {
 } {
   const caller = callerOf(c);
   if (caller !== undefined) return { js: true, page: caller.page };
-  const referer = c.req.header("referer");
-  if (referer === undefined || !URL.canParse(referer)) return { js: false, page: undefined };
-  const url = new URL(referer);
-  return { js: false, page: isLocalPage(url, c) ? url : undefined };
+  return { js: false, page: localPageOf(c.req.header("referer"), c) };
 }
 
 /** リクエスト `c` のレスポンスの移動先 `location` を、`c` の URL のパスとクエリと、ページ `page` の URL のオリジンを基準に解決する。 */
