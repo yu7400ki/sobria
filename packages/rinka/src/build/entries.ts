@@ -70,16 +70,13 @@ export const oxc = {
   sourceType: "module",
 } satisfies UserConfig["oxc"] & { sourceType: "module" };
 
+/** 環境 `env` の実行時のコードの入口を、`lib/` からの相対パスで返す。 */
+const runtimeOf = (env: "client" | "server"): ReadonlyMap<string, string> =>
+  new Map([
+    [entries.main, `${env}/index.js`],
+    [entries.jsxRuntime, `${env}/jsx-runtime.js`],
+    [entries.internal, `${env}/internal.js`],
+  ]);
+
 /** 環境ごとの実行時のコードの入口を、`lib/` からの相対パスで表す。 */
-export const runtimes: Readonly<Record<"client" | "server", ReadonlyMap<string, string>>> = {
-  client: new Map([
-    [entries.main, "client/index.js"],
-    [entries.jsxRuntime, "client/jsx-runtime.js"],
-    [entries.internal, "client/internal.js"],
-  ]),
-  server: new Map([
-    [entries.main, "server/index.js"],
-    [entries.jsxRuntime, "server/jsx-runtime.js"],
-    [entries.internal, "server/internal.js"],
-  ]),
-};
+export const runtimes = { client: runtimeOf("client"), server: runtimeOf("server") } as const;
