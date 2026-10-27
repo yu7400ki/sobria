@@ -955,7 +955,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       const creator = child.data;
       const mapKey = childKey(child.key);
       if (creator.listChild(mapKey)) {
-        this.send(creator, mapKey, Promise.resolve(scriptJson(id)));
+        this.send(creator, mapKey, scriptJson(id));
       } else {
         announce = dataScript(creator.id, mapKey, scriptJson(id));
       }
@@ -1081,7 +1081,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         at.addRefreshData(id, toScript(values, `<${tag}>`));
         return `${start}>`;
       }
-      if (transfer) this.send(record, PROPS_KEY, Promise.resolve(toScript(transfer, `<${tag}>`)));
+      if (transfer) this.send(record, PROPS_KEY, toScript(transfer, `<${tag}>`));
       const keys = record.seal(transfer ? [PROPS_KEY] : [], at.shown);
       const om = keys.length > 0 ? attribute(AWAITED_ATTRIBUTE, keys.join(" ")) : "";
       return `${start}${om}><template shadowrootmode="open"${form ? " shadowrootdelegatesfocus" : ""}>`;
@@ -1462,42 +1462,38 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     );
   }
 
-  /** `sendMemo` の `relayed` の値を、ホストの `key` に送る。 */
+  /** `sendMemo` の `relayed` の値を、ホストの `key` に送る。`relayed` の値が Relay なら、送るか送らないかが決まった後に閉じる。 */
   private async transfer(
     host: HostRecord,
     path: string,
     key: string,
     relayed: Promise<unknown>,
   ): Promise<void> {
-    let value: unknown;
     try {
-      value = await relayed;
-    } catch {
-      await this.deliver(host, key, noValue);
-      return;
-    }
-    if (!(value instanceof Relay)) {
-      await this.deliver(host, key, this.script(value, path));
-      return;
-    }
-    const relay = value;
-    try {
-      let first: IteratorResult<unknown>;
-      try {
-        first = await relay.first;
-      } catch {
-        await this.deliver(host, key, noValue);
-        return;
-      }
-      if (first.done === true) {
-        await this.deliver(host, key, noValue);
-        return;
-      }
-      const script = this.script(first.value, path);
-      await this.deliver(host, key, script === noValue ? script : streamRecordExpression(script));
+      await this.deliver(host, key, await this.memoScript(path, relayed));
     } finally {
-      void relay.close();
-      this.relays?.delete(relay);
+      const value = await relayed.catch(() => undefined);
+      if (value instanceof Relay) {
+        void value.close();
+        this.relays?.delete(value);
+      }
+    }
+  }
+
+  /**
+   * `sendMemo` の `relayed` の値を JS の式にする。`relayed` が失敗したときと、Relay が最初の値の前に終わるか失敗したときは `$rinka.n` にする。
+   * Relay なら、最初の値を `$rinka.s` のストリームの記録にする式を返す。
+   */
+  private async memoScript(path: string, relayed: Promise<unknown>): Promise<string> {
+    try {
+      const value = await relayed;
+      if (!(value instanceof Relay)) return this.script(value, path);
+      const first = await value.first;
+      if (first.done === true) return noValue;
+      const script = this.script(first.value, path);
+      return script === noValue ? script : streamRecordExpression(script);
+    } catch {
+      return noValue;
     }
   }
 
@@ -1536,14 +1532,11 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   }
 
   /**
-   * `expression` が解決した JS の式を、ホストをページに出力した後に、`$rinka.d` でホストの `key` の値として送る。
+   * JS の式 `expression` を、ホストをページに出力した後に、`$rinka.d` でホストの `key` の値として送る。
    * 送るのは、開始タグの `data-om` に列挙したキーの値だけで、キーごとに 1 回だけ送る。ホストを出力しなければ送らない。
    */
-  private send(host: HostRecord, key: string, expression: Promise<string>): void {
-    const task = (async () => {
-      await this.deliver(host, key, await expression);
-    })();
-    this.values.add(task);
+  private send(host: HostRecord, key: string, expression: string): void {
+    this.values.add(this.deliver(host, key, expression));
   }
 
   /** `flush` のチャンク `html` を書き込み、`flush` のチャンクがページに現れたことを決める。 */
@@ -1561,7 +1554,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   /** 境界を送り終えたものとして数え、Shadow DOM の中の後送りの境界をすべて送り終えたホストに、`@b` の値を送る。 */
   private finishBoundary(boundary: Boundary): void {
     for (const host of boundary.path) {
-      if (host.release()) this.send(host, BOUNDARIES_KEY, Promise.resolve("1"));
+      if (host.release()) this.send(host, BOUNDARIES_KEY, "1");
     }
   }
 
