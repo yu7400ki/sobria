@@ -38,7 +38,7 @@ const like = () => {
 
 `memo` は、ほかの Signal や memo から計算する値を作成します。読み取った値が変化したときだけ計算し直します。
 
-memo の関数は Promise を返してもかまいません。この章では、Promise を返す memo を非同期の memo と呼びます。memo の関数が async iterable を返すと、memo の値は、iterable が yield するたびにその値に置換されます（[サーバー関数](/guide/server-functions#値を順に返す)）。サーバーのデータを取得するときは、memo の中で [サーバー関数](/guide/server-functions) を呼び出します。
+memo の関数は Promise か async iterable を返してもかまいません。この章では、Promise か async iterable を返す memo を非同期の memo と呼びます。memo の関数が async iterable を返すか、async iterable に解決する Promise を返すと、memo の値は、iterable が yield するたびにその値に置換されます（[サーバー関数](/guide/server-functions#値を順に返す)）。サーバーのデータを取得するときは、memo の中で [サーバー関数](/guide/server-functions) を呼び出します。
 
 ```tsx
 // src/elements/user-name.tsx
@@ -195,8 +195,8 @@ export default function RenameUser(props: { userId: number }) {
 
 - `signal` と `memo` は、初期の値を計算して保持します
 - `effect` と `ctx.onMount` に渡した関数は実行しません。ブラウザで要素が起動したときに初めて実行します
-- 非同期の memo は、サーバーで値を取得します。取得した値はページに埋め込んで送信し、ブラウザで要素が起動したときの memo の値になります。ブラウザは、埋め込まれた値を使用して、同じデータを取得し直しません。サーバーで失敗した memo のように、例外としてブラウザで値を取得し直す memo もあります。その条件は [読み込みと値の受け渡し](/guide/loading) で説明します
+- 非同期の memo は、サーバーで値を取得します。取得した値はページに埋め込んで送信し、ブラウザで要素が起動したときの memo の値になります。ブラウザは、埋め込まれた値を使用して、同じデータを取得し直しません。ただし、memo の関数が async iterable を返す memo、async iterable に解決する Promise を返す memo、サーバーで失敗した memo は、ブラウザで値を取得し直します。これらの memo は [読み込みと値の受け渡し](/guide/loading#サーバーで取得した値を引き継ぐ) で説明します
 
-非同期の memo の中では、`fetch` を直接呼び出さずに、サーバー関数を呼び出します。ブラウザで要素が起動するときは、依存する値を記録するために memo の関数を 1 回実行します。この実行では、サーバー関数は通信しません。`fetch` を直接呼び出すと、この実行でも通信するので、同じデータを 2 回取得します。
+非同期の memo の中では、`fetch` を直接呼び出さずに、サーバー関数を呼び出します。ブラウザで要素が起動するときは、値を取得し直す memo を除いて、依存する値を記録するために memo の関数を 1 回実行します。この実行では、サーバー関数は通信しません。`fetch` を直接呼び出すと、この実行でも通信するので、同じデータを 2 回取得します。
 
 サーバーで値が解決するまでの待ち方と、`<Loading>` の内容を後から送る仕組みは、[ページとデータ](/guide/pages-and-data) で説明します。
