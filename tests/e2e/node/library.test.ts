@@ -97,8 +97,8 @@ describe("library: true のビルド", () => {
           attributes: [
             { name: "required", fieldName: "required", type: { text: "boolean" } },
             { name: "max", fieldName: "max", type: { text: "number" } },
-            { name: "name", fieldName: "name", type: { text: "string" } },
-            { name: "disabled", fieldName: "disabled", type: { text: "boolean" } },
+            { name: "name", type: { text: "string" } },
+            { name: "disabled", type: { text: "boolean" } },
           ],
           members: [
             { kind: "field", name: "required", type: { text: "boolean" } },

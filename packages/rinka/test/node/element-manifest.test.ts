@@ -202,7 +202,7 @@ export default function Card() {
     ]);
   });
 
-  it("フォームの部品には、name と disabled の属性を記述する", () => {
+  it("フォームの部品には、name と disabled の属性を記述し、Props の型に無い属性にはフィールドの名前を記述しない", () => {
     const { attributes } = describeCard(`
 import type { Ctx } from "rinka";
 type Props = { max?: number };
@@ -212,8 +212,8 @@ export default function Card(props: Props, { form }: Ctx) {
 }`);
     expect(attributes).toEqual([
       { name: "max", fieldName: "max", type: { text: "number" } },
-      { name: "name", fieldName: "name", type: { text: "string" } },
-      { name: "disabled", fieldName: "disabled", type: { text: "boolean" } },
+      { name: "name", type: { text: "string" } },
+      { name: "disabled", type: { text: "boolean" } },
     ]);
   });
 
@@ -227,7 +227,7 @@ export default function Card(props: Props, { form }: Ctx) {
 }`);
     expect(attributes).toEqual([
       { name: "name", fieldName: "name", type: { text: "string" } },
-      { name: "disabled", fieldName: "disabled", type: { text: "boolean" } },
+      { name: "disabled", type: { text: "boolean" } },
     ]);
   });
 

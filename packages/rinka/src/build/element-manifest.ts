@@ -26,7 +26,8 @@ export interface Documented {
 /** Custom Elements Manifest の属性を表す。 */
 export interface ManifestAttribute extends Documented {
   readonly name: string;
-  readonly fieldName: string;
+  /** 属性に対応するホストのプロパティの名前である。 */
+  readonly fieldName?: string;
   readonly type?: ManifestType;
 }
 
@@ -185,7 +186,7 @@ export function describeElement(
   }
   for (const [attribute, type] of Object.entries(formAttributeTypes)) {
     if (kinds.reflects.has(attribute) && !props.has(attribute)) {
-      attributes.push({ name: attribute, fieldName: attribute, type: { text: type } });
+      attributes.push({ name: attribute, type: { text: type } });
     }
   }
   members.push(...source.exposed(program, fn, file));
