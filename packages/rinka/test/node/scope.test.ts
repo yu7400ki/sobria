@@ -160,6 +160,26 @@ describe("memoOf", () => {
     expect(peek(read)).toBe(2);
   });
 
+  it("loadingValue を渡すと、関数が async iterable に解決する Promise を返しても、最初の値が届くまでその値を返す", async () => {
+    const source = channel<number>();
+    const pending = Promise.withResolvers<AsyncIterable<number>>();
+    let read!: () => number;
+    createRoot(() => {
+      read = memoOf(() => pending.promise, { loadingValue: 1 });
+    });
+    flush();
+    expect(peek(read)).toBe(1);
+    pending.resolve(source.values());
+    await settle();
+    expect(peek(read)).toBe(1);
+    source.send(2);
+    await settle();
+    expect(peek(read)).toBe(2);
+    source.send(3);
+    await settle();
+    expect(peek(read)).toBe(3);
+  });
+
   it("Promise が async iterable に解決する前に memo を計算し直すか破棄すると、解決した iterable の return を呼ぶ", async () => {
     const returned: number[] = [];
     const iterableOf = (index: number): AsyncIterable<number> => ({
