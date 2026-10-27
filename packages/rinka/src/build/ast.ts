@@ -46,18 +46,21 @@ function isNode(value: unknown): value is Node {
   );
 }
 
-/** `node` の子のノードを返す。 */
-export function children(node: Node): Node[] {
-  const found: Node[] = [];
+/** `node` の子のノードを、子を保持する `node` のキーとの組で返す。 */
+function childEntries(node: Node): [key: string, child: Node][] {
+  const found: [string, Node][] = [];
   for (const [key, value] of Object.entries(node)) {
     if (key === "parent") continue;
-    if (Array.isArray(value)) {
-      for (const item of value) if (isNode(item)) found.push(item);
-    } else if (isNode(value)) {
-      found.push(value);
+    for (const item of Array.isArray(value) ? value : [value]) {
+      if (isNode(item)) found.push([key, item]);
     }
   }
   return found;
+}
+
+/** `node` の子のノードを返す。 */
+export function children(node: Node): Node[] {
+  return childEntries(node).map(([, child]) => child);
 }
 
 /** `node` と、その子孫のノードを、親から順に `visit` に渡す。`skip` が真を返すノードと、その子孫は渡さない。 */
@@ -311,14 +314,7 @@ export function forEachReference(
     ) {
       visit(node);
     }
-    for (const [childKey, value] of Object.entries(node)) {
-      if (childKey === "parent") continue;
-      if (Array.isArray(value)) {
-        for (const item of value) if (isNode(item)) walkNode(item, node, childKey);
-      } else if (isNode(value)) {
-        walkNode(value, node, childKey);
-      }
-    }
+    for (const [childKey, child] of childEntries(node)) walkNode(child, node, childKey);
   };
   walkNode(root, undefined, "");
 }
