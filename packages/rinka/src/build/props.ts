@@ -33,20 +33,10 @@ interface Helpers {
 /** 解析できない理由を受け取り、ビルドのエラーを返す関数を表す。 */
 type Fail = (message: string) => CompileError;
 
-/**
- * 要素の関数 `fn` の第 1 引数の型注釈を解析し、要素を登録するときの設定を返す。
- * `program` は `fn` を宣言したファイルで、`file` はそのパスである。
- */
-export function analyzeProps(
-  program: ESTree.Program,
-  fn: ESTree.Function,
-  file: string,
-): ElementOptions {
-  return {
-    props: Object.fromEntries(
-      [...propMembers(program, fn, file)].map(([name, { kind }]) => [name, kind]),
-    ),
-  };
+/** Props の型のメンバー `members` と、要素がフォームの部品かどうか `form` から、要素を登録するときの設定を返す。 */
+export function optionsOf(members: ReadonlyMap<string, PropMember>, form: boolean): ElementOptions {
+  const props = Object.fromEntries([...members].map(([name, { kind }]) => [name, kind]));
+  return form ? { props, form: true } : { props };
 }
 
 /** Props の型の 1 つのメンバーの、分類と宣言を表す。 */

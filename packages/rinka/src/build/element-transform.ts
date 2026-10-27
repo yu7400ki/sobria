@@ -22,7 +22,7 @@ import {
 import { importInternalAs } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 import { usesForm } from "./form-usage.ts";
-import { analyzeProps } from "./props.ts";
+import { optionsOf, propMembers } from "./props.ts";
 
 /** 変換する要素のファイルの、タグ名と、ブラウザが読み込むモジュールの URL と、モジュールが静的に import するチャンクの URL を表す。 */
 export interface ElementTarget {
@@ -47,10 +47,7 @@ export function registerElement(
   client: boolean,
 ): ElementInfo {
   const { exported, fn, name } = elementFunction(program, file);
-  const analyzed = analyzeProps(program, fn, file);
-  const elementOptions: ElementOptions = usesForm(fn, file)
-    ? { ...analyzed, form: true }
-    : analyzed;
+  const elementOptions = optionsOf(propMembers(program, fn, file), usesForm(fn, file));
   convertSlots(fn, elementOptions, output, file);
   output.remove(exported.start, fn.start);
   const [last, accept] = client
