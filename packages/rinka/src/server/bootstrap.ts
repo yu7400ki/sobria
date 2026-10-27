@@ -65,7 +65,7 @@ export const dataScript = (id: string, key: string, value: string): string =>
   `<script>$rinka.d(${scriptJson(id)},{${scriptJson(key)}:${value}})</script>`;
 
 /** JS の式 `value` の値を保持するストリームの記録を作成する JS の式を返す。 */
-export const streamExpression = (value: string): string => `$rinka.s(${value})`;
+export const streamRecordExpression = (value: string): string => `$rinka.s(${value})`;
 
 /** 要素の一覧を起動スクリプトに伝えるスクリプトを返す。一覧が空なら空の文字列を返す。 */
 export const listScript = (list: readonly ListedElement[]): string =>

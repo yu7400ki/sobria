@@ -57,7 +57,7 @@ import {
   listScript,
   loadAttributeValue,
   noValue,
-  streamExpression,
+  streamRecordExpression,
   swapScript,
 } from "./bootstrap.ts";
 import {
@@ -1494,7 +1494,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         return;
       }
       const script = this.script(first.value, path);
-      await this.deliver(host, key, script === noValue ? script : streamExpression(script));
+      await this.deliver(host, key, script === noValue ? script : streamRecordExpression(script));
     } finally {
       void relay.close();
       this.relays?.delete(relay);

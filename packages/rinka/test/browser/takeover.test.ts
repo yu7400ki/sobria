@@ -513,7 +513,7 @@ describe("入れ子の子要素の引き継ぎ", () => {
   });
 });
 
-/** 値を送るスクリプトのうち、キー `key` の値を、`$rinka.s` で作成したストリームに置き換える。 */
+/** 値を送るスクリプトのうち、キー `key` の値を、`$rinka.s` で作成したストリームの記録に置き換える。 */
 const streamed = (scripts: string[], key: string) =>
   scripts.map((script) =>
     !script.includes(JSON.stringify(key))

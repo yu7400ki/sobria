@@ -2,7 +2,7 @@ import type { SourceAccessor } from "@solidjs/signals";
 
 import { AWAITED_ATTRIBUTE, HOST_ATTRIBUTE } from "../shared/attributes.ts";
 import { isPlainObject } from "../shared/objects.ts";
-import type { Receiver, TransferStream } from "../shared/receiver.ts";
+import type { Receiver, StreamRecord } from "../shared/receiver.ts";
 import { memoOf, runSeeding, type MemoCompute, type ScopedMemo } from "../shared/scope.ts";
 import { isChildKey, isReservedKey, PROPS_KEY } from "../shared/transfer-keys.ts";
 
@@ -118,7 +118,7 @@ export function beginTakeover(id: string | null, tag: string): Transferred {
       used.add(key);
       const value = values.get(key);
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      if (!isStream(store, value)) return seededMemo(value as T, compute);
+      if (!isStreamRecord(store, value)) return seededMemo(value as T, compute);
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       return memoOf(compute, { loadingValue: value.v as T });
     },
@@ -135,9 +135,9 @@ export function beginTakeover(id: string | null, tag: string): Transferred {
 }
 
 /** `value` が、`$rinka.s` で作成したストリームの記録なら `true` を返す。 */
-function isStream(store: Receiver | undefined, value: unknown): value is TransferStream {
+function isStreamRecord(store: Receiver | undefined, value: unknown): value is StreamRecord {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-  return store?.t.has(value as TransferStream) ?? false;
+  return store?.t.has(value as StreamRecord) ?? false;
 }
 
 /**

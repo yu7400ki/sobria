@@ -15,7 +15,7 @@ export interface SwapSpec {
 export type ListedElement = readonly [tag: string, module: string, load: DefaultLoad];
 
 /** SSR の memo の関数が返した async iterable の、最初の値を保持する記録を表す。 */
-export interface TransferStream {
+export interface StreamRecord {
   /** 最初の値である。 */
   readonly v: unknown;
 }
@@ -29,9 +29,9 @@ export interface Receiver {
   /** 値が無いことを表すオブジェクトである。 */
   readonly n: object;
   /** `s` で作成したストリームの記録を保持する。 */
-  readonly t: WeakSet<TransferStream>;
+  readonly t: WeakSet<StreamRecord>;
   /** 値 `value` を保持するストリームの記録を作成する。 */
-  readonly s: (value: unknown) => TransferStream;
+  readonly s: (value: unknown) => StreamRecord;
   /** ホストに引き継ぐ値を保持して、そのホストで値を待っている関数に通知する。 */
   readonly d: (id: string, values: Record<string, unknown>) => void;
   /** 1 つの境界の中身と、その境界の中の差し替えを適用する。開始と終了の目印がそろわない差し替えは、適用せずに除去する。 */
