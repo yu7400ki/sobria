@@ -4,12 +4,17 @@ import type { ESTree, ParseResult } from "vite";
 
 import { formAttributeTypes, propKinds } from "../shared/element.ts";
 import { customEventName } from "../shared/names.ts";
-import { importedNames, langs, parseWithComments, walk } from "./ast.ts";
+import { langs, parseWithComments, walk } from "./ast.ts";
 import { elementFunction } from "./element-transform.ts";
-import { entries } from "./entries.ts";
-import { CompileError } from "./errors.ts";
 import { usesForm } from "./form-usage.ts";
-import { fileTypes, memberName, optionsOf, propMembers, type FileTypes } from "./props.ts";
+import {
+  exposedMembers,
+  fileTypes,
+  memberName,
+  optionsOf,
+  propMembers,
+  type FileTypes,
+} from "./props.ts";
 
 /** Custom Elements Manifest の型の記述を表す。 */
 export interface ManifestType {
@@ -151,10 +156,10 @@ export function describeElement(
     lang: langs.get(extname(file)) ?? "tsx",
   });
   const source = new Source(code, comments, fileTypes(program));
-  const { exported, fn, name } = elementFunction(program, file);
+  const { exported, fn, name, ctx } = elementFunction(program, file);
   const { tags, ...docs } = source.docsOf(exported);
   const props = propMembers(program, fn, file);
-  const kinds = propKinds(optionsOf(props, usesForm(fn, file)));
+  const kinds = propKinds(optionsOf(props, usesForm(fn, ctx, file)));
   const attributeOf = new Map(
     [...kinds.attributes].map(([attribute, { name: prop }]) => [prop, attribute]),
   );
@@ -189,7 +194,7 @@ export function describeElement(
       attributes.push({ name: attribute, type: { text: type } });
     }
   }
-  members.push(...source.exposed(program, fn, file));
+  members.push(...source.exposed(exposedMembers(program, ctx, file)));
   const cssProperties = tags.flatMap((entry) =>
     entry.tag === "cssprop" ? cssPropertyOf(entry.text) : [],
   );
@@ -294,33 +299,8 @@ class Source {
     return defined.some((member) => member.type === "TSNullKeyword") ? text : `${text} | null`;
   }
 
-  /**
-   * 要素の関数 `fn` の第 2 引数の型注釈 `Ctx<M>` の、`M` のメンバーを返す。
-   * `M` を、型リテラルか、同じファイルで宣言した type か interface の名前で記述していなければ、ビルドのエラーにする。
-   */
-  exposed(program: ESTree.Program, fn: ESTree.Function, file: string): ManifestMember[] {
-    const declared = fn.params[1];
-    const param = declared?.type === "AssignmentPattern" ? declared.left : declared;
-    const annotation =
-      param?.type === "Identifier" || param?.type === "ObjectPattern"
-        ? param.typeAnnotation?.typeAnnotation
-        : undefined;
-    const ctx = importedNames(program, entries.main).get("Ctx");
-    if (
-      annotation?.type !== "TSTypeReference" ||
-      annotation.typeName.type !== "Identifier" ||
-      !ctx?.has(annotation.typeName.name)
-    ) {
-      return [];
-    }
-    const methods = annotation.typeArguments?.params[0];
-    if (methods === undefined || methods.type === "TSObjectKeyword") return [];
-    const signatures = this.types.members(methods);
-    if (signatures === undefined) {
-      throw new CompileError(
-        `${file}: Ctx<M> の M には、型リテラルか、同じファイルで宣言した type か interface の名前を記述してください。`,
-      );
-    }
+  /** `Ctx<M>` の `M` のメンバーの宣言 `signatures` を、メソッドとフィールドにする。 */
+  exposed(signatures: readonly ESTree.TSSignature[]): ManifestMember[] {
     const setters = new Set(
       signatures.flatMap((signature) =>
         signature.type === "TSMethodSignature" && signature.kind === "set"

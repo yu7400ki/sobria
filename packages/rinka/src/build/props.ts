@@ -26,6 +26,8 @@ interface Helpers {
   readonly props: ReadonlySet<string>;
   /** `Slot` の名前である。 */
   readonly slot: ReadonlySet<string>;
+  /** `Ctx` の名前である。 */
+  readonly ctx: ReadonlySet<string>;
   /** ファイルのトップレベルで宣言した type と interface の、名前ごとの宣言である。 */
   readonly declared: ReadonlyMap<string, Declared>;
 }
@@ -38,6 +40,9 @@ export function optionsOf(members: ReadonlyMap<string, PropMember>, form: boolea
   const props = Object.fromEntries([...members].map(([name, { kind }]) => [name, kind]));
   return form ? { props, form: true } : { props };
 }
+
+/** 要素の関数の第 2 引数の ctx を、デフォルト値を外して表す。 */
+export type CtxParam = Extract<ESTree.ParamPattern, { type: "Identifier" | "ObjectPattern" }>;
 
 /** Props の型の 1 つのメンバーの、分類と宣言を表す。 */
 export interface PropMember {
@@ -122,6 +127,35 @@ function membersOf(
   return aliased?.type === "TSTypeLiteral" ? aliased.members : undefined;
 }
 
+/**
+ * 要素の関数の第 2 引数 `ctx` の型注釈 `Ctx<M>` の、`M` のメンバーを返す。型注釈が `Ctx` でないときと、`M` が無いか `object` のときは、空の配列を返す。
+ * `M` を、型リテラルか、同じファイルで宣言した type か interface の名前で記述していなければ、ビルドのエラーにする。
+ */
+export function exposedMembers(
+  program: ESTree.Program,
+  ctx: CtxParam | undefined,
+  file: string,
+): readonly ESTree.TSSignature[] {
+  const annotation = ctx?.typeAnnotation?.typeAnnotation;
+  const helpers = helpersOf(program);
+  if (
+    annotation?.type !== "TSTypeReference" ||
+    annotation.typeName.type !== "Identifier" ||
+    !helpers.ctx.has(annotation.typeName.name)
+  ) {
+    return [];
+  }
+  const methods = annotation.typeArguments?.params[0];
+  if (methods === undefined || methods.type === "TSObjectKeyword") return [];
+  const members = membersOf(methods, helpers);
+  if (members === undefined) {
+    throw new CompileError(
+      `${file}: Ctx<M> の M には、型リテラルか、同じファイルで宣言した type か interface の名前を記述してください。`,
+    );
+  }
+  return members;
+}
+
 /** ファイルの中で宣言した型を、Props の型と同じ規則で解決する関数を表す。 */
 export interface FileTypes {
   /** 型リテラルか、同じファイルで宣言した type か interface の名前のメンバーを返す。それ以外の形と、extends を持つ interface には `undefined` を返す。 */
@@ -156,7 +190,7 @@ export function memberName(member: ESTree.TSSignature): string | undefined {
   return key.type === "Literal" && typeof key.value === "string" ? key.value : undefined;
 }
 
-/** `rinka` から import した `Props` と `Slot` の、ファイルの中の名前と、ファイルで宣言した type と interface を返す。 */
+/** `rinka` から import した `Props` と `Slot` と `Ctx` の、ファイルの中の名前と、ファイルで宣言した type と interface を返す。 */
 function helpersOf(program: ESTree.Program): Helpers {
   const names = importedNames(program, entries.main);
   const declared = new Map<string, Declared>();
@@ -182,6 +216,7 @@ function helpersOf(program: ESTree.Program): Helpers {
   return {
     props: names.get("Props") ?? new Set(),
     slot: names.get("Slot") ?? new Set(),
+    ctx: names.get("Ctx") ?? new Set(),
     declared,
   };
 }

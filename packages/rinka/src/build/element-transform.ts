@@ -22,7 +22,7 @@ import {
 import { importInternalAs } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 import { usesForm } from "./form-usage.ts";
-import { optionsOf, propMembers } from "./props.ts";
+import { optionsOf, propMembers, type CtxParam } from "./props.ts";
 
 /** 変換する要素のファイルの、タグ名と、ブラウザが読み込むモジュールの URL と、モジュールが静的に import するチャンクの URL を表す。 */
 export interface ElementTarget {
@@ -46,8 +46,8 @@ export function registerElement(
   file: string,
   client: boolean,
 ): ElementInfo {
-  const { exported, fn, name } = elementFunction(program, file);
-  const elementOptions = optionsOf(propMembers(program, fn, file), usesForm(fn, file));
+  const { exported, fn, name, ctx } = elementFunction(program, file);
+  const elementOptions = optionsOf(propMembers(program, fn, file), usesForm(fn, ctx, file));
   convertSlots(fn, elementOptions, output, file);
   output.remove(exported.start, fn.start);
   const [last, accept] = client
@@ -67,14 +67,18 @@ ${accept}`);
   return { tag, options: elementOptions };
 }
 
-/** 要素のファイルの default export の文と、default export した関数宣言と、その関数の名前を表す。 */
+/** 要素のファイルの default export の文と、default export した関数宣言と、その関数の名前と、第 2 引数を表す。 */
 export interface ElementFunction {
   readonly exported: ESTree.ExportDefaultDeclaration;
   readonly fn: ESTree.Function;
   readonly name: string;
+  readonly ctx: CtxParam | undefined;
 }
 
-/** 要素のファイル `program` が default export した要素の関数を返す。名前付きの関数宣言を default export していなければ、ビルドのエラーにする。 */
+/**
+ * 要素のファイル `program` が default export した要素の関数を返す。
+ * 名前付きの関数宣言を default export していないときと、第 2 引数を名前か分割代入で受け取っていないときは、ビルドのエラーにする。
+ */
 export function elementFunction(program: ESTree.Program, file: string): ElementFunction {
   const exported = program.body.find((statement) => statement.type === "ExportDefaultDeclaration");
   const fn = exported?.declaration;
@@ -83,7 +87,14 @@ export function elementFunction(program: ESTree.Program, file: string): ElementF
       `${file}: 要素のファイルは、export default function 名前(props, ctx) の形で関数を default export してください。`,
     );
   }
-  return { exported, fn, name: fn.id.name };
+  const declared = fn.params[1];
+  const ctx = declared?.type === "AssignmentPattern" ? declared.left : declared;
+  if (ctx !== undefined && ctx.type !== "ObjectPattern" && ctx.type !== "Identifier") {
+    throw new CompileError(
+      `${file}: 要素の関数の 2 番目の引数は、ctx のような名前か、{ form } のような分割代入で受け取ってください。`,
+    );
+  }
+  return { exported, fn, name: fn.id.name, ctx };
 }
 
 /** 要素のファイルの最上位の `export const load` の値を返す。記述が無ければ `load` を返す。ほかの形で `load` を export すると、ビルドのエラーにする。 */

@@ -2,21 +2,15 @@ import type { ESTree } from "vite";
 
 import { binds, forEachReference, isFunction, walk, withoutTypes, type Node } from "./ast.ts";
 import { CompileError } from "./errors.ts";
+import type { CtxParam } from "./props.ts";
 
 /**
- * 要素の関数 `fn` が、2 番目の引数の ctx の `form` を使用するかどうかを返す。
+ * 要素の関数 `fn` が、2 番目の引数の ctx `param` の `form` を使用するかどうかを返す。
  * ctx を、`ctx[key]` の形でないプロパティの参照と、キーが識別子で残余の要素を持たない分割代入以外で使用していれば、ビルドのエラーにする。
  * 内側の関数とブロックで同じ名前を宣言した変数は、ctx として扱わない。
  */
-export function usesForm(fn: ESTree.Function, file: string): boolean {
-  const declared = fn.params[1];
-  if (declared === undefined) return false;
-  const param = declared.type === "AssignmentPattern" ? declared.left : declared;
-  if (param.type !== "ObjectPattern" && param.type !== "Identifier") {
-    throw new CompileError(
-      `${file}: 要素の関数の 2 番目の引数は、ctx のような名前か、{ form } のような分割代入で受け取ってください。`,
-    );
-  }
+export function usesForm(fn: ESTree.Function, param: CtxParam | undefined, file: string): boolean {
+  if (param === undefined) return false;
   const error = () =>
     new CompileError(
       `${file}: 要素の関数の ${param.type === "Identifier" ? param.name : "ctx"} は、ctx.form のようなプロパティの参照か、const { form } = ctx のような分割代入で使用してください。要素がフォームの部品かどうかを、ctx の使い方からビルドで判別するためです。`,
