@@ -126,6 +126,41 @@ export default defineConfig({
 
 フォームの部品、スロット、`<label for>` は、rinka のアプリの中と同じように動作します。この形にはサーバーが無いので、要素はサーバーで描画されず、[サーバー関数](/guide/server-functions)も呼び出せません。ライブラリには、サーバーを必要としない要素だけを含めてください。
 
+#### マニフェスト
+
+ビルドは、要素のタグ名、属性、プロパティ、イベント、スロット、CSS の part とカスタムプロパティを記述した [Custom Elements Manifest](https://github.com/webcomponents/custom-elements-manifest) を、`dist/custom-elements.json` に出力します。`package.json` の `customElements` には、このファイルのパスを記述してください。記述が無いか、出力したファイルと異なるパスを記述していると、ビルドが警告を表示します。
+
+```json
+{
+  "name": "acme-ui",
+  "customElements": "dist/custom-elements.json"
+}
+```
+
+マニフェストのプロパティには、スロット以外のすべての props を出力します。属性、イベント、スロットには、[要素](/guide/elements)で説明した規則で、要素が受け付ける属性、発行するイベント、スロットを出力します。要素の関数の JSDoc は、要素の説明になります。Props の型のメンバーの JSDoc は、そのメンバーに対応する属性、プロパティ、イベント、スロットの説明になります。`@deprecated` は、要素の関数か、Props の型のメンバーに記述すると、その要素かメンバーが非推奨であることを表します。CSS のカスタムプロパティは、要素の関数の JSDoc に `@cssprop --名前 - 説明` の形で記述します。デフォルト値を示すときは、`@cssprop [--名前=デフォルト値] - 説明` の形で記述します。ビルドは、要素の JSX で、小文字で始まるタグの `part` に文字列のリテラルで記述した名前を、CSS の part として出力します。
+
+```tsx
+type Props = {
+  count: number;
+  /** ボタンを押したときに、1 を足したいいねの数を通知します。 */
+  onLikeClick?: (count: number) => void;
+};
+
+/**
+ * いいねの数を表示します。
+ * @cssprop [--counter-color=black] - 文字の色です。
+ */
+export default function Counter(props: Props) {
+  return (
+    <button part="button" onClick={() => props.onLikeClick?.(props.count + 1)}>
+      {props.count}
+    </button>
+  );
+}
+```
+
+属性とプロパティの型は、ソースに記述した型注釈の文字列をそのまま出力します。型の名前は、同じファイルで宣言した型でも展開しません。イベントの型は `CustomEvent<detail の型>` です。detail の型は、`onX` の props に渡す関数の、最初の引数の型です。引数を省略できるときと、引数の型が `undefined` か `void` を含むときは、detail の型は `undefined` を除いて `null` を含みます。引数の無い関数では、detail の型は `null` です。型引数を持つ type の名前で記述した関数と、関数型の合併では、detail の型は `unknown` です。`expose` で公開するメソッドとプロパティは、`Ctx<M>` の `M` から取得します。`M` には、型リテラルか、同じファイルで宣言した type の名前か、extends の無い interface の名前を記述してください。ほかの形で記述すると、ビルドがエラーになります。
+
 ### TSX のソースのまま配布する
 
 別の rinka のアプリで使用するライブラリは、要素を TSX のソースのまま配布します。使用する側のアプリが、ライブラリの要素をアプリの要素と同じようにコンパイルします。そのため、ライブラリの要素もサーバーで描画され、アプリの要素と同じように動作します。
