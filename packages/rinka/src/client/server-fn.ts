@@ -130,60 +130,51 @@ function streamed(response: Response, endpoint: URL, refresh: boolean): AsyncIte
     .pipeThrough(new TextDecoderStream())
     .pipeThrough(splitLines())
     .getReader();
-  const state = { cancelled: false };
-  const values = valuesOf(reader, state, response, endpoint, refresh);
+  let cancelled = false;
+  const values = (async function* (): AsyncGenerator<unknown, void> {
+    try {
+      for (;;) {
+        // oxlint-disable-next-line no-await-in-loop
+        const { done, value: text } = await reader.read();
+        if (done) {
+          if (cancelled) return;
+          break;
+        }
+        const parsedLine: unknown = JSON.parse(text);
+        const line = isPlainObject(parsedLine) ? parsedLine : {};
+        const page = "page" in line ? line.page : undefined;
+        // oxlint-disable-next-line no-await-in-loop
+        const decoded = await decode(line);
+        if (decoded) {
+          yield decoded.value;
+        } else if ("end" in line) {
+          if (refresh) reflectPage(startRewrite(), page);
+          return;
+        } else if (isRedirectJson(line)) {
+          // oxlint-disable-next-line no-await-in-loop
+          if (redirected(line, page, endpoint, refresh ? startRewrite() : undefined)) await never();
+          return;
+        } else if ("error" in line) {
+          throw new ServerFnError(response, null, 500);
+        } else {
+          throw new TypeError("サーバー関数のストリームの行が、rinka の形式ではありません。");
+        }
+      }
+      throw new TypeError("サーバー関数のストリームが、終わりを伝える行の前に途切れました。");
+    } finally {
+      await reader.cancel().catch(() => {});
+    }
+  })();
   return {
     [Symbol.asyncIterator]: () => ({
       next: () => values.next(),
       return: async () => {
-        state.cancelled = true;
+        cancelled = true;
         await reader.cancel().catch(() => {});
         return values.return();
       },
     }),
   };
-}
-
-/** `streamed` の行を `reader` から読み、値を yield する。`state.cancelled` が真のときに本文が終わったら、反復を終える。 */
-async function* valuesOf(
-  reader: ReadableStreamDefaultReader<string>,
-  state: { readonly cancelled: boolean },
-  response: Response,
-  endpoint: URL,
-  refresh: boolean,
-): AsyncGenerator<unknown, void> {
-  try {
-    for (;;) {
-      // oxlint-disable-next-line no-await-in-loop
-      const { done, value: text } = await reader.read();
-      if (done) {
-        if (state.cancelled) return;
-        break;
-      }
-      const parsedLine: unknown = JSON.parse(text);
-      const line = isPlainObject(parsedLine) ? parsedLine : {};
-      const page = "page" in line ? line.page : undefined;
-      // oxlint-disable-next-line no-await-in-loop
-      const decoded = await decode(line);
-      if (decoded) {
-        yield decoded.value;
-      } else if ("end" in line) {
-        if (refresh) reflectPage(startRewrite(), page);
-        return;
-      } else if (isRedirectJson(line)) {
-        // oxlint-disable-next-line no-await-in-loop
-        if (redirected(line, page, endpoint, refresh ? startRewrite() : undefined)) await never();
-        return;
-      } else if ("error" in line) {
-        throw new ServerFnError(response, null, 500);
-      } else {
-        throw new TypeError("サーバー関数のストリームの行が、rinka の形式ではありません。");
-      }
-    }
-    throw new TypeError("サーバー関数のストリームが、終わりを伝える行の前に途切れました。");
-  } finally {
-    await reader.cancel().catch(() => {});
-  }
 }
 
 /** `body` が `{ ok }` か `{ s }` なら、その値を `value` に持つオブジェクトを返し、そうでなければ `undefined` を返す。 */
