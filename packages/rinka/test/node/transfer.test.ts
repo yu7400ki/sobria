@@ -6,8 +6,10 @@ import { Errored, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { registerServerFn } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
+import { Renderer } from "../../src/server/render.ts";
 import { renderToStream, renderToString } from "../../src/server/response.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
+import { asNode } from "../../src/server/tree.ts";
 import { siteMemo as memo } from "../../src/shared/signals.ts";
 import { read } from "./stream-order.ts";
 
@@ -602,6 +604,27 @@ describe("ストリームの memo", () => {
     await reader.cancel();
     await vi.waitFor(() => expect(calls).toEqual(["next", "return"]));
   });
+
+  it.each([false, true])(
+    "iterable の return は、最初の値を $rinka.d で書き込んだ後に呼ぶ（blocking: %s）",
+    async (blocking) => {
+      const { iterable, calls } = recorded(["a", "b"], 1);
+      const Card = defineStreamed("x-st14", "s.tsx:14:1", () => iterable);
+      const renderer = new Renderer({
+        kind: "document",
+        blocking,
+        write: (text) => {
+          if (text.includes('{"s.tsx:14:1#0":')) calls.push("sent");
+        },
+      });
+      const node = jsx(Loading, {
+        fallback: "loading",
+        children: [jsx(Card, {}), jsx(after(50, "x"), {})],
+      });
+      await renderer.finish(await renderer.shell(asNode(node)), "");
+      await vi.waitFor(() => expect(calls).toEqual(["next", "sent", "return"]));
+    },
+  );
 
   it("レスポンスを返さずに描画を終えたら、iterable の return を呼ぶ", async () => {
     const rendered = recorded(["a", "b"], 1);
