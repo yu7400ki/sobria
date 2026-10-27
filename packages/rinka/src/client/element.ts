@@ -17,10 +17,10 @@ import { ARIA_ATTRIBUTE, attributeValue, HOST_ATTRIBUTE } from "../shared/attrib
 import {
   createElementComponent,
   elementInfo,
-  type AttributeType,
   type Ctx,
   type ElementComponent,
   type ElementOptions,
+  fromAttribute,
   propKinds,
   type PropKinds,
   unsupportedFormControls,
@@ -146,13 +146,6 @@ export interface HotContext {
 }
 
 const definitions = new Map<string, Definition>();
-
-function convert(value: string | null, type: AttributeType | undefined): unknown {
-  if (value === null) return undefined;
-  if (type === "number") return Number(value);
-  if (type === "boolean") return value !== "false";
-  return value;
-}
 
 const readSource = (source: Source): unknown => ("read" in source ? source.read() : source.value);
 
@@ -439,7 +432,7 @@ export function registerElement<P, M extends object = object>(
       if (entry === undefined) return;
       const prop = instances.get(this)!.props.get(entry.name)!;
       if (reflects.has(entry.name) && attributeValue(attribute, peek(prop)) === value) return;
-      write(prop, { value: convert(value, entry.type) });
+      write(prop, { value: fromAttribute(value, entry.type) });
     }
 
     connectedCallback(): void {

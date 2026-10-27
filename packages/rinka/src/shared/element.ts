@@ -12,6 +12,14 @@ import type { ElementCss } from "./styles.ts";
 /** 属性の値から変換する props の型を表す。 */
 export type AttributeType = "string" | "number" | "boolean";
 
+/** 属性の値 `value` を、型 `type` の props の値に変換する。属性が無ければ `undefined` を返し、`type` が `undefined` なら文字列のまま返す。 */
+export function fromAttribute(value: string | null, type: AttributeType | undefined): unknown {
+  if (value === null) return undefined;
+  if (type === "number") return Number(value);
+  if (type === "boolean") return value !== "false";
+  return value;
+}
+
 /** 属性の変化を受け取る props の名前と、属性の値を変換した後の型を表す。型が `undefined` なら、属性の値を文字列のまま受け取る。 */
 export interface AttributeProp {
   readonly name: string;
