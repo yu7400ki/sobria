@@ -17,8 +17,7 @@ function templateSheet(
 ): CSSStyleSheet {
   const cached = values.length === 0 ? templateSheets.get(strings) : undefined;
   if (cached) return cached;
-  const sheet = new CSSStyleSheet();
-  sheet.replaceSync(cssText(strings, values));
+  const sheet = createSheet(cssText(strings, values));
   if (values.length === 0) templateSheets.set(strings, sheet);
   return sheet;
 }
@@ -29,7 +28,7 @@ export async function loadSheet(url: string): Promise<CSSStyleSheet> {
   return createSheet(await response.text());
 }
 
-/** Vite が処理した CSS `css` からシートを作成する。 */
+/** CSS `css` からシートを作成する。 */
 export function createSheet(css: string): CSSStyleSheet {
   const sheet = new CSSStyleSheet();
   updateSheet(sheet, css);
