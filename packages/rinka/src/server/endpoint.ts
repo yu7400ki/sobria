@@ -143,7 +143,7 @@ function respondThrown(
   error: unknown,
   fail: Failure,
 ): Response | Promise<Response> {
-  const { respond } = responders[kind];
+  const { respond, reject } = responders[kind];
   const thrown = classify(error);
   switch (thrown.kind) {
     case "redirect":
@@ -152,6 +152,7 @@ function respondThrown(
     case "response":
       return thrown.response;
     case "notFound":
+      return reject(c, 404);
     case "schema":
       return respond(c, thrown, fail);
     case "error":
@@ -159,11 +160,10 @@ function respondThrown(
   }
 }
 
-/** handler の戻り値と、handler が投げた値のうち、レスポンスの形をリクエストの種類で決めるものを表す。 */
+/** handler の戻り値と、handler が投げた値のうち、レスポンスの形をリクエストの種類ごとの `respond` で決めるものを表す。 */
 type Outcome =
   | { readonly kind: "value"; readonly value: unknown }
   | Streamed
-  | { readonly kind: "notFound" }
   | { readonly kind: "schema"; readonly issues: SchemaError["issues"] }
   | { readonly kind: "error"; readonly error: unknown };
 
@@ -186,14 +186,14 @@ export type Failure = (c: Context, error: unknown) => Response | Promise<Respons
 /** リクエストの種類ごとの `Failure` である。 */
 export type Failures = Readonly<Record<RequestKind, Failure>>;
 
-/** rinka が handler を呼ばずに拒否するときのステータスである。 */
+/** rinka がリクエストを拒否するときのステータスである。 */
 type Rejection = 400 | 403 | 404 | 405;
 
 /** リクエストの種類ごとの、入力の読み方とレスポンスの作り方である。 */
 interface Responder {
   /** リクエストから入力を読む。読めなければ例外を投げる。 */
   readonly read: (c: Context) => Promise<unknown>;
-  /** handler を呼ばずに拒否するときのレスポンスを返す。 */
+  /** リクエストを拒否するレスポンスを返す。 */
   readonly reject: (c: Context, status: Rejection) => Response;
   /** handler の結果のレスポンスを返す。 */
   readonly respond: (c: Context, outcome: Outcome, fail: Failure) => Response | Promise<Response>;
@@ -216,14 +216,10 @@ const responders = {
           return rpc(c, toRpcBody(outcome.value));
         case "stream":
           return stream(c, outcome, fail);
-        case "notFound":
-          return rpc(c, null, 404);
         case "schema":
           return rpc(c, { issues: outcome.issues }, 422);
         case "error":
           return fail(c, outcome.error);
-        default:
-          return unreachable(outcome);
       }
     },
   },
@@ -237,23 +233,14 @@ const responders = {
           return c.redirect(callerOf(c)?.page?.href ?? c.req.header("referer") ?? "/", 303);
         case "value":
           return c.redirect(callerOf(c)?.page?.href ?? c.req.header("referer") ?? "/", 303);
-        case "notFound":
-          return c.text(rejectionText[404], 404);
         case "schema":
           return c.json({ issues: outcome.issues }, 422);
         case "error":
           return fail(c, outcome.error);
-        default:
-          return unreachable(outcome);
       }
     },
   },
 } satisfies Record<RequestKind, Responder>;
-
-/** 型の上で到達しない値を受け取り、エラーを投げる。 */
-function unreachable(value: never): never {
-  throw new Error(`想定していない値です: ${JSON.stringify(value)}`);
-}
 
 /** サブリクエスト `request` を、リクエスト `c` と同じアプリで処理したレスポンスを返す関数を表す。 */
 export type FetchPage = (c: Context, request: Request) => Response | Promise<Response>;

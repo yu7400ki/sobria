@@ -405,7 +405,7 @@ describe("リクエストの種類ごとのレスポンス", () => {
     error: defineServerFn(() => {
       throw new Error("boom");
     }),
-  } satisfies Record<OutcomeKind | "http" | "redirect", unknown>;
+  } satisfies Record<OutcomeKind | "notFound" | "http" | "redirect", unknown>;
   const ids = Object.fromEntries(
     Object.entries(handlers).map(([name, fn]) => [name, register(fn)]),
   ) as Record<keyof typeof handlers, string>;
