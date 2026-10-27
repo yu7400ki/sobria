@@ -154,6 +154,8 @@ describe("props の値", () => {
       [{ u: 1 }, ' u="1"'],
       [{ u: true }, " u"],
       [{ o: "a" }, ' o="a"'],
+      [{ s: "a\u0000b" }, ' s="a\u0000b"'],
+      [{ s: "a\uD800b" }, ' s="a\uFFFDb"'],
     ])("%o は、属性を変えずに @p でも送る", async (props, attributes) => {
       const { html, sent } = await render(jsx(Kinds, props));
       expect(html).toContain(`<x-tr-kinds data-oh="h1"${attributes} data-om="@p">`);
@@ -166,6 +168,7 @@ describe("props の値", () => {
       [{ n: Number.NaN }, ' n="NaN"'],
       [{ s: "a" }, ' s="a"'],
       [{ u: "1" }, ' u="1"'],
+      [{ s: "a\r\nb" }, ' s="a&#13;\nb"'],
     ])("%o は、属性だけで送る", async (props, attributes) => {
       const { html, sent } = await render(jsx(Kinds, props));
       expect(html).toContain(`<x-tr-kinds data-oh="h1"${attributes}>`);

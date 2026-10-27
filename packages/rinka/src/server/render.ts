@@ -76,7 +76,13 @@ import {
 } from "./document-head.ts";
 import { classify, navigableLocation } from "./errors.ts";
 import { HostRecord, hostIds } from "./host-record.ts";
-import { attribute, checkAttributeName, escapeAttribute, escapeText } from "./html.ts";
+import {
+  attribute,
+  checkAttributeName,
+  escapeAttribute,
+  escapeText,
+  parsedAttribute,
+} from "./html.ts";
 import { Labels } from "./labels.ts";
 import {
   mergeDelivered,
@@ -1002,7 +1008,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         // クライアントが属性から受け取る値が元の値と異なれば、@p でも送る
         const output = primitive ? attributeValue(attributeName, value) : null;
         const entry = kinds.attributes.get(attributeName);
-        const received = entry ? fromAttribute(output, entry.type) : undefined;
+        const received = entry ? fromAttribute(parsedAttribute(output), entry.type) : undefined;
         if (Object.is(received, value)) continue;
         checkSerializable(value, `<${tag}> ${name}`, true);
         (transfer ??= {})[name] = value;

@@ -3,6 +3,7 @@ import { createPlugin, fromJSON, serialize, toJSON, type SerovalNode } from "ser
 import { serverFnRefOf, type ServerFnRef } from "../shared/server-fn.ts";
 import { checkSerializable, isJson, isSerovalJson, type RpcBody } from "../shared/wire.ts";
 import { serverFnCall } from "./bootstrap.ts";
+import { replacedOnPage } from "./html.ts";
 
 function refuseError(): never {
   throw new Error("Error は送信できません。");
@@ -51,10 +52,14 @@ function withPath<T>(run: () => T, value: unknown, path: string, allowServerFns:
   }
 }
 
-/** ページのスクリプトに埋め込む、`value` を作成する JS の式を返す。 */
+/** ページのスクリプトに埋め込む、`value` を作成する JS の式を返す。U+FFFD に置き換わる文字は、`\u` のエスケープにする。 */
 export function toScript(value: unknown, path: string): string {
   return withPath(
-    () => serialize(value, { plugins: [refuseErrors, serverFns] }),
+    () =>
+      serialize(value, { plugins: [refuseErrors, serverFns] }).replace(
+        replacedOnPage,
+        (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`,
+      ),
     value,
     path,
     true,

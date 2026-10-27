@@ -31,6 +31,11 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const html = (node: Element | ShadowRoot | null | undefined) =>
   node?.innerHTML.replaceAll(/<!--[[\]]-->/g, "") ?? "";
 
+/** スクリプトの本文 `script` から、HTML のパーサーが読み取る本文を返す。 */
+const parsedScript = (script: string) =>
+  new DOMParser().parseFromString(`<script>${script}</script>`, "text/html").querySelector("script")
+    ?.textContent ?? "";
+
 /** スクリプトの本文を実行する。 */
 // oxlint-disable-next-line typescript/no-implied-eval
 const run = (script: string) => new Function(script)();
@@ -331,6 +336,24 @@ describe("値の引き継ぎ", () => {
     expect(host?.size).toBe(1);
     expect(warn).not.toHaveBeenCalled();
   });
+
+  it.each([["a\r\nb"], ["a\u0000b"], ["a\uD800b"]])(
+    "ページに出力すると置き換わる文字を含む文字列 %j も、同じ値で受け取る",
+    async (label) => {
+      const tag = nextTag();
+      const kinds = { props: { label: "string" } } as const;
+      const scripts = await serve(
+        server(
+          defineServer(tag, () => null, kinds),
+          { label },
+        ),
+      );
+      scripts.forEach((script) => run(parsedScript(script)));
+      defineClient(tag, () => null, kinds);
+      await tick();
+      expect((document.querySelector(tag) as { label?: unknown } | null)?.label).toBe(label);
+    },
+  );
 });
 
 describe("Shadow DOM の中の子要素", () => {

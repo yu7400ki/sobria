@@ -4,13 +4,22 @@ import { attributeValue } from "../shared/attributes.ts";
 export const escapeText = (text: string): string =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
-/** `text` を、HTML の二重引用符で囲んだ属性の値として出力する文字列にする。`&`、`"`、`<`、`>` を文字参照にする。 */
+/** `text` を、HTML の二重引用符で囲んだ属性の値として出力する文字列にする。`&`、`"`、`<`、`>` と CR を文字参照にする。 */
 export const escapeAttribute = (text: string): string =>
   text
     .replaceAll("&", "&amp;")
     .replaceAll('"', "&quot;")
     .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+    .replaceAll(">", "&gt;")
+    .replaceAll("\r", "&#13;");
+
+/** ページに出力すると U+FFFD に置き換わる文字（NUL と、対になっていないサロゲート）に一致する正規表現である。 */
+export const replacedOnPage =
+  /\0|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+/** `escapeAttribute` で出力した属性の値 `text` から、ブラウザが読み取る文字列を返す。 */
+export const parsedAttribute = (text: string | null): string | null =>
+  text?.replace(replacedOnPage, "\uFFFD") ?? null;
 
 /** HTML の属性の名前として使用できる文字列に一致する正規表現である。 */
 const attributeName = /^[^\s"'>/=\p{Cc}]+$/u;
