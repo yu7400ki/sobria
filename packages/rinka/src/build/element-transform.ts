@@ -46,13 +46,7 @@ export function registerElement(
   file: string,
   client: boolean,
 ): ElementInfo {
-  const exported = program.body.find((statement) => statement.type === "ExportDefaultDeclaration");
-  const fn = exported?.declaration;
-  if (!exported || fn?.type !== "FunctionDeclaration" || !fn.id) {
-    throw new CompileError(
-      `${file}: 要素のファイルは、export default function 名前(props, ctx) の形で関数を default export してください。`,
-    );
-  }
+  const { exported, fn, name } = elementFunction(program, file);
   const analyzed = analyzeProps(program, fn, file);
   const elementOptions: ElementOptions = usesForm(fn, file)
     ? { ...analyzed, form: true }
@@ -70,10 +64,29 @@ export function registerElement(
         "",
       ];
   output.append(`
-export default ${DEFINE}(${[JSON.stringify(tag), fn.id.name, JSON.stringify(elementOptions), last].join(", ")});
+export default ${DEFINE}(${[JSON.stringify(tag), name, JSON.stringify(elementOptions), last].join(", ")});
 ${accept}`);
   output.prepend(importInternalAs(client ? "client" : "server", "defineElement", DEFINE));
   return { tag, options: elementOptions };
+}
+
+/** 要素のファイルの default export の文と、default export した関数宣言と、その関数の名前を表す。 */
+export interface ElementFunction {
+  readonly exported: ESTree.ExportDefaultDeclaration;
+  readonly fn: ESTree.Function;
+  readonly name: string;
+}
+
+/** 要素のファイル `program` が default export した要素の関数を返す。名前付きの関数宣言を default export していなければ、ビルドのエラーにする。 */
+export function elementFunction(program: ESTree.Program, file: string): ElementFunction {
+  const exported = program.body.find((statement) => statement.type === "ExportDefaultDeclaration");
+  const fn = exported?.declaration;
+  if (!exported || fn?.type !== "FunctionDeclaration" || !fn.id) {
+    throw new CompileError(
+      `${file}: 要素のファイルは、export default function 名前(props, ctx) の形で関数を default export してください。`,
+    );
+  }
+  return { exported, fn, name: fn.id.name };
 }
 
 /** 要素のファイルの最上位の `export const load` の値を返す。記述が無ければ `load` を返す。ほかの形で `load` を export すると、ビルドのエラーにする。 */

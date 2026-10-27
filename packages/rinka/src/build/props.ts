@@ -42,9 +42,31 @@ export function analyzeProps(
   fn: ESTree.Function,
   file: string,
 ): ElementOptions {
+  return {
+    props: Object.fromEntries(
+      [...propMembers(program, fn, file)].map(([name, { kind }]) => [name, kind]),
+    ),
+  };
+}
+
+/** Props の型の 1 つのメンバーの、分類と宣言を表す。 */
+export interface PropMember {
+  readonly kind: PropKind;
+  readonly signature: ESTree.TSPropertySignature | ESTree.TSMethodSignature;
+}
+
+/**
+ * 要素の関数 `fn` の第 1 引数の型注釈を解析し、Props の型のメンバーの分類と宣言を、名前ごとに宣言した順で返す。
+ * `children` の分類は `slot` である。
+ */
+export function propMembers(
+  program: ESTree.Program,
+  fn: ESTree.Function,
+  file: string,
+): ReadonlyMap<string, PropMember> {
   const fail: Fail = (message) => new CompileError(`${file}: ${message}`);
   const [param] = fn.params;
-  if (!param) return { props: {} };
+  if (!param) return new Map();
   if (param.type !== "Identifier") {
     throw fail(
       "要素の関数の第 1 引数は、props のような 1 つの名前で受け取ってください。分割代入、既定値、残余引数は使用できません。",
@@ -59,42 +81,89 @@ export function analyzeProps(
   const members = propsMembers(annotation, helpersOf(program), fail);
   const errors = checkPropNames([...members.keys()]);
   if (errors.length > 0) throw fail(errors.join("\n"));
-  return {
-    props: Object.fromEntries(
-      [...members].map(([name, kind]) => [name, name === "children" ? "slot" : kind]),
-    ),
-  };
+  return members;
 }
 
-/** Props の型注釈 `type` が表す型リテラルの、メンバーの名前と分類を返す。 */
-function propsMembers(type: ESTree.TSType, helpers: Helpers, fail: Fail): Map<string, PropKind> {
-  const classifyAll = (members: readonly ESTree.TSSignature[]) =>
-    classifyMembers(members, helpers, fail);
+/** Props の型注釈 `type` が表す型リテラルの、メンバーの名前と、分類と宣言を返す。 */
+function propsMembers(type: ESTree.TSType, helpers: Helpers, fail: Fail): Map<string, PropMember> {
   const unwrap = (reference: ESTree.TSTypeReference) => {
     const argument = reference.typeArguments?.params[0];
     if (argument?.type !== "TSTypeLiteral") {
       throw fail("Props<T> の T には、型リテラルを記述してください。");
     }
-    return classifyAll(argument.members);
+    return classifyMembers(argument.members, helpers, fail);
   };
-  const isHelper = (reference: ESTree.TSTypeReference) =>
-    reference.typeName.type === "Identifier" && helpers.props.has(reference.typeName.name);
-  const unsupported = fail(
-    "Props の型には、型リテラルか、同じファイルで宣言した type か interface の名前か、rinka の Props<T> で包んだ型リテラルを記述してください。",
-  );
-  if (type.type === "TSTypeLiteral") return classifyAll(type.members);
-  if (type.type !== "TSTypeReference" || type.typeName.type !== "Identifier") throw unsupported;
+  const isHelper = (reference: ESTree.TSType): reference is ESTree.TSTypeReference =>
+    reference.type === "TSTypeReference" &&
+    reference.typeName.type === "Identifier" &&
+    helpers.props.has(reference.typeName.name);
   if (isHelper(type)) return unwrap(type);
-  const declared = helpers.declared.get(type.typeName.name);
-  if (declared === undefined) throw unsupported;
-  if (declared.kind === "interface") {
-    if (declared.extended) throw unsupported;
-    return classifyAll(declared.members);
+  const aliased = aliasedType(type, helpers);
+  if (aliased && isHelper(aliased)) return unwrap(aliased);
+  const members = membersOf(type, helpers);
+  if (members === undefined) {
+    throw fail(
+      "Props の型には、型リテラルか、同じファイルで宣言した type か interface の名前か、rinka の Props<T> で包んだ型リテラルを記述してください。",
+    );
   }
-  const aliased = declared.declaration.typeAnnotation;
-  if (aliased.type === "TSTypeLiteral") return classifyAll(aliased.members);
-  if (aliased.type === "TSTypeReference" && isHelper(aliased)) return unwrap(aliased);
-  throw unsupported;
+  return classifyMembers(members, helpers, fail);
+}
+
+/** `type` が同じファイルで宣言した type の名前なら、その本体の型を返す。 */
+function aliasedType(type: ESTree.TSType, helpers: Helpers): ESTree.TSType | undefined {
+  if (type.type !== "TSTypeReference" || type.typeName.type !== "Identifier") return undefined;
+  const declared = helpers.declared.get(type.typeName.name);
+  return declared?.kind === "alias" ? declared.declaration.typeAnnotation : undefined;
+}
+
+/**
+ * `type` が型リテラルか、同じファイルで宣言した type か interface の名前なら、その型のメンバーを返す。
+ * type の本体が型リテラルでないときと、interface が extends を持つときは、`undefined` を返す。
+ */
+function membersOf(
+  type: ESTree.TSType,
+  helpers: Helpers,
+): readonly ESTree.TSSignature[] | undefined {
+  if (type.type === "TSTypeLiteral") return type.members;
+  if (type.type !== "TSTypeReference" || type.typeName.type !== "Identifier") return undefined;
+  const declared = helpers.declared.get(type.typeName.name);
+  if (declared?.kind === "interface") return declared.extended ? undefined : declared.members;
+  const aliased = declared?.declaration.typeAnnotation;
+  return aliased?.type === "TSTypeLiteral" ? aliased.members : undefined;
+}
+
+/** ファイルの中で宣言した型を、Props の型と同じ規則で解決する関数を表す。 */
+export interface FileTypes {
+  /** 型リテラルか、同じファイルで宣言した type か interface の名前のメンバーを返す。それ以外の形と、extends を持つ interface には `undefined` を返す。 */
+  readonly members: (type: ESTree.TSType) => readonly ESTree.TSSignature[] | undefined;
+  /** 括弧と、同じファイルで宣言した型引数の無い type の名前を、本体の型までたどって返す。 */
+  readonly resolve: (type: ESTree.TSType) => ESTree.TSType;
+}
+
+/** ファイル `program` で宣言した型を解決する関数を返す。 */
+export function fileTypes(program: ESTree.Program): FileTypes {
+  const helpers = helpersOf(program);
+  const resolve = (type: ESTree.TSType, seen: ReadonlySet<string> = new Set()): ESTree.TSType => {
+    if (type.type === "TSParenthesizedType") return resolve(type.typeAnnotation, seen);
+    if (type.type !== "TSTypeReference" || type.typeName.type !== "Identifier") return type;
+    const { name } = type.typeName;
+    const declared = helpers.declared.get(name);
+    if (seen.has(name) || declared?.kind !== "alias" || declared.declaration.typeParameters) {
+      return type;
+    }
+    return resolve(declared.declaration.typeAnnotation, new Set([...seen, name]));
+  };
+  return { members: (type) => membersOf(type, helpers), resolve: (type) => resolve(type) };
+}
+
+/** 型のメンバーの名前を返す。名前を識別子か文字列で記述していなければ `undefined` を返す。 */
+export function memberName(member: ESTree.TSSignature): string | undefined {
+  if (member.type !== "TSPropertySignature" && member.type !== "TSMethodSignature") {
+    return undefined;
+  }
+  const { key } = member;
+  if (!member.computed && key.type === "Identifier") return key.name;
+  return key.type === "Literal" && typeof key.value === "string" ? key.value : undefined;
 }
 
 /** `rinka` から import した `Props` と `Slot` の、ファイルの中の名前と、ファイルで宣言した type と interface を返す。 */
@@ -141,25 +210,25 @@ function declarations(
   });
 }
 
-/** 型リテラルのメンバーを、名前と分類の組にする。 */
+/** 型リテラルのメンバーを、名前と、分類と宣言の組にする。`children` は `slot` に分類する。 */
 function classifyMembers(
   members: readonly ESTree.TSSignature[],
   helpers: Helpers,
   fail: Fail,
-): Map<string, PropKind> {
-  const classified = new Map<string, PropKind>();
+): Map<string, PropMember> {
+  const classified = new Map<string, PropMember>();
   for (const member of members) {
     if (member.type !== "TSPropertySignature" && member.type !== "TSMethodSignature") {
       throw fail("Props の型には、プロパティとメソッドだけを宣言してください。");
     }
-    const { key } = member;
-    let name: string | undefined;
-    if (!member.computed && key.type === "Identifier") name = key.name;
-    else if (key.type === "Literal" && typeof key.value === "string") name = key.value;
+    const name = memberName(member);
     if (name === undefined) {
       throw fail("Props の型のメンバーの名前は、識別子か文字列で記述してください。");
     }
-    classified.set(name, memberKind(member, helpers));
+    classified.set(name, {
+      kind: name === "children" ? "slot" : memberKind(member, helpers),
+      signature: member,
+    });
   }
   return classified;
 }

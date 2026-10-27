@@ -1,7 +1,7 @@
 import { extname } from "node:path";
 
 import type { MagicString, SourceMap } from "magic-string";
-import { parseSync, type ESTree } from "vite";
+import { parseSync, type ESTree, type ParseResult } from "vite";
 
 import { ParseError } from "./errors.ts";
 
@@ -163,11 +163,19 @@ export interface ModuleSource {
 }
 
 /** `code` を ES モジュールとして解析する。式を囲む括弧は `ParenthesizedExpression` のノードにする。構文の誤りがあれば `ParseError` を投げる。 */
-export function parseModule(code: string, { id, file, lang }: ModuleSource): ESTree.Program {
-  const { program, errors } = parseSync(id, code, { lang, sourceType: "module" });
+export function parseModule(code: string, source: ModuleSource): ESTree.Program {
+  return parseWithComments(code, source).program;
+}
+
+/** `code` を `parseModule` と同じく解析し、プログラムとコメントを返す。コメントは、ソースに現れる順に並ぶ。 */
+export function parseWithComments(
+  code: string,
+  { id, file, lang }: ModuleSource,
+): Pick<ParseResult, "program" | "comments"> {
+  const { program, comments, errors } = parseSync(id, code, { lang, sourceType: "module" });
   const [error] = errors;
   if (error) throw new ParseError(`${file} を解析できません: ${error.message}`);
-  return program;
+  return { program, comments };
 }
 
 /** 式を囲む括弧を外したノードを返す。 */
