@@ -1455,7 +1455,11 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       isAsyncIterable(value) ? this.relay(value) : value,
     );
     this.values.add(this.transfer(host, path, key, relayed));
-    return relayed.then((value) => (value instanceof Relay ? value.view() : value));
+    return relayed.then((value) =>
+      value instanceof Relay
+        ? value.first.then((first) => (first.done === true ? undefined : first.value))
+        : value,
+    );
   }
 
   /** `sendMemo` の `relayed` の値を、ホストの `key` に送る。 */

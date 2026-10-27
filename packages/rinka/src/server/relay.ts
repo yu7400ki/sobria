@@ -10,7 +10,6 @@ import { getContext, runInRequest } from "./context.ts";
 export class Relay {
   private readonly iterator: AsyncIterator<unknown>;
   private readonly context: Context | undefined;
-  private readonly closed = Promise.withResolvers<void>();
   /** iterator が終わったか失敗したら真である。 */
   private finished = false;
   /** `close` が返す Promise である。`close` を呼ぶまでは `undefined` である。 */
@@ -30,14 +29,6 @@ export class Relay {
     return this.returned !== undefined;
   }
 
-  /** 最初の値を yield し、`close` が呼ばれるまで終わらない async iterable を返す。最初の値の前に失敗したら、その例外を投げる。 */
-  async *view(): AsyncGenerator<unknown, void> {
-    const result = await this.first;
-    if (result.done === true) return;
-    yield result.value;
-    await this.closed.promise;
-  }
-
   /** 2 番目以降の値を yield する。最初の `next()` で終わったときと、`close` を呼んだ後は、値を yield せずに終わる。 */
   async *rest(): AsyncGenerator<unknown, void> {
     if ((await this.first).done === true) return;
@@ -49,10 +40,9 @@ export class Relay {
     }
   }
 
-  /** 反復を終え、`view` にも終わりを伝える。iterator が終わっていなければ、`return()` を 1 回だけ呼ぶ。返す Promise は、`return()` が終わると解決する。 */
+  /** 反復を終える。iterator が終わっていなければ、`return()` を 1 回だけ呼ぶ。返す Promise は、`return()` が終わると解決する。 */
   close(): Promise<void> {
     if (this.returned === undefined) {
-      this.closed.resolve();
       this.returned = this.finished
         ? Promise.resolve()
         : this.run(() => closeIterator(this.iterator));
