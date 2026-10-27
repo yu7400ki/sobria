@@ -64,7 +64,8 @@ export default async function setup(project: TestProject): Promise<() => Promise
     await rm(library, { recursive: true, force: true });
   };
   try {
-    const basic = await start("basic", servers);
+    // テストのページは開発サーバーと別のオリジンの iframe なので、RPC のレスポンスのヘッダーを読めるように公開する
+    const basic = await start("basic", servers, { server: { cors: { exposedHeaders: "*" } } });
     project.provide("basicOrigin", basic);
     project.provide("basicPage", await page(basic, "/"));
     project.provide("nestedPage", await page(basic, "/nested"));
