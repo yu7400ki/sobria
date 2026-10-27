@@ -3,11 +3,13 @@ import { isPlainObject } from "../shared/objects.ts";
 import type { Receiver } from "../shared/receiver.ts";
 import {
   REFRESH_HEADER,
+  sameDocument,
   type RefreshJson,
   type RefreshPage,
   type RefreshValues,
 } from "../shared/refresh.ts";
 import { PROPS_KEY, REFRESH_PROPS_KEY } from "../shared/transfer-keys.ts";
+import type { RedirectJson } from "../shared/wire.ts";
 import { morph } from "./morph.ts";
 
 /** ページの描き直しを始めた回数である。 */
@@ -91,6 +93,26 @@ export function reflectPage(reflect: Reflect, page: unknown): boolean {
     location.reload();
   });
   return reloaded;
+}
+
+/**
+ * 移動先を伝える JSON `body` を反映する。`reflect` があり、移動先が現在のページなら、`beforeReflect` を呼んでから `page` を反映し、それ以外では移動先に移動する。
+ * `reflect` でページを読み込み直したときと、移動したときは真を返す。
+ */
+export function redirected(
+  body: RedirectJson,
+  page: unknown,
+  endpoint: URL,
+  reflect: Reflect | undefined,
+  beforeReflect?: () => void,
+): boolean {
+  const target = new URL(body.redirect, endpoint);
+  if (reflect && sameDocument(target, new URL(location.href))) {
+    beforeReflect?.();
+    return reflectPage(reflect, page);
+  }
+  location.assign(target);
+  return true;
 }
 
 /** `value` が、描き直しのレスポンスの JSON かどうかを返す。 */

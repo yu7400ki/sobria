@@ -1,5 +1,5 @@
 import { isPlainObject } from "../shared/objects.ts";
-import { PAGE_HEADER, sameDocument } from "../shared/refresh.ts";
+import { PAGE_HEADER } from "../shared/refresh.ts";
 import { isSeeding } from "../shared/scope.ts";
 import type { CallOptions, ServerFnMethod } from "../shared/server-fn.ts";
 import { ServerFnError, withServerFnRef } from "../shared/server-fn.ts";
@@ -12,9 +12,8 @@ import {
   splitLines,
   wireFormat,
   wireHeader,
-  type RedirectJson,
 } from "../shared/wire.ts";
-import { reflectPage, startRewrite, type Reflect } from "./refresh.ts";
+import { redirected, reflectPage, startRewrite, type Reflect } from "./refresh.ts";
 
 /** RPC の関数を表す。 */
 export type RpcFn = (input?: unknown, options?: CallOptions) => Promise<unknown>;
@@ -99,22 +98,6 @@ async function read(
       return redirected(body, page, endpoint, reflect) ? never() : undefined;
   }
   throw new TypeError("サーバー関数のレスポンスの本文が、rinka の RPC の形式ではありません。");
-}
-
-/**
- * 移動先を伝える JSON `body` を反映する。`reflect` があり、移動先が現在のページなら `page` を反映し、それ以外では移動先に移動する。
- * `reflect` でページを読み込み直したときと、移動したときは真を返す。
- */
-function redirected(
-  body: RedirectJson,
-  page: unknown,
-  endpoint: URL,
-  reflect: Reflect | undefined,
-): boolean {
-  const target = new URL(body.redirect, endpoint);
-  if (reflect && sameDocument(target, new URL(location.href))) return reflectPage(reflect, page);
-  location.assign(target);
-  return true;
 }
 
 /**

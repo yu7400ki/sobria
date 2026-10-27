@@ -1,6 +1,6 @@
-import { PAGE_HEADER, sameDocument } from "../shared/refresh.ts";
+import { PAGE_HEADER } from "../shared/refresh.ts";
 import { isRedirectJson, rpcPrefix, wireFormat, wireHeader } from "../shared/wire.ts";
-import { applyRefresh, isRefreshJson, reflectPage, sendRefresh, startRewrite } from "./refresh.ts";
+import { applyRefresh, isRefreshJson, redirected, sendRefresh, startRewrite } from "./refresh.ts";
 
 /** 送信中のフォームである。 */
 const busy = new WeakSet<HTMLFormElement>();
@@ -65,13 +65,7 @@ async function submit(
   }
   const { response, body } = received;
   if (response.headers.get(wireHeader) === wireFormat.rpc && isRedirectJson(body)) {
-    const target = new URL(body.redirect, action);
-    if (!sameDocument(target, new URL(location.href))) {
-      location.assign(target.href);
-      return;
-    }
-    form.reset();
-    reflectPage(reflect, "page" in body ? body.page : undefined);
+    redirected(body, "page" in body ? body.page : undefined, action, reflect, () => form.reset());
   } else if (isRefreshJson(body)) {
     reflect(() => applyRefresh(body));
   } else {
