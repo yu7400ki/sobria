@@ -66,8 +66,8 @@ export const createScope = (memo: ScopedMemo, data?: unknown): MemoScope => ({
 let current: MemoScope | undefined;
 let seeding = false;
 
-/** `fn` を `scope` の描画の範囲で実行する。 */
-export function withScope<T>(scope: MemoScope, fn: () => T): T {
+/** `fn` を `scope` の描画の範囲で実行する。`scope` が `undefined` なら、描画の範囲の外で実行する。 */
+function runIn<T>(scope: MemoScope | undefined, fn: () => T): T {
   const previous = current;
   current = scope;
   try {
@@ -77,16 +77,11 @@ export function withScope<T>(scope: MemoScope, fn: () => T): T {
   }
 }
 
+/** `fn` を `scope` の描画の範囲で実行する。 */
+export const withScope = <T>(scope: MemoScope, fn: () => T): T => runIn(scope, fn);
+
 /** `fn` を、描画の範囲の外で実行する。 */
-export function outsideScope<T>(fn: () => T): T {
-  const previous = current;
-  current = undefined;
-  try {
-    return fn();
-  } finally {
-    current = previous;
-  }
-}
+export const outsideScope = <T>(fn: () => T): T => runIn(undefined, fn);
 
 /** `memo` の 2 番目の引数を表す。 */
 export interface MemoOptions {
