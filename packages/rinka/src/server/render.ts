@@ -639,12 +639,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
           this.element(node.fn, node.props, node.key, ctx, out, node.child);
           return;
         }
-        const result = node.fn(node.props);
-        if (result instanceof Promise) {
-          out.push(this.hole(result.then((value) => this.chunks(asNode(value), ctx))));
-        } else {
-          this.walk(asNode(result), ctx, out);
-        }
+        this.emit(node.fn(node.props), ctx, out);
       }
     }
   }
@@ -663,11 +658,15 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /** 関数を呼び出した値を描画する。関数が未解決の値を参照すると、値が解決してから描画する穴にする。 */
   private thunk(fn: () => Node, ctx: WalkCtx, out: Chunk[]): void {
-    const value = this.settle(ctx, fn);
+    this.emit(this.settle(ctx, fn), ctx, out);
+  }
+
+  /** `value` が Promise なら、解決してから描画する穴を出力し、そうでなければ `value` を描画する。 */
+  private emit(value: unknown, ctx: WalkCtx, out: Chunk[]): void {
     if (value instanceof Promise) {
-      out.push(this.hole(value.then((resolved) => this.chunks(resolved, ctx))));
+      out.push(this.hole(value.then((resolved) => this.chunks(asNode(resolved), ctx))));
     } else {
-      this.walk(value, ctx, out);
+      this.walk(asNode(value), ctx, out);
     }
   }
 
