@@ -280,6 +280,32 @@ describe("値の引き継ぎ", () => {
     expect(html(host?.shadowRoot)).toBe("<p>ann</p>");
     expect(host?.data).toEqual({ name: "ann" });
   });
+
+  it("引き継いだ props を読む領域は、引き取った後に実行し直さない", async () => {
+    const tag = nextTag();
+    let runs = 0;
+    const view = (h: H) => (props: { data?: { name: string } }) =>
+      h("p", {
+        children: () => {
+          runs++;
+          return h("i", { children: props.data?.name });
+        },
+      });
+    const scripts = await serve(
+      server(defineServer(tag, view(server), { props: { data: "object" } }), {
+        data: { name: "ann" },
+      }),
+    );
+    scripts.forEach(run);
+    const host = document.querySelector(tag);
+    const node = host?.shadowRoot?.querySelector("i");
+    runs = 0;
+    defineClient(tag, view(client), { props: { data: "object" } });
+    await tick();
+    expect(html(host?.shadowRoot)).toBe("<p><i>ann</i></p>");
+    expect(host?.shadowRoot?.querySelector("i")).toBe(node);
+    expect(runs).toBe(1);
+  });
 });
 
 describe("Shadow DOM の中の子要素", () => {

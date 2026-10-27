@@ -283,9 +283,10 @@ export function registerElement<P, M extends object = object>(
       host.shadowRoot ?? host.attachShadow({ mode: "open", delegatesFocus: options.form === true });
     shadow.addEventListener("submit", handleSubmit);
     const transferred = beginTakeover(id, tag);
+    // 値の変化を通知せずに設定する
     for (const [name, value] of Object.entries(transferred.props)) {
       const prop = instance.props.get(name);
-      if (prop) write(prop, { value });
+      if (prop) prop.source = { value };
     }
     const scope = createScope(transferred.memo, transferred.values);
     let target: ParentNode = shadow;
