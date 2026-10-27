@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import type { ESTree } from "vite";
@@ -7,6 +7,7 @@ import type { ESTree } from "vite";
 import { prerenderEnv, type PrerenderScope, type PrerenderTarget } from "../shared/prerender.ts";
 import { moduleExportName, parseModule, sourceLangOf } from "./ast.ts";
 import { entries, importInternal } from "./entries.ts";
+import { inside } from "./paths.ts";
 import { scanRoutes } from "./routes.ts";
 import { SERVER_ENTRY_NAME } from "./settings.ts";
 
@@ -69,12 +70,9 @@ function fileOf(clientDir: string, pathname: string, kind: "page" | "route"): st
     .filter((part) => part !== "")
     .map(decodeURIComponent);
   const file = resolve(clientDir, ...parts, ...(kind === "page" ? ["index.html"] : []));
-  const inside = relative(resolve(clientDir), file);
   if (
     parts.some((part) => part === "." || part === ".." || /[/\\]/.test(part)) ||
-    isAbsolute(inside) ||
-    inside === ".." ||
-    inside.startsWith(`..${sep}`)
+    inside(resolve(clientDir), file) === undefined
   ) {
     throw new Error(`[rinka] ${pathname} は、書き出しの出力先の外を指します。`);
   }
