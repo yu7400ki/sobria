@@ -50,8 +50,6 @@ props は `props.label` のように読みます。読み取りは追跡され�
 
 型が `string`、`number`、`boolean` の props は、属性でも受け取ります。属性の値は、Props の型に変換します。Props の型ごとの受け取り方と変換の規則は [props の型と受け取り方](/reference/jsx#props-の型と受け取り方) に、属性の名前の決まり方は [props の名前と属性の名前](/reference/jsx#props-の名前と属性の名前) に記述しています。
 
-ページから boolean の props に `false` を渡すと、サーバーで描画するときの props の値は `false` で、ブラウザで要素が起動した後の props の値は `undefined` になります（[サーバーコンポーネントから渡す値](/reference/jsx#サーバーコンポーネントから渡す値)）。そのため、`props.open ?? true` のようなデフォルトの値を記述すると、サーバーとブラウザで値が異なります。boolean の props には、省略したときに `false` として扱える名前を付けます。例えば、省略したときに開いた状態で表示するなら、`open` の代わりに `collapsed` を props にします。
-
 ### props にできない名前
 
 `title`、`id`、`class`、`hidden` のように、HTML の要素で意味を持つ名前は、props の名前にできません。使用できない名前の一覧は、[props にできない名前](/reference/jsx#props-にできない名前) に記述しています。
