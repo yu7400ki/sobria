@@ -511,7 +511,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   private readonly hosts = new Set<HostRecord>();
   /** ホストに値を送る処理のうち、終わっていないものを保持する。 */
   private readonly values = new Set<Promise<void>>();
-  /** 反復している SSR の memo の async iterable を保持する。`closeRelays` を呼んだ後は `undefined` である。 */
+  /** 反復している SSR の memo の async iterable を保持する。`cancel` を呼んだ後は `undefined` である。 */
   private relays: Set<Relay> | undefined = new Set();
   /** 要素を描画したか、`<Loading>` の中身を後送りにしたときに真になる。真になったページにだけ、起動スクリプトを出力する。 */
   private interactive = false;
@@ -1482,18 +1482,12 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     }
   }
 
-  /** `source` を反復する Relay を作成する。`closeRelays` を呼んだ後なら、作成した Relay をすぐに閉じる。 */
+  /** `source` を反復する Relay を作成する。`cancel` を呼んだ後なら、作成した Relay をすぐに閉じる。 */
   private relay(source: AsyncIterable<unknown>): Relay {
     const relay = new Relay(source);
     if (this.relays) this.relays.add(relay);
     else void relay.close();
     return relay;
-  }
-
-  /** 反復しているすべての Relay を閉じ、それより後に作成する Relay も閉じる。 */
-  private closeRelays(): void {
-    for (const relay of this.relays ?? []) void relay.close();
-    this.relays = undefined;
   }
 
   /** `value` を JS の式にする。シリアライズできなければ `console.error` に出力して、`$rinka.n` を返す。 */
@@ -1511,9 +1505,10 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     if (await host.take(key)) this.write(dataScript(host.id, key, value));
   }
 
-  /** 出力の読み取りが中止されたので、反復している SSR の memo の async iterable を閉じる。 */
+  /** 反復している SSR の memo の async iterable をすべて閉じ、それより後に作成する Relay も閉じる。 */
   cancel(): void {
-    this.closeRelays();
+    for (const relay of this.relays ?? []) void relay.close();
+    this.relays = undefined;
   }
 
   /**
@@ -1671,7 +1666,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   /** 要素の描画の範囲を破棄し、SSR の memo の async iterable の反復を終える。 */
   dispose(): void {
     for (const dispose of this.disposers.splice(0)) dispose();
-    this.closeRelays();
+    this.cancel();
   }
 }
 
