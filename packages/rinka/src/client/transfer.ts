@@ -2,7 +2,7 @@ import type { SourceAccessor } from "@solidjs/signals";
 
 import { AWAITED_ATTRIBUTE, HOST_ATTRIBUTE } from "../shared/attributes.ts";
 import { isPlainObject } from "../shared/objects.ts";
-import { streamState, type Receiver, type TransferStream } from "../shared/receiver.ts";
+import type { Receiver, TransferStream } from "../shared/receiver.ts";
 import { memoOf, runSeeding, type MemoCompute, type ScopedMemo } from "../shared/scope.ts";
 import { isChildKey, isReservedKey, PROPS_KEY } from "../shared/transfer-keys.ts";
 
@@ -120,7 +120,7 @@ export function beginTakeover(id: string | null, tag: string): Transferred {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       if (!isStream(store, value)) return seededMemo(value as T, compute);
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-      return seededMemo(follow(value) as AsyncIterable<T>, compute, { loadingValue: value.v as T });
+      return memoOf(compute, { loadingValue: value.v as T });
     },
     finish: () => {
       if (!import.meta.env?.DEV) return;
@@ -142,13 +142,9 @@ function isStream(store: Receiver | undefined, value: unknown): value is Transfe
 
 /**
  * 最初の計算で `first` を返す memo を作成する。最初の計算では、`compute` に直前の値として `undefined` を渡してシードとして 1 回呼び、
- * 戻り値は使用せず、投げた値は無視する。2 回目以降の計算では、`compute` の戻り値を使用する。`options` は `memoOf` に渡す。
+ * 戻り値は使用せず、投げた値は無視する。2 回目以降の計算では、`compute` の戻り値を使用する。
  */
-function seededMemo<T>(
-  first: T | AsyncIterable<T>,
-  compute: MemoCompute<T>,
-  options?: { readonly loadingValue: T },
-): SourceAccessor<T> {
+function seededMemo<T>(first: T, compute: MemoCompute<T>): SourceAccessor<T> {
   let seeding = true;
   return memoOf<T>((prev) => {
     if (!seeding) return compute(prev);
@@ -161,47 +157,5 @@ function seededMemo<T>(
     }
     void Promise.resolve(result).catch(() => {});
     return first;
-  }, options);
-}
-
-/**
- * `stream` の最新の値を返し、その後は、届いた値を届くたびに返す async iterable を返す。ストリームが失敗したら例外を投げる。
- * `return()` を呼ぶと、次の値を待っているときも、すぐに待つのをやめて終わる。
- */
-function follow(stream: TransferStream): AsyncIterable<unknown> {
-  const finished: IteratorResult<unknown> = { done: true, value: undefined };
-  let last: number | undefined;
-  let stopped = false;
-  let wake: (() => void) | undefined;
-  const iterator: AsyncIterator<unknown> = {
-    next: async () => {
-      for (;;) {
-        if (stopped) return finished;
-        if (stream.n !== last) {
-          last = stream.n;
-          return { done: false, value: stream.v };
-        }
-        if (stream.d === streamState.done) return finished;
-        if (stream.d === streamState.failed) {
-          stopped = true;
-          throw new Error("サーバーで memo の値を取得できませんでした。");
-        }
-        // oxlint-disable-next-line no-await-in-loop
-        await new Promise<void>((resolve) => {
-          wake = resolve;
-          stream.l.push(resolve);
-        });
-      }
-    },
-    return: async () => {
-      stopped = true;
-      if (wake) {
-        const index = stream.l.indexOf(wake);
-        if (index !== -1) stream.l.splice(index, 1);
-        wake();
-      }
-      return finished;
-    },
-  };
-  return { [Symbol.asyncIterator]: () => iterator };
+  });
 }

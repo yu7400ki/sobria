@@ -8,7 +8,7 @@ import { Loading as ServerLoading } from "../../src/server/control.ts";
 import { defineElement as defineServer } from "../../src/server/element.ts";
 import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
 import { renderToStream } from "../../src/server/response.ts";
-import { isSeeding } from "../../src/shared/scope.ts";
+import { isSeeding, type MemoCompute } from "../../src/shared/scope.ts";
 import { siteMemo as memo, signal } from "../../src/shared/signals.ts";
 
 afterEach(() => {
@@ -523,96 +523,66 @@ const streamed = (scripts: string[], key: string) =>
           .replace(/\}\)$/, ")})"),
   );
 
-/** 値を送るスクリプトから、キー `key` の値を送ったホストの ID を返す。 */
-const hostOf = (scripts: string[], key: string) => {
-  const script = scripts.find((s) => s.includes(JSON.stringify(key)));
-  return JSON.parse(/^\$rinka\.d\(("[^"]*")/.exec(script ?? "")?.[1] ?? '""') as string;
-};
-
 /** 呼び出し箇所が `t:20` の memo の値を表示する要素の関数を作成する。memo の関数は `fetch` を呼ぶ。 */
-const streamView = (h: H, fetch: () => Promise<string>) => () => {
+const streamView = (h: H, fetch: MemoCompute<string>) => () => {
   const value = memo(fetch, { site: "t:20" });
   return h("p", { children: () => value() });
 };
 
-/** `"a"` と `"b"` を yield する。 */
-async function* letters() {
-  yield "a";
-  yield "b";
-}
-
 /** `"a"` に解決する Promise を返す。 */
 const fetchA = () => Promise.resolve("a");
 
-/** サーバーのストリームの失敗を伝える未処理の例外だけを、報告しないようにする。 */
-const ignoreStreamFailure = (event: ErrorEvent | PromiseRejectionEvent) => {
-  const error: unknown = event instanceof ErrorEvent ? event.error : event.reason;
-  if (error instanceof Error && error.message.startsWith("サーバーで memo")) event.preventDefault();
-};
+/** `send` で渡した値を順に yield する async iterable を返す `values` と、`send` の組を作成する。 */
+function channel<T>() {
+  const pending: PromiseWithResolvers<T>[] = [Promise.withResolvers<T>()];
+  async function* values(): AsyncGenerator<T> {
+    for (let i = 0; ; i++) {
+      // oxlint-disable-next-line no-await-in-loop
+      yield await pending[i]!.promise;
+    }
+  }
+  const send = (value: T) => {
+    pending.at(-1)!.resolve(value);
+    pending.push(Promise.withResolvers<T>());
+  };
+  return { values, send };
+}
 
 describe("ストリームの値の引き継ぎ", () => {
-  it("引き継いだ最新の値で起動し、後から届いた値で memo を置き換え、memo の取得を繰り返さない", async () => {
+  it("引き継いだ値で起動し、起動した時点で memo の関数を 1 回実行し、memo の関数が返した async iterable の値で memo を置き換える", async () => {
     const tag = nextTag();
-    let fetched = 0;
+    const source = channel<string>();
+    const pending = Promise.withResolvers<AsyncIterable<string>>();
+    const seeding: boolean[] = [];
     const fetch = () => {
-      if (!isSeeding()) fetched++;
-      return Promise.resolve("a");
+      seeding.push(isSeeding());
+      return pending.promise;
     };
     const scripts = await serve(
-      server(defineServer(tag, streamView(server, fetch), { props: {} }), {}),
+      server(defineServer(tag, streamView(server, fetchA), { props: {} }), {}),
     );
-    const id = hostOf(scripts, "t:20#0");
     streamed(scripts, "t:20#0").forEach(run);
-    run(`$rinka.p(${JSON.stringify(id)},"t:20#0",0,"b")`);
-    fetched = 0;
     defineClient(tag, streamView(client, fetch), { props: {} });
     await tick();
     const host = document.querySelector(tag);
+    expect(html(host?.shadowRoot)).toBe("<p>a</p>");
+    pending.resolve(source.values());
+    await tick();
+    expect(html(host?.shadowRoot)).toBe("<p>a</p>");
+    source.send("b");
+    await tick();
     expect(html(host?.shadowRoot)).toBe("<p>b</p>");
-    run(`$rinka.p(${JSON.stringify(id)},"t:20#0",0,"c")`);
+    source.send("c");
     await tick();
     expect(html(host?.shadowRoot)).toBe("<p>c</p>");
-    run(`$rinka.p(${JSON.stringify(id)},"t:20#0",1)`);
-    await tick();
-    expect(html(host?.shadowRoot)).toBe("<p>c</p>");
-    expect(fetched).toBe(0);
-  });
-
-  it("次の値が届く前に memo を計算し直すと、引き継いだストリームの値を待つのをやめる", async () => {
-    const tag = nextTag();
-    const [version, setVersion] = signal(0);
-    const view = (h: H) => () => {
-      const value = memo(
-        () => {
-          const current = version();
-          return Promise.resolve(`v${current}`);
-        },
-        { site: "t:21" },
-      );
-      return h("p", { children: () => value() });
-    };
-    const scripts = await serve(server(defineServer(tag, view(server), { props: {} }), {}));
-    const id = hostOf(scripts, "t:21#0");
-    streamed(scripts, "t:21#0").forEach(run);
-    defineClient(tag, view(client), { props: {} });
-    await tick();
-    const values = (globalThis.$rinka?.v[id] ?? {}) as Record<string, { l: unknown[] }>;
-    const stream = values["t:21#0"]!;
-    const waiting = stream.l.length;
-    setVersion(1);
-    await tick();
-    expect([waiting, stream.l.length, html(document.querySelector(tag)?.shadowRoot)]).toEqual([
-      1,
-      0,
-      "<p>v1</p>",
-    ]);
+    expect(seeding).toEqual([false]);
   });
 
   it("起動した要素の関数の中で、引き継いだストリームの memo を読み取っても、保留中にならない", async () => {
     const tag = nextTag();
     const read: string[] = [];
-    const view = (h: H, record: boolean) => () => {
-      const value = memo(fetchA, { site: "t:20" });
+    const view = (h: H, record: boolean, fetch: () => Promise<string>) => () => {
+      const value = memo(fetch, { site: "t:20" });
       if (record && read.length === 0) {
         try {
           read.push(value());
@@ -622,73 +592,17 @@ describe("ストリームの値の引き継ぎ", () => {
       }
       return h("p", { children: () => value() });
     };
-    const scripts = await serve(server(defineServer(tag, view(server, false), { props: {} }), {}));
-    const id = hostOf(scripts, "t:20#0");
-    streamed(scripts, "t:20#0").forEach(run);
-    run(`$rinka.p(${JSON.stringify(id)},"t:20#0",0,"b")`);
-    defineClient(tag, view(client, true), { props: {} });
-    await tick();
-    expect(read).toEqual(["b"]);
-  });
-
-  it("サーバーの memo が返した async iterable の値をすべて受け取ってから起動すると、最後の値で起動し、memo の取得を繰り返さない", async () => {
-    const tag = nextTag();
-    let fetched = 0;
-    const view = (h: H) => () => {
-      const value = memo(
-        () => {
-          if (!isSeeding()) fetched++;
-          return letters();
-        },
-        { site: "t:23" },
-      );
-      return h("p", { children: () => value() });
-    };
-    const scripts = await serve(server(defineServer(tag, view(server), { props: {} }), {}));
-    expect(scripts.some((script) => script.includes("$rinka.s("))).toBe(true);
-    scripts.forEach(run);
-    fetched = 0;
-    defineClient(tag, view(client), { props: {} });
-    await tick();
-    expect(html(document.querySelector(tag)?.shadowRoot)).toBe("<p>b</p>");
-    expect(fetched).toBe(0);
-  });
-
-  it("サーバーの memo が async iterable に解決する Promise を返しても、最初の値で描画し、続きの値を送る", async () => {
-    const tag = nextTag();
-    let fetched = 0;
-    const view = (h: H) => () => {
-      const value = memo(
-        () => {
-          if (!isSeeding()) fetched++;
-          return Promise.resolve(letters());
-        },
-        { site: "t:22" },
-      );
-      return h("p", { children: () => value() });
-    };
-    const scripts = await serve(server(defineServer(tag, view(server), { props: {} }), {}));
-    scripts.forEach(run);
-    fetched = 0;
-    defineClient(tag, view(client), { props: {} });
-    await tick();
-    expect(html(document.querySelector(tag)?.shadowRoot)).toBe("<p>b</p>");
-    expect(fetched).toBe(0);
-  });
-
-  it("起動する前にストリームが終わっていれば、最後の値で起動する", async () => {
-    const tag = nextTag();
     const scripts = await serve(
-      server(defineServer(tag, streamView(server, fetchA), { props: {} }), {}),
+      server(defineServer(tag, view(server, false, fetchA), { props: {} }), {}),
     );
-    const id = hostOf(scripts, "t:20#0");
     streamed(scripts, "t:20#0").forEach(run);
-    run(
-      `$rinka.p(${JSON.stringify(id)},"t:20#0",0,"z");$rinka.p(${JSON.stringify(id)},"t:20#0",1)`,
+    defineClient(
+      tag,
+      view(client, true, () => new Promise(() => {})),
+      { props: {} },
     );
-    defineClient(tag, streamView(client, fetchA), { props: {} });
     await tick();
-    expect(html(document.querySelector(tag)?.shadowRoot)).toBe("<p>z</p>");
+    expect(read).toEqual(["a"]);
   });
 
   it("依存が変化すると、引き継いだストリームの値を使わずに、memo の関数をブラウザで実行する", async () => {
@@ -705,7 +619,6 @@ describe("ストリームの値の引き継ぎ", () => {
       return h("p", { children: () => value() });
     };
     const scripts = await serve(server(defineServer(tag, view(server), { props: {} }), {}));
-    const id = hostOf(scripts, "t:21#0");
     streamed(scripts, "t:21#0").forEach(run);
     defineClient(tag, view(client), { props: {} });
     await tick();
@@ -714,33 +627,5 @@ describe("ストリームの値の引き継ぎ", () => {
     setVersion(1);
     await tick();
     expect(html(host?.shadowRoot)).toBe("<p>v1</p>");
-    run(`$rinka.p(${JSON.stringify(id)},"t:21#0",0,"stale")`);
-    await tick();
-    expect(html(host?.shadowRoot)).toBe("<p>v1</p>");
-  });
-
-  it("サーバーの iterable が失敗したら、memo を読み取ると例外を投げる", async () => {
-    const tag = nextTag();
-    let read: (() => string) | undefined;
-    const view = (h: H) => () => {
-      const value = memo(fetchA, { site: "t:20" });
-      read = value;
-      return h("p", { children: () => value() });
-    };
-    const scripts = await serve(server(defineServer(tag, view(server), { props: {} }), {}));
-    const id = hostOf(scripts, "t:20#0");
-    streamed(scripts, "t:20#0").forEach(run);
-    defineClient(tag, view(client), { props: {} });
-    await tick();
-    expect(html(document.querySelector(tag)?.shadowRoot)).toBe("<p>a</p>");
-    // 失敗を受け止める境界が無いので、@solidjs/signals は memo の失敗を未処理の例外として報告する。
-    window.addEventListener("error", ignoreStreamFailure);
-    window.addEventListener("unhandledrejection", ignoreStreamFailure);
-    run(`$rinka.p(${JSON.stringify(id)},"t:20#0",2)`);
-    await tick();
-    expect(() => read?.()).toThrow("サーバーで memo の値を取得できませんでした。");
-    await tick();
-    window.removeEventListener("error", ignoreStreamFailure);
-    window.removeEventListener("unhandledrejection", ignoreStreamFailure);
   });
 });
