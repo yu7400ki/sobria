@@ -1,4 +1,4 @@
 .badge {
-  color: rgb(0, 128, 0);
+  color: var(--badge-color, rgb(0, 128, 0));
   background: url(./dot.svg);
 }

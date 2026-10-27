@@ -22,6 +22,7 @@
     "typescript": "catalog:",
     "vite": "catalog:"
   },
+  "customElements": "dist/custom-elements.json",
   "rinka": {
     "prefix": "acme",
     "elements": "src/elements"

@@ -10,7 +10,7 @@ export interface Library extends ElementSource {
 }
 
 /** ディレクトリ `dir` から上位に向かって `name` を探し、最初に見つけたパスを返す。見つからなければ undefined を返す。 */
-function findUp(dir: string, name: string): string | undefined {
+export function findUp(dir: string, name: string): string | undefined {
   const path = join(dir, name);
   if (existsSync(path)) return path;
   const parent = dirname(dir);
@@ -18,7 +18,7 @@ function findUp(dir: string, name: string): string | undefined {
 }
 
 /** パス `path` の JSON のファイルを読み込む。 */
-const readJson = (path: string): Record<string, unknown> =>
+export const readJson = (path: string): Record<string, unknown> =>
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
 
