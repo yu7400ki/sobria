@@ -82,41 +82,38 @@ const ranks = { static: 0, param: 1, "catch-all": 2 } as const satisfies Record<
   number
 >;
 
+/** 区切りの種類ごとに、区切りの名前を文字列にする関数を表す。 */
+type SegmentFormat = { readonly [K in UrlSegment["kind"]]: (name: string) => string };
+
+/** 区切りの列の各区切りを、`format` で文字列にした配列を返す。 */
+const formatSegments = (segments: readonly UrlSegment[], format: SegmentFormat): string[] =>
+  segments.map((segment) => format[segment.kind](segment.name));
+
 /** 区切りの列から Hono のパスを組み立てる。`not-found.tsx` の行は、配下のすべての URL に一致するパスにする。 */
 function honoPath(segments: readonly UrlSegment[], kind: RouteKind): string {
-  const parts = segments.map((segment) => {
-    switch (segment.kind) {
-      case "static":
-        return segment.name;
-      case "param":
-        return `:${segment.name}`;
-      case "catch-all":
-        return `:${segment.name}{.+}`;
-    }
+  const parts = formatSegments(segments, {
+    static: (name) => name,
+    param: (name) => `:${name}`,
+    "catch-all": (name) => `:${name}{.+}`,
   });
   return `/${(kind === "not-found" ? [...parts, "*"] : parts).join("/")}`;
 }
 
 /** パラメータの名前を除いた、区切りの列が一致する URL の形を返す。動的な区切りとキャッチオールは、静的な区切りの名前と重ならない `[` で始まる記号で表す。 */
 const shapeOf = (segments: readonly UrlSegment[]): string =>
-  segments
-    .map((segment) => (segment.kind === "static" ? segment.name : `[${segment.kind}]`))
-    .join("/");
+  formatSegments(segments, {
+    static: (name) => name,
+    param: () => "[param]",
+    "catch-all": () => "[catch-all]",
+  }).join("/");
 
 /** 区切りの列から、グループを除いたファイルの形のパス（`/users/[id]`、`/docs/[...slug]`）を組み立てる。 */
 const filePath = (segments: readonly UrlSegment[]): string =>
-  `/${segments
-    .map((segment) => {
-      switch (segment.kind) {
-        case "static":
-          return segment.name;
-        case "param":
-          return `[${segment.name}]`;
-        case "catch-all":
-          return `[...${segment.name}]`;
-      }
-    })
-    .join("/")}`;
+  `/${formatSegments(segments, {
+    static: (name) => name,
+    param: (name) => `[${name}]`,
+    "catch-all": (name) => `[...${name}]`,
+  }).join("/")}`;
 
 /** `left` と `right` の同じ位置の要素を、短いほうの長さまで組にする。 */
 function zip<T extends object>(left: readonly T[], right: readonly T[]): (readonly [T, T])[] {
@@ -154,34 +151,6 @@ function compareRoutes(a: Scanned, b: Scanned): number {
     if (left.kind === "static" && left.name !== right.name) return left.name < right.name ? -1 : 1;
   }
   return a.depth - b.depth;
-}
-
-/** 種類が `kind` の行に `fallbacks` を付与して返す。`not-found.tsx` の行の `notFound` は、その行のファイルにする。 */
-function rowOf({
-  kind,
-  path,
-  pattern,
-  module,
-  layouts,
-  middlewares,
-  fallbacks,
-}: {
-  readonly kind: RouteKind;
-  readonly path: string;
-  readonly pattern: string;
-  readonly module: string;
-  readonly layouts: readonly string[];
-  readonly middlewares: readonly DirectoryMiddleware<PathFiles>[];
-  readonly fallbacks: Fallbacks<PathFiles>;
-}): ScannedRoute {
-  switch (kind) {
-    case "page":
-      return { kind, path, pattern, module, layouts, middlewares, ...fallbacks };
-    case "not-found":
-      return { kind, path, middlewares, ...fallbacks, notFound: { module, layouts } };
-    case "route":
-      return { kind, path, pattern, module, middlewares, ...fallbacks };
-  }
 }
 
 /**
@@ -249,15 +218,13 @@ function scan(
         );
       }
       const path = honoPath(segments, kind);
-      const route = rowOf({
-        kind,
-        path,
-        pattern: filePath(segments),
-        module: file,
-        layouts,
-        middlewares,
-        fallbacks,
-      });
+      const pattern = filePath(segments);
+      const route: ScannedRoute =
+        kind === "page"
+          ? { kind, path, pattern, module: file, layouts, middlewares, ...fallbacks }
+          : kind === "not-found"
+            ? { kind, path, middlewares, ...fallbacks, notFound: { module: file, layouts } }
+            : { kind, path, pattern, module: file, middlewares, ...fallbacks };
       scanned.push({ route, segments, depth });
     }
     for (const entry of entries) {
