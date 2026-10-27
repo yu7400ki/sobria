@@ -83,6 +83,68 @@ export default function SearchBox() {
 - `apply` が関数を返すと、rinka はその関数を、次に `apply` を呼ぶ前と、要素を破棄するときに呼びます
 - `read` が非同期の memo を読むときは、memo が新しい値に解決してから `apply` を呼びます
 
+## external
+
+`external(subscribe, getSnapshot, getServerSnapshot?)` は、URL のクエリやメディアクエリのように、rinka の外にある状態を読み取る関数を返します。`subscribe` は、状態が変化したときに呼ぶ関数を受け取り、購読を解除する関数を返します。
+
+次の例は、URL のクエリの `sort` を読み書きする要素です。
+
+```tsx
+// src/elements/sort-select.tsx
+import { external } from "rinka";
+
+const listeners = new Set<() => void>();
+
+function subscribe(notify: () => void) {
+  listeners.add(notify);
+  addEventListener("popstate", notify);
+  return () => {
+    listeners.delete(notify);
+    removeEventListener("popstate", notify);
+  };
+}
+
+function setSort(value: string) {
+  const url = new URL(location.href);
+  url.searchParams.set("sort", value);
+  history.pushState(null, "", url);
+  for (const notify of listeners) notify();
+}
+
+const sortOf = (search: string) => new URLSearchParams(search).get("sort") ?? "new";
+
+export default function SortSelect(props: { search: string }) {
+  const sort = external(
+    subscribe,
+    () => sortOf(location.search),
+    () => sortOf(props.search),
+  );
+  return (
+    <select value={sort()} onChange={(e) => setSort(e.currentTarget.value)}>
+      <option value="new">新しい順</option>
+      <option value="popular">人気順</option>
+    </select>
+  );
+}
+```
+
+```tsx
+// src/routes/posts/page.tsx
+import type { PageProps } from "rinka/router";
+
+import SortSelect from "../../elements/sort-select.tsx";
+
+export default function Posts({ url }: PageProps<"/posts">) {
+  return <SortSelect search={url.search} />;
+}
+```
+
+- サーバーで描画するときは、`getServerSnapshot` の値を使用します。`getServerSnapshot` を省略した `external` をサーバーで実行すると、エラーになります。ブラウザだけで作成する要素では、省略できます
+- サーバーで描画した要素がブラウザで起動するときは、最初に `getServerSnapshot` の値で表示し、起動した後に `getSnapshot` の値に切り替えます。最初の表示をサーバーが出力した HTML と一致させるので、`getServerSnapshot` はサーバーとブラウザで同じ値を返す必要があります。要素の中ではリクエストの URL を参照できないので、上の例のように、ページが props で URL のクエリを渡します
+- `getSnapshot` は、状態が変化していなければ同じ値を返す必要があります。`getSnapshot` の値は `Object.is` で比較し、異なるときだけ表示を更新します
+- 要素を破棄すると、購読を解除します
+- ページの内容もクエリに合わせて変えるときは、URL を書き換えた後に `refreshPage()` を呼びます（[サーバー関数](/guide/server-functions)）
+
 ## 非同期の値を待つ
 
 ### Loading
