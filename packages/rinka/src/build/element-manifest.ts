@@ -2,14 +2,14 @@ import { extname } from "node:path";
 
 import type { ESTree, ParseResult } from "vite";
 
-import { formAttributeTypes, type PropKind } from "../shared/element.ts";
-import { customEventName, isEventProp, propToAttribute } from "../shared/names.ts";
+import { formAttributeTypes, propKinds } from "../shared/element.ts";
+import { customEventName } from "../shared/names.ts";
 import { importedNames, langs, parseWithComments, walk } from "./ast.ts";
 import { elementFunction } from "./element-transform.ts";
 import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 import { usesForm } from "./form-usage.ts";
-import { fileTypes, memberName, propMembers, type FileTypes } from "./props.ts";
+import { fileTypes, memberName, optionsOf, propMembers, type FileTypes } from "./props.ts";
 
 /** Custom Elements Manifest の型の記述を表す。 */
 export interface ManifestType {
@@ -135,11 +135,9 @@ export function manifestOf(elements: readonly ManifestElement[]): ManifestPackag
   };
 }
 
-/** 属性で受け取る props の分類である。 */
-const attributeKinds: ReadonlySet<PropKind> = new Set(["string", "number", "boolean", "unknown"]);
-
 /**
  * タグ名 `tag` の要素のファイル `file` のコード `code` から、要素の宣言を返す。
+ * 属性、イベント、スロットは、要素を登録するときと同じ props の分類から算出する。
  * 型は型注釈のソースの文字列で記述し、説明は JSDoc から取得する。
  */
 export function describeElement(
@@ -155,22 +153,28 @@ export function describeElement(
   const { exported, fn, name } = elementFunction(program, file);
   const { tags, ...docs } = source.docsOf(exported);
   const props = propMembers(program, fn, file);
+  const kinds = propKinds(optionsOf(props, usesForm(fn, file)));
+  const attributeOf = new Map(
+    [...kinds.attributes].map(([attribute, { name: prop }]) => [prop, attribute]),
+  );
   const attributes: ManifestAttribute[] = [];
   const events: ManifestEvent[] = [];
   const slots: ManifestSlot[] = [];
   const members: ManifestMember[] = [];
-  for (const [prop, { kind, signature }] of props) {
+  for (const [prop, { signature }] of props) {
     const { tags: _, ...doc } = source.docsOf(signature);
-    if (kind === "slot") {
+    if (kinds.slots.has(prop)) {
       slots.push({ name: prop === "children" ? "" : prop, ...doc });
       continue;
     }
     const type = source.signatureType(signature);
     const typed = type === undefined ? {} : { type: { text: type } };
     members.push({ kind: "field", name: prop, ...typed, ...doc });
-    if (attributeKinds.has(kind)) {
-      attributes.push({ name: propToAttribute(prop), fieldName: prop, ...typed, ...doc });
-    } else if (kind === "function" && isEventProp(prop)) {
+    const attribute = attributeOf.get(prop);
+    if (attribute !== undefined) {
+      attributes.push({ name: attribute, fieldName: prop, ...typed, ...doc });
+    }
+    if (kinds.events.has(prop)) {
       const detail = source.detailType(signature);
       events.push({
         name: customEventName(prop),
@@ -179,9 +183,8 @@ export function describeElement(
       });
     }
   }
-  if (usesForm(fn, file)) {
-    for (const [attribute, type] of Object.entries(formAttributeTypes)) {
-      if (props.has(attribute)) continue;
+  for (const [attribute, type] of Object.entries(formAttributeTypes)) {
+    if (kinds.reflects.has(attribute) && !props.has(attribute)) {
       attributes.push({ name: attribute, fieldName: attribute, type: { text: type } });
     }
   }
