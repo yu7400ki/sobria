@@ -737,13 +737,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         this.walk(asNode(props.children), { ...ctx, head: "all" }, out);
         return;
       }
-      const id = ++this.seq;
-      this.hoisted.set(id, {
-        kind: role,
-        values: this.rootAttributes(props, ctx),
-        depth: ctx.depth,
-      });
-      out.push(this.marker(id, ""), this.marker(id, "/"));
+      this.hoist({ kind: role, values: this.rootAttributes(props, ctx), depth: ctx.depth }, out);
       this.walk(asNode(props.children), ctx, out);
       return;
     }
@@ -757,13 +751,20 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       this.nativeTag(tag, props, key, ctx, out);
       return;
     }
-    const id = ++this.seq;
     const headTagKey = this.settle(ctx, (tracked) =>
       headKey(tag, (name) => this.value(props[name], ctx, tracked)),
     );
-    this.hoisted.set(id, { kind: "head", key: headTagKey, depth: ctx.depth });
+    this.hoist({ kind: "head", key: headTagKey, depth: ctx.depth }, out, () =>
+      this.nativeTag(tag, props, key, { ...ctx, head: "none" }, out),
+    );
+  }
+
+  /** `record` を文書の骨組みへ移動するものとして記録し、その開始と終了の目印を `out` に出力する。`inner` は、2 つの目印の間に出力する。 */
+  private hoist(record: Hoisted, out: Chunk[], inner?: () => void): void {
+    const id = ++this.seq;
+    this.hoisted.set(id, record);
     out.push(this.marker(id, ""));
-    this.nativeTag(tag, props, key, { ...ctx, head: "none" }, out);
+    inner?.();
     out.push(this.marker(id, "/"));
   }
 
@@ -778,9 +779,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     const values = new Map<keyof NavigationProps, NavigationProps[keyof NavigationProps]>();
     if (props.transitions !== undefined) values.set("transitions", props.transitions);
     if (props.prefetch !== undefined) values.set("prefetch", props.prefetch);
-    const id = ++this.seq;
-    this.hoisted.set(id, { kind: "navigation", values, depth: ctx.depth });
-    out.push(this.marker(id, ""), this.marker(id, "/"));
+    this.hoist({ kind: "navigation", values, depth: ctx.depth }, out);
   }
 
   /** `position` の理由で移動できない位置にある `tag` を、開発時に、位置の説明と、`action` に記述した扱いとともに警告する。 */
