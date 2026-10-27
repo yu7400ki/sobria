@@ -272,7 +272,7 @@ class Source {
 
   /**
    * イベントの props の宣言から、`CustomEvent` の `detail` の型を返す。
-   * 引数が無ければ `null` にし、第 1 引数の型から `undefined` を除き、第 1 引数を省略できれば `null` を加える。
+   * 引数が無ければ `null` にし、第 1 引数の型から `undefined` を除き、第 1 引数を省略できるか、型が `undefined` を受け付ければ `null` を加える。
    */
   detailType(signature: PropSignature): string {
     const params = this.signatureParams(signature);
@@ -289,7 +289,9 @@ class Source {
     const members = type.type === "TSUnionType" ? type.types : [type];
     const defined = members.filter((member) => member.type !== "TSUndefinedKeyword");
     const optional =
-      (first.type === "Identifier" && first.optional) || defined.length < members.length;
+      (first.type === "Identifier" && first.optional) ||
+      defined.length < members.length ||
+      defined.some((member) => member.type === "TSVoidKeyword");
     if (!optional) return this.text(withoutParens(annotation.typeAnnotation));
     if (defined.length === 0) return "null";
     const text =

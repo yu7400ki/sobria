@@ -1,5 +1,8 @@
+import { readFile } from "node:fs/promises";
+
 import { describe, expect, it } from "vitest";
 
+import { parseModule } from "../../src/build/ast.ts";
 import { describeElement, manifestOf } from "../../src/build/element-manifest.ts";
 import { CompileError } from "../../src/build/errors.ts";
 
@@ -356,5 +359,43 @@ describe("マニフェスト", () => {
         },
       ],
     });
+  });
+});
+
+describe("detail の型", () => {
+  it("マニフェストのイベントの型は、型のテストと同じ fixture の Expected に記述した型と一致する", async () => {
+    const path = new URL("../types/client/fixtures/detail-events.ts", import.meta.url);
+    const code = await readFile(path, "utf8");
+    const file = "test/types/client/fixtures/detail-events.ts";
+    const expected = parseModule(code, { id: file, file, lang: "ts" }).body.flatMap((statement) => {
+      const declaration =
+        statement.type === "ExportNamedDeclaration" ? statement.declaration : undefined;
+      if (
+        declaration?.type !== "TSTypeAliasDeclaration" ||
+        declaration.id.name !== "Expected" ||
+        declaration.typeAnnotation.type !== "TSTypeLiteral"
+      ) {
+        return [];
+      }
+      return declaration.typeAnnotation.members.flatMap((member) =>
+        member.type === "TSPropertySignature" &&
+        member.key.type === "Identifier" &&
+        member.typeAnnotation
+          ? [
+              {
+                name: member.key.name,
+                type: {
+                  text: code.slice(
+                    member.typeAnnotation.typeAnnotation.start,
+                    member.typeAnnotation.typeAnnotation.end,
+                  ),
+                },
+              },
+            ]
+          : [],
+      );
+    });
+    expect(expected).toHaveLength(12);
+    expect(describeElement(code, { tag: "x-detail", file }).events).toEqual(expected);
   });
 });
