@@ -26,7 +26,7 @@ export class Relay {
   }
 
   /** `close` を呼んだら真である。 */
-  get closing(): boolean {
+  private get closing(): boolean {
     return this.returned !== undefined;
   }
 

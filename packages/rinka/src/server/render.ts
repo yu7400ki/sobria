@@ -1443,7 +1443,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   /**
    * memo の関数が返した `result` の値を、シェルを出力した後に `$rinka.d` でホストに送り、memo の値として使用する値を返す。
    * `result` が失敗したときと、値をシリアライズできないときは、値が無いことを表す `$rinka.n` を送る。シリアライズできない値は `console.error` に出力する。
-   * `result` が async iterable か、async iterable に解決するなら、その最初の値で描画し、最初の値を `$rinka.s` のストリームとして送ってから iterable を閉じる。
+   * `result` が async iterable か、async iterable に解決するなら、その最初の値で描画し、最初の値を `$rinka.s` のストリームの記録として送ってから iterable を閉じる。
    */
   private sendMemo(
     host: HostRecord,
@@ -1521,11 +1521,9 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     }
   }
 
-  /** ホストをページに出力した後に、JS の式 `value` を `$rinka.d` でホストの `key` の値として送る。送ったら真を返す。 */
-  private async deliver(host: HostRecord, key: string, value: string): Promise<boolean> {
-    if (!(await host.take(key))) return false;
-    this.write(dataScript(host.id, key, value));
-    return true;
+  /** ホストをページに出力した後に、JS の式 `value` を `$rinka.d` でホストの `key` の値として送る。 */
+  private async deliver(host: HostRecord, key: string, value: string): Promise<void> {
+    if (await host.take(key)) this.write(dataScript(host.id, key, value));
   }
 
   /** 出力の読み取りが中止されたので、反復している SSR の memo の async iterable を閉じる。 */

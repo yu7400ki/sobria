@@ -134,7 +134,7 @@ export function beginTakeover(id: string | null, tag: string): Transferred {
   };
 }
 
-/** `value` が、`$rinka.s` で作成したストリームなら `true` を返す。 */
+/** `value` が、`$rinka.s` で作成したストリームの記録なら `true` を返す。 */
 function isStream(store: Receiver | undefined, value: unknown): value is TransferStream {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   return store?.t.has(value as TransferStream) ?? false;

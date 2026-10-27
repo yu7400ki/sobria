@@ -28,9 +28,9 @@ export interface Receiver {
   readonly l: Record<string, (() => void)[] | undefined>;
   /** 値が無いことを表すオブジェクトである。 */
   readonly n: object;
-  /** `s` で作成したストリームを保持する。 */
+  /** `s` で作成したストリームの記録を保持する。 */
   readonly t: WeakSet<TransferStream>;
-  /** 最初の値が `value` のストリームを作成する。 */
+  /** 値 `value` を保持するストリームの記録を作成する。 */
   readonly s: (value: unknown) => TransferStream;
   /** ホストに引き継ぐ値を保持して、そのホストで値を待っている関数に通知する。 */
   readonly d: (id: string, values: Record<string, unknown>) => void;
