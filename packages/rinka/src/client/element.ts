@@ -41,7 +41,7 @@ import {
   insert,
   Deferred,
   DeferredRegion,
-  setter,
+  attributeSetter,
 } from "./dom.ts";
 import { formControls, formElementClass } from "./form-element.ts";
 import { handleSubmit } from "./form.ts";
@@ -341,7 +341,7 @@ export function registerElement<P, M extends object = object>(
               prop.track();
               return readSource(prop.source);
             },
-            setter(host, name, false),
+            attributeSetter(host, name),
           );
         }
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion
@@ -625,7 +625,7 @@ function createHost(
       } else if (read && isEventProp(name)) {
         const listener = untrack(read);
         if (isFunction(listener)) applyAttribute(host, name, listener);
-        else bind(read, setter(host, name, false));
+        else bind(read, attributeSetter(host, name));
       } else {
         applyAttribute(host, name, value);
       }
@@ -633,7 +633,7 @@ function createHost(
   };
   if (!at) assign(host);
   else if (!claimWithin(childCursor(host, at.hydration), assign)) return host;
-  if (key !== undefined) setter(host, "key", false)(key);
+  if (key !== undefined) attributeSetter(host, "key")(key);
   if (isFunction(props.ref)) instance.ref = props.ref;
   if (owner) {
     instance.owned = true;

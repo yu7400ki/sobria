@@ -133,13 +133,8 @@ export function callRef<T>(ref: (node: T) => unknown, node: T): void {
   if (isFunction(cleanup)) onCleanup(() => void cleanup());
 }
 
-/** `isProperty` が `true` ならプロパティとして、`false` なら属性として、値を設定する関数を返す。プロパティの `null` と `undefined` は `""` にする。 */
-export function setter(el: Element, name: string, isProperty: boolean): (value: unknown) => void {
-  if (isProperty) {
-    return (value) => {
-      Reflect.set(el, name, value ?? "");
-    };
-  }
+/** `el` の属性 `name` に値を設定する関数を返す。 */
+export function attributeSetter(el: Element, name: string): (value: unknown) => void {
   const attribute = tagAttributeName(name);
   return (value) => {
     const text = attributeValue(name, value);
@@ -157,7 +152,7 @@ export function bind(value: unknown, set: (value: unknown) => void): void {
 /** `onX` の名前の関数は `el` のリスナーにし、それ以外の値は `el` の属性にする。リスナーは、描画の範囲を破棄したときに外す。 */
 export function applyAttribute(el: Element, name: string, value: unknown): void {
   if (!isEventProp(name) || !isFunction(value)) {
-    bind(value, setter(el, name, false));
+    bind(value, attributeSetter(el, name));
     return;
   }
   const type = listenerEventName(name);
@@ -222,7 +217,9 @@ function createTag(tag: string, given: Record<string, unknown>, at: Cursor | und
   const kept = claimed !== undefined && outputs.size > 0 && edited(el);
   for (const name of outputs.keys()) {
     if (!(name in props)) continue;
-    const set = setter(el, name, true);
+    const set = (value: unknown): void => {
+      Reflect.set(el, name, value ?? "");
+    };
     bind(props[name], kept ? afterFirst(set) : set);
   }
   if (tag === "slot") registerSlot(typeof props.name === "string" ? props.name : "");
