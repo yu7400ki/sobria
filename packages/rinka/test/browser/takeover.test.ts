@@ -605,7 +605,7 @@ describe("ストリームの値の引き継ぎ", () => {
     expect(read).toEqual(["a"]);
   });
 
-  it("依存が変化すると、引き継いだストリームの値を使わずに、memo の関数をブラウザで実行する", async () => {
+  it("依存が変化すると、引き継いだストリームの memo の関数をブラウザで実行し直す", async () => {
     const tag = nextTag();
     const [version, setVersion] = signal(0);
     const view = (h: H) => () => {
