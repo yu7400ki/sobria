@@ -131,14 +131,12 @@ export function registerServerFns(
   definitions: readonly Definition[],
   fnModule: string,
 ): void {
-  let registered = false;
   for (const definition of definitions) {
     if (definition.kind !== "serverFn") continue;
-    registered = true;
     const id = serverFnId(fnModule, definition.name);
     surround(output, definition.init, `${REGISTER}(${JSON.stringify(id)}, `, ")");
   }
-  if (registered) {
+  if (definitions.some((definition) => definition.kind === "serverFn")) {
     output.prepend(`const ${REGISTER} = ${SERVER_FN_MODULE}(${JSON.stringify(fnModule)});\n`);
     output.prepend(importInternalAs("server", "serverFnModule", SERVER_FN_MODULE));
   }
@@ -209,14 +207,12 @@ export function replaceDefinitions(
     }
     if (changed) after = used(removed);
   }
-  let serverFns = false;
   for (const definition of definitions) {
     const { init } = definition;
     if (definition.kind === "middleware") {
       output.overwrite(init.start, init.end, "undefined");
       continue;
     }
-    serverFns = true;
     output.overwrite(
       init.start,
       init.end,
@@ -243,7 +239,7 @@ export function replaceDefinitions(
     ];
     output.overwrite(statement.start, statement.source.start, `import ${parts.join(", ")} from `);
   }
-  if (serverFns) {
+  if (definitions.some((definition) => definition.kind === "serverFn")) {
     output.prepend(importInternalAs("client", "serverFn", SERVER_FN));
   }
 }
