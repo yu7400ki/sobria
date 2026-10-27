@@ -1036,16 +1036,10 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       const content = asNode(runWithOwner(ctx.owner, () => untrack(() => read(name))));
       const boundary = shadow?.slots.get(slot) ?? ctx.boundary;
       const light: WalkCtx = {
-        owner: ctx.owner,
-        path: ctx.path,
+        ...ctx,
         boundary,
-        depth: ctx.depth,
         head: restrict(ctx.head, "element"),
-        slots: ctx.slots,
         slot: slot === "" ? undefined : slot,
-        disabled: ctx.disabled,
-        fallback: ctx.fallback,
-        catchers: ctx.catchers,
         parent: noParentTag,
       };
       // クライアントは、getter の props を関数として挿入するので、getter の内容は領域になる。
