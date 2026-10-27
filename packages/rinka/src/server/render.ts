@@ -29,6 +29,7 @@ import {
 } from "../shared/attributes.ts";
 import {
   elementInfo,
+  fromAttribute,
   isElementComponent,
   propKinds,
   type Ctx,
@@ -199,7 +200,7 @@ interface Slotted {
 }
 
 /**
- * 要素のホストの属性を表す。`transfer` は、属性にできない props の値を、props の名前ごとに保持する。
+ * 要素のホストの属性を表す。`transfer` は、属性の文字列から元の値に戻せない props の値を、props の名前ごとに保持する。
  * `current` は、描き直しで、ページにある要素に設定する props の値を、props の名前ごとに保持する。
  */
 interface HostAttributes {
@@ -990,17 +991,21 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       for (const name of kinds.values) {
         const value = propValue(name);
         current[name] = value;
-        if (
+        const attributeName = propToAttribute(name);
+        const primitive = !(
           (typeof value === "object" && value !== null) ||
           typeof value === "function" ||
           typeof value === "bigint"
-        ) {
-          if (ctx.owner !== null) continue;
-          checkSerializable(value, `<${tag}> ${name}`, true);
-          (transfer ??= {})[name] = value;
-          continue;
-        }
-        add(propToAttribute(name), value);
+        );
+        if (primitive) add(attributeName, value);
+        if (ctx.owner !== null) continue;
+        // クライアントが属性から受け取る値が元の値と異なれば、@p でも送る
+        const output = primitive ? attributeValue(attributeName, value) : null;
+        const entry = kinds.attributes.get(attributeName);
+        const received = entry ? fromAttribute(output, entry.type) : undefined;
+        if (Object.is(received, value)) continue;
+        checkSerializable(value, `<${tag}> ${name}`, true);
+        (transfer ??= {})[name] = value;
       }
       for (const name of Object.keys(descriptors)) {
         if (kinds.names.includes(name) || kinds.slots.has(name) || name === "ref") continue;

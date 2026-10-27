@@ -142,6 +142,43 @@ describe("props の値", () => {
     expect(sent).toEqual([["h1", { "@p": { data: 10n } }]]);
   });
 
+  describe("属性の文字列から元の値に戻せない値", () => {
+    const Kinds = defineElement("x-tr-kinds", () => null, {
+      props: { b: "boolean", n: "number", s: "string", u: "unknown", o: "object" },
+    });
+
+    it.each([
+      [{ b: false }, ""],
+      [{ n: -0 }, ' n="0"'],
+      [{ s: null }, ""],
+      [{ u: 1 }, ' u="1"'],
+      [{ u: true }, " u"],
+      [{ o: "a" }, ' o="a"'],
+    ])("%o は、属性を変えずに @p でも送る", async (props, attributes) => {
+      const { html, sent } = await render(jsx(Kinds, props));
+      expect(html).toContain(`<x-tr-kinds data-oh="h1"${attributes} data-om="@p">`);
+      expect(sent).toEqual([["h1", { "@p": props }]]);
+    });
+
+    it.each([
+      [{ b: true }, " b"],
+      [{ n: 1 }, ' n="1"'],
+      [{ n: Number.NaN }, ' n="NaN"'],
+      [{ s: "a" }, ' s="a"'],
+      [{ u: "1" }, ' u="1"'],
+    ])("%o は、属性だけで送る", async (props, attributes) => {
+      const { html, sent } = await render(jsx(Kinds, props));
+      expect(html).toContain(`<x-tr-kinds data-oh="h1"${attributes}>`);
+      expect(sent).toEqual([]);
+    });
+
+    it("symbol は、シリアライズできないので、位置を含むエラーにする", async () => {
+      await expect(renderToString(jsx(Kinds, { u: Symbol("q") }))).rejects.toThrow(
+        "<x-tr-kinds> u は symbol なので",
+      );
+    });
+  });
+
   it("サーバー関数の props は、オブジェクトの中にあっても、$rinka.f の呼び出しにして送る", async () => {
     const like = registerServerFn(
       "src/fns.ts#like",

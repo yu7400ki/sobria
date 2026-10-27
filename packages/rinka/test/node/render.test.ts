@@ -176,7 +176,7 @@ const Card = defineElement(
   {
     props: {
       label: "unknown",
-      count: "unknown",
+      count: "number",
       data: "unknown",
       header: "slot",
       children: "slot",

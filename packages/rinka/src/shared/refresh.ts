@@ -34,7 +34,7 @@ export interface RefreshJson {
 export interface RefreshValues {
   /** ページにある要素に設定する props である。 */
   readonly [REFRESH_PROPS_KEY]: object;
-  /** 新しく現れた要素が起動時に受け取る、属性にできない props である。 */
+  /** 新しく現れた要素が起動時に受け取る、属性の文字列から元の値に戻せない props である。 */
   readonly [PROPS_KEY]?: unknown;
 }
 

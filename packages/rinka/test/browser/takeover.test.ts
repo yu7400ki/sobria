@@ -73,6 +73,13 @@ const inner = () => memo(() => "row", { site: "t:11" })();
 const dataView = (h: H) => (props: { data?: { name: string } }) =>
   h("p", { children: () => props.data?.name });
 
+/** props の `open` が `false` のときだけ、`size` の型を `<i>` で表示する要素の関数を作成する。 */
+const openView = (h: H) => (props: { open?: boolean; size?: unknown }) =>
+  h("p", {
+    children: () =>
+      props.open === false ? h("i", { children: () => typeof props.size }) : h("b", {}),
+  });
+
 describe("値の引き継ぎ", () => {
   it("引き継いだ値で描画し、表示を変えずに、memo の取得を繰り返さない", async () => {
     const tag = nextTag();
@@ -305,6 +312,24 @@ describe("値の引き継ぎ", () => {
     expect(html(host?.shadowRoot)).toBe("<p><i>ann</i></p>");
     expect(host?.shadowRoot?.querySelector("i")).toBe(node);
     expect(runs).toBe(1);
+  });
+
+  it("属性の文字列から元の値に戻せない props は、サーバーと同じ値で受け取り、DOM を引き取る", async () => {
+    const tag = nextTag();
+    const kinds = { props: { open: "boolean", size: "unknown" } } as const;
+    const warn = vi.spyOn(console, "warn");
+    const scripts = await serve(
+      server(defineServer(tag, openView(server), kinds), { open: false, size: 1 }),
+    );
+    const host = document.querySelector(tag) as (HTMLElement & { size?: unknown }) | null;
+    const node = host?.shadowRoot?.querySelector("i");
+    scripts.forEach(run);
+    defineClient(tag, openView(client), kinds);
+    await tick();
+    expect(html(host?.shadowRoot)).toBe("<p><i>number</i></p>");
+    expect(host?.shadowRoot?.querySelector("i")).toBe(node);
+    expect(host?.size).toBe(1);
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 

@@ -1,7 +1,7 @@
 /** ホストの Shadow DOM の中の後送りの境界を、すべて送り終えたことを表す値のキーである。 */
 export const BOUNDARIES_KEY = "@b";
 
-/** 属性にできない props の値を送るキーである。 */
+/** 属性の文字列から元の値に戻せない props の値を送るキーである。 */
 export const PROPS_KEY = "@p";
 
 /** 描き直しで、ページにある要素に設定する props の値を送るキーである。 */

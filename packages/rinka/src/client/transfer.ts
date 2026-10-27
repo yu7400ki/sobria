@@ -91,7 +91,7 @@ export function whenArrived(
 export interface Transferred {
   /** 引き継いだ値のうち、値が無いことを表すオブジェクトを除いたものを、キーごとに保持する。 */
   readonly values: ReadonlyMap<string, unknown>;
-  /** 引き継いだ、属性にできない props の値を、props の名前ごとに保持する。 */
+  /** 引き継いだ、属性の文字列から元の値に戻せない props の値を、props の名前ごとに保持する。 */
   readonly props: object;
   /** キーの値を引き継いでいれば、その値を最初の値にする memo を作成し、引き継いでいなければ memo を作成する。 */
   readonly memo: ScopedMemo;
