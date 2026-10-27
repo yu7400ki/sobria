@@ -1245,15 +1245,8 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
             this.caught = Math.max(this.caught, node.status ?? 500);
           } else {
             const after = afterShell(error);
-            switch (after.kind) {
-              case "navigate":
-                throw error;
-              case "blocked":
-                break;
-              case "catch":
-                if (after.noindex) flush.noindex = true;
-                break;
-            }
+            if (after.kind === "navigate") throw error;
+            if (after.kind === "catch" && after.noindex) flush.noindex = true;
           }
           const fallback = await this.serialize(this.chunks(node.fallback(error), ctx), out);
           return this.region(ctx) ? REGION_FALLBACK_MARK + fallback : fallback;
