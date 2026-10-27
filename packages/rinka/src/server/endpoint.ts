@@ -230,9 +230,9 @@ const responders = {
       switch (outcome.kind) {
         case "stream":
           for await (const _ of outcome.relay.rest());
-          return c.redirect(callerOf(c)?.page?.href ?? c.req.header("referer") ?? "/", 303);
+          return c.redirect(submittedPage(c).page?.href ?? "/", 303);
         case "value":
-          return c.redirect(callerOf(c)?.page?.href ?? c.req.header("referer") ?? "/", 303);
+          return c.redirect(submittedPage(c).page?.href ?? "/", 303);
         case "schema":
           return c.json({ issues: outcome.issues }, 422);
         case "error":

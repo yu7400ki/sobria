@@ -98,6 +98,26 @@ describe("JS が無いときのフォームの送信", () => {
     expect(response.headers.get("location")).toBe("/");
   });
 
+  it.each([
+    ["ホストがリクエストと異なる", "http://example.com/posts/1"],
+    ["パスが /_rinka/ の下にある", "http://localhost/_rinka/fn/x"],
+  ])(
+    "Referer の%s URL なら、値を返したときも async iterable を返したときも / に 303 でリダイレクトする",
+    async (_, referer) => {
+      const value = register(defineServerFn(() => null));
+      const stream = register(
+        defineServerFn(async function* () {
+          yield 1;
+        }),
+      );
+      for (const { id } of [value, stream]) {
+        // oxlint-disable-next-line no-await-in-loop
+        const response = await submit(id, new FormData(), { referer });
+        expect([response.status, response.headers.get("location")]).toEqual([303, "/"]);
+      }
+    },
+  );
+
   it("redirect() は、その URL への 303 にする", async () => {
     const { id } = register(
       defineServerFn(() => {

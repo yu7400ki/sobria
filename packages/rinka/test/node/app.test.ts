@@ -794,17 +794,14 @@ describe("JS からのサーバー関数の呼び出し", () => {
     expect(response.headers.get("content-type")).toContain("text/html");
   });
 
-  it("x-rinka-page の URL のホストがリクエストと異なるときと、/_rinka/ の下にあるときは、Referer に戻り、描き直さない", async () => {
+  it("x-rinka-page の URL のホストがリクエストと異なるときと、/_rinka/ の下にあるときは、Referer が同じホストの URL でも / に戻り、描き直さない", async () => {
     const results = await Promise.all(
       ["http://example.com/form?x=1", "http://localhost/_rinka/fn/x"].map(async (url) => {
         const response = await submit(ids.saved, { "x-rinka-page": url });
         return response.json();
       }),
     );
-    expect(results).toEqual([
-      { redirect: "http://localhost/referer" },
-      { redirect: "http://localhost/referer" },
-    ]);
+    expect(results).toEqual([{ redirect: "/" }, { redirect: "/" }]);
   });
 
   it("x-rinka-page の無いフォームの送信には、リダイレクトのまま返す", async () => {
