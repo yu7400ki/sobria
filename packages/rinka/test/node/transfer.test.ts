@@ -577,10 +577,11 @@ describe("ストリームの memo", () => {
     ]);
   });
 
-  it("最初の値の前に失敗したら、値が無いことを送る", async () => {
+  it("最初の値の前に失敗したら、<Errored> のフォールバックを描画し、値が無いことを送る", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const Card = defineStreamed("x-st4", "s.tsx:4:1", () => failsFirst());
-    const { sent } = await render(jsx(Card, {}));
+    const { html, sent } = await render(jsx(Card, {}));
+    expect(html).toContain("<!--!-->failed<!--]-->");
     expect(sent).toContainEqual(["h1", { "s.tsx:4:1#0": missing }]);
   });
 
