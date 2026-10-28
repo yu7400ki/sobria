@@ -195,9 +195,84 @@ export default function X(props: Base) { return null; }`;
         { name: "value", kind: "number" },
       ]);
       await writeFile(shared, "export interface Base { value: string }");
-      checker.changed([shared]);
+      checker.notify({ changed: [shared] });
       expect(checker.param(file, code, code.indexOf("props:"))?.props).toEqual([
         { name: "value", kind: "string" },
+      ]);
+    } finally {
+      await rm(dir, { recursive: true });
+    }
+  });
+
+  it("import されるファイルの作成を通知すると、要素の props を作成したファイルの型で分類する", async () => {
+    const dir = await mkdtemp(join(fixture, "created-"));
+    const shared = join(dir, "shared.ts").replaceAll("\\", "/");
+    const file = join(dir, "element.tsx").replaceAll("\\", "/");
+    const code = `import type { Base } from "./shared.ts";
+export default function X(props: Base) { return null; }`;
+    try {
+      expect(checker.param(file, code, code.indexOf("props:"))).toBeUndefined();
+      await writeFile(shared, "export interface Base { value: number }");
+      checker.notify({ created: [shared] });
+      expect(checker.param(file, code, code.indexOf("props:"))?.props).toEqual([
+        { name: "value", kind: "number" },
+      ]);
+    } finally {
+      await rm(dir, { recursive: true });
+    }
+  });
+
+  it("解析したファイルの削除を通知すると、そのファイルから import した Props の型を解決しない", () => {
+    const shared = join(fixture, "removed-shared.tsx").replaceAll("\\", "/");
+    const file = join(fixture, "removed-element.tsx").replaceAll("\\", "/");
+    const sharedCode = `export interface Base { value: number }
+export default function S(props: Base) { return null; }`;
+    const code = `import type { Base } from "./removed-shared.tsx";
+export default function X(props: Base) { return null; }`;
+    checker.param(shared, sharedCode, sharedCode.indexOf("props:"));
+    expect(checker.param(file, code, code.indexOf("props:"))?.props).toEqual([
+      { name: "value", kind: "number" },
+    ]);
+    checker.notify({ deleted: [shared] });
+    expect(checker.param(file, code, code.indexOf("props:"))).toBeUndefined();
+  });
+
+  it("解析したファイルを削除して作り直すと、作り直したディスクの内容で型を解決する", async () => {
+    const dir = await mkdtemp(join(fixture, "recreated-"));
+    const shared = join(dir, "shared.tsx").replaceAll("\\", "/");
+    const file = join(dir, "element.tsx").replaceAll("\\", "/");
+    const sharedCode = `export interface Base { value: number }
+export default function S(props: Base) { return null; }`;
+    const code = `import type { Base } from "./shared.tsx";
+export default function X(props: Base) { return null; }`;
+    try {
+      checker.param(shared, sharedCode, sharedCode.indexOf("props:"));
+      expect(checker.param(file, code, code.indexOf("props:"))?.props).toEqual([
+        { name: "value", kind: "number" },
+      ]);
+      checker.notify({ deleted: [shared] });
+      const recreated = sharedCode.replace("number", "string");
+      await writeFile(shared, recreated);
+      checker.notify({ created: [shared] });
+      expect(checker.param(file, code, code.indexOf("props:"))?.props).toEqual([
+        { name: "value", kind: "string" },
+      ]);
+      const solo = join(dir, "solo.tsx").replaceAll("\\", "/");
+      checker.param(solo, sharedCode, sharedCode.indexOf("props:"));
+      checker.notify({ deleted: [solo] });
+      await writeFile(solo, recreated);
+      checker.notify({ created: [solo] });
+      expect(checker.param(solo, recreated, recreated.indexOf("props:"))?.props).toEqual([
+        { name: "value", kind: "string" },
+      ]);
+      await rm(shared);
+      checker.notify({ deleted: [shared] });
+      checker.notify({ created: [shared] });
+      expect(checker.param(file, code, code.indexOf("props:"))).toBeUndefined();
+      await writeFile(shared, sharedCode);
+      checker.notify({ created: [shared] });
+      expect(checker.param(file, code, code.indexOf("props:"))?.props).toEqual([
+        { name: "value", kind: "number" },
       ]);
     } finally {
       await rm(dir, { recursive: true });

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -78,6 +79,13 @@ export interface ElementDescription {
   readonly exposed: readonly ExposedDescription[];
 }
 
+/** ディスクで作成、変更、削除されたファイルのパスを表す。 */
+export interface FileChanges {
+  readonly created?: readonly string[];
+  readonly changed?: readonly string[];
+  readonly deleted?: readonly string[];
+}
+
 /** TypeScript の型チェッカーで、要素の関数の引数の型を解析するオブジェクトを表す。 */
 export interface TypeChecker {
   /**
@@ -97,8 +105,11 @@ export interface TypeChecker {
     code: string,
     position: number,
   ) => ElementDescription | undefined;
-  /** ディスクで変更されたファイル `files` を通知する。次の解析から、変更後の内容で型を解決する。 */
-  readonly changed: (files: readonly string[]) => void;
+  /**
+   * ディスクで作成、変更、削除されたファイルを通知する。次の解析から、`param` と `describe` に渡していないファイルは、通知した後のディスクの内容で型を解決する。
+   * 削除されたファイルが `param` か `describe` に渡したファイルなら、root から除外する。そのファイルが作成されたら、作成されたディスクの内容で型を解決する。
+   */
+  readonly notify: (changes: FileChanges) => void;
   /** 型チェッカーのプロセスを終了する。 */
   readonly close: () => void;
 }
@@ -137,6 +148,8 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
   const { options: compilerOptions, fileNames } = api.parseConfigFile(options.config);
   const roots = new Set([probe, ...fileNames]);
   const files = new Map([[probe, slotProbe]]);
+  /** `param` か `describe` に渡したファイルのうち、削除を通知されたファイルの集合である。 */
+  const removed = new Set<string>();
   const program = () => ({ rootFiles: [...roots], compilerOptions });
   const created = api.createSnapshot({
     createPrograms: [program()],
@@ -158,6 +171,7 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
       for (const [file, code] of changes) {
         roots.add(file);
         files.set(file, code);
+        removed.delete(file);
       }
       update({
         fileSystem: { kind: "layer", files: Object.fromEntries(changes) },
@@ -233,8 +247,38 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
           : describeExposed(checker, methods, (name) => textOf("exposed", name));
       return { props, exposed };
     },
-    changed(changedFiles) {
-      update({ fileNotifications: { changed: [...changedFiles] } });
+    notify(changes) {
+      const deleted = changes.deleted ?? [];
+      const loaded = deleted.filter((file) => files.delete(file));
+      for (const file of loaded) {
+        roots.delete(file);
+        removed.add(file);
+      }
+      const restored = (changes.created ?? []).flatMap((file) => {
+        if (!removed.has(file)) return [];
+        try {
+          const code = readFileSync(file, "utf8");
+          removed.delete(file);
+          return [[file, code] as const];
+        } catch {
+          return [];
+        }
+      });
+      for (const [file, code] of restored) {
+        roots.add(file);
+        files.set(file, code);
+      }
+      update({
+        fileSystem: { kind: "layer", files: Object.fromEntries(restored), removedPaths: loaded },
+        fileNotifications: {
+          created: [...(changes.created ?? [])],
+          changed: [...(changes.changed ?? [])],
+          deleted: [...deleted],
+        },
+        ...(loaded.length + restored.length > 0 && {
+          reconfigurePrograms: [{ id, ...program() }],
+        }),
+      });
     },
     close() {
       snapshot.dispose();

@@ -1,6 +1,12 @@
 import { fileURLToPath } from "node:url";
 
-import { transformWithOxc, type Plugin, type ResolvedConfig } from "vite";
+import {
+  normalizePath,
+  transformWithOxc,
+  type Plugin,
+  type ResolvedConfig,
+  type ViteDevServer,
+} from "vite";
 
 import { appBuild } from "./app-build.ts";
 import { sourceLangOf, type SourceLang } from "./ast.ts";
@@ -28,9 +34,17 @@ import {
   type Settings,
 } from "./settings.ts";
 import { SHEET_QUERY, sheetId, sheetModule, sheetPath } from "./sheets.ts";
-import { createTypeChecker, type ParamType, type TypeChecker } from "./type-checker.ts";
+import {
+  createTypeChecker,
+  type FileChanges,
+  type ParamType,
+  type TypeChecker,
+} from "./type-checker.ts";
 
 export type { RinkaOptions } from "./settings.ts";
+
+/** 作成、変更、削除を型チェッカーに通知するファイルの拡張子に一致する正規表現である。 */
+const SCRIPT = /\.[cm]?[jt]sx?$/;
 
 /** rinka のプラグインが、ほかのプラグインと CLI に公開する API を表す。 */
 export interface RinkaApi {
@@ -117,8 +131,52 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       checker ??= createTypeChecker({ config: elementsConfig(current().root) });
       const type = checker.param(path, code, position);
       analyzed.set(path, { code, position, type });
+      // 要素のファイルが export する型を、ほかの要素が import していることがある
+      if (last !== undefined) reanalyze();
       return type;
     };
+  /** 開発サーバーである。`configureServer` で受け取る。 */
+  let devServer: ViteDevServer | undefined;
+  /**
+   * 開発サーバーで、解析したすべての要素の第 1 引数の型を、最後に解析したコードで解析し直す。
+   * 解析の結果が変わった要素のモジュールを、すべての環境で無効にし、HMR が有効なら読み込み直す。
+   */
+  const reanalyze = (): void => {
+    const server = devServer;
+    if (server === undefined || checker === undefined) return;
+    /** `error` を開発サーバーのログに出力する。 */
+    const log = (error: unknown) => {
+      server.config.logger.error(error instanceof Error ? error.message : String(error));
+    };
+    const reloads: Promise<void>[] = [];
+    try {
+      for (const [element, last] of analyzed) {
+        const type = checker.param(element, last.code, last.position);
+        if (JSON.stringify(type) === JSON.stringify(last.type)) continue;
+        analyzed.set(element, { ...last, type });
+        for (const environment of Object.values(server.environments)) {
+          for (const module of environment.moduleGraph.getModulesByFile(element) ?? []) {
+            environment.moduleGraph.invalidateModule(module);
+            reloads.push(environment.reloadModule(module));
+          }
+        }
+      }
+    } catch (error) {
+      log(error);
+    }
+    Promise.all(reloads).catch(log);
+  };
+  /**
+   * スクリプトのファイル `path` の作成、変更、削除を型チェッカーに通知し、要素を解析し直す。
+   * 解析した要素のファイルの変更では、通知した時点では解析し直さずに、Vite が変換し直したときに解析し直す。
+   */
+  const onFile = (kind: keyof FileChanges, path: string): void => {
+    if (checker === undefined || !SCRIPT.test(path)) return;
+    const file = normalizePath(path);
+    if (kind === "deleted") analyzed.delete(file);
+    checker.notify({ [kind]: [file] });
+    if (kind !== "changed" || !analyzed.has(file)) reanalyze();
+  };
   const build = appBuild({ options, settings: current });
 
   /**
@@ -215,6 +273,13 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       closeBundle() {
         checker?.close();
         checker = undefined;
+        analyzed.clear();
+      },
+      configureServer(server) {
+        devServer = server;
+        server.watcher.on("add", (path) => onFile("created", path));
+        server.watcher.on("change", (path) => onFile("changed", path));
+        server.watcher.on("unlink", (path) => onFile("deleted", path));
       },
       resolveId(id, importer, resolveOptions) {
         if (id === entries.routes) return ROUTES;

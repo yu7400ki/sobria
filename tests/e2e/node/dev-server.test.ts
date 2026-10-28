@@ -61,6 +61,31 @@ const link = async () => {
   return (await response.text()).includes('href="/src/routes/styled/styled.css?direct"');
 };
 
+/** クライアントの環境で変換した、`src/elements/` の要素のファイル `name` のモジュールのコードを返す。変換の結果が無ければ空文字列を返し、変換に失敗したら、エラーを文字列にして返す。 */
+const transformed = async (name = "typed.tsx") =>
+  server.environments.client.transformRequest(`/src/elements/${name}`).then(
+    (result) => result?.code ?? "",
+    (error: unknown) => String(error),
+  );
+
+/** 要素の props の型に `../lib/typed-props.ts` の `Props` を使用する、要素のファイルのソースである。 */
+const typedSource =
+  'import type { Props } from "../lib/typed-props.ts";\nexport default function Typed(props: Props) {\n  return <p>{String(props.value)}</p>;\n}\n';
+
+/** `value` の型を `type` にした `OwnerProps` 型を export する、要素のファイルのソースを返す。 */
+const ownerSource = (type: string) =>
+  `export type OwnerProps = { value?: ${type} };\nexport default function Owner(props: OwnerProps) {\n  return <p>{String(props.value)}</p>;\n}\n`;
+
+/** 2 つの要素のモジュールが、どちらも `value` の props を分類 `kind` で登録するまで待つ。 */
+const registered = (kind: string) =>
+  Promise.all(
+    ["owner.tsx", "user.tsx"].map((name) =>
+      vi.waitUntil(async () => (await transformed(name)).includes(`"value": "${kind}"`), {
+        timeout: 5000,
+      }),
+    ),
+  );
+
 describe("開発サーバー", () => {
   it("ページを描画しても、ページの CSS を読み込む動的 import について警告しない", async () => {
     await fetch(`${origin}/`);
@@ -137,6 +162,64 @@ writeFileSync(${JSON.stringify(marker)}, "x");
       await rm(file, { force: true });
     }
   });
+
+  it("要素が import した Props の型のファイルが変更されると、要素を新しい props の分類で登録し直す", async () => {
+    const typesFile = join(root, "src/lib/typed-props.ts");
+    const elementFile = join(root, "src/elements/typed.tsx");
+    try {
+      await writeFile(typesFile, "export type Props = { value?: string };\n");
+      await writeFile(elementFile, typedSource);
+      await vi.waitUntil(async () => /"value": "string"/.test(await transformed()), {
+        timeout: 5000,
+      });
+      await writeFile(typesFile, "export type Props = { value?: number };\n");
+      server.watcher.emit("change", posix(typesFile));
+      await vi.waitUntil(async () => /"value": "number"/.test(await transformed()), {
+        timeout: 5000,
+      });
+    } finally {
+      await rm(elementFile, { force: true });
+      await rm(typesFile, { force: true });
+    }
+  }, 20_000);
+
+  it("要素が import した Props の型のファイルが作成されると、要素を props の分類で登録し直す", async () => {
+    const typesFile = join(root, "src/lib/typed-props.ts");
+    const elementFile = join(root, "src/elements/typed.tsx");
+    try {
+      await writeFile(elementFile, typedSource);
+      await vi.waitUntil(async () => (await transformed()).includes("解決できない"), {
+        timeout: 5000,
+      });
+      await writeFile(typesFile, "export type Props = { value?: number };\n");
+      server.watcher.emit("add", posix(typesFile));
+      await vi.waitUntil(async () => /"value": "number"/.test(await transformed()), {
+        timeout: 5000,
+      });
+    } finally {
+      await rm(elementFile, { force: true });
+      await rm(typesFile, { force: true });
+    }
+  }, 20_000);
+
+  it("ほかの要素のファイルで宣言した Props の型が変更されると、その型を import する要素も登録し直す", async () => {
+    const ownerFile = join(root, "src/elements/owner.tsx");
+    const userFile = join(root, "src/elements/user.tsx");
+    try {
+      await writeFile(ownerFile, ownerSource("string"));
+      await writeFile(
+        userFile,
+        'import type { OwnerProps } from "./owner.tsx";\nexport default function User(props: OwnerProps) {\n  return <p>{String(props.value)}</p>;\n}\n',
+      );
+      await registered("string");
+      await writeFile(ownerFile, ownerSource("number"));
+      server.watcher.emit("change", posix(ownerFile));
+      await registered("number");
+    } finally {
+      await rm(userFile, { force: true });
+      await rm(ownerFile, { force: true });
+    }
+  }, 30_000);
 
   it("ページの CSS の import を追加か削除すると、HMR が無効でも、次のリクエストの <link> に反映する", async () => {
     const dir = join(root, "src/routes/styled");
