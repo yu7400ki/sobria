@@ -37,13 +37,16 @@ import {
 import { registerSlot } from "./slots.ts";
 
 /** HTML の名前空間である。 */
-const HTML_NS = "http://www.w3.org/1999/xhtml";
+export const HTML_NS = "http://www.w3.org/1999/xhtml";
 
 /** SVG の名前空間である。 */
-const SVG_NS = "http://www.w3.org/2000/svg";
+export const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** タグを作成する名前空間を表す。 */
+export type Namespace = typeof HTML_NS | typeof SVG_NS;
 
 /** `parent` の子のタグを作成する名前空間を返す。`parent` が `<foreignObject>` 以外の SVG のタグなら SVG の名前空間を、それ以外なら HTML の名前空間を返す。 */
-function childNamespace(parent: ParentNode): string {
+function childNamespace(parent: ParentNode): Namespace {
   return parent instanceof Element &&
     parent.namespaceURI === SVG_NS &&
     parent.localName !== "foreignObject"
@@ -61,10 +64,10 @@ export type Boundary = "loading" | "errored";
  */
 class Lazy<T> {
   readonly #owner: Owner | null = getOwner();
-  readonly #make: (at: Cursor | undefined, ns: string) => T;
+  readonly #make: (at: Cursor | undefined, ns: Namespace) => T;
   #result: { readonly value: T } | { readonly error: unknown } | undefined;
 
-  constructor(make: (at: Cursor | undefined, ns: string) => T) {
+  constructor(make: (at: Cursor | undefined, ns: Namespace) => T) {
     this.#make = make;
   }
 
@@ -74,13 +77,16 @@ class Lazy<T> {
   }
 
   /** 値を返す。まだ作成していなければ、`at` の位置で、名前空間 `ns` のタグとして作成する。 */
-  value(at: Cursor | undefined, ns: string): T {
+  value(at: Cursor | undefined, ns: Namespace): T {
     this.#result ??= this.#create(at, ns);
     if ("error" in this.#result) throw this.#result.error;
     return this.#result.value;
   }
 
-  #create(at: Cursor | undefined, ns: string): { readonly value: T } | { readonly error: unknown } {
+  #create(
+    at: Cursor | undefined,
+    ns: Namespace,
+  ): { readonly value: T } | { readonly error: unknown } {
     try {
       return {
         value: runWithOwner(this.#owner, () =>
@@ -104,7 +110,7 @@ export class DeferredRegion extends Lazy<() => unknown> {
   /** `"loading"` の境界は、中身が保留中ならフォールバックを返し、`"errored"` の境界は、中身が投げたらフォールバックを返す。 */
   readonly boundary: Boundary;
 
-  constructor(make: (at: Cursor | undefined, ns: string) => () => unknown, boundary: Boundary) {
+  constructor(make: (at: Cursor | undefined, ns: Namespace) => () => unknown, boundary: Boundary) {
     super(make);
     this.boundary = boundary;
   }
@@ -115,7 +121,7 @@ export class DeferredRegion extends Lazy<() => unknown> {
  * 最初の描画の引き取りの最中なら、`at` の位置から範囲の終わりまでノードを引き取り、範囲にあるノードの列を返す。
  * 引き取りの最中でなければ、`content` のタグを名前空間 `ns` で作成する。
  */
-export function build(content: unknown, at: Cursor | undefined, ns: string): Node[] {
+export function build(content: unknown, at: Cursor | undefined, ns: Namespace): Node[] {
   if (at && at.hydration.state !== "done") {
     const before = at.next === null ? at.parent.lastChild : at.next.previousSibling;
     if (!claimWithin(at, (inner) => insert(inner, content))) return [];
@@ -222,7 +228,7 @@ function createTag(
   tag: string,
   given: Record<string, unknown>,
   at: Cursor | undefined,
-  ns: string,
+  ns: Namespace,
 ): Element {
   const props = tag === "form" ? formProps(given) : given;
   const space = tag === "svg" ? SVG_NS : ns;
@@ -266,7 +272,7 @@ export function insert(
   target: ParentNode | Cursor,
   value: unknown,
   place: (node: Node) => Node = (node) => node,
-  ns?: string,
+  ns?: Namespace,
 ): void {
   const at = "hydration" in target ? target : undefined;
   if (at && !claiming(at.hydration)) return;
@@ -310,7 +316,7 @@ function createRegion(
   parent: ParentNode,
   value: () => unknown,
   place: (node: Node) => Node,
-  ns: string,
+  ns: Namespace,
 ): void {
   const start = document.createComment(REGION_START);
   const end = document.createComment(REGION_END);
@@ -327,7 +333,7 @@ function updateRegion(
   end: Comment,
   value: () => unknown,
   place: (node: Node) => Node,
-  ns: string,
+  ns: Namespace,
   first?: () => boolean,
 ): void {
   let initial = first !== undefined;
@@ -359,7 +365,7 @@ function claimRegion(
   region: Region | undefined,
   value: () => unknown,
   place: (node: Node) => Node,
-  ns: string,
+  ns: Namespace,
 ): void {
   if (!region) return;
   const { start, end, inner } = region;
@@ -378,7 +384,7 @@ function claimBoundary(
   region: Region | undefined,
   value: DeferredRegion,
   place: (node: Node) => Node,
-  ns: string,
+  ns: Namespace,
 ): void {
   if (!region) return;
   const { start, end, inner } = region;

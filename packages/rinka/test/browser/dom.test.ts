@@ -2,6 +2,7 @@ import { createRoot, flush } from "@solidjs/signals";
 import { describe, expect, it } from "vitest";
 
 import { Errored, Loading } from "../../src/client/control.ts";
+import { HTML_NS, SVG_NS } from "../../src/client/dom.ts";
 import { Fragment, jsx, jsxs } from "../../src/client/jsx-runtime.ts";
 import { signal } from "../../src/shared/signals.ts";
 import { toNode } from "./nodes.ts";
@@ -228,9 +229,6 @@ describe("子", () => {
 });
 
 describe("名前空間", () => {
-  const svg = "http://www.w3.org/2000/svg";
-  const xhtml = "http://www.w3.org/1999/xhtml";
-
   it("<svg> とその子孫は SVG の名前空間で作成し、<foreignObject> の子は HTML の名前空間で作成する", () => {
     const { node } = mount(() =>
       jsx("div", {
@@ -243,13 +241,13 @@ describe("名前空間", () => {
       }),
     );
     const div = node as HTMLElement;
-    expect(div.namespaceURI).toBe(xhtml);
-    expect(div.querySelector("svg")?.namespaceURI).toBe(svg);
-    expect(div.querySelector("svg > a")?.namespaceURI).toBe(svg);
-    expect(div.querySelector("path")?.namespaceURI).toBe(svg);
-    expect(div.querySelector("foreignObject")?.namespaceURI).toBe(svg);
-    expect(div.querySelector("foreignObject > a")?.namespaceURI).toBe(xhtml);
-    expect(div.querySelector("p")?.namespaceURI).toBe(xhtml);
+    expect(div.namespaceURI).toBe(HTML_NS);
+    expect(div.querySelector("svg")?.namespaceURI).toBe(SVG_NS);
+    expect(div.querySelector("svg > a")?.namespaceURI).toBe(SVG_NS);
+    expect(div.querySelector("path")?.namespaceURI).toBe(SVG_NS);
+    expect(div.querySelector("foreignObject")?.namespaceURI).toBe(SVG_NS);
+    expect(div.querySelector("foreignObject > a")?.namespaceURI).toBe(HTML_NS);
+    expect(div.querySelector("p")?.namespaceURI).toBe(HTML_NS);
   });
 
   it("<svg> の中の領域が後から作成するタグも、SVG の名前空間で作成する", () => {
@@ -265,8 +263,8 @@ describe("名前空間", () => {
     setShown(true);
     flush();
     const root = node as SVGSVGElement;
-    expect(root.querySelector("path")?.namespaceURI).toBe(svg);
-    expect(root.querySelector("circle")?.namespaceURI).toBe(svg);
+    expect(root.querySelector("path")?.namespaceURI).toBe(SVG_NS);
+    expect(root.querySelector("circle")?.namespaceURI).toBe(SVG_NS);
   });
 
   it("<svg> の中の <Loading> と <Errored> の中身も、SVG の名前空間で作成する", () => {
@@ -279,8 +277,8 @@ describe("名前空間", () => {
       }),
     );
     const root = node as SVGSVGElement;
-    expect(root.querySelector("path")?.namespaceURI).toBe(svg);
-    expect(root.querySelector("circle")?.namespaceURI).toBe(svg);
+    expect(root.querySelector("path")?.namespaceURI).toBe(SVG_NS);
+    expect(root.querySelector("circle")?.namespaceURI).toBe(SVG_NS);
   });
 
   it("領域の中の <svg> は、SVG の名前空間で作成する", () => {
@@ -290,7 +288,7 @@ describe("名前空間", () => {
     );
     setShown(true);
     flush();
-    expect((node as HTMLElement).querySelector("path")?.namespaceURI).toBe(svg);
+    expect((node as HTMLElement).querySelector("path")?.namespaceURI).toBe(SVG_NS);
   });
 });
 

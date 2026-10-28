@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Errored as ClientErrored, Loading as ClientLoading } from "../../src/client/control.ts";
+import { SVG_NS } from "../../src/client/dom.ts";
 import { defineElement as defineClient } from "../../src/client/element.ts";
 import { serverOnly, serverStyles } from "../../src/client/hydration.ts";
 import { jsx as clientJsx } from "../../src/client/jsx-runtime.ts";
@@ -663,6 +664,24 @@ describe("SSR の DOM の引き取り", () => {
     await boot();
     expect(host.shadowRoot!.textContent).toBe("failed");
     warn.mockRestore();
+  });
+
+  it("サーバーでだけ投げた <svg> の中の <Errored> は、中身を SVG の名前空間で作成する", async () => {
+    const { host, boot } = await served(
+      ({ h, Errored, prefix }) =>
+        () =>
+          h("svg", {
+            children: h(Errored, {
+              fallback: null,
+              children: () => {
+                if (prefix === serverSide.prefix) throw new Error("boom");
+                return h("path", {});
+              },
+            }),
+          }),
+    );
+    await boot();
+    expect(host.shadowRoot!.querySelector("path")?.namespaceURI).toBe(SVG_NS);
   });
 
   it("描画の先頭の <style> は、サーバーのスタイルとして扱わずに引き取る", async () => {
