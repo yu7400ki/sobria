@@ -54,6 +54,13 @@ const seroval: Pattern = {
     "seroval を import できるのは、src/server/wire.ts と src/client/wire-codec.ts です。src/shared/wire.ts は型だけを import できます。値のシリアライズには、これらのモジュールを使用してください。",
 };
 
+/** typescript の import に一致するパターンを表す。 */
+const typescriptApi: Pattern = {
+  regex: "^typescript(/|$)",
+  message:
+    "typescript を import できるのは、src/build/type-checker.ts です。型の解析には、このモジュールの createTypeChecker を使用してください。",
+};
+
 const shared = [
   directory("client"),
   directory("server"),
@@ -61,9 +68,17 @@ const shared = [
   self,
   nodeBuiltin,
   propNameList,
+  typescriptApi,
 ];
-const client = [directory("server"), directory("build"), self, nodeBuiltin, propNameList];
-const server = [directory("client"), directory("build"), self, propNameList];
+const client = [
+  directory("server"),
+  directory("build"),
+  self,
+  nodeBuiltin,
+  propNameList,
+  typescriptApi,
+];
+const server = [directory("client"), directory("build"), self, propNameList, typescriptApi];
 /** vite の isRunnableDevEnvironment の import に一致する指定を表す。 */
 const runnableCheck: Path = {
   name: "vite",
@@ -72,7 +87,7 @@ const runnableCheck: Path = {
     "isRunnableDevEnvironment はクラスで判定するので、アプリと rinka の vite が別のインスタンスに解決されると偽になります。runner の有無で判定してください。",
 };
 
-const build = [directory("client"), directory("server"), self, runnableCheck];
+const build = [directory("client"), directory("server"), self, runnableCheck, typescriptApi];
 
 /** 呼び出したページの URL のヘッダーの名前の import に一致する指定を表す。 */
 const pageHeader: Path = {
@@ -141,6 +156,10 @@ export default defineConfig({
         "no-undef": "error",
         "rinka/no-directional-insert": "error",
       },
+    },
+    {
+      files: ["src/build/type-checker.ts"],
+      rules: restrict(...build.filter((pattern) => pattern !== typescriptApi), seroval),
     },
     { files: ["test/**"], rules: testRelaxations },
   ],
