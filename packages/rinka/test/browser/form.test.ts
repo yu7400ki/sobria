@@ -207,14 +207,22 @@ describe("JS があるときのフォームの送信", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("描き直しの JSON のレスポンスは、そのままページに反映する", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      Response.json(refreshJson({ head: "<title>error page</title>" }), { status: 500 }),
-    );
-    const { button } = placeForm();
-    button.click();
-    await vi.waitFor(() => expect(document.title).toBe("error page"));
-  });
+  it.each([
+    [200, "saved"],
+    [500, "error page"],
+  ] as const)(
+    "ステータスが %s の描き直しの JSON のレスポンスは、フォームを初期値に戻さずに、そのままページに反映する",
+    async (status, title) => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        Response.json(refreshJson({ head: `<title>${title}</title>` }), { status }),
+      );
+      const { form, button } = placeForm();
+      const reset = vi.spyOn(form, "reset");
+      button.click();
+      await vi.waitFor(() => expect(document.title).toBe(title));
+      expect(reset).not.toHaveBeenCalled();
+    },
+  );
 
   it("ページ以外のレスポンスは、ページを変更せずにコンソールに記録する", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ issues: [] }, { status: 422 }));
