@@ -389,6 +389,38 @@ writeFileSync(${JSON.stringify(marker)}, "x");
     30_000,
   );
 
+  it("共通のコンポーネントは、ページの中と要素の中の両方で、ラベル、入力欄、エラーの文を id で関連付ける", async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage();
+      await page.goto(`${origin}/field`);
+      await page.locator("app-field-box[data-started]").waitFor({ timeout: 5000 });
+      /** セレクター `host` が指す要素の Shadow DOM（空の文字列なら文書）の中の、ラベルの `for`、入力欄の `id` と `aria-describedby`、エラーの文の `id` を返す。 */
+      const links = (host: string) =>
+        page.evaluate((selector) => {
+          const scope = selector === "" ? document : document.querySelector(selector)?.shadowRoot;
+          const field = scope?.querySelector(".field");
+          const input = field?.querySelector("input");
+          return [
+            field?.querySelector("label")?.htmlFor,
+            input?.id,
+            input?.getAttribute("aria-describedby"),
+            field?.querySelector("p")?.id,
+          ];
+        }, host);
+      for (const [label, input, describedBy, error] of [
+        await links(""),
+        await links("app-field-box"),
+      ]) {
+        expect([label, describedBy]).toEqual([input, error]);
+        expect(input).not.toBe(error);
+        expect(input).toMatch(/^rinka-i\d+$/);
+      }
+    } finally {
+      await browser.close();
+    }
+  }, 30_000);
+
   it("Vite が処理するリクエストは、Vite が返す", async () => {
     const response = await fetch(`${origin}/src/elements/counter.tsx`);
     expect(response.status).toBe(200);
