@@ -19,10 +19,13 @@ afterAll(() => {
   checker.close();
 });
 
-/** `code` を、ディスクに無い要素のファイルとして、`(props` の位置の引数の型を解析する。 */
+/** `code` の中の、`export default function` で宣言した要素の関数の名前の位置を返す。 */
+const nameAt = (code: string) => code.search(/(?<=export default function )\w/);
+
+/** `code` を、ディスクに無い要素のファイルとして、要素の関数の第 1 引数の型を解析する。 */
 function analyze(code: string, dir = fixture) {
   const file = join(dir, `element-${count++}.tsx`).replaceAll("\\", "/");
-  return checker.param(file, code, code.indexOf("(props") + 1);
+  return checker.param(file, code, nameAt(code));
 }
 
 /** `code` を解析し、インデックスシグネチャが無いことを確認して、props の名前ごとの分類を返す。 */
@@ -191,12 +194,12 @@ export default function X(props: P) { return null; }`,
 export default function X(props: Base) { return null; }`;
     try {
       await writeFile(shared, "export interface Base { value: number }");
-      expect(checker.param(file, code, code.indexOf("props:"))?.props).toEqual([
+      expect(checker.param(file, code, nameAt(code))?.props).toEqual([
         { name: "value", kind: "number" },
       ]);
       await writeFile(shared, "export interface Base { value: string }");
       checker.notify({ changed: [shared] });
-      expect(checker.param(file, code, code.indexOf("props:"))?.props).toEqual([
+      expect(checker.param(file, code, nameAt(code))?.props).toEqual([
         { name: "value", kind: "string" },
       ]);
     } finally {
@@ -211,10 +214,10 @@ export default function X(props: Base) { return null; }`;
     const code = `import type { Base } from "./shared.ts";
 export default function X(props: Base) { return null; }`;
     try {
-      expect(checker.param(file, code, code.indexOf("props:"))).toBeUndefined();
+      expect(checker.param(file, code, nameAt(code))).toBeUndefined();
       await writeFile(shared, "export interface Base { value: number }");
       checker.notify({ created: [shared] });
-      expect(checker.param(file, code, code.indexOf("props:"))?.props).toEqual([
+      expect(checker.param(file, code, nameAt(code))?.props).toEqual([
         { name: "value", kind: "number" },
       ]);
     } finally {
@@ -229,12 +232,12 @@ export default function X(props: Base) { return null; }`;
 export default function S(props: Base) { return null; }`;
     const code = `import type { Base } from "./removed-shared.tsx";
 export default function X(props: Base) { return null; }`;
-    checker.param(shared, sharedCode, sharedCode.indexOf("props:"));
-    expect(checker.param(file, code, code.indexOf("props:"))?.props).toEqual([
+    checker.param(shared, sharedCode, nameAt(sharedCode));
+    expect(checker.param(file, code, nameAt(code))?.props).toEqual([
       { name: "value", kind: "number" },
     ]);
     checker.notify({ deleted: [shared] });
-    expect(checker.param(file, code, code.indexOf("props:"))).toBeUndefined();
+    expect(checker.param(file, code, nameAt(code))).toBeUndefined();
   });
 
   it("解析したファイルを削除して作り直すと、作り直したディスクの内容で型を解決する", async () => {
@@ -246,32 +249,32 @@ export default function S(props: Base) { return null; }`;
     const code = `import type { Base } from "./shared.tsx";
 export default function X(props: Base) { return null; }`;
     try {
-      checker.param(shared, sharedCode, sharedCode.indexOf("props:"));
-      expect(checker.param(file, code, code.indexOf("props:"))?.props).toEqual([
+      checker.param(shared, sharedCode, nameAt(sharedCode));
+      expect(checker.param(file, code, nameAt(code))?.props).toEqual([
         { name: "value", kind: "number" },
       ]);
       checker.notify({ deleted: [shared] });
       const recreated = sharedCode.replace("number", "string");
       await writeFile(shared, recreated);
       checker.notify({ created: [shared] });
-      expect(checker.param(file, code, code.indexOf("props:"))?.props).toEqual([
+      expect(checker.param(file, code, nameAt(code))?.props).toEqual([
         { name: "value", kind: "string" },
       ]);
       const solo = join(dir, "solo.tsx").replaceAll("\\", "/");
-      checker.param(solo, sharedCode, sharedCode.indexOf("props:"));
+      checker.param(solo, sharedCode, nameAt(sharedCode));
       checker.notify({ deleted: [solo] });
       await writeFile(solo, recreated);
       checker.notify({ created: [solo] });
-      expect(checker.param(solo, recreated, recreated.indexOf("props:"))?.props).toEqual([
+      expect(checker.param(solo, recreated, nameAt(recreated))?.props).toEqual([
         { name: "value", kind: "string" },
       ]);
       await rm(shared);
       checker.notify({ deleted: [shared] });
       checker.notify({ created: [shared] });
-      expect(checker.param(file, code, code.indexOf("props:"))).toBeUndefined();
+      expect(checker.param(file, code, nameAt(code))).toBeUndefined();
       await writeFile(shared, sharedCode);
       checker.notify({ created: [shared] });
-      expect(checker.param(file, code, code.indexOf("props:"))?.props).toEqual([
+      expect(checker.param(file, code, nameAt(code))?.props).toEqual([
         { name: "value", kind: "number" },
       ]);
     } finally {
@@ -283,10 +286,10 @@ export default function X(props: Base) { return null; }`;
     const file = join(fixture, "edited.tsx").replaceAll("\\", "/");
     const before = "export default function X(props: { a: string }) { return null; }";
     const after = "export default function X(props: { a: number; b: boolean }) { return null; }";
-    expect(checker.param(file, before, before.indexOf("props:"))?.props).toEqual([
+    expect(checker.param(file, before, nameAt(before))?.props).toEqual([
       { name: "a", kind: "string" },
     ]);
-    expect(checker.param(file, after, after.indexOf("props:"))?.props).toEqual([
+    expect(checker.param(file, after, nameAt(after))?.props).toEqual([
       { name: "a", kind: "number" },
       { name: "b", kind: "boolean" },
     ]);
@@ -302,6 +305,6 @@ export default function X(props: { a: string }) { return null; }`),
   it("インデックスシグネチャを持つ型を報告する", () => {
     const file = join(fixture, "indexed.tsx").replaceAll("\\", "/");
     const code = "export default function X(props: Record<string, string>) { return null; }";
-    expect(checker.param(file, code, code.indexOf("props:"))).toEqual({ props: [], indexed: true });
+    expect(checker.param(file, code, nameAt(code))).toEqual({ props: [], indexed: true });
   });
 });

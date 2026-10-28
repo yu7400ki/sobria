@@ -72,7 +72,7 @@ export type ExposedDescription =
     };
 
 /** 要素の関数の JSDoc と、引数の型を解析した結果を表す。 */
-export interface ElementDescription {
+export interface ElementDescription extends ParamType {
   /** 要素の関数の JSDoc である。 */
   readonly docs: DocComment;
   /** Props の型のメンバーである。宣言した順に並ぶ。 */
@@ -91,9 +91,9 @@ export interface FileChanges {
 /** TypeScript の型チェッカーで、要素の関数の引数の型を解析するオブジェクトを表す。 */
 export interface TypeChecker {
   /**
-   * `code` を `file` の内容として、`code` の中の位置 `position` にある式や宣言の型を、要素の関数の引数の型として解析する。
-   * 型から `undefined` と `null` を除外した型を、Props の型として解析する。
-   * 除外した型がオブジェクトの型でないとき（ユニオン型、`any`、`unknown`、プリミティブなど）と、型チェッカーが解決できない型のときは、`undefined` を返す。
+   * `code` を `file` の内容として、位置 `position` にある要素の関数の型から、第 1 引数の型を Props の型として解析する。
+   * 第 1 引数の型から `undefined` と `null` を除外した型を解析する。
+   * 第 1 引数が無いときと、除外した型がオブジェクトの型でないとき（ユニオン型、`any`、`unknown`、プリミティブなど）と、型チェッカーが解決できない型のときは、`undefined` を返す。
    */
   readonly param: (file: string, code: string, position: number) => ParamType | undefined;
   /**
@@ -203,7 +203,8 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
   return {
     param(file, code, position) {
       const checker = load({ [file]: code });
-      const result = membersOf(checker, checker.getTypeAtPosition(file, position));
+      const [propsParam] = signatureAt(checker, file, position)?.getParameters() ?? [];
+      const result = propsParam && membersOf(checker, checker.getTypeOfSymbol(propsParam));
       return (
         result && {
           props: result.members.map(({ symbol, kind }) => ({ name: symbol.name, kind })),
@@ -215,13 +216,12 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
       const types = `${file}.rinka-types.ts`;
       const typesCode = typesProbe(file);
       const checker = load({ [file]: code, [types]: typesCode });
-      const element = checker.getTypeAtPosition(file, position);
-      const [signature] = element ? checker.getSignaturesOfType(element, SignatureKind.Call) : [];
+      const signature = signatureAt(checker, file, position);
       if (signature === undefined) return undefined;
       const [propsParam, ctxParam] = signature.getParameters();
       const result =
         propsParam === undefined
-          ? { members: [] }
+          ? { members: [], indexed: false }
           : membersOf(checker, checker.getTypeOfSymbol(propsParam));
       if (result === undefined) return undefined;
       /** 型を宣言するファイルの変数 `name` のプロパティ `property` の型を、文字列にして返す。プロパティが無ければ `unknown` を返す。 */
@@ -247,10 +247,11 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
         methods === undefined
           ? []
           : describeExposed(checker, methods, (name) => textOf("exposed", name));
-      const symbol = element?.getSymbol();
+      const symbol = checker.getTypeAtPosition(file, position)?.getSymbol();
       return {
         docs: symbol ? docsOf(checker, symbol) : { description: "", tags: [] },
         props,
+        indexed: result.indexed,
         exposed,
       };
     },
@@ -292,6 +293,12 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
       api.close();
     },
   };
+}
+
+/** ファイル `file` の位置 `position` にある関数の型の、最初の呼び出しのシグネチャを返す。 */
+function signatureAt(checker: Checker, file: string, position: number): Signature | undefined {
+  const type = checker.getTypeAtPosition(file, position);
+  return type && checker.getSignaturesOfType(type, SignatureKind.Call)[0];
 }
 
 /** `symbol` の JSDoc の説明とタグを返す。 */

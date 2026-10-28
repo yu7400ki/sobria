@@ -23,7 +23,7 @@ import {
 import { importInternalAs } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 import { usesForm } from "./form-usage.ts";
-import { optionsOf, paramKinds, type CtxParam, type ParamTypeOf } from "./props.ts";
+import { checkedProps, optionsOf, type CtxParam, type ParamTypeOf } from "./props.ts";
 
 /** 変換する要素のファイルの、タグ名と、ブラウザが読み込むモジュールの URL と、モジュールが静的に import するチャンクの URL を表す。 */
 export interface ElementTarget {
@@ -49,8 +49,9 @@ export function registerElement(
   file: string,
   client: boolean,
 ): ElementInfo {
-  const { exported, fn, id, ctx } = elementFunction(program, file);
-  const kinds = paramKinds(fn, output.original, file, paramType);
+  const { exported, fn, id, props, ctx } = elementFunction(program, file);
+  const kinds =
+    props === undefined ? [] : checkedProps(file, paramType(output.original, id.start)).props;
   const elementOptions = optionsOf(kinds, usesForm(fn, ctx, file));
   convertSlots(fn, elementOptions, output, file);
   output.remove(exported.start, fn.start);
@@ -76,12 +77,14 @@ export interface ElementFunction {
   readonly exported: ESTree.ExportDefaultDeclaration;
   readonly fn: ESTree.Function;
   readonly id: ESTree.BindingIdentifier;
+  /** 第 1 引数の名前である。第 1 引数が無ければ `undefined` である。 */
+  readonly props: ESTree.BindingIdentifier | undefined;
   readonly ctx: CtxParam | undefined;
 }
 
 /**
  * 要素のファイル `program` が default export した要素の関数を返す。
- * 名前付きの関数宣言を default export していないときと、第 2 引数を名前か分割代入で受け取っていないときは、ビルドのエラーにする。
+ * 要素の関数は、名前付きの関数宣言で default export する。第 1 引数は、型注釈を付けた 1 つの名前で受け取り、第 2 引数は、名前か分割代入で受け取る。引数はどちらも省略できる。この形でなければ、ビルドのエラーにする。
  */
 export function elementFunction(program: ESTree.Program, file: string): ElementFunction {
   const exported = program.body.find((statement) => statement.type === "ExportDefaultDeclaration");
@@ -91,6 +94,17 @@ export function elementFunction(program: ESTree.Program, file: string): ElementF
       `${file}: 要素のファイルは、export default function 名前(props, ctx) の形で関数を default export してください。`,
     );
   }
+  const [props] = fn.params;
+  if (props !== undefined && props.type !== "Identifier") {
+    throw new CompileError(
+      `${file}: 要素の関数の第 1 引数は、props のような 1 つの名前で受け取ってください。分割代入、デフォルト値、残余引数は使用できません。`,
+    );
+  }
+  if (props !== undefined && !props.typeAnnotation) {
+    throw new CompileError(
+      `${file}: 要素の関数の第 1 引数に、Props の型注釈を記述してください。props を受け取る要素は、TypeScript のファイル（.tsx）に記述してください。`,
+    );
+  }
   const declared = fn.params[1];
   const ctx = declared?.type === "AssignmentPattern" ? declared.left : declared;
   if (ctx !== undefined && ctx.type !== "ObjectPattern" && ctx.type !== "Identifier") {
@@ -98,7 +112,7 @@ export function elementFunction(program: ESTree.Program, file: string): ElementF
       `${file}: 要素の関数の 2 番目の引数は、ctx のような名前か、{ form } のような分割代入で受け取ってください。`,
     );
   }
-  return { exported, fn, id: fn.id, ctx };
+  return { exported, fn, id: fn.id, props, ctx };
 }
 
 /** 要素のファイルの最上位の `export const load` の値を返す。記述が無ければ `load` を返す。ほかの形で `load` を export すると、ビルドのエラーにする。 */

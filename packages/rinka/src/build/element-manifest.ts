@@ -7,7 +7,7 @@ import { customEventName } from "../shared/names.ts";
 import { langs, parseModule, walk } from "./ast.ts";
 import { elementFunction } from "./element-transform.ts";
 import { usesForm } from "./form-usage.ts";
-import { optionsOf, propsParamStart, unresolvedProps } from "./props.ts";
+import { checkedProps, optionsOf } from "./props.ts";
 import type {
   DocComment,
   ElementDescription,
@@ -162,15 +162,8 @@ export function describeElement(
 ): CustomElementDeclaration {
   const program = parseModule(code, { id: file, file, lang: langs.get(extname(file)) ?? "tsx" });
   const { fn, id, ctx } = elementFunction(program, file);
-  propsParamStart(fn, file);
-  const described = describeTypes(code, id.start);
-  if (described === undefined) throw unresolvedProps(file);
-  const kinds = propKinds(
-    optionsOf(
-      new Map(described.props.map(({ name: prop, kind }) => [prop, kind])),
-      usesForm(fn, ctx, file),
-    ),
-  );
+  const described = checkedProps(file, describeTypes(code, id.start));
+  const kinds = propKinds(optionsOf(described.props, usesForm(fn, ctx, file)));
   const attributeOf = new Map(
     [...kinds.attributes].map(([attribute, { name: prop }]) => [prop, attribute]),
   );
