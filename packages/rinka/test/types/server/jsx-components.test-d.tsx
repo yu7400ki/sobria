@@ -1,4 +1,5 @@
 import {
+  createContext,
   defineElement,
   Errored,
   type ClientNode,
@@ -89,5 +90,14 @@ test("サーバーの Errored の fallback の関数は、エラーだけを受�
         <p />
       </Errored>
     )
+  );
+});
+
+test("createContext が返したコンポーネントを、子を包んで記述できる", () => {
+  const Theme = createContext("light");
+  void (
+    <Theme value="dark">
+      <Card title="t" />
+    </Theme>
   );
 });

@@ -1,4 +1,5 @@
 import {
+  createContext,
   defineElement,
   Errored,
   type ClientNode,
@@ -146,5 +147,14 @@ test("要素のファイルの Errored は、シェルの中で受け止めた�
     <Errored status={200} fallback={(_error, retry) => <button onClick={retry}>再試行</button>}>
       body
     </Errored>
+  );
+});
+
+test("createContext が返したコンポーネントを、子を包んで記述できる", () => {
+  const Theme = createContext("light");
+  void (
+    <Theme value="dark">
+      <Card title="t" />
+    </Theme>
   );
 });

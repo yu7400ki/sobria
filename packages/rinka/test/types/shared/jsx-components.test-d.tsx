@@ -1,4 +1,12 @@
-import type { ClientNode, ServerNode, SharedNode, Slot } from "rinka";
+import {
+  createContext,
+  createId,
+  useContext,
+  type ClientNode,
+  type ServerNode,
+  type SharedNode,
+  type Slot,
+} from "rinka";
 import type { JSX } from "rinka/jsx-runtime";
 import { expectTypeOf, test } from "vitest";
 
@@ -38,4 +46,17 @@ test("共通のコンポーネントの HTML のタグは、イベントハン�
 
 test("共通のコンポーネントは、スロットの型の children を JSX の子に配置できる", () => {
   void ((props: { children?: Slot }) => <div>{props.children}</div>);
+});
+
+test("createContext が返したコンポーネントは value と子を受け取り、useContext は値の型を返す", () => {
+  const Theme = createContext<"light" | "dark">("light");
+  void (
+    <Theme value="dark">
+      <Card title="t" />
+    </Theme>
+  );
+  // @ts-expect-error 値の型に合わない value は渡せない
+  void (<Theme value="blue" />);
+  expectTypeOf(useContext(Theme)).toEqualTypeOf<"light" | "dark">();
+  expectTypeOf(createId()).toEqualTypeOf<string>();
 });

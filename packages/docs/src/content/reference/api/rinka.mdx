@@ -409,6 +409,16 @@ type PropKind = AttributeType | "unknown" | "function" | "object" | "slot";
 type Props<T extends CheckedProps<T>> = T;
 ```
 
+## SharedContext
+
+`createContext` が返すコンテキストを表す。`<Theme value={…}>` のように記述すると、子孫の `useContext(Theme)` は `value` を返す。
+
+```ts
+interface SharedContext<T> {
+  (props: { readonly value: T; readonly children?: unknown }): SharedNode;
+}
+```
+
 ## ServerFnError
 
 クライアントから呼び出したサーバー関数が、2xx 以外のレスポンスを返したか、ストリームの途中で失敗したことを表す。
@@ -567,4 +577,28 @@ function defineElement<P, M extends object = object>(
 const refreshPage: RefreshPage;
 
 type RefreshPage = () => Promise<void>;
+```
+
+## createContext
+
+コンテキストを作成する。`<Theme value={…}>` の子孫の `useContext(Theme)` は `value` を返し、子孫でない位置では `defaultValue` を返す。
+
+```ts
+function createContext<T>(defaultValue: T): SharedContext<T>;
+```
+
+## createId
+
+ページか要素のインスタンスの中で一意な id を返す。
+
+```ts
+const createId: () => string;
+```
+
+## useContext
+
+描画の位置から見て最も内側の `context` の値を返す。無ければ `createContext` に渡した値を返す。
+
+```ts
+const useContext: <T>(context: SharedContext<T>) => T;
 ```

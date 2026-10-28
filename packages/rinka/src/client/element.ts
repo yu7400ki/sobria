@@ -57,6 +57,7 @@ import {
   takeElement,
   type Cursor,
 } from "./hydration.ts";
+import { enterRenderScope } from "./shared-context.ts";
 import {
   activateInSlot,
   addChild,
@@ -306,6 +307,7 @@ export function registerElement<P, M extends object = object>(
         instance.run = run;
         definition.shown.add(instance);
         enterHost(instance.slots);
+        enterRenderScope();
         onCleanup(() => {
           instance.run = undefined;
           run.mounts = [];
