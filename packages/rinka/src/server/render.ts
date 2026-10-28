@@ -49,6 +49,7 @@ import {
   type MemoCompute,
   type ScopedChild,
 } from "../shared/scope.ts";
+import { createRenderScope, type RenderScope } from "../shared/shared-context.ts";
 import { BOUNDARIES_KEY, childKey, PROPS_KEY, REFRESH_PROPS_KEY } from "../shared/transfer-keys.ts";
 import { checkSerializable, formProps } from "../shared/wire.ts";
 import { ariaAttributes } from "./aria.ts";
@@ -95,6 +96,7 @@ import {
 } from "./out.ts";
 import { Relay } from "./relay.ts";
 import { scriptJson } from "./script.ts";
+import { prepareRenderScopes, runInScope } from "./shared-context.ts";
 import { elementCss } from "./styles.ts";
 import { asNode, type ErroredNode, type Node } from "./tree.ts";
 import { toScript } from "./wire.ts";
@@ -272,6 +274,8 @@ interface WalkCtx {
   readonly catchers: readonly Catcher[];
   /** 祖先のネイティブのタグが子孫に渡す状態である。要素の境界では `noParentTag` に戻す。 */
   readonly parent: ParentTag;
+  /** この位置のコンテキストの値と id の数である。要素の境界では新しい範囲にする。 */
+  readonly scope: RenderScope;
 }
 
 /** `outputs` で、出力する形が `output` の props の名前を返す。 */
@@ -637,6 +641,9 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       case "depth":
         this.walk(asNode(node.children), { ...ctx, depth: node.depth }, out);
         return;
+      case "context":
+        this.walk(asNode(node.children), { ...ctx, scope: node.scope(ctx.scope) }, out);
+        return;
       case "navigation":
         this.navigation(node.props, ctx, out);
         return;
@@ -645,7 +652,11 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
           this.element(node.fn, node.props, node.key, ctx, out, node.child);
           return;
         }
-        this.emit(node.fn(node.props), ctx, out);
+        this.emit(
+          runInScope(ctx.scope, () => node.fn(node.props)),
+          ctx,
+          out,
+        );
       }
     }
   }
@@ -704,11 +715,12 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /** `compute` を追跡せずに呼び出した値を返す。未解決の値を参照したときは、追跡して呼び出した値が解決する Promise を返す。 */
   private settle<T>(ctx: WalkCtx, compute: (tracked: boolean) => T): T | Promise<T> {
+    const scoped = (tracked: boolean): T => runInScope(ctx.scope, () => compute(tracked));
     try {
-      return runWithOwner(ctx.owner, () => untrack(() => compute(false)));
+      return runWithOwner(ctx.owner, () => untrack(() => scoped(false)));
     } catch (error) {
       if (!(error instanceof NotReadyError)) throw error;
-      const settled = runWithOwner(ctx.owner, () => resolve(() => compute(true)));
+      const settled = runWithOwner(ctx.owner, () => resolve(() => scoped(true)));
       settled.catch(() => {});
       return settled;
     }
@@ -1142,6 +1154,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion
       internals: internals as ElementInternals,
     };
+    const rendering = createRenderScope();
     const scope = createScope(
       <T>(memoKey: string, fn: MemoCompute<T>) =>
         memoOf<T>((prev) => {
@@ -1161,7 +1174,11 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     createRoot((dispose) => {
       this.disposers.push(dispose);
       owner = getOwner();
-      tree = asNode(untrack(() => withScope(scope, () => component(props, elementCtx))));
+      tree = asNode(
+        untrack(() =>
+          withScope(scope, () => runInScope(rendering, () => component(props, elementCtx))),
+        ),
+      );
     });
     const shadowCtx: WalkCtx = {
       owner,
@@ -1175,6 +1192,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       fallback: false,
       catchers: ctx.catchers,
       parent: noParentTag,
+      scope: rendering,
     };
     const read = submitted;
     const input =
@@ -1565,6 +1583,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /** シェルを描画し、シェルの HTML を返す。 */
   async shell(node: Node): Promise<string> {
+    await prepareRenderScopes();
     const html = await this.serialize(
       this.chunks(node, {
         owner: null,
@@ -1578,6 +1597,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         fallback: false,
         catchers: [],
         parent: noParentTag,
+        scope: createRenderScope(),
       }),
       this.shellOut,
     );

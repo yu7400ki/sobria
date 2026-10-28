@@ -1,6 +1,7 @@
 import type { NavigationProps } from "../shared/navigation.ts";
 import { serverJsxNodes, type ServerNode } from "../shared/nodes.ts";
 import type { ScopedChild } from "../shared/scope.ts";
+import type { RenderScope } from "../shared/shared-context.ts";
 
 /** サーバーで描画する木のノードを表す。関数は、描画するときに呼び出して、返した値を描画する。 */
 export type Node =
@@ -17,6 +18,7 @@ export type Node =
   | LoadingNode
   | ErroredNode
   | DepthNode
+  | ContextNode
   | NavigationNode;
 
 /** ネイティブのタグを表す。`props` は、記述子のまま保持する。 */
@@ -56,6 +58,14 @@ export interface ErroredNode {
 export interface DepthNode {
   readonly kind: "depth";
   readonly depth: number;
+  readonly children: unknown;
+}
+
+/** 子を、外側の描画の範囲にコンテキストの値を加えた範囲で描画するノードを表す。 */
+export interface ContextNode {
+  readonly kind: "context";
+  /** 外側の描画の範囲 `outer` から、子を描画する範囲を返す。 */
+  readonly scope: (outer: RenderScope) => RenderScope;
   readonly children: unknown;
 }
 

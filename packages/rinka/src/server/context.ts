@@ -1,41 +1,42 @@
 import { Context } from "hono";
 
-/** リクエストの Context を保持する、AsyncLocalStorage と同じ形のオブジェクトを表す。 */
-interface Storage {
-  run<T>(c: Context, fn: () => T): T;
-  getStore(): Context | undefined;
+/** 値を保持する、AsyncLocalStorage と同じ形のオブジェクトを表す。 */
+export interface Storage<T> {
+  run<R>(value: T, fn: () => R): R;
+  getStore(): T | undefined;
 }
 
-type StorageClass = new () => Storage;
+type StorageClass = new <T>() => Storage<T>;
 
 /**
- * Context を保持するオブジェクトを返す。グローバルに AsyncLocalStorage があればそれを使用し、無ければ `importAsyncHooks` で読み込んだ `node:async_hooks` のものを使用する。
+ * 値を保持するオブジェクトを作成する関数を返す。グローバルに AsyncLocalStorage があればそれを使用し、無ければ `importAsyncHooks` で読み込んだ `node:async_hooks` のものを使用する。
  * どちらも無ければ、`await` をまたぐと値を失う同期的な代用品を使用し、警告を出力する。
  */
 export async function loadStorage(
   importAsyncHooks: () => Promise<{ AsyncLocalStorage: StorageClass }> = () =>
     import("node:async_hooks"),
-): Promise<Storage> {
+): Promise<<T>() => Storage<T>> {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   const global = (globalThis as { AsyncLocalStorage?: StorageClass }).AsyncLocalStorage;
-  if (global) return new global();
+  if (global) return () => new global();
   try {
     const { AsyncLocalStorage } = await importAsyncHooks();
-    return new AsyncLocalStorage();
+    if (typeof AsyncLocalStorage !== "function") throw new TypeError("AsyncLocalStorage");
+    return () => new AsyncLocalStorage();
   } catch {
     console.warn(
-      "[rinka] AsyncLocalStorage を使用できないので、サーバー関数が受け取るリクエストの Context は、await をまたぐと失われ、同時に処理するリクエストのあいだで混在します。",
+      "[rinka] AsyncLocalStorage を使用できないので、サーバー関数が受け取るリクエストの Context と、useContext で読む値は、await をまたぐと失われ、同時に処理するリクエストのあいだで混在します。",
     );
-    return synchronousStorage();
+    return synchronousStorage;
   }
 }
 
-function synchronousStorage(): Storage {
-  let current: Context | undefined;
+function synchronousStorage<T>(): Storage<T> {
+  let current: T | undefined;
   return {
-    run(c, fn) {
+    run(value, fn) {
       const previous = current;
-      current = c;
+      current = value;
       try {
         return fn();
       } finally {
@@ -46,12 +47,20 @@ function synchronousStorage(): Storage {
   };
 }
 
-let storage: Storage | undefined;
-let loading: Promise<Storage> | undefined;
+let creating: Promise<<T>() => Storage<T>> | undefined;
+
+/** 値を保持するオブジェクトを作成する。 */
+export async function createStorage<T>(): Promise<Storage<T>> {
+  const create = await (creating ??= loadStorage());
+  return create<T>();
+}
+
+let storage: Storage<Context> | undefined;
+let loading: Promise<Storage<Context>> | undefined;
 
 /** `fn` を、`c` を処理中のリクエストの Context として実行する。 */
 export async function runInRequest<T>(c: Context, fn: () => T | Promise<T>): Promise<T> {
-  storage ??= await (loading ??= loadStorage());
+  storage ??= await (loading ??= createStorage());
   return storage.run(c, fn);
 }
 

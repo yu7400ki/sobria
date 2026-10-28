@@ -120,7 +120,6 @@ describe("クライアントの external", () => {
     async (_, nested) => {
       const tag = nextTag();
       const store = createStore("client");
-      const warn = vi.spyOn(console, "warn");
       const seen: string[] = [];
       await serve(
         (serverJsx as unknown as H)(
@@ -130,6 +129,7 @@ describe("クライアントの external", () => {
           {},
         ),
       );
+      const warn = vi.spyOn(console, "warn");
       const host = document.querySelector(tag);
       const paragraph = host?.shadowRoot?.querySelector("p");
       expect(html(host?.shadowRoot)).toBe("<p>server</p>");

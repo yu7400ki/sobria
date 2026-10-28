@@ -19,11 +19,11 @@ describe("リクエストの Context の保持", () => {
   it("グローバルに AsyncLocalStorage があれば、それを使用する", async () => {
     class Global extends AsyncLocalStorage<Context> {}
     vi.stubGlobal("AsyncLocalStorage", Global);
-    expect(await loadStorage(unavailable)).toBeInstanceOf(Global);
+    expect((await loadStorage(unavailable))()).toBeInstanceOf(Global);
   });
 
   it("グローバルに無ければ、node:async_hooks の AsyncLocalStorage を使用し、await をまたいで値を保持する", async () => {
-    const storage = await loadStorage();
+    const storage = (await loadStorage())<Context>();
     const c = request("/a");
     const seen = await storage.run(c, async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -34,7 +34,7 @@ describe("リクエストの Context の保持", () => {
 
   it("どちらも無ければ、同期的な代用品を使用し、警告を出力する", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const storage = await loadStorage(unavailable);
+    const storage = (await loadStorage(unavailable))<Context>();
     const c = request("/a");
     expect(storage.run(c, () => storage.getStore())).toBe(c);
     expect(storage.getStore()).toBeUndefined();
