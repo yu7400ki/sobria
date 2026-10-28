@@ -17,7 +17,6 @@ export const addPost = defineServerFn({
   input: z.object({ title: z.string().min(1) }),
 })(async (c, { input }) => {
   db.posts.insert(input.title);
-  return null;
 });
 ```
 
@@ -51,18 +50,19 @@ JS が無いときは、ブラウザの通常の送信になります。handler 
 
 | handler の結果                                | レスポンス                                         |
 | --------------------------------------------- | -------------------------------------------------- |
-| 値を返した                                    | 送信したページ（Referer）への 303 のリダイレクト   |
+| 値を返さなかった（`undefined`）               | 送信したページ（Referer）への 303 のリダイレクト   |
+| `undefined` 以外の値を返した                  | 送信したページを描画したレスポンス                 |
 | `redirect()` を投げた                         | その URL への 303 のリダイレクト                   |
 | Response を返したか、`HTTPException` を投げた | その Response                                      |
 | `notFound()` を投げた                         | 404                                                |
 | `input` のスキーマの検証に失敗した            | 422 の `{ issues }`。ブラウザは JSON を表示します  |
 | それ以外の例外を投げた                        | 送信したページに最も近い `error.tsx` を 500 で表示 |
 
-handler がそれ以外の例外を投げたときは、送信したページへの GET と同じく、そのページのディレクトリまでのすべての `middleware.ts` を実行してから、ページの代わりに、そのページに最も近い `error.tsx` を描画します。`middleware.ts` がページの代わりにレスポンスを返したとき（`redirect()` と `notFound()` を投げたときを含む）は、そのページへの GET と同じレスポンスを返します。ただし、307 と 308 のリダイレクトは、フォームの本文が移動先に再送信されないように、ステータスを 303 に変換します。
+handler が `undefined` 以外の値を返したときと、それ以外の例外を投げたときは、送信したページへの GET と同じく、そのページのディレクトリまでのすべての `middleware.ts` を実行してから描画します。例外を投げたときは、ページの代わりに、そのページに最も近い `error.tsx` を描画します。`middleware.ts` がページの代わりにレスポンスを返したとき（`redirect()` と `notFound()` を投げたときを含む）は、そのページへの GET と同じレスポンスを返します。ただし、307 と 308 のリダイレクトは、フォームの本文が移動先に再送信されないように、ステータスを 303 に変換します。
 
 handler が例外を投げたときに `error.tsx` が無ければ、500 を返します。本番のサーバーは `Internal Server Error` のテキストを返し、開発サーバーはエラーの画面を返します。
 
-Referer を送信しない設定（`Referrer-Policy: no-referrer`）のページから送信したときと、Referer が別のホストの URL のときは、handler が値を返したときのリダイレクト先が `/` になります。
+Referer を送信しない設定（`Referrer-Policy: no-referrer`）のページからの送信と、Referer が別のホストの URL である送信では、handler が値を返したかどうかに関わらず、送信したページの代わりに `/` にリダイレクトします。
 
 ## JS があるときの送信
 
@@ -70,6 +70,7 @@ Referer を送信しない設定（`Referrer-Policy: no-referrer`）のページ
 
 - 送信の結果、移動先が現在のページなら、ページを描き直した結果を反映してから、フォームを初期値に戻します。フォームの部品の `form.onReset` は、描き直した後の props を読みます。URL とスクロールの位置は変化せず、フォームの部品でない要素の状態も保持されます
 - 移動先が別のページなら、そのページに移動します
+- handler が `undefined` 以外の値を返したときは、フォームを初期値に戻さずに、送信したページを描き直した結果を反映します
 - handler が例外を投げて 500 になったときは、`error.tsx` があれば、URL を変更せずに、ページを `error.tsx` に差し替えます
 - handler が例外を投げた後で、送信したページの `middleware.ts` がリダイレクトしたときは、最初の 2 つの箇条と同じく、移動先に応じて反映します。`notFound()` を投げたときは、`not-found.tsx` があれば、URL を変更せずに、ページを `not-found.tsx` に差し替えます。使用する `not-found.tsx` は、そのページへの GET で使用するものと同じです
 - そのほかのレスポンス（`error.tsx` が無いときの 500、スキーマの検証に失敗した 422、handler や `middleware.ts` が返した独自の Response など）を受け取ったときは、ページを変更せずに、レスポンスをコンソールに記録します
@@ -112,7 +113,6 @@ const orderSchema = z.object({
 
 export const placeOrder = defineServerFn({ input: orderSchema })(async (c, { input }) => {
   console.log(input.items[0]?.count);
-  return null;
 });
 ```
 
@@ -147,95 +147,57 @@ export default function Page() {
 
 ## 失敗を表示する
 
-`input` のスキーマの検証に失敗したときの 422 は、利用者に表示する画面になりません。利用者に表示する検証のエラーは、handler の中で検証して、送信したページに渡します。次の例では、handler がエラーと入力した値を Cookie に保存し、送信したページへのリクエストで、その Cookie を 1 回だけ読み取ります。このような Cookie を flash の Cookie と呼びます。
-
-```ts
-// src/lib/flash.ts
-import type { Context } from "hono";
-import { setCookie } from "hono/cookie";
-
-export type Flash = { errors: Record<string, string>; values: Record<string, string> };
-
-declare module "hono" {
-  interface ContextVariableMap {
-    flash: Flash | undefined;
-  }
-}
-
-export function setFlash(c: Context, flash: Flash) {
-  setCookie(c, "flash", JSON.stringify(flash), { path: "/", httpOnly: true, sameSite: "Lax" });
-}
-```
+`input` のスキーマの検証に失敗したときの 422 は、利用者に表示する画面になりません。利用者に表示する検証のエラーは、handler の中で検証して、値として返します。フォームの送信で handler が `undefined` 以外の値を返すと、rinka はリダイレクトせずに、送信したページを描画します。ページは、`getServerFnResult` で handler が返した値を受け取ります。
 
 ```ts
 // src/lib/users.ts
 import { defineServerFn, redirect } from "rinka/server";
 import { z } from "zod";
 
-import { setFlash } from "./flash.ts";
-
 const taken = new Set(["admin"]);
 
 export const signup = defineServerFn({
   input: z.object({ name: z.string() }),
-})(async (c, { input }) => {
-  if (input.name === "") {
-    setFlash(c, { errors: { name: "名前を入力してください" }, values: input });
-    throw redirect("/signup");
-  }
+})(async (_c, { input }) => {
+  if (input.name === "") return { errors: { name: "名前を入力してください" }, values: input };
   if (taken.has(input.name)) {
-    setFlash(c, { errors: { name: "この名前は使用されています" }, values: input });
-    throw redirect("/signup");
+    return { errors: { name: "この名前は使用されています" }, values: input };
   }
   taken.add(input.name);
   throw redirect("/");
 });
 ```
 
-ルートの `middleware.ts` で、GET のリクエストの Cookie を読み取って `c.set` します。ページの描画中に設定したヘッダーはページのレスポンスに含まれないので、Cookie は同じミドルウェアの `await next()` の後で削除します。
-
-```ts
-// src/routes/middleware.ts
-import { deleteCookie, getCookie } from "hono/cookie";
-import { defineMiddleware } from "rinka/server";
-
-import type { Flash } from "../lib/flash.ts";
-
-export default defineMiddleware(async (c, next) => {
-  const flash = c.req.method === "GET" ? getCookie(c, "flash") : undefined;
-  c.set("flash", flash === undefined ? undefined : (JSON.parse(flash) as Flash));
-  await next();
-  if (flash !== undefined) deleteCookie(c, "flash", { path: "/" });
-});
-```
-
-ページでは、`getContext()` で値を読み取ります。
-
 ```tsx
 // src/routes/signup/page.tsx
-import { getContext } from "rinka/server";
+import { getServerFnResult } from "rinka/server";
 
 import { signup } from "../../lib/users.ts";
 
 export default function Page() {
-  const flash = getContext()?.get("flash");
+  const result = getServerFnResult(signup);
   return (
     <form action={signup}>
       <label for="name">名前</label>
       <input
         id="name"
         name="name"
-        value={flash?.values.name ?? ""}
-        aria-invalid={flash?.errors.name !== undefined}
+        value={result?.values.name ?? ""}
+        aria-invalid={result?.errors.name !== undefined}
       />
-      {flash?.errors.name && <p>{flash.errors.name}</p>}
+      {result?.errors.name && <p>{result.errors.name}</p>}
       <button>登録する</button>
     </form>
   );
 }
 ```
 
-JS があるときも、同じコードで動作します。handler が現在のページにリダイレクトすると、rinka は、handler が設定した Cookie を使用してページを描き直し、その結果をサーバー関数のレスポンスに含めて返します。
+- `getServerFnResult(fn)` は、ページを描画するきっかけになったリクエストで `fn` が値を返していなければ、`undefined` を返します。`getServerFnResult` では、別のサーバー関数が返した値は読めません
+- 値を返す代わりに別のページへ移動するには、handler で `redirect()` を投げます。handler が何も返さないときは、送信したページにリダイレクトします
+- JS があるときは、rinka はフォームを初期値に戻さずに、描き直したページを反映します。JS が無いときは、送信したページを POST のレスポンスとして表示するので、入力欄の値は、ページが出力した値になります。どちらの場合も同じ表示にするには、上の例のように、handler が返した入力の値をページが入力欄に渡します
+- JS が無いときに、値を返した後の画面で再読み込みすると、ブラウザは送信をやり直すかを確認します
+- 同じサーバー関数を使うフォームが 1 つのページに複数あるときは、どのフォームの結果かを区別できる値（id など）を、handler の戻り値に含めます
+- 要素の描画の中では `getServerFnResult` を呼べません。ページが props で要素に値を渡します
 
 ## フォームの部品になる要素
 
