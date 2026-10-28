@@ -325,7 +325,44 @@ export default function Badge(props: { label: string; children?: JSX.Element }) 
 }
 ```
 
-共通のコンポーネントには、ネイティブのタグと属性、ほかの共通のコンポーネント、`children` を記述できます。共通のコンポーネントはページの中でも描画され、ページの中では JS が動作しないので、イベントハンドラーと `ref` は記述できません。共通のコンポーネントから、要素とページのコンポーネントは import できません。
+共通のコンポーネントには、ネイティブのタグと属性、ほかの共通のコンポーネント、`children` を記述できます。共通のコンポーネントはページの中でも描画され、ページの中では JS が動作しないので、イベントハンドラーと `ref` は記述できません。共通のコンポーネントから、要素とページのコンポーネントは import できません。共通のコンポーネントの戻り値の型を明示するときは、`rinka` の `SharedNode` を使います。
+
+### コンテキストと id
+
+`createContext` で作成したコンテキストを使用すると、親の部品から子の部品に値を渡せます。`createContext` が返すコンポーネントに `value` を渡して子を包むと、子孫の `useContext` はその値を返します。`createId` は、ページでは描画ごとに、要素ではインスタンスごとに一意な id を返します。
+
+```tsx
+// src/components/field.tsx
+import { createContext, createId, useContext } from "rinka";
+
+const FieldIds = createContext({ input: "", error: "" });
+
+export function Field(props: { children?: JSX.Element }) {
+  return (
+    <FieldIds value={{ input: createId(), error: createId() }}>
+      <div class="field">{props.children}</div>
+    </FieldIds>
+  );
+}
+
+export function FieldLabel(props: { children?: JSX.Element }) {
+  return <label for={useContext(FieldIds).input}>{props.children}</label>;
+}
+
+export function FieldInput(props: { name: string }) {
+  const ids = useContext(FieldIds);
+  return <input name={props.name} id={ids.input} aria-describedby={ids.error} />;
+}
+
+export function FieldError(props: { children?: JSX.Element }) {
+  return <p id={useContext(FieldIds).error}>{props.children}</p>;
+}
+```
+
+- 子孫でない位置の `useContext` は、`createContext` に渡した値を返します
+- 要素の関数と、要素の Shadow DOM の中の部品では、ページと外側の要素で渡した値を読めません。要素に値を渡すには、props を使います。props に記述した式と、要素の子として記述した内容は、要素を記述した位置の値を読めます
+- `value` は、コンポーネントを描画した時点の値です。変化する値を渡すには、Signal（[リアクティビティ](/guide/reactivity)）を読む関数を `value` に渡し、子孫は `useContext` が返した関数を呼んで値を読みます
+- ページと要素の描画の外（サーバー関数の handler など）で `useContext` と `createId` を呼ぶと、エラーになります
 
 ## タグ名
 
