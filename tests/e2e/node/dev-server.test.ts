@@ -357,6 +357,38 @@ writeFileSync(${JSON.stringify(marker)}, "x");
     }
   }, 30_000);
 
+  it.each([true, false])(
+    "JS が %s のときに、検証に失敗したフォームの送信は、handler が返した入力した値とエラーを、送信したページに表示する",
+    async (javaScriptEnabled) => {
+      const browser = await chromium.launch();
+      try {
+        const page = await (await browser.newContext({ javaScriptEnabled })).newPage();
+        await page.goto(`${origin}/signup`);
+        if (javaScriptEnabled) {
+          await page.locator("app-refresher[data-started]").waitFor({ timeout: 5000 });
+          await page.locator("app-refresher #count").dispatchEvent("click");
+        }
+        await page.locator("input[name=name]").fill("admin");
+        await page.locator("#signup").click();
+        await page
+          .locator("#error", { hasText: "この名前は使用されています" })
+          .waitFor({ timeout: 5000 });
+        expect(await page.locator("input[name=name]").getAttribute("value")).toBe("admin");
+        if (javaScriptEnabled) {
+          expect(await page.locator("app-refresher #count").textContent()).toBe("signup 1");
+        }
+        expect(new URL(page.url()).pathname).toBe(
+          javaScriptEnabled
+            ? "/signup"
+            : "/_rinka/fn/" + encodeURIComponent("src/lib/signup.ts#signup"),
+        );
+      } finally {
+        await browser.close();
+      }
+    },
+    30_000,
+  );
+
   it("Vite が処理するリクエストは、Vite が返す", async () => {
     const response = await fetch(`${origin}/src/elements/counter.tsx`);
     expect(response.status).toBe(200);
