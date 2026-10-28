@@ -1,0 +1,205 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { createTypeChecker, type TypeChecker } from "../../src/build/type-checker.ts";
+
+const fixture = resolve(import.meta.dirname, "../fixtures/type-checker");
+const config = join(fixture, "tsconfig.json");
+
+let checker: TypeChecker;
+let count = 0;
+
+beforeAll(() => {
+  checker = createTypeChecker({ config, rootFiles: [] });
+});
+
+afterAll(() => {
+  checker.close();
+});
+
+/** `code` を、ディスクに無い要素のファイルとして、`props:` の位置の引数の型を解析する。 */
+function analyze(code: string, dir = fixture) {
+  const file = join(dir, `element-${count++}.tsx`).replaceAll("\\", "/");
+  return checker.param(file, code, code.indexOf("props:"));
+}
+
+/** `code` を解析し、インデックスシグネチャが無いことを確認して、props の名前ごとの分類を返す。 */
+function kinds(code: string, dir = fixture): Record<string, string> {
+  const result = analyze(code, dir);
+  expect(result?.indexed).toBe(false);
+  return Object.fromEntries((result?.props ?? []).map(({ name, kind }) => [name, kind]));
+}
+
+describe("createTypeChecker", () => {
+  it("プリミティブ、関数、オブジェクト、スロットの型を分類する", () => {
+    expect(
+      kinds(`import type { Slot } from "rinka";
+export default function X(props: {
+  text: string; count: number; open: boolean; onSelect: (value: string) => void;
+  method(): void; data: { id: string }; list: string[]; when: Date;
+  icon: Slot; label: JSX.Element; children?: JSX.Element; get size(): number;
+}) { return null; }`),
+    ).toEqual({
+      text: "string",
+      count: "number",
+      open: "boolean",
+      onSelect: "function",
+      method: "function",
+      data: "object",
+      list: "object",
+      when: "object",
+      icon: "slot",
+      label: "slot",
+      children: "slot",
+      size: "number",
+    });
+  });
+
+  it("リテラル型、enum、テンプレートのリテラル型を、string、number、boolean に分類する", () => {
+    expect(
+      kinds(`enum Mode { A = "a", B = "b" }
+enum Level { Low, High }
+export default function X(props: {
+  variant: "a" | "b"; size: 1 | 2; on: true; mode: Mode; level: Level; width: \`\${number}px\`;
+}) { return null; }`),
+    ).toEqual({
+      variant: "string",
+      size: "number",
+      on: "boolean",
+      mode: "string",
+      level: "number",
+      width: "string",
+    });
+  });
+
+  it("ユニオン型は、undefined と null を除外した要素の分類が 1 つに揃えばその分類に、混在するか要素が残らなければ unknown にする", () => {
+    expect(
+      kinds(`export default function X(props: {
+  a?: string; b: number | null; c: string | number; d: string | boolean; e: undefined | null;
+  f: (() => void) | undefined; g: unknown; h: any; i: bigint; j: symbol;
+}) { return null; }`),
+    ).toEqual({
+      a: "string",
+      b: "number",
+      c: "unknown",
+      d: "unknown",
+      e: "unknown",
+      f: "function",
+      g: "unknown",
+      h: "unknown",
+      i: "unknown",
+      j: "unknown",
+    });
+  });
+
+  it("呼び出しのシグネチャとプロパティを両方持つ型と、object と、オブジェクトの交差型は、オブジェクトに分類する", () => {
+    expect(
+      kinds(`interface Handler { (): void }
+export default function X(props: {
+  a: Handler; b: { (): void; x: number }; c: object; d: { x: 1 } & { y: 2 };
+}) { return null; }`),
+    ).toEqual({ a: "function", b: "object", c: "object", d: "object" });
+  });
+
+  it("プリミティブの型を含む交差型は、そのプリミティブの分類にする", () => {
+    expect(
+      kinds(`export default function X(props: {
+  id: string & { readonly brand: "id" }; count: number & {}; on: boolean & { x?: 1 };
+}) { return null; }`),
+    ).toEqual({ id: "string", count: "number", on: "boolean" });
+  });
+
+  it("型パラメータは、制約の型で分類し、制約が無ければ unknown にする", () => {
+    expect(
+      kinds(`export default function X<T extends string, U, V extends { a: 1 }>(props: {
+  t: T; u: U; v: V;
+}) { return null; }`),
+    ).toEqual({ t: "string", u: "unknown", v: "object" });
+  });
+
+  it("名前が children の props は、型によらずスロットに分類する", () => {
+    expect(
+      kinds("export default function X(props: { children: string }) { return null; }"),
+    ).toEqual({ children: "slot" });
+  });
+
+  it("引数の型が any か、解決できない型なら、undefined を返す", () => {
+    expect(analyze("export default function X(props: any) { return null; }")).toBeUndefined();
+    expect(
+      analyze(`import type { Base } from "./missing.ts";
+export default function X(props: Base & { z: string }) { return null; }`),
+    ).toBeUndefined();
+  });
+
+  it("別のファイルから import した型、交差型、Pick、extends を持つ interface を解決する", async () => {
+    const dir = await mkdtemp(join(fixture, "import-"));
+    try {
+      await writeFile(
+        join(dir, "shared.ts"),
+        `export interface Base { id: string; count: number; tags: string[] }
+export type Size = "s" | "m";
+export interface Extended extends Base { open: boolean }`,
+      );
+      expect(
+        kinds(
+          `import type { Props } from "rinka";
+import type { Base, Extended, Size } from "./shared.ts";
+type P = Props<Pick<Base, "id" | "count"> & { size?: Size; extended: Extended }>;
+export default function X(props: P) { return null; }`,
+          dir,
+        ),
+      ).toEqual({ id: "string", count: "number", size: "string", extended: "object" });
+    } finally {
+      await rm(dir, { recursive: true });
+    }
+  });
+
+  it("import した型のファイルの変更を通知すると、変更後の型で分類する", async () => {
+    const dir = await mkdtemp(join(fixture, "changed-"));
+    const shared = join(dir, "shared.ts").replaceAll("\\", "/");
+    const file = join(dir, "element.tsx").replaceAll("\\", "/");
+    const code = `import type { Base } from "./shared.ts";
+export default function X(props: Base) { return null; }`;
+    try {
+      await writeFile(shared, "export interface Base { value: number }");
+      expect(checker.param(file, code, code.indexOf("props:"))?.props).toEqual([
+        { name: "value", kind: "number" },
+      ]);
+      await writeFile(shared, "export interface Base { value: string }");
+      checker.changed([shared]);
+      expect(checker.param(file, code, code.indexOf("props:"))?.props).toEqual([
+        { name: "value", kind: "string" },
+      ]);
+    } finally {
+      await rm(dir, { recursive: true });
+    }
+  });
+
+  it("同じファイルの内容が変わると、新しい内容で解析する", () => {
+    const file = join(fixture, "edited.tsx").replaceAll("\\", "/");
+    const before = "export default function X(props: { a: string }) { return null; }";
+    const after = "export default function X(props: { a: number; b: boolean }) { return null; }";
+    expect(checker.param(file, before, before.indexOf("props:"))?.props).toEqual([
+      { name: "a", kind: "string" },
+    ]);
+    expect(checker.param(file, after, after.indexOf("props:"))?.props).toEqual([
+      { name: "a", kind: "number" },
+      { name: "b", kind: "boolean" },
+    ]);
+  });
+
+  it("位置は、UTF-16 の単位で数える", () => {
+    expect(
+      kinds(`// 日本語のコメント 🎉
+export default function X(props: { a: string }) { return null; }`),
+    ).toEqual({ a: "string" });
+  });
+
+  it("インデックスシグネチャを持つ型を報告する", () => {
+    const file = join(fixture, "indexed.tsx").replaceAll("\\", "/");
+    const code = "export default function X(props: Record<string, string>) { return null; }";
+    expect(checker.param(file, code, code.indexOf("props:"))).toEqual({ props: [], indexed: true });
+  });
+});

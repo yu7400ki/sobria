@@ -154,6 +154,7 @@ vite.config.ts.timestamp-*
 # rinka
 /packages/rinka/lib/
 /packages/rinka/.lint-probe-*/
+/packages/rinka/test/fixtures/type-checker/*-*/
 /tests/e2e/.rinka-tmp-*/
 /tests/fixture-library/types/
 .rinka/
