@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 
-import { normalizePath, transformWithOxc, type Plugin, type ResolvedConfig } from "vite";
+import { transformWithOxc, type Plugin, type ResolvedConfig } from "vite";
 
 import { appBuild } from "./app-build.ts";
 import { sourceLangOf, type SourceLang } from "./ast.ts";
@@ -15,7 +15,6 @@ import { libraryBuild } from "./library-build.ts";
 import { fromApp } from "./package.ts";
 import { devPath, inside, relativePath } from "./paths.ts";
 import { elementsConfig, preparedFiles, writePrepared } from "./prepare.ts";
-import type { ParamTypeOf } from "./props.ts";
 import { routesModule } from "./routes.ts";
 import { hashedFnModule, isServerFnSource, serverFnModules } from "./server-fns.ts";
 import {
@@ -109,11 +108,6 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   /** 型チェッカーを返す。起動していなければ起動する。 */
   const typeChecker = (): TypeChecker =>
     (checker ??= createTypeChecker({ config: elementsConfig(current().root) }));
-  /** パス `path` の要素のファイルの、第 1 引数の型を解析する関数を返す。 */
-  const paramTypeOf =
-    (path: string): ParamTypeOf =>
-    (code, position) =>
-      typeChecker().param(path, code, position);
   const build = appBuild({ options, settings: current });
 
   /**
@@ -153,7 +147,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       ...(tag !== undefined && {
         element: {
           tag,
-          paramType: paramTypeOf(target.path),
+          paramType: (source, position) => typeChecker().param(target.path, source, position),
           ...(scene === "app" && !client
             ? build.clientAssets.element(target.file)
             : { module: devPath(target.path, root) }),
@@ -223,7 +217,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         const onFile = (kind: keyof FileChanges, path: string): void => {
           if (checker === undefined || !SCRIPT.test(path)) return;
           try {
-            const reloads = checker.notify({ [kind]: [normalizePath(path)] }).flatMap((element) =>
+            const reloads = checker.notify({ [kind]: [path] }).flatMap((element) =>
               Object.values(server.environments).flatMap((environment) =>
                 [...(environment.moduleGraph.getModulesByFile(element) ?? [])].map((module) => {
                   environment.moduleGraph.invalidateModule(module);

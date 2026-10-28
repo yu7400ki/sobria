@@ -36,6 +36,13 @@ function kinds(code: string, dir = fixture): Record<string, string> {
 }
 
 describe("createTypeChecker", () => {
+  it("第 1 引数が無い要素の関数は、props を空にする", () => {
+    expect(analyze("export default function X() { return null; }")).toEqual({
+      props: [],
+      indexed: false,
+    });
+  });
+
   it("プリミティブ、関数、オブジェクト、スロットの型を分類する", () => {
     expect(
       kinds(`import type { Slot } from "rinka";
@@ -267,6 +274,18 @@ export default function O(props: { b: string }) { return null; }`;
     } finally {
       await rm(dir, { recursive: true });
     }
+  });
+
+  it("パスの区切りが \\ でも / でも、同じファイルとして扱う", () => {
+    const owner = join(fixture, "separated-owner.tsx").replaceAll("\\", "/");
+    const file = join(fixture, "separated-element.tsx").replaceAll("\\", "/");
+    const ownerCode = `declare global { interface SeparatedGlobal { a: number } }
+export default function O(props: { b: string }) { return null; }`;
+    const code = "export default function X(props: SeparatedGlobal) { return null; }";
+    checker.param(owner.replaceAll("/", "\\"), ownerCode, nameAt(ownerCode));
+    expect(checker.param(file, code, nameAt(code))?.props).toEqual([{ name: "a", kind: "number" }]);
+    checker.notify({ deleted: [owner] });
+    expect(checker.param(file, code, nameAt(code))).toBeUndefined();
   });
 
   it("解析したファイルの削除を通知すると、そのファイルから import した Props の型を解決しない", async () => {

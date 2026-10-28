@@ -87,13 +87,17 @@ export interface FileChanges {
   readonly deleted?: readonly string[];
 }
 
-/** TypeScript の型チェッカーで、要素の関数の引数の型を解析するオブジェクトを表す。 */
+/**
+ * TypeScript の型チェッカーで、要素の関数の引数の型を解析するオブジェクトを表す。
+ * 受け取ったファイルのパスは、区切りが `\` でも `/` でも、同じファイルとして扱う。
+ */
 export interface TypeChecker {
   /**
    * 要素のファイル `file` を変換するコード `code` の、位置 `position` にある要素の関数の型から、第 1 引数の型を Props の型として解析する。
    * ほかのファイルが import した `file` の型は、ディスクの内容で解決する。
    * 第 1 引数の型から `undefined` と `null` を除外した型を解析する。
-   * 第 1 引数が無いときと、除外した型がオブジェクトの型でないとき（ユニオン型、`any`、`unknown`、プリミティブなど）と、型チェッカーが解決できない型のときは、`undefined` を返す。
+   * 第 1 引数が無ければ、`props` を空にする。
+   * 要素の関数の型を呼び出せないときと、除外した型がオブジェクトの型でないとき（ユニオン型、`any`、`unknown`、プリミティブなど）と、型チェッカーが解決できない型のときは、`undefined` を返す。
    */
   readonly param: (file: string, code: string, position: number) => ParamType | undefined;
   /**
@@ -110,7 +114,7 @@ export interface TypeChecker {
   /**
    * ディスクで作成、変更、削除されたファイルを通知する。次の解析から、通知した後のディスクの内容で型を解決する。
    * 削除されたファイルが、`param` か `describe` に渡した要素のファイルなら、そのファイルについて渡したコードを、以降の型の解決に使用しない。
-   * 通知を反映した後で、`param` に渡した要素のファイルを、最後に渡したコードで解析し直し、解析の結果が変わったファイルを返す。
+   * 通知を反映した後で、`param` に渡した要素のファイルを、最後に渡したコードで解析し直し、解析の結果が変わったファイルを、区切りを `/` にしたパスで返す。
    */
   readonly notify: (changes: FileChanges) => readonly string[];
   /** 型チェッカーのプロセスを終了する。 */
@@ -120,11 +124,11 @@ export interface TypeChecker {
 /** rinka の `Slot` の型を import して、`slot` の型にするファイルの内容である。 */
 const slotProbe = 'import type { Slot } from "rinka";\nexport declare const slot: Slot;\n';
 
+/** パス `path` の区切りを `/` にする。 */
+const slash = (path: string) => path.replaceAll("\\", "/");
+
 /** `DetailMap` の型を宣言したモジュールのパスである。 */
-const elementTypes = fileURLToPath(new URL("../shared/element.js", import.meta.url)).replaceAll(
-  "\\",
-  "/",
-);
+const elementTypes = slash(fileURLToPath(new URL("../shared/element.js", import.meta.url)));
 
 /** 要素のファイル `file` の、変換するコードを型チェッカーに渡す仮想のパスを返す。 */
 const virtualPath = (file: string) => `${file}.rinka.tsx`;
@@ -152,7 +156,7 @@ export declare const exposed: { [K in keyof M]-?: M[K] };
  * `param` と `describe` に渡した要素のファイルの変換するコードと、`describe` が作成する型の宣言も、root に追加する。
  */
 export function createTypeChecker(options: { readonly config: string }): TypeChecker {
-  const probe = join(dirname(options.config), "rinka-slot.ts");
+  const probe = slash(join(dirname(options.config), "rinka-slot.ts"));
   const api = new API({ cwd: dirname(options.config) });
   const { options: compilerOptions, fileNames } = api.parseConfigFile(options.config);
   /** 型チェッカーに渡したファイルのパスごとの内容である。 */
@@ -191,8 +195,13 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
     }
     return snapshot.getProject(id)!.checker;
   };
-  /** Props の型 `type` のメンバーの名前と分類を返す。Props の型として解析できなければ `undefined` を返す。 */
-  const membersOf = (checker: Checker, type: Type | undefined) => {
+  /**
+   * 要素の関数の第 1 引数 `param` の型から、Props の型のメンバーの名前と分類と、インデックスシグネチャがあるかを返す。
+   * `param` が無ければメンバーを空にする。Props の型として解析できなければ `undefined` を返す。
+   */
+  const membersOf = (checker: Checker, param: TypeSymbol | undefined) => {
+    if (param === undefined) return { members: [], indexed: false };
+    const type = checker.getTypeOfSymbol(param);
     if (type === undefined || type.flags & (TypeFlags.Any | TypeFlags.Unknown)) return undefined;
     const props = checker.getNonNullableType(type) ?? type;
     if (props.isUnionType() || !(props.flags & (TypeFlags.Object | TypeFlags.Intersection))) {
@@ -213,8 +222,9 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
   const analyze = (file: string, code: string, position: number): ParamType | undefined => {
     const virtual = virtualPath(file);
     const checker = load({ [virtual]: code });
-    const [propsParam] = signatureAt(checker, virtual, position)?.getParameters() ?? [];
-    const result = propsParam && membersOf(checker, checker.getTypeOfSymbol(propsParam));
+    const signature = signatureAt(checker, virtual, position);
+    if (signature === undefined) return undefined;
+    const result = membersOf(checker, signature.getParameters()[0]);
     return (
       result && {
         props: result.members.map(({ symbol, kind }) => ({ name: symbol.name, kind })),
@@ -223,14 +233,16 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
     );
   };
   return {
-    param(file, code, position) {
+    param(path, code, position) {
+      const file = slash(path);
       const last = analyses.get(file);
       if (last?.code === code && last.position === position) return last.type;
       const type = analyze(file, code, position);
       analyses.set(file, { code, position, type });
       return type;
     },
-    describe(file, code, position) {
+    describe(path, code, position) {
+      const file = slash(path);
       const types = typesPath(file);
       const typesCode = typesProbe(file);
       const virtual = virtualPath(file);
@@ -238,10 +250,7 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
       const signature = signatureAt(checker, virtual, position);
       if (signature === undefined) return undefined;
       const [propsParam, ctxParam] = signature.getParameters();
-      const result =
-        propsParam === undefined
-          ? { members: [], indexed: false }
-          : membersOf(checker, checker.getTypeOfSymbol(propsParam));
+      const result = membersOf(checker, propsParam);
       if (result === undefined) return undefined;
       /** 型を宣言するファイルの変数 `name` のプロパティ `property` の型を、文字列にして返す。プロパティが無ければ `unknown` を返す。 */
       const textOf = (name: string, property: string) => {
@@ -275,16 +284,16 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
       };
     },
     notify(changes) {
-      const deleted = changes.deleted ?? [];
+      const deleted = (changes.deleted ?? []).map(slash);
       const removed = deleted.filter((file) =>
         [typesPath(file), virtualPath(file)].map((path) => files.delete(path)).includes(true),
       );
       for (const file of removed) analyses.delete(file);
       update({
         fileNotifications: {
-          created: [...(changes.created ?? [])],
-          changed: [...(changes.changed ?? [])],
-          deleted: [...deleted],
+          created: (changes.created ?? []).map(slash),
+          changed: (changes.changed ?? []).map(slash),
+          deleted,
         },
         ...(removed.length > 0 && { reconfigurePrograms: [{ id, ...program() }] }),
       });

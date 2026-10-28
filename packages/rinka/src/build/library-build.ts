@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-import { normalizePath, type Plugin } from "vite";
+import type { Plugin } from "vite";
 
 import { manifestOf } from "./element-manifest.ts";
 import type { ElementFile } from "./elements.ts";
@@ -78,7 +78,7 @@ export function libraryBuild({ options, settings, typeChecker }: LibraryContext)
           file: relativePath(root, path),
           code: readFileSync(path, "utf8"),
           path: relativePath(dir, join(clientDir, entries.get(tag)!)),
-          source: normalizePath(path),
+          source: path,
         })),
         typeChecker(),
       );
