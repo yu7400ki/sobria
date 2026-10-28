@@ -590,8 +590,13 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     return out;
   }
 
+  /** `fn` を、`ctx` の位置の描画の範囲で実行する。 */
+  private inPosition<T>(ctx: WalkCtx, fn: () => T): T {
+    return runInScope(ctx.scope, fn);
+  }
+
   private walk(node: Node, ctx: WalkCtx, out: Chunk[]): void {
-    runInScope(ctx.scope, () => this.walkInScope(node, ctx, out));
+    this.inPosition(ctx, () => this.walkInScope(node, ctx, out));
   }
 
   /** `walk` の本体である。`ctx` の描画の範囲の中で呼ぶ。 */
@@ -657,11 +662,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
           this.element(node.fn, node.props, node.key, ctx, out, node.child);
           return;
         }
-        this.emit(
-          runInScope(ctx.scope, () => node.fn(node.props)),
-          ctx,
-          out,
-        );
+        this.emit(node.fn(node.props), ctx, out);
       }
     }
   }
@@ -720,7 +721,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /** `compute` を追跡せずに呼び出した値を返す。未解決の値を参照したときは、追跡して呼び出した値が解決する Promise を返す。 */
   private settle<T>(ctx: WalkCtx, compute: (tracked: boolean) => T): T | Promise<T> {
-    const scoped = (tracked: boolean): T => runInScope(ctx.scope, () => compute(tracked));
+    const scoped = (tracked: boolean): T => this.inPosition(ctx, () => compute(tracked));
     try {
       return runWithOwner(ctx.owner, () => untrack(() => scoped(false)));
     } catch (error) {
@@ -987,9 +988,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     const read = (name: string): unknown => {
       const descriptor = descriptors[name];
       const getter = descriptor?.get;
-      return getter
-        ? runInScope(ctx.scope, () => getter.call(props) as unknown)
-        : descriptor?.value;
+      return getter ? this.inPosition(ctx, () => getter.call(props) as unknown) : descriptor?.value;
     };
     /** 要素の関数に渡す値を返す。関数の props でない props に渡した関数は、呼び出した値にする。 */
     const propValue = (name: string): unknown => {
@@ -1286,7 +1285,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
           }
           const fallback = await this.serialize(
             this.chunks(
-              runInScope(ctx.scope, () => node.fallback(error)),
+              this.inPosition(ctx, () => node.fallback(error)),
               ctx,
             ),
             out,
@@ -1408,7 +1407,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     try {
       html = await this.serialize(
         this.chunks(
-          runInScope(catcher.ctx.scope, () => catcher.node.fallback(error)),
+          this.inPosition(catcher.ctx, () => catcher.node.fallback(error)),
           {
             ...catcher.ctx,
             head: restrict(catcher.ctx.head, "loading"),
