@@ -92,6 +92,8 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
       null,
       2,
     )}\n`;
+  /** すべてのプロジェクトが含める型宣言のファイルである。 */
+  const declarations = ["env.d.ts", "routes.d.ts"];
   return new Map([
     ["routes.d.ts", routesDeclaration(root, options.extensions)],
     ["env.d.ts", envDeclaration(options.globalJSX)],
@@ -105,7 +107,7 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
         "shared",
         ["rinka-shared", "rinka-server"],
         {
-          include: [fromPrepared(join(root, "src")), "env.d.ts", "routes.d.ts"],
+          include: [fromPrepared(join(root, "src")), ...declarations],
           exclude: [elements, routesDir],
         },
         [],
@@ -116,13 +118,13 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
       tsconfig(
         "elements",
         ["rinka-client"],
-        { include: [elements, "env.d.ts", "elements.d.ts", "routes.d.ts"] },
+        { include: [elements, ...declarations, "elements.d.ts"] },
         ["shared"],
       ),
     ],
     [
       projectConfig("server"),
-      tsconfig("server", ["rinka-server"], { include: [routesDir, "env.d.ts", "routes.d.ts"] }, [
+      tsconfig("server", ["rinka-server"], { include: [routesDir, ...declarations] }, [
         "elements",
         "shared",
       ]),

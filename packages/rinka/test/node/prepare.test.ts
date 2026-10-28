@@ -114,7 +114,7 @@ describe("tsconfig", () => {
         outDir: "out/elements",
         customConditions: ["rinka-client"],
       },
-      include: ["../src/elements", "env.d.ts", "elements.d.ts", "routes.d.ts"],
+      include: ["../src/elements", "env.d.ts", "routes.d.ts", "elements.d.ts"],
       references: [{ path: "tsconfig.shared.json" }],
     });
   });
