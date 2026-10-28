@@ -24,6 +24,14 @@ interface ServerNode {
 }
 ```
 
+## SharedNode
+
+共通のコンポーネントの JSX を評価した値の型を表す。要素とサーバーコンポーネントのどちらの JSX にも記述できる。
+
+```ts
+type SharedNode = ClientNode & ServerNode;
+```
+
 ## Slot
 
 要素の Props で、スロットになる props の型を表す。

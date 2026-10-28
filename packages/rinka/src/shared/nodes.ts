@@ -12,6 +12,9 @@ export interface ServerNode {
   readonly [server]: true;
 }
 
+/** 共通のコンポーネントの JSX を評価した値の型を表す。要素とサーバーコンポーネントのどちらの JSX にも記述できる。 */
+export type SharedNode = ClientNode & ServerNode;
+
 /** サーバーのファイルの JSX のランタイムが作成した、タグとコンポーネントのノードを記録する集合である。 */
 export const serverJsxNodes = new WeakSet<object>();
 

@@ -4,6 +4,7 @@ import {
   type ClientNode,
   type Ctx,
   type ServerNode,
+  type SharedNode,
   type Slot,
 } from "rinka";
 import type { JSX } from "rinka/jsx-runtime";
@@ -14,7 +15,7 @@ const Dialog = defineElement("type-jsx-dialog", (_props: DialogProps) => null, {
   props: { heading: "unknown", header: "slot", children: "slot" },
 });
 
-const Card = (_props: { title: string }) => null as unknown as ClientNode & ServerNode;
+const Card = (_props: { title: string }) => null as unknown as SharedNode;
 
 async function Profile(_props: { id: string }): Promise<ServerNode> {
   return <section />;

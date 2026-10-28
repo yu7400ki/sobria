@@ -6,7 +6,7 @@ import type {
   SvgTag,
 } from "./jsx-attributes.ts";
 import type { EventPropName } from "./names.ts";
-import type { ClientNode, ServerNode, Slot, SlotContent } from "./nodes.ts";
+import type { ClientNode, ServerNode, SharedNode, Slot, SlotContent } from "./nodes.ts";
 
 /** HTML のタグの名前を表す。 */
 export type HtmlTag = keyof HTMLElementTagNameMap;
@@ -76,7 +76,7 @@ export type ServerChild =
 
 /** 共通のコンポーネントの JSX の子に記述できる値を表す。 */
 export type SharedChild =
-  | (ClientNode & ServerNode)
+  | SharedNode
   | Slot
   | string
   | number

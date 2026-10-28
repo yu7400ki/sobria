@@ -5,6 +5,7 @@ import {
   type Ctx,
   type ElementRef,
   type ServerNode,
+  type SharedNode,
   type Slot,
 } from "rinka";
 import type { JSX } from "rinka/jsx-runtime";
@@ -24,7 +25,7 @@ function TextField(props: { label: string; ref?: (el: HTMLInputElement) => void 
   );
 }
 
-const Card = (_props: { title: string }) => null as unknown as ClientNode & ServerNode;
+const Card = (_props: { title: string }) => null as unknown as SharedNode;
 const ServerPart = (_props: { id: string }) => null as unknown as ServerNode;
 
 test("要素は、Props、スロットの内容、ホストの属性、ElementRef を受け取る ref を受け付ける", () => {

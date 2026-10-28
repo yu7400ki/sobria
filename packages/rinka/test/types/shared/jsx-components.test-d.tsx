@@ -1,8 +1,8 @@
-import type { ClientNode, ServerNode, Slot } from "rinka";
+import type { ClientNode, ServerNode, SharedNode, Slot } from "rinka";
 import type { JSX } from "rinka/jsx-runtime";
 import { expectTypeOf, test } from "vitest";
 
-const Card = (_props: { title: string }) => null as unknown as ClientNode & ServerNode;
+const Card = (_props: { title: string }) => null as unknown as SharedNode;
 
 test("共通のコンポーネントの中では、共通のコンポーネントに Props だけを渡せる", () => {
   void (<Card title="t" />);
@@ -15,7 +15,7 @@ const OnlyClient = (_props: object) => null as unknown as ClientNode;
 const OnlyServer = (_props: object) => null as unknown as ServerNode;
 
 test("共通のコンポーネントの JSX は、要素とサーバーの両方のノードを返す", () => {
-  expectTypeOf(Badge).returns.toEqualTypeOf<ClientNode & ServerNode>();
+  expectTypeOf(Badge).returns.toEqualTypeOf<SharedNode>();
 });
 
 test("共通のコンポーネントの中では、要素のノードだけ、サーバーのノードだけを返すコンポーネントを使用できない", () => {

@@ -1,4 +1,4 @@
-export type { ClientNode, ServerNode, Slot, SlotContent } from "./nodes.ts";
+export type { ClientNode, ServerNode, SharedNode, Slot, SlotContent } from "./nodes.ts";
 export {
   action,
   isPending,
