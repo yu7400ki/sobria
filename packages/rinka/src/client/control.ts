@@ -13,9 +13,9 @@ const read = (value: Child): Child => (isFunction(value) ? value() : value);
 export function Loading(props: { fallback?: Child; children?: Child }): ClientNode {
   return asClientNode(
     new DeferredRegion(
-      (at) =>
+      (at, ns) =>
         createLoadingBoundary(
-          () => build(read(props.children), at),
+          () => build(read(props.children), at, ns),
           () => read(props.fallback),
         ),
       "loading",
@@ -35,9 +35,9 @@ export function Errored(props: {
 }): ClientNode {
   return asClientNode(
     new DeferredRegion(
-      (at) =>
+      (at, ns) =>
         createErrorBoundary(
-          () => build(read(props.children), at),
+          () => build(read(props.children), at, ns),
           // フォールバックは SSR のノードを引き取らずに表示する
           (error, retry) =>
             withHydrating(false, () => {

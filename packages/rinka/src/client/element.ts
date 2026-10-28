@@ -365,13 +365,13 @@ export function registerElement<P, M extends object = object>(
           });
           return content;
         };
-        const root = new DeferredRegion((at) => {
+        const root = new DeferredRegion((at, ns) => {
           if (!owner)
             return createLoadingBoundary(
-              () => build(render(), at),
+              () => build(render(), at, ns),
               () => undefined,
             );
-          const nodes = build(render(), at);
+          const nodes = build(render(), at, ns);
           return () => nodes;
         }, "loading");
         if (hydration) {

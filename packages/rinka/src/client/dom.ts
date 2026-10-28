@@ -36,20 +36,35 @@ import {
 } from "./hydration.ts";
 import { registerSlot } from "./slots.ts";
 
+/** HTML の名前空間である。 */
+const HTML_NS = "http://www.w3.org/1999/xhtml";
+
+/** SVG の名前空間である。 */
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** `parent` の子のタグを作成する名前空間を返す。`parent` が `<foreignObject>` 以外の SVG のタグなら SVG の名前空間を、それ以外なら HTML の名前空間を返す。 */
+function childNamespace(parent: ParentNode): string {
+  return parent instanceof Element &&
+    parent.namespaceURI === SVG_NS &&
+    parent.localName !== "foreignObject"
+    ? SVG_NS
+    : HTML_NS;
+}
+
 /** フォールバックを返す境界の種類を表す。 */
 export type Boundary = "loading" | "errored";
 
 /**
  * JSX が作成した、まだ挿入する値にしていない値を表す。
- * 最初に値を求めたときに、JSX を評価した時点の owner の下で `make` を呼ぶ。引き取りの最中なら、`make` には引き取りの位置を渡す。
+ * 最初に値を求めたときに、JSX を評価した時点の owner の下で `make` を呼ぶ。引き取りの最中なら、`make` には引き取りの位置を渡す。`make` には、値のタグを作成する名前空間も渡す。
  * 2 回目以降は、最初に作成した値を返す。`make` が投げた値は、値を求めるたびに投げ直す。
  */
 class Lazy<T> {
   readonly #owner: Owner | null = getOwner();
-  readonly #make: (at: Cursor | undefined) => T;
+  readonly #make: (at: Cursor | undefined, ns: string) => T;
   #result: { readonly value: T } | { readonly error: unknown } | undefined;
 
-  constructor(make: (at: Cursor | undefined) => T) {
+  constructor(make: (at: Cursor | undefined, ns: string) => T) {
     this.#make = make;
   }
 
@@ -58,18 +73,18 @@ class Lazy<T> {
     return this.#result !== undefined;
   }
 
-  /** 値を返す。まだ作成していなければ、`at` の位置で作成する。 */
-  value(at?: Cursor): T {
-    this.#result ??= this.#create(at);
+  /** 値を返す。まだ作成していなければ、`at` の位置で、名前空間 `ns` のタグとして作成する。 */
+  value(at: Cursor | undefined, ns: string): T {
+    this.#result ??= this.#create(at, ns);
     if ("error" in this.#result) throw this.#result.error;
     return this.#result.value;
   }
 
-  #create(at: Cursor | undefined): { readonly value: T } | { readonly error: unknown } {
+  #create(at: Cursor | undefined, ns: string): { readonly value: T } | { readonly error: unknown } {
     try {
       return {
         value: runWithOwner(this.#owner, () =>
-          withHydrating(at !== undefined, () => this.#make(at)),
+          withHydrating(at !== undefined, () => this.#make(at, ns)),
         ),
       };
     } catch (error) {
@@ -89,7 +104,7 @@ export class DeferredRegion extends Lazy<() => unknown> {
   /** `"loading"` の境界は、中身が保留中ならフォールバックを返し、`"errored"` の境界は、中身が投げたらフォールバックを返す。 */
   readonly boundary: Boundary;
 
-  constructor(make: (at: Cursor | undefined) => () => unknown, boundary: Boundary) {
+  constructor(make: (at: Cursor | undefined, ns: string) => () => unknown, boundary: Boundary) {
     super(make);
     this.boundary = boundary;
   }
@@ -98,8 +113,9 @@ export class DeferredRegion extends Lazy<() => unknown> {
 /**
  * `content` を挿入したノードの列を返す。`content` の中の関数は、それぞれ領域になる。
  * 最初の描画の引き取りの最中なら、`at` の位置から範囲の終わりまでノードを引き取り、範囲にあるノードの列を返す。
+ * 引き取りの最中でなければ、`content` のタグを名前空間 `ns` で作成する。
  */
-export function build(content: unknown, at: Cursor | undefined): Node[] {
+export function build(content: unknown, at: Cursor | undefined, ns: string): Node[] {
   if (at && at.hydration.state !== "done") {
     const before = at.next === null ? at.parent.lastChild : at.next.previousSibling;
     if (!claimWithin(at, (inner) => insert(inner, content))) return [];
@@ -109,7 +125,7 @@ export function build(content: unknown, at: Cursor | undefined): Node[] {
     return nodes;
   }
   const fragment = document.createDocumentFragment();
-  insert(fragment, content);
+  insert(fragment, content, undefined, ns);
   return [...fragment.childNodes];
 }
 
@@ -199,13 +215,20 @@ function edited(el: Element): boolean {
 
 /**
  * ネイティブのタグのノードを作成する。子、属性、プロパティの順に設定する。
+ * `<svg>` は SVG の名前空間で、それ以外のタグは名前空間 `ns` で作成する。
  * `at` があれば、位置にある同じタグの要素を引き取り、子も引き取る。
  */
-function createTag(tag: string, given: Record<string, unknown>, at: Cursor | undefined): Element {
+function createTag(
+  tag: string,
+  given: Record<string, unknown>,
+  at: Cursor | undefined,
+  ns: string,
+): Element {
   const props = tag === "form" ? formProps(given) : given;
+  const space = tag === "svg" ? SVG_NS : ns;
   const claimed = at && takeElement(at, tag);
-  if (at && !claimed) return document.createElement(tag);
-  const el = claimed ?? document.createElement(tag);
+  if (at && !claimed) return document.createElementNS(space, tag);
+  const el = claimed ?? document.createElementNS(space, tag);
   if (at && !rawTextTags.has(tag)) {
     claimWithin(childCursor(el, at.hydration), (inner) => {
       if (props.children !== undefined) insert(inner, props.children);
@@ -237,20 +260,23 @@ function createTag(tag: string, given: Record<string, unknown>, at: Cursor | und
  * `target` が引き取りの位置なら、位置から値のノードを引き取る。引き取りの最中でなければ、何もしない。
  * 関数の値は、2 つのコメントで囲んだ領域になり、値が変化するたびに領域の中身を置換する。
  * 文字列、数値、bigint、ノードは、`place` で変換してから挿入する。
+ * 値のタグは、名前空間 `ns` で作成する。`ns` を省略すると、挿入先の親のノードから名前空間を決定する。
  */
 export function insert(
   target: ParentNode | Cursor,
   value: unknown,
   place: (node: Node) => Node = (node) => node,
+  ns?: string,
 ): void {
   const at = "hydration" in target ? target : undefined;
   if (at && !claiming(at.hydration)) return;
   const parent = "hydration" in target ? target.parent : target;
+  const space = ns ?? childNamespace(parent);
   if (Array.isArray(value)) {
-    for (const item of value as unknown[]) insert(target, item, place);
+    for (const item of value as unknown[]) insert(target, item, place, space);
   } else if (isFunction(value)) {
-    if (!at) createRegion(parent, value, place);
-    else claimRegion(takeRegion(at), value, place);
+    if (!at) createRegion(parent, value, place, space);
+    else claimRegion(takeRegion(at), value, place, space);
   } else if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") {
     if (at) claimText(at, String(value), place);
     else parent.append(place(document.createTextNode(String(value))));
@@ -260,11 +286,11 @@ export function insert(
   } else if (value instanceof Lazy && at && value.created) {
     fail(at, "作成済みの値");
   } else if (value instanceof Deferred) {
-    if (!at) parent.append(place(value.value()));
-    else place(value.value(at));
+    if (!at) parent.append(place(value.value(undefined, space)));
+    else place(value.value(at, space));
   } else if (value instanceof DeferredRegion) {
-    if (!at) createRegion(parent, value.value(), place);
-    else claimBoundary(takeRegion(at), value, place);
+    if (!at) createRegion(parent, value.value(undefined, space), place, space);
+    else claimBoundary(takeRegion(at), value, place, space);
   }
 }
 
@@ -280,11 +306,16 @@ function placed(start: Comment, end: Comment, value: unknown): boolean {
 }
 
 /** 値が変化するたびに中身を置換する領域を、`parent` の末尾に作成する。 */
-function createRegion(parent: ParentNode, value: () => unknown, place: (node: Node) => Node): void {
+function createRegion(
+  parent: ParentNode,
+  value: () => unknown,
+  place: (node: Node) => Node,
+  ns: string,
+): void {
   const start = document.createComment(REGION_START);
   const end = document.createComment(REGION_END);
   parent.append(start, end);
-  updateRegion(start, end, value, place);
+  updateRegion(start, end, value, place, ns);
 }
 
 /**
@@ -296,6 +327,7 @@ function updateRegion(
   end: Comment,
   value: () => unknown,
   place: (node: Node) => Node,
+  ns: string,
   first?: () => boolean,
 ): void {
   let initial = first !== undefined;
@@ -308,7 +340,7 @@ function updateRegion(
       const current = outsideScope(value);
       if (placed(start, end, current)) return undefined;
       const fragment = document.createDocumentFragment();
-      insert(fragment, current, place);
+      insert(fragment, current, place, ns);
       return fragment;
     },
     (fragment) => {
@@ -327,10 +359,11 @@ function claimRegion(
   region: Region | undefined,
   value: () => unknown,
   place: (node: Node) => Node,
+  ns: string,
 ): void {
   if (!region) return;
   const { start, end, inner } = region;
-  updateRegion(start, end, value, place, () => {
+  updateRegion(start, end, value, place, ns, () => {
     claimWithin(inner, (within) => insert(within, outsideScope(value), place));
     return true;
   });
@@ -345,12 +378,13 @@ function claimBoundary(
   region: Region | undefined,
   value: DeferredRegion,
   place: (node: Node) => Node,
+  ns: string,
 ): void {
   if (!region) return;
   const { start, end, inner } = region;
   const fresh = atServerFallback(inner);
-  const made = value.value(fresh ? undefined : inner);
-  updateRegion(start, end, made, place, () => {
+  const made = value.value(fresh ? undefined : inner, ns);
+  updateRegion(start, end, made, place, ns, () => {
     if (fresh) return false;
     if (!claiming(inner.hydration)) return true;
     return placed(start, end, outsideScope(made)) || value.boundary === "loading";
@@ -377,7 +411,7 @@ export function createNode(
 ): ClientNode {
   if (typeof type === "string") {
     const given = key === undefined ? props : { ...props, key };
-    return asClientNode(new Deferred((at) => createTag(type, given, at)));
+    return asClientNode(new Deferred((at, ns) => createTag(type, given, at, ns)));
   }
   return asClientNode(untrack(() => outsideScope(() => type(props))));
 }

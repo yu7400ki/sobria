@@ -693,6 +693,19 @@ describe("SSR の DOM の引き取り", () => {
     warn.mockRestore();
   });
 
+  it("引き取った <svg> の中の領域が後から作成するタグは、SVG の名前空間で作成する", async () => {
+    const [shown, setShown] = signal(false);
+    const { host, boot } = await served(
+      ({ h }) =>
+        () =>
+          h("svg", { children: () => (shown() ? h("path", {}) : null) }),
+    );
+    await boot();
+    setShown(true);
+    await tick();
+    expect(host.shadowRoot!.querySelector("path")?.namespaceURI).toBe("http://www.w3.org/2000/svg");
+  });
+
   it("中身をテキストとして解析するタグは、要素を引き取り、中身を作り直す", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { host, boot } = await served(({ h }) => () => [
