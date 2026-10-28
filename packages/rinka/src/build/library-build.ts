@@ -1,24 +1,29 @@
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-import type { Plugin } from "vite";
+import { normalizePath, type Plugin } from "vite";
 
 import { manifestOf } from "./element-manifest.ts";
 import type { ElementFile } from "./elements.ts";
 import { findUp, readJson } from "./libraries.ts";
 import { inside, relativePath } from "./paths.ts";
-import { elementsConfig } from "./prepare.ts";
 import { DEFAULT_PREFIX, sceneOf, type SceneContext, type Settings } from "./settings.ts";
-import { createTypeChecker } from "./type-checker.ts";
+import type { TypeChecker } from "./type-checker.ts";
 
 /** ライブラリのビルドが出力する、Custom Elements Manifest のファイルの名前である。 */
 const MANIFEST = "custom-elements.json";
+
+/** ライブラリのビルドのプラグインを作成する関数が受け取る値を表す。 */
+export interface LibraryContext extends SceneContext {
+  /** 型チェッカーを返す。起動していなければ起動する。 */
+  readonly typeChecker: () => TypeChecker;
+}
 
 /**
  * `library: true` の `vite build` で、アプリの要素を、自分自身を登録する ES モジュールとして
  * 出力先のタグ名のファイルに出力し、要素を記述した Custom Elements Manifest を出力先に出力するプラグインを返す。
  */
-export function libraryBuild({ options, settings }: SceneContext): Plugin {
+export function libraryBuild({ options, settings, typeChecker }: LibraryContext): Plugin {
   return {
     name: "rinka:library",
     apply: (_config, { command }) => sceneOf(command, options) === "library",
@@ -67,26 +72,21 @@ export function libraryBuild({ options, settings }: SceneContext): Plugin {
           output.type === "chunk" && output.isEntry ? [[output.name, output.fileName]] : [],
         ),
       );
-      const checker = createTypeChecker({ config: elementsConfig(root) });
-      try {
-        const manifest = manifestOf(
-          ownElements(settings()).map(({ tag, path }) => ({
-            tag,
-            file: relativePath(root, path),
-            code: readFileSync(path, "utf8"),
-            path: relativePath(dir, join(clientDir, entries.get(tag)!)),
-            source: path,
-          })),
-          checker,
-        );
-        this.emitFile({
-          type: "asset",
-          fileName: MANIFEST,
-          source: `${JSON.stringify(manifest, null, 2)}\n`,
-        });
-      } finally {
-        checker.close();
-      }
+      const manifest = manifestOf(
+        ownElements(settings()).map(({ tag, path }) => ({
+          tag,
+          file: relativePath(root, path),
+          code: readFileSync(path, "utf8"),
+          path: relativePath(dir, join(clientDir, entries.get(tag)!)),
+          source: normalizePath(path),
+        })),
+        typeChecker(),
+      );
+      this.emitFile({
+        type: "asset",
+        fileName: MANIFEST,
+        source: `${JSON.stringify(manifest, null, 2)}\n`,
+      });
     },
   };
 }

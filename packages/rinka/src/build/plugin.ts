@@ -106,13 +106,14 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   const api: RinkaApi = { prepare: writeTypes };
   /** 型チェッカーである。要素の Props の型を初めて解析するときに起動し、`closeBundle` で終了する。 */
   let checker: TypeChecker | undefined;
+  /** 型チェッカーを返す。起動していなければ起動する。 */
+  const typeChecker = (): TypeChecker =>
+    (checker ??= createTypeChecker({ config: elementsConfig(current().root) }));
   /** パス `path` の要素のファイルの、第 1 引数の型を解析する関数を返す。 */
   const paramTypeOf =
     (path: string): ParamTypeOf =>
-    (code, position) => {
-      checker ??= createTypeChecker({ config: elementsConfig(current().root) });
-      return checker.param(path, code, position);
-    };
+    (code, position) =>
+      typeChecker().param(path, code, position);
   const build = appBuild({ options, settings: current });
 
   /**
@@ -327,6 +328,6 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
     },
     serve({ options, settings: current, writeTypes }),
     build.plugin,
-    libraryBuild({ options, settings: current }),
+    libraryBuild({ options, settings: current, typeChecker }),
   ];
 }
