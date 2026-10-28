@@ -159,7 +159,7 @@ export default function Counter(props: Props) {
 }
 ```
 
-属性とプロパティの型は、ソースに記述した型注釈の文字列をそのまま出力します。型の名前は、同じファイルで宣言した型でも展開しません。イベントの型は `CustomEvent<detail の型>` です。detail の型は、`onX` の props に渡す関数の、最初の引数の型です。引数を省略できるときと、引数の型が `undefined` か `void` を含むときは、detail の型は `undefined` を除いて `null` を含みます。引数の無い関数では、detail の型は `null` です。型引数を持つ type の名前で記述した関数と、関数型の合併では、detail の型は `unknown` です。`expose` で公開するメソッドとプロパティは、`Ctx<M>` の `M` から取得します。`M` には、型リテラルか、同じファイルで宣言した type の名前か、extends の無い interface の名前を記述してください。ほかの形で記述すると、ビルドがエラーになります。
+属性とプロパティの型は、TypeScript が解決した型を文字列にして出力します。interface、enum、型の別名は、名前のまま出力します。ただし、`type Label = string` のようなプリミティブの型の別名は展開します。ユニオン型の要素の順序は、ソースの記述と異なることがあります。イベントの型は `CustomEvent<detail の型>` です。detail の型は、`onX` の props に渡す関数の、最初の引数の型です。引数を省略できるときと、引数の型が `undefined` か `void` を含むときは、detail の型は `undefined` を除いて `null` を含みます。引数の無い関数では、detail の型は `null` です。`expose` で公開するメソッドとプロパティは、`Ctx<M>` の `M` から取得します。`M` には、別のファイルから import した型も記述できます。`M` が `object` のときは、メソッドとプロパティを出力しません。
 
 ### TSX のソースのまま配布する
 
