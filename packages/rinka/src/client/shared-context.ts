@@ -5,6 +5,7 @@ import {
   getOwner,
   runWithOwner,
   setContext,
+  type Owner,
 } from "@solidjs/signals";
 
 import type { SharedNode } from "../shared/nodes.ts";
@@ -35,6 +36,12 @@ function currentScope(error: () => Error): RenderScope {
   return scope;
 }
 
+/** 子の値 `value` のうち、挿入するときに呼ぶ関数を、配列の中のものも含めて、`owner` の下で呼ぶ関数に置換して返す。 */
+function withOwner(owner: Owner, value: unknown): unknown {
+  if (isFunction(value)) return () => runWithOwner(owner, value);
+  return Array.isArray(value) ? value.map((child) => withOwner(owner, child)) : value;
+}
+
 /** コンテキストを作成する。`<Theme value={…}>` の子孫の `useContext(Theme)` は `value` を返し、子孫でない位置では `defaultValue` を返す。 */
 export function createContext<T>(defaultValue: T): SharedContext<T> {
   const context: SharedContext<T> = (props) => {
@@ -47,9 +54,8 @@ export function createContext<T>(defaultValue: T): SharedContext<T> {
       setContext(ScopeContext, scope);
       return props.children;
     });
-    const node = isFunction(children) ? () => runWithOwner(owner, children) : children;
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-    return node as SharedNode;
+    return withOwner(owner, children) as SharedNode;
   };
   return withDefault(context, defaultValue);
 }

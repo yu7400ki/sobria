@@ -5,6 +5,8 @@ import { defineElement } from "../../src/server/element.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToString } from "../../src/server/response.ts";
 import { createContext, createId, useContext } from "../../src/server/shared-context.ts";
+import type { Ctx } from "../../src/shared/element.ts";
+import type { SharedContext } from "../../src/shared/shared-context.ts";
 
 const Theme = createContext("light");
 
@@ -187,6 +189,117 @@ describe("サーバーのコンテキスト", () => {
     expect(html).toContain("<b>dark</b>");
     expect(html).toContain("<u>dark</u>");
     expect(html).toContain("</template>dark</x-themed-slot>");
+  });
+
+  it.each([
+    ["関数", (Off: SharedContext<boolean>) => ({ disabled: () => useContext(Off) })],
+    [
+      "getter",
+      (Off: SharedContext<boolean>) => ({
+        get disabled() {
+          return useContext(Off);
+        },
+      }),
+    ],
+  ])(
+    "%s の <fieldset disabled> は、記述した位置の値で中のフォームの部品を無効にし、<legend> の中の部品は無効にしない",
+    async (_kind, disabledOf) => {
+      const Off = createContext(false);
+      const Field = defineElement(
+        "x-context-field",
+        (_props: object, { form }: Ctx) => {
+          form.value(() => "a");
+          return jsx("button", { disabled: () => form.disabled() });
+        },
+        { props: {}, form: true },
+      );
+      const html = await renderToString(
+        jsx(Off, {
+          value: true,
+          get children() {
+            // disabled の getter を評価しないように、オブジェクトを展開せずに children を加える
+            return jsx(
+              "fieldset",
+              Object.defineProperty(disabledOf(Off), "children", {
+                enumerable: true,
+                value: [
+                  jsx("legend", { children: jsx(Field, { name: "l" }) }),
+                  jsx(Off, {
+                    value: false,
+                    get children() {
+                      return jsx(Field, { name: "n" });
+                    },
+                  }),
+                ],
+              }),
+            );
+          },
+        }),
+      );
+      expect(html).toMatch(/<fieldset disabled>/);
+      expect(html).toContain('name="l" value="a" data-rinka-form>');
+      expect(html).toContain('name="n" value="a" data-rinka-form disabled>');
+      expect(html.match(/<button[^>]*>/g)).toEqual(["<button>", "<button disabled>"]);
+    },
+  );
+
+  it("要素に関数で渡した props は、要素の関数と form.disabled() でも、記述した位置の値になる", async () => {
+    const Off = createContext(false);
+    const Labeled = defineElement(
+      "x-context-reader",
+      (props: { label?: string }) => jsx("i", { children: () => props.label }),
+      { props: { label: "unknown" } },
+    );
+    const Field = defineElement(
+      "x-context-reader-field",
+      (_props: object, { form }: Ctx) => {
+        form.value(() => "a");
+        return jsx("button", { disabled: () => form.disabled() });
+      },
+      { props: {}, form: true },
+    );
+    const html = await renderToString(
+      jsx(Theme, {
+        value: "dark",
+        get children() {
+          return jsx(Off, {
+            value: true,
+            get children() {
+              return [
+                jsx(Labeled, { label: () => useContext(Theme) }),
+                jsx(Field, { name: "n", disabled: () => useContext(Off) }),
+              ];
+            },
+          });
+        },
+      }),
+    );
+    expect(html).toContain("<i><!--[-->dark<!--]--></i>");
+    expect(html).toContain("<button disabled>");
+    expect(html).toContain('name="n" value="a" data-rinka-form disabled>');
+  });
+
+  it("<select value> は、記述した位置の値で <option> を選択する", async () => {
+    const Sel = createContext("");
+    const html = await renderToString(
+      jsx(Sel, {
+        value: "b",
+        get children() {
+          return jsx("select", {
+            value: () => useContext(Sel),
+            children: jsx(Sel, {
+              value: "a",
+              get children() {
+                return [jsx("option", { value: "a" }), jsx("option", { value: "b" })];
+              },
+            }),
+          });
+        },
+      }),
+    );
+    expect(html).toBe(
+      '<select><option value="a"></option><option value="b" selected></option></select>',
+    );
   });
 
   it("コンテキストのコンポーネントの子の getter は、値を加えた範囲で読む", async () => {

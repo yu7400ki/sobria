@@ -172,6 +172,16 @@ describe("ブラウザのコンテキスト", () => {
     expect(shadow(await connect(tag))).toBe("dark");
   });
 
+  it("子の配列の中の関数は、コンテキストのコンポーネントの値を読む", async () => {
+    const tag = nextTag();
+    defineClient(
+      tag,
+      () => jsx(Theme, { value: "dark", children: [jsx("b", {}), () => useContext(Theme)] }),
+      { props: {} },
+    );
+    expect(shadow(await connect(tag))).toBe("<b></b>dark");
+  });
+
   it("createId は、要素のインスタンスごとに 1 から連番の id を返す", async () => {
     const tag = nextTag();
     defineClient(tag, () => jsx("p", { id: createId(), children: jsx("i", { id: createId() }) }), {

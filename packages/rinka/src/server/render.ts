@@ -266,7 +266,10 @@ interface WalkCtx {
   readonly depth: number;
   /** この位置のタグを `<head>` に移動するかどうかを表す。 */
   readonly head: HeadPlacement;
-  /** 同じ tree の外側にある `<fieldset disabled>` で無効になるかどうかを返す。値が未解決なら `NotReadyError` を投げる。 */
+  /**
+   * 同じ tree の外側にある `<fieldset disabled>` で無効になるかどうかを返す。値が未解決なら `NotReadyError` を投げる。
+   * `disabled` の値は、`<fieldset>` を記述した位置の描画の範囲で評価する。
+   */
   readonly disabled: () => boolean;
   /** `<Loading>` のフォールバックの中で、フォールバックと同じ tree にあれば `true` である。 */
   readonly fallback: boolean;
@@ -299,7 +302,7 @@ interface FormProps {
 interface ParentTag {
   /** `<fieldset>` の子なら、その `<fieldset>` の子の `<legend>` を表す。 */
   readonly legend: Legend | undefined;
-  /** `<select>` の子なら、その `<select>` の `value` を返す。値が未解決なら `NotReadyError` を投げる。 */
+  /** `<select>` の子なら、その `<select>` を記述した位置の描画の範囲で評価した `value` を返す。値が未解決なら `NotReadyError` を投げる。 */
   readonly selectValue: ((tracked: boolean) => unknown) | undefined;
   /** 中身をテキストとして解析する要素（`<title>`、`<textarea>`、`<script>`、`<style>`）の中なら `true` である。 */
   readonly rawText: boolean;
@@ -915,13 +918,16 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       disabled = parent.legend.outer;
     }
     if (tag === "fieldset") {
-      disabled = () => outer() || disables(this.value(props.disabled, ctx, true));
+      disabled = () =>
+        outer() || this.inPosition(ctx, () => disables(this.value(props.disabled, ctx, true)));
     }
     const option = propertyOf(outputs, "option");
     let { selectValue } = parent;
     if (option !== undefined) {
       selectValue =
-        option in props ? (tracked) => this.value(props[option], ctx, tracked) : undefined;
+        option in props
+          ? (tracked) => this.inPosition(ctx, () => this.value(props[option], ctx, tracked))
+          : undefined;
     }
     return {
       disabled,
@@ -990,11 +996,12 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       const getter = descriptor?.get;
       return getter ? this.inPosition(ctx, () => getter.call(props) as unknown) : descriptor?.value;
     };
-    /** 要素の関数に渡す値を返す。関数の props でない props に渡した関数は、呼び出した値にする。 */
-    const propValue = (name: string): unknown => {
-      const value = read(name);
-      return kinds.isReader(name, value) ? value() : value;
-    };
+    /** 要素の関数に渡す値を返す。関数の props でない props に渡した関数は、要素を記述した位置の描画の範囲で呼び出した値にする。 */
+    const propValue = (name: string): unknown =>
+      this.inPosition(ctx, () => {
+        const value = read(name);
+        return kinds.isReader(name, value) ? value() : value;
+      });
 
     const elementProps = {};
     for (const name of kinds.values) {
