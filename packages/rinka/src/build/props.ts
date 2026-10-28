@@ -5,6 +5,7 @@ import { checkPropNames } from "../shared/prop-names.ts";
 import { importedNames, keyName } from "./ast.ts";
 import { entries } from "./entries.ts";
 import { CompileError } from "./errors.ts";
+import type { ParamType } from "./type-checker.ts";
 
 /**
  * ファイルのトップレベルで宣言した 1 つの型の名前に対応する、type か interface の宣言を表す。
@@ -35,10 +36,64 @@ interface Helpers {
 /** 解析できない理由を受け取り、ビルドのエラーを返す関数を表す。 */
 type Fail = (message: string) => CompileError;
 
-/** Props の型のメンバー `members` と、要素がフォームの部品かどうか `form` から、要素を登録するときの設定を返す。 */
-export function optionsOf(members: ReadonlyMap<string, PropMember>, form: boolean): ElementOptions {
-  const props = Object.fromEntries([...members].map(([name, { kind }]) => [name, kind]));
+/** props の名前ごとの分類 `kinds` と、要素がフォームの部品かどうか `form` から、要素を登録するときの設定を返す。 */
+export function optionsOf(kinds: ReadonlyMap<string, PropKind>, form: boolean): ElementOptions {
+  const props = Object.fromEntries(kinds);
   return form ? { props, form: true } : { props };
+}
+
+/** `code` の中の位置 `position` にある、要素の関数の第 1 引数の型を解析する関数を表す。 */
+export type ParamTypeOf = (code: string, position: number) => ParamType | undefined;
+
+/**
+ * ファイルのコード `code` にある要素の関数 `fn` の第 1 引数の型を、`paramType` で解析する。props の名前ごとの分類を、宣言した順で返す。
+ * 型を解決できないときと、型がオブジェクトの型でないときと、型がインデックスシグネチャを持つときは、ビルドのエラーにする。
+ */
+export function paramKinds(
+  fn: ESTree.Function,
+  code: string,
+  file: string,
+  paramType: ParamTypeOf,
+): ReadonlyMap<string, PropKind> {
+  const fail: Fail = (message) => new CompileError(`${file}: ${message}`);
+  const param = propsParam(fn, fail);
+  if (!param) return new Map();
+  const type = paramType(code, param.start);
+  if (type === undefined) {
+    throw fail(
+      "Props の型を解決できないか、Props の型がオブジェクトの型ではありません。型の名前と、型を import するパスを確認してください。Props の型には、props の名前と型を列挙したオブジェクトの型を記述してください。ユニオン型、any、unknown は使用できません。",
+    );
+  }
+  if (type.indexed) {
+    throw fail(
+      "Props の型には、インデックスシグネチャを使用できません。props の名前を列挙してください。",
+    );
+  }
+  const kinds = new Map(type.props.map(({ name, kind }) => [name, kind]));
+  const errors = checkPropNames([...kinds.keys()]);
+  if (errors.length > 0) throw fail(errors.join("\n"));
+  return kinds;
+}
+
+/**
+ * 要素の関数 `fn` の第 1 引数の、開始位置と型注釈を返す。第 1 引数が無ければ `undefined` を返す。
+ * 第 1 引数を 1 つの名前で受け取っていないときと、型注釈が無いときは、`fail` が返すエラーを投げる。
+ */
+function propsParam(fn: ESTree.Function, fail: Fail) {
+  const [param] = fn.params;
+  if (!param) return undefined;
+  if (param.type !== "Identifier") {
+    throw fail(
+      "要素の関数の第 1 引数は、props のような 1 つの名前で受け取ってください。分割代入、デフォルト値、残余引数は使用できません。",
+    );
+  }
+  const annotation = param.typeAnnotation?.typeAnnotation;
+  if (!annotation) {
+    throw fail(
+      "要素の関数の第 1 引数に、Props の型注釈を記述してください。props を受け取る要素は、TypeScript のファイル（.tsx）に記述してください。",
+    );
+  }
+  return { start: param.start, annotation };
 }
 
 /** 要素の関数の第 2 引数の ctx を、デフォルト値を外して表す。 */
@@ -60,20 +115,9 @@ export function propMembers(
   file: string,
 ): ReadonlyMap<string, PropMember> {
   const fail: Fail = (message) => new CompileError(`${file}: ${message}`);
-  const [param] = fn.params;
+  const param = propsParam(fn, fail);
   if (!param) return new Map();
-  if (param.type !== "Identifier") {
-    throw fail(
-      "要素の関数の第 1 引数は、props のような 1 つの名前で受け取ってください。分割代入、既定値、残余引数は使用できません。",
-    );
-  }
-  const annotation = param.typeAnnotation?.typeAnnotation;
-  if (!annotation) {
-    throw fail(
-      "要素の関数の第 1 引数に、Props の型注釈を記述してください。props を受け取る要素は、TypeScript のファイル（.tsx）に記述してください。",
-    );
-  }
-  const members = propsMembers(annotation, helpersOf(program), fail);
+  const members = propsMembers(param.annotation, helpersOf(program), fail);
   const errors = checkPropNames([...members.keys()]);
   if (errors.length > 0) throw fail(errors.join("\n"));
   return members;

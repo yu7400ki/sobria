@@ -23,13 +23,15 @@ import {
 import { importInternalAs } from "./entries.ts";
 import { CompileError } from "./errors.ts";
 import { usesForm } from "./form-usage.ts";
-import { optionsOf, propMembers, type CtxParam } from "./props.ts";
+import { optionsOf, paramKinds, type CtxParam, type ParamTypeOf } from "./props.ts";
 
 /** 変換する要素のファイルの、タグ名と、ブラウザが読み込むモジュールの URL と、モジュールが静的に import するチャンクの URL を表す。 */
 export interface ElementTarget {
   readonly tag: string;
   readonly module: string;
   readonly chunks?: readonly string[];
+  /** 要素の関数の第 1 引数の型を解析する関数である。 */
+  readonly paramType: ParamTypeOf;
 }
 
 /** 要素を登録する関数を、変換したコードの中で呼ぶ名前である。 */
@@ -43,12 +45,13 @@ const DEFINE = "__rinka_defineElement";
 export function registerElement(
   program: ESTree.Program,
   output: MagicString,
-  { tag, module, chunks }: ElementTarget,
+  { tag, module, chunks, paramType }: ElementTarget,
   file: string,
   client: boolean,
 ): ElementInfo {
   const { exported, fn, name, ctx } = elementFunction(program, file);
-  const elementOptions = optionsOf(propMembers(program, fn, file), usesForm(fn, ctx, file));
+  const kinds = paramKinds(fn, output.original, file, paramType);
+  const elementOptions = optionsOf(kinds, usesForm(fn, ctx, file));
   convertSlots(fn, elementOptions, output, file);
   output.remove(exported.start, fn.start);
   const [last, accept] = client

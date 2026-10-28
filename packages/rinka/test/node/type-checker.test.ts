@@ -12,17 +12,17 @@ let checker: TypeChecker;
 let count = 0;
 
 beforeAll(() => {
-  checker = createTypeChecker({ config, rootFiles: [] });
+  checker = createTypeChecker({ config });
 });
 
 afterAll(() => {
   checker.close();
 });
 
-/** `code` を、ディスクに無い要素のファイルとして、`props:` の位置の引数の型を解析する。 */
+/** `code` を、ディスクに無い要素のファイルとして、`(props` の位置の引数の型を解析する。 */
 function analyze(code: string, dir = fixture) {
   const file = join(dir, `element-${count++}.tsx`).replaceAll("\\", "/");
-  return checker.param(file, code, code.indexOf("props:"));
+  return checker.param(file, code, code.indexOf("(props") + 1);
 }
 
 /** `code` を解析し、インデックスシグネチャが無いことを確認して、props の名前ごとの分類を返す。 */
@@ -119,10 +119,37 @@ export default function X(props: {
     ).toEqual({ t: "string", u: "unknown", v: "object" });
   });
 
+  it("型パラメータを持つ type の別名、負の数、タプル、別名で import した Slot を分類する", () => {
+    expect(
+      kinds(`import type { Slot as S } from "rinka";
+type Id<T> = T;
+type Box<T> = { value: T };
+export default function X(props: {
+  a: Id<string>; b: Box<number>; c: -1 | 1; d: [number, string]; e: string | { a: 1 }; f: S;
+}) { return null; }`),
+    ).toEqual({ a: "string", b: "object", c: "number", d: "object", e: "unknown", f: "slot" });
+  });
+
   it("名前が children の props は、型によらずスロットに分類する", () => {
     expect(
       kinds("export default function X(props: { children: string }) { return null; }"),
     ).toEqual({ children: "slot" });
+  });
+
+  it("引数の型から undefined と null を除外して解析する", () => {
+    expect(analyze("export default function X(props?: { a: string }) { return null; }")).toEqual({
+      props: [{ name: "a", kind: "string" }],
+      indexed: false,
+    });
+    expect(
+      analyze("export default function X(props: { a: number } | null) { return null; }"),
+    ).toEqual({ props: [{ name: "a", kind: "number" }], indexed: false });
+  });
+
+  it("引数の型が、オブジェクトの型でないときは、undefined を返す", () => {
+    for (const type of ["unknown", "never", "string", "{ a: string } | { b: number }"]) {
+      expect(analyze(`export default function X(props: ${type}) { return null; }`)).toBeUndefined();
+    }
   });
 
   it("引数の型が any か、解決できない型なら、undefined を返す", () => {

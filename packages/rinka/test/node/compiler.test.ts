@@ -4,16 +4,32 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { transformWithOxc } from "vite";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { CompileError, transformSource, type SourceOptions } from "../../src/build/compiler.ts";
 import { oxc } from "../../src/build/entries.ts";
 import { transformJsx } from "../../src/build/jsx.ts";
+import { createTypeChecker, type TypeChecker } from "../../src/build/type-checker.ts";
 import { stopIfSeeding } from "../../src/client/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToString } from "../../src/server/response.ts";
 import { defineServerFn, definitionOf } from "../../src/server/server-fn.ts";
 import { runSeeding } from "../../src/shared/scope.ts";
+
+const typesFixture = resolve(import.meta.dirname, "../fixtures/type-checker");
+let checker: TypeChecker;
+
+beforeAll(() => {
+  checker = createTypeChecker({ config: join(typesFixture, "tsconfig.json") });
+});
+
+afterAll(() => {
+  checker.close();
+});
+
+/** 要素のファイルの Props の型を、型チェッカーで `test/fixtures/type-checker/x.tsx` のコードとして解析する。 */
+const paramType = (code: string, position: number) =>
+  checker.param(join(typesFixture, "x.tsx").replaceAll("\\", "/"), code, position);
 
 /** `.ts` のモジュール `src/lib/a.ts` として `code` を変換し、空白をまとめたコードを返す。 */
 function module(code: string, client = false): string {
@@ -126,7 +142,7 @@ function element(code: string) {
     file: "src/elements/x.tsx",
     lang: "tsx",
     client: false,
-    element: { tag: "app-x", module: "/src/elements/x.tsx" },
+    element: { tag: "app-x", module: "/src/elements/x.tsx", paramType },
   });
 }
 
@@ -137,7 +153,7 @@ const props = (code: string) => Object.keys(element(code).element?.options.props
 const fails = (code: string) => () => element(code);
 
 describe("Props の型の解析", () => {
-  it("Props の各メンバーを、型の記述から分類する", () => {
+  it("Props の各メンバーを、型チェッカーが解決した型から分類する", () => {
     const { element: info } = element(`import type { Slot } from "rinka";
 type Props = {
   userId: number;
@@ -174,125 +190,54 @@ export default function X(props: Props) { return <p />; }`);
     });
   });
 
-  it("負の数とテンプレートのリテラル型、getter、別名で import した Slot を分類する", () => {
-    const { element: info } = element(`import type { Slot as S } from "rinka";
-type Props = { n?: -1 | 1; t?: \`a\`; get g(): string; s?: S; o?: Slot };
-export default function X(props: Props) { return <p />; }`);
-    expect(info?.options).toEqual({
-      props: { n: "number", t: "string", g: "string", s: "slot", o: "unknown" },
-    });
-  });
-
-  it("型の記述と、同じファイルで宣言した type と interface から、オブジェクトと分かる props を object に分類する", () => {
-    const { element: info } = element(`type Variant = "a" | "b";
-type Handler = () => void;
-type Loop = Loop[] | Loop;
-interface User { name: string }
-type Props = {
-  list: string[];
-  pair: readonly [number, string];
-  map: { [key: string]: number };
-  any: object;
-  both: { a: 1 } | readonly string[];
-  user: User;
-  record: Record<string, number>;
-  variant: Variant;
-  handler: Handler;
-  loop: Loop;
-  imported: Imported;
-  width: \`\${number}px\`;
-  mixed: string | { a: 1 };
-};
-export default function X(props: Props) { return <p />; }`);
-    expect(info?.options).toEqual({
-      props: {
-        list: "object",
-        pair: "object",
-        map: "object",
-        any: "object",
-        both: "object",
-        user: "object",
-        record: "object",
-        variant: "string",
-        handler: "function",
-        loop: "unknown",
-        imported: "unknown",
-        width: "unknown",
-        mixed: "unknown",
-      },
-    });
-  });
-
-  it("呼び出しのシグネチャだけを持つ interface は関数に分類し、type の別名の型引数は解決できない名前として扱う", () => {
-    const { element: info } = element(`type Item = { a: 1 };
-type Id<Item> = Item;
-type Maybe<Date> = Date | undefined;
-type Box<T> = { value: T };
-type Pick<T> = (value: T) => void;
-interface Handler { (x: number): void }
-interface Handler { (x: string): void }
-type Props = {
-  onPick: Handler;
-  label: Id<string>;
-  when: Maybe<string>;
-  box: Box<number>;
-  onChoose: Pick<string>;
-};
-export default function X(props: Props) { return <p />; }`);
-    expect(info?.options).toEqual({
-      props: {
-        onPick: "function",
-        label: "unknown",
-        when: "unknown",
-        box: "object",
-        onChoose: "function",
-      },
-    });
-  });
-
-  it("同じ名前の interface は、すべての宣言のメンバーを合わせてから分類する", () => {
-    const { element: info } = element(`interface H {}
-interface H { (x: number): void }
-type Props = { onPick: H };
-export default function X(props: Props) { return <p />; }`);
-    expect(info?.options).toEqual({ props: { onPick: "function" } });
-  });
-
-  it("同じ名前の interface の宣言を、1 つの Props の型にまとめる", () => {
+  it("交差型、Pick、extends を持つ interface、rinka の Props<T> で包んだ型のプロパティを、Props のメンバーにする", () => {
     expect(
-      props(`interface Props { a: string }
-interface Props { b: number }
+      props(`type A = { a: string }; type Props = A & { b: number };
 export default function X(props: Props) { return <p />; }`),
     ).toEqual(["a", "b"]);
-  });
-
-  it("interface と、引数の型リテラルと、rinka の Props<T> で包んだ型を解析する", () => {
     expect(
-      props(`export interface Props { a: string }
+      props(`interface Base { a: string; b: number; c: boolean }
+export default function X(props: Pick<Base, "a" | "c">) { return <p />; }`),
+    ).toEqual(["a", "c"]);
+    expect(
+      props(`interface Base { a: string }
+interface Props extends Base { b: number }
 export default function X(props: Props) { return <p />; }`),
-    ).toEqual(["a"]);
-    expect(props(`export default function X(props: { b: number }) { return <p />; }`)).toEqual([
-      "b",
-    ]);
+    ).toEqual(["b", "a"]);
     expect(
       props(`import type { Props as P } from "rinka";
-type CardProps = P<{ c: boolean }>;
-export default function X(props: CardProps) { return <p />; }`),
-    ).toEqual(["c"]);
+type Base = { a: string };
+export default function X(props: P<Base>) { return <p />; }`),
+    ).toEqual(["a"]);
+  });
+
+  it("省略できる第 1 引数の型も、Props の型として解析し、引数の無い要素は props を受け取らない", () => {
+    expect(
+      props(`type Props = { a: string };
+export default function X(props?: Props) { return <p />; }`),
+    ).toEqual(["a"]);
     expect(props(`export default function X() { return <p />; }`)).toEqual([]);
+  });
+
+  it("enum とテンプレートのリテラル型を、string か number に分類する", () => {
+    const { element: info } = element(`enum Mode { A = "a" }
+enum Level { Low }
+export default function X(props: { mode: Mode; level: Level; width: \`\${number}px\` }) { return <p />; }`);
+    expect(info?.options).toEqual({
+      props: { mode: "string", level: "number", width: "string" },
+    });
   });
 
   it("解析できない型と、props にできない名前は、ビルドのエラーにする", () => {
     const end = "export default function X(props: Props) { return <p />; }";
-    expect(fails(`import type { Props } from "./props.ts";\n${end}`)).toThrow(CompileError);
-    expect(fails(`type A = { a: string }; type Props = A & { b: number };\n${end}`)).toThrow(
-      /Props/,
-    );
-    expect(
-      fails(
-        `import type { Props as P } from "rinka"; type Base = { a: string }; type Props = P<Base>;\n${end}`,
-      ),
-    ).toThrow(/型リテラル/);
+    expect(fails(`import type { Props } from "./missing.ts";\n${end}`)).toThrow(CompileError);
+    expect(fails(`import type { Props } from "./missing.ts";\n${end}`)).toThrow(/解決できない/);
+    for (const type of ["any", "unknown", "string", "{ a: string } | { b: number }"]) {
+      expect(fails(`export default function X(props: ${type}) { return <p />; }`)).toThrow(
+        /解決できない/,
+      );
+    }
+    expect(fails(`type Props = Record<string, string>;\n${end}`)).toThrow(/インデックスシグネチャ/);
     expect(fails(`export default function X({ a }: { a: string }) { return <p />; }`)).toThrow(
       /分割代入/,
     );
@@ -360,7 +305,7 @@ export default function X(props: Props) { return <p />; }`);
       file: "src/elements/x.tsx",
       lang: "tsx",
       client: true,
-      element: { tag: "app-x", module: "/src/elements/x.tsx" },
+      element: { tag: "app-x", module: "/src/elements/x.tsx", paramType },
     }).code;
     expect(client).toContain(
       'export default __rinka_defineElement("app-x", X, {"props":{"a":"string"}}, import.meta.hot);',
@@ -545,7 +490,7 @@ export default function X(props: Props) {
       {
         id: "src/elements/x.tsx",
         file: "src/elements/x.tsx",
-        element: { tag: "app-x", module: "/src/elements/x.tsx" },
+        element: { tag: "app-x", module: "/src/elements/x.tsx", paramType },
       },
     );
     expect(code).toContain(
@@ -583,7 +528,7 @@ export default function X(props: Props) { return <p>{props.header ?? <div>{props
       {
         id: "src/elements/x.tsx",
         file: "src/elements/x.tsx",
-        element: { tag: "app-x", module: "/src/elements/x.tsx" },
+        element: { tag: "app-x", module: "/src/elements/x.tsx", paramType },
       },
     );
     expect(code).toContain('_jsx("slot", { name: "header", children: _jsx("div", {');
@@ -625,7 +570,7 @@ export default function Card(props: Props) {
           file: "src/elements/card.tsx",
           lang: "tsx",
           client: false,
-          element: { tag: "app-card", module: "/src/elements/card.tsx" },
+          element: { tag: "app-card", module: "/src/elements/card.tsx", paramType },
         },
       );
       await load(await lower(card.code, "src/elements/card.tsx"), "card.js");
@@ -723,7 +668,7 @@ type Props = { header?: JSX.Element };
 export default function X(props: Props) { return <p>{props.header ?? <D n={2} />}</p>; }`;
     const options = {
       file: "src/elements/x.tsx",
-      element: { tag: "app-x", module: "/src/elements/x.tsx" },
+      element: { tag: "app-x", module: "/src/elements/x.tsx", paramType },
     };
     const site = '"src/elements/x.tsx:3:70"';
     expect(await compile(source, { ...options, client: true })).toContain(site);

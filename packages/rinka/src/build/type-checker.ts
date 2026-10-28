@@ -29,7 +29,8 @@ export interface ParamType {
 export interface TypeChecker {
   /**
    * `code` を `file` の内容として、`code` の中の位置 `position` にある式や宣言の型を、要素の関数の引数の型として解析する。
-   * 型が `any` か、型チェッカーが解決できない型なら、`undefined` を返す。
+   * 型から `undefined` と `null` を除外した型を、Props の型として解析する。
+   * 除外した型がオブジェクトの型でないとき（ユニオン型、`any`、`unknown`、プリミティブなど）と、型チェッカーが解決できない型のときは、`undefined` を返す。
    */
   readonly param: (file: string, code: string, position: number) => ParamType | undefined;
   /** ディスクで変更されたファイル `files` を通知する。次の解析から、変更後の内容で型を解決する。 */
@@ -42,16 +43,14 @@ export interface TypeChecker {
 const slotProbe = 'import type { Slot } from "rinka";\nexport declare const slot: Slot;\n';
 
 /**
- * tsconfig `config` のコンパイラの設定で、`config` が含むファイルと `rootFiles` を root にしたプログラムの型チェッカーを起動する。
+ * tsconfig `config` のコンパイラの設定で、`config` が含むファイルを root にしたプログラムの型チェッカーを起動する。
+ * `param` に渡したファイルも、root に加える。
  */
-export function createTypeChecker(options: {
-  readonly config: string;
-  readonly rootFiles: readonly string[];
-}): TypeChecker {
+export function createTypeChecker(options: { readonly config: string }): TypeChecker {
   const probe = join(dirname(options.config), "rinka-slot.ts");
   const api = new API({ cwd: dirname(options.config) });
   const { options: compilerOptions, fileNames } = api.parseConfigFile(options.config);
-  const roots = new Set([probe, ...fileNames, ...options.rootFiles]);
+  const roots = new Set([probe, ...fileNames]);
   const files = new Map([[probe, slotProbe]]);
   const program = () => ({ rootFiles: [...roots], compilerOptions });
   const created = api.createSnapshot({
@@ -80,15 +79,19 @@ export function createTypeChecker(options: {
       const { checker } = snapshot.getProject(id)!;
       const type = checker.getTypeAtPosition(file, position);
       const slot = checker.getTypeAtPosition(probe, slotProbe.indexOf("slot:"))?.getSymbol();
-      if (type === undefined || type.flags & TypeFlags.Any) return undefined;
-      const symbols = checker.getPropertiesOfType(type);
+      if (type === undefined || type.flags & (TypeFlags.Any | TypeFlags.Unknown)) return undefined;
+      const props = checker.getNonNullableType(type) ?? type;
+      if (props.isUnionType() || !(props.flags & (TypeFlags.Object | TypeFlags.Intersection))) {
+        return undefined;
+      }
+      const symbols = checker.getPropertiesOfType(props);
       const types = checker.getTypeOfSymbol(symbols);
       return {
         props: symbols.map((symbol, index) => ({
           name: symbol.name,
           kind: symbol.name === "children" ? "slot" : kindOf(checker, types[index], slot?.id),
         })),
-        indexed: checker.getIndexInfosOfType(type).length > 0,
+        indexed: checker.getIndexInfosOfType(props).length > 0,
       };
     },
     changed(changedFiles) {

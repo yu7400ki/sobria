@@ -159,7 +159,9 @@ export function describeElement(
   const { exported, fn, name, ctx } = elementFunction(program, file);
   const { tags, ...docs } = source.docsOf(exported);
   const props = propMembers(program, fn, file);
-  const kinds = propKinds(optionsOf(props, usesForm(fn, ctx, file)));
+  const kinds = propKinds(
+    optionsOf(new Map([...props].map(([prop, { kind }]) => [prop, kind])), usesForm(fn, ctx, file)),
+  );
   const attributeOf = new Map(
     [...kinds.attributes].map(([attribute, { name: prop }]) => [prop, attribute]),
   );

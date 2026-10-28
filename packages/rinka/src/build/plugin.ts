@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { transformWithOxc, type Plugin, type ResolvedConfig } from "vite";
@@ -14,7 +15,8 @@ import { transformJsx } from "./jsx.ts";
 import { libraryBuild } from "./library-build.ts";
 import { fromApp } from "./package.ts";
 import { devPath, inside, relativePath } from "./paths.ts";
-import { preparedFiles, writePrepared } from "./prepare.ts";
+import { PREPARED_DIR, preparedFiles, projectConfig, writePrepared } from "./prepare.ts";
+import type { ParamTypeOf } from "./props.ts";
 import { routesModule } from "./routes.ts";
 import { hashedFnModule, isServerFnSource, serverFnModules } from "./server-fns.ts";
 import {
@@ -27,6 +29,7 @@ import {
   type Settings,
 } from "./settings.ts";
 import { SHEET_QUERY, sheetId, sheetModule, sheetPath } from "./sheets.ts";
+import { createTypeChecker, type ParamType, type TypeChecker } from "./type-checker.ts";
 
 export type { RinkaOptions } from "./settings.ts";
 
@@ -99,6 +102,26 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
     );
   };
   const api: RinkaApi = { prepare: writeTypes };
+  /** 型チェッカーである。要素の Props の型を初めて解析するときに起動し、`closeBundle` で終了する。 */
+  let checker: TypeChecker | undefined;
+  /** 要素のファイルのパスごとに保持する、最後に解析したコードと、第 1 引数の開始位置と、解析の結果である。 */
+  const analyzed = new Map<
+    string,
+    { readonly code: string; readonly position: number; readonly type: ParamType | undefined }
+  >();
+  /** パス `path` の要素のファイルの、第 1 引数の型を解析する関数を返す。同じコードと位置の解析には、前の結果を返す。 */
+  const paramTypeOf =
+    (path: string): ParamTypeOf =>
+    (code, position) => {
+      const last = analyzed.get(path);
+      if (last?.code === code && last.position === position) return last.type;
+      checker ??= createTypeChecker({
+        config: join(current().root, PREPARED_DIR, projectConfig("elements")),
+      });
+      const type = checker.param(path, code, position);
+      analyzed.set(path, { code, position, type });
+      return type;
+    };
   const build = appBuild({ options, settings: current });
 
   /**
@@ -138,6 +161,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       ...(tag !== undefined && {
         element: {
           tag,
+          paramType: paramTypeOf(target.path),
           ...(scene === "app" && !client
             ? build.clientAssets.element(target.file)
             : { module: devPath(target.path, root) }),
@@ -190,6 +214,10 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       },
       buildStart() {
         writeTypes();
+      },
+      closeBundle() {
+        checker?.close();
+        checker = undefined;
       },
       resolveId(id, importer, resolveOptions) {
         if (id === entries.routes) return ROUTES;
