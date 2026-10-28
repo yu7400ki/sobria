@@ -242,6 +242,9 @@ export default function X(props: { mode: Mode; level: Level; width: \`\${number}
       /分割代入/,
     );
     expect(fails(`export default function X(props) { return <p />; }`)).toThrow(/型注釈/);
+    expect(
+      fails(`export default function X(this: void, props: { a: string }) { return <p />; }`),
+    ).toThrow(/this/);
     expect(fails(`type Props = { ref: string };\n${end}`)).toThrow(/"ref"/);
     expect(fails(`type Props = { title: string };\n${end}`)).toThrow(/"title"/);
   });

@@ -95,6 +95,11 @@ export function elementFunction(program: ESTree.Program, file: string): ElementF
     );
   }
   const [props] = fn.params;
+  if (props?.type === "Identifier" && props.name === "this") {
+    throw new CompileError(
+      `${file}: 要素の関数には、this の引数を宣言できません。this の引数を削除し、第 1 引数で props を、第 2 引数で ctx を受け取ってください。`,
+    );
+  }
   if (props !== undefined && props.type !== "Identifier") {
     throw new CompileError(
       `${file}: 要素の関数の第 1 引数は、props のような 1 つの名前で受け取ってください。分割代入、デフォルト値、残余引数は使用できません。`,
