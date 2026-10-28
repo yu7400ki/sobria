@@ -1,10 +1,10 @@
 import { extname } from "node:path";
 
-import type { ESTree, ParseResult } from "vite";
+import type { ESTree } from "vite";
 
 import { formAttributeTypes, propKinds } from "../shared/element.ts";
 import { customEventName } from "../shared/names.ts";
-import { langs, parseWithComments, walk } from "./ast.ts";
+import { langs, parseModule, walk } from "./ast.ts";
 import { elementFunction } from "./element-transform.ts";
 import { usesForm } from "./form-usage.ts";
 import { optionsOf, propsParamStart, unresolvedProps } from "./props.ts";
@@ -153,21 +153,15 @@ export type DescribeTypes = (code: string, position: number) => ElementDescripti
 /**
  * タグ名 `tag` の要素のファイル `file` のコード `code` から、要素の宣言を返す。
  * 属性、イベント、スロットは、要素を登録するときと同じ props の分類から算出する。
- * props と `Ctx<M>` の `M` のメンバーの型、説明、イベントの `detail` の型は型チェッカーから取得し、要素の関数の説明は JSDoc から取得する。
+ * 要素の関数の説明と、props と `Ctx<M>` の `M` のメンバーの型、説明、イベントの `detail` の型は、型チェッカーから取得する。
  */
 export function describeElement(
   code: string,
   { tag, file }: { readonly tag: string; readonly file: string },
   describeTypes: DescribeTypes,
 ): CustomElementDeclaration {
-  const { program, comments } = parseWithComments(code, {
-    id: file,
-    file,
-    lang: langs.get(extname(file)) ?? "tsx",
-  });
-  const source = new Source(code, comments);
-  const { exported, fn, id, ctx } = elementFunction(program, file);
-  const { tags, ...docs } = source.docsOf(exported);
+  const program = parseModule(code, { id: file, file, lang: langs.get(extname(file)) ?? "tsx" });
+  const { fn, id, ctx } = elementFunction(program, file);
   propsParamStart(fn, file);
   const described = describeTypes(code, id.start);
   if (described === undefined) throw unresolvedProps(file);
@@ -210,15 +204,15 @@ export function describeElement(
     }
   }
   members.push(...described.exposed.map(exposedMember));
-  const cssProperties = tags.flatMap((entry) =>
-    entry.tag === "cssprop" ? cssPropertyOf(entry.text) : [],
+  const cssProperties = described.docs.tags.flatMap((entry) =>
+    entry.name === "cssprop" ? cssPropertyOf(entry.text) : [],
   );
   return {
     kind: "class",
     customElement: true,
     tagName: tag,
     name: id.name,
-    ...docs,
+    ...documented(described.docs),
     attributes: nonEmpty(attributes),
     events: nonEmpty(events),
     slots: nonEmpty(slots),
@@ -269,54 +263,6 @@ function documented({ description, tags }: DocComment): Documented {
 /** `items` が空なら `undefined` を返す。 */
 const nonEmpty = <T>(items: readonly T[]): readonly T[] | undefined =>
   items.length > 0 ? items : undefined;
-
-/** JSDoc の説明と、説明より後に記述したタグを表す。 */
-interface Docs extends Documented {
-  readonly tags: readonly { readonly tag: string; readonly text: string }[];
-}
-
-/** 要素のファイルのコードとコメントから、JSDoc の説明を取得する。 */
-class Source {
-  constructor(
-    private readonly code: string,
-    private readonly comments: ParseResult["comments"],
-  ) {}
-
-  /** ノードの直前に、空白だけを挟んで記述した JSDoc の説明とタグを返す。 */
-  docsOf(node: { readonly start: number }): Docs {
-    const comment = this.comments.findLast((candidate) => candidate.end <= node.start);
-    if (
-      comment?.type !== "Block" ||
-      !comment.value.startsWith("*") ||
-      this.code.slice(comment.end, node.start).trim() !== ""
-    ) {
-      return { tags: [] };
-    }
-    return parseJsDoc(comment.value.slice(1));
-  }
-}
-
-/** JSDoc の本文（先頭の `/**` の 2 つ目の `*` から後）から、説明とタグを返す。 */
-function parseJsDoc(value: string): Docs {
-  const lines = value.split("\n").map((line) => line.replace(/^\s*\*? ?/, "").trimEnd());
-  const description: string[] = [];
-  const tags: { tag: string; text: string }[] = [];
-  for (const line of lines) {
-    const tag = /^@(\w+)\s*(.*)$/.exec(line);
-    if (tag) tags.push({ tag: tag[1]!, text: tag[2]! });
-    else if (tags.length > 0) tags.at(-1)!.text += `\n${line}`;
-    else description.push(line);
-  }
-  const text = description.join("\n").trim();
-  const summary = tags.find(({ tag }) => tag === "summary")?.text.trim();
-  const deprecated = tags.find(({ tag }) => tag === "deprecated")?.text.trim();
-  return {
-    ...(text === "" ? {} : { description: text }),
-    ...(summary ? { summary } : {}),
-    ...(deprecated === undefined ? {} : { deprecated: deprecated === "" ? true : deprecated }),
-    tags,
-  };
-}
 
 /**
  * `@cssprop` のタグの本文から、CSS のカスタムプロパティを返す。

@@ -71,8 +71,10 @@ export type ExposedDescription =
       readonly docs: DocComment;
     };
 
-/** 要素の関数の引数の型を、マニフェストに記述するために解析した結果を表す。 */
+/** 要素の関数の JSDoc と、引数の型を解析した結果を表す。 */
 export interface ElementDescription {
+  /** 要素の関数の JSDoc である。 */
+  readonly docs: DocComment;
   /** Props の型のメンバーである。宣言した順に並ぶ。 */
   readonly props: readonly PropDescription[];
   /** `Ctx<M>` の `M` のメンバーである。宣言した順に並ぶ。 */
@@ -245,7 +247,12 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
         methods === undefined
           ? []
           : describeExposed(checker, methods, (name) => textOf("exposed", name));
-      return { props, exposed };
+      const symbol = element?.getSymbol();
+      return {
+        docs: symbol ? docsOf(checker, symbol) : { description: "", tags: [] },
+        props,
+        exposed,
+      };
     },
     notify(changes) {
       const deleted = changes.deleted ?? [];
