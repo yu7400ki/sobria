@@ -57,7 +57,7 @@ export function serverFnModule(fnModule: string): typeof registerServerFn {
 /**
  * サーバー関数のエンドポイントへのリクエストを処理し、それ以外のリクエストを後続の処理に渡す Hono のミドルウェアを返す。
  * rinka が扱わない例外は、リクエストの種類に対応する `failures` の関数が返すレスポンスにする。
- * フォームの送信で handler が値を返したら、`submitted` が返すレスポンスにする。
+ * フォームの送信で handler が `undefined` 以外の値を返し、送信したページがあれば、`submitted` が返すレスポンスにする。
  */
 export function serverFnMiddleware(
   options: AppOptions,
@@ -139,10 +139,7 @@ async function endpoint(
       opened.body = streamed.body;
       return streamed;
     },
-    (error) => {
-      forgetResult(c.req.raw);
-      return respondThrown(c, kind, error, fail);
-    },
+    (error) => respondThrown(c, kind, error, fail),
   );
   // ミドルウェアがストリームの本文を使わないレスポンスに置換したら、本文から反復を終えられないので、ここで終える
   const { relay, body } = opened;
@@ -150,13 +147,17 @@ async function endpoint(
   return response;
 }
 
-/** リクエストの種類が `kind` のリクエスト `c` で投げられた値 `error` から、レスポンスを作成する。`redirect()` は、リクエストの種類にかかわらず 303 にする。 */
+/**
+ * リクエストの種類が `kind` のリクエスト `c` で投げられた値 `error` から、レスポンスを作成する。`redirect()` は、リクエストの種類にかかわらず 303 にする。
+ * `c` でサーバー関数が返した値は、作成するレスポンスで描画するページから読めなくなる。
+ */
 function respondThrown(
   c: Context,
   kind: RequestKind,
   error: unknown,
   fail: Failure,
 ): Response | Promise<Response> {
+  forgetResult(c.req.raw);
   const { refuse, reject } = responders[kind];
   const thrown = classify(error);
   switch (thrown.kind) {
@@ -204,8 +205,11 @@ export type Failure = (c: Context, error: unknown) => Response | Promise<Respons
 /** リクエストの種類ごとの `Failure` である。 */
 export type Failures = Readonly<Record<RequestKind, Failure>>;
 
-/** フォームの送信 `c` で handler が値を返したときに、送信したページを描画したレスポンスを返す関数の型である。 */
-export type Submitted = (c: Context) => Promise<Response>;
+/** フォームの送信 `c` で handler が値を返したときに、送信したページ `page` を描画したレスポンスを返す関数の型である。`js` は JS からの送信かどうかである。 */
+export type Submitted = (
+  c: Context,
+  target: { readonly js: boolean; readonly page: URL },
+) => Promise<Response>;
 
 /** rinka がリクエストを拒否するときのステータスである。 */
 type Rejection = 400 | 403 | 404 | 405;
@@ -247,9 +251,12 @@ const responders = {
     read: async (c) => formDataToInput(await c.req.formData()),
     reject: (c, status) => c.text(rejectionText[status], status),
     respond: async (c, outcome, _fail, submitted) => {
-      if (outcome.kind === "value" && outcome.value !== undefined) return submitted(c);
+      const { js, page } = submittedPage(c);
       if (outcome.kind === "stream") for await (const _ of outcome.relay.rest());
-      return c.redirect(submittedPage(c).page?.href ?? "/", 303);
+      if (page === undefined) return c.redirect("/", 303);
+      if (outcome.kind === "value" && outcome.value !== undefined)
+        return submitted(c, { js, page });
+      return c.redirect(page.href, 303);
     },
     refuse: (c, outcome, fail) =>
       outcome.kind === "schema" ? c.json({ issues: outcome.issues }, 422) : fail(c, outcome.error),

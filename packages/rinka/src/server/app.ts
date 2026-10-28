@@ -226,10 +226,8 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
     if (formErrors.has(submitted.request)) console.error(error);
     return response;
   };
-  const formSubmitted: Submitted = async (c) => {
-    const submitted = submittedRequest(c);
-    return submitted === undefined ? c.redirect("/", 303) : submittedResponse(c, submitted);
-  };
+  const formSubmitted: Submitted = async (c, { js, page }) =>
+    submittedResponse(c, { js, request: pageRequest(c, page, js) });
   app.onError(async (c) => withContextHeaders(c, await fail(c, c.error)));
   const failures = { rpc: fail, form: formFailure };
   const serverFns = serverFnMiddleware(options, failures, formSubmitted);

@@ -99,6 +99,12 @@ test("getServerFnResult は、サーバー関数の戻り値の型か undefined 
     yield 1;
   });
   expectTypeOf(getServerFnResult(streamed)).toEqualTypeOf<undefined>();
+  const branched = defineServerFn((c) =>
+    c.req.query("x") === undefined ? { errors: ["e"] } : new Response(null),
+  );
+  expectTypeOf(getServerFnResult(branched)).toEqualTypeOf<{ errors: string[] } | undefined>();
+  const mixed = defineServerFn((): { a: number } | AsyncIterable<number> => ({ a: 1 }));
+  expectTypeOf(getServerFnResult(mixed)).toEqualTypeOf<{ a: number } | undefined>();
   // @ts-expect-error サーバー関数でない関数は受け付けない
   getServerFnResult(() => 1);
 });

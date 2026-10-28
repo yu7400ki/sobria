@@ -376,6 +376,49 @@ describe("サーバー関数の戻り値をページに渡す", () => {
     expect(await bodyOf(response)).toContain("<h1>null null null null undefined</h1>");
   });
 
+  /** サーバー関数のエンドポイントへのリクエストで、`next()` の後に `thrown` を投げるルートの middleware.ts を加えた、ルートの表を返す。 */
+  const throwingAfter = (thrown: unknown): Routes => ({
+    ...routes,
+    middleware: loadOf<MiddlewareHandler>(async (c, next) => {
+      await next();
+      if (c.req.path.startsWith("/_rinka/fn/")) throw thrown;
+    }),
+  });
+
+  it("handler が値を返した後にルートの middleware.ts が例外を投げたら、error.tsx の描画では値を読めない", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    onTestFinished(() => error.mockRestore());
+    const response = await request(
+      throwingAfter(new Error("root late")),
+      rpcPath("src/app-test.ts#resultSave"),
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          referer: "http://localhost/form",
+        },
+        body: "a=1",
+      },
+    );
+    expect(response.status).toBe(500);
+    expect(await bodyOf(response)).toContain("<h1>null null null null undefined</h1>");
+  });
+
+  it("RPC で handler が値を返した後に、ルートの middleware.ts が呼び出したページへの redirect() を投げたら、描き直すページでは値を読めない", async () => {
+    const response = await request(
+      throwingAfter(redirect("/form")),
+      rpcPath("src/app-test.ts#resultSave"),
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-rinka-page": "http://localhost/form" },
+        body: "null",
+      },
+    );
+    expect(((await response.json()) as { page: { body: string } }).page.body).toBe(
+      "<p>null null null null undefined</p>",
+    );
+  });
+
   it("フォームの送信で handler が undefined を返したら、送信したページへ 303 で移動する", async () => {
     const response = await post("src/app-test.ts#resultNothing", {
       referer: "http://localhost/form",

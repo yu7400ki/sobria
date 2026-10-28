@@ -3,8 +3,8 @@ import type { ServerFnMethod } from "../shared/server-fn.ts";
 import { getContext } from "./context.ts";
 import type { ServerFn } from "./server-fn.ts";
 
-/** handler の戻り値の型 `R` のうち、`getServerFnResult` が返す値の型である。ストリームなら `never` である。 */
-type ResultOf<R> = Awaited<R> extends AsyncIterable<unknown> ? never : Awaited<R>;
+/** handler の戻り値の型 `R` から、Response とストリームを除いた型である。 */
+type ResultOf<R> = Exclude<Awaited<R>, Response | AsyncIterable<unknown>>;
 
 /** `Request` をキーにして、そのリクエストでサーバー関数が返した値と、サーバー関数の ID を保持する。 */
 const results = new WeakMap<Request, { readonly id: string; readonly value: unknown }>();
@@ -29,7 +29,7 @@ export function inheritResult(from: Request, to: Request): void {
  * ページを描画するきっかけになったリクエストで、サーバー関数 `fn` が返した値を返す。
  * 対象のリクエストは、フォームの送信と、JS からの呼び出しの後に、送信したページや呼び出したページを描画するリクエストである。
  * そのリクエストで `fn` が値を返していなければ、別のサーバー関数が値を返していても `undefined` を返す。
- * `fn` がストリームを返したときと、サーバー関数のミドルウェアが例外を投げたときも `undefined` を返す。
+ * `fn` が Response かストリームを返したときと、サーバー関数のミドルウェアかルートの `middleware.ts` が handler の後で例外を投げたときも `undefined` を返す。
  */
 export function getServerFnResult<In, R, M extends ServerFnMethod>(
   fn: ServerFn<In, R, M>,
