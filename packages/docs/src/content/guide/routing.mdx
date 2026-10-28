@@ -257,7 +257,7 @@ export default function User({ params }: PageProps<"/users/[id]">) {
 }
 ```
 
-`href()` は、ルートとパラメータから URL を作成します。存在しないルートと、不足したパラメータは型エラーになります。`href()` は、ページと要素のどちらでも使用できます。
+`href()` は、ルートとパラメータから URL を作成します。存在しないルートと、不足したパラメータは型エラーになります。`href()` は、ページ、要素、`src/lib/` などのそれ以外のファイルのどれでも使用できます。
 
 ```tsx
 // src/routes/page.tsx

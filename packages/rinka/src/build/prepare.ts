@@ -104,7 +104,10 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
       tsconfig(
         "shared",
         ["rinka-shared", "rinka-server"],
-        { include: [fromPrepared(join(root, "src")), "env.d.ts"], exclude: [elements, routesDir] },
+        {
+          include: [fromPrepared(join(root, "src")), "env.d.ts", "routes.d.ts"],
+          exclude: [elements, routesDir],
+        },
         [],
       ),
     ],

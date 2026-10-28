@@ -142,7 +142,7 @@ describe("tsconfig", () => {
         outDir: "out/shared",
         customConditions: ["rinka-shared", "rinka-server"],
       },
-      include: ["../src", "env.d.ts"],
+      include: ["../src", "env.d.ts", "routes.d.ts"],
       exclude: ["../src/elements", "../src/routes"],
     });
   });
