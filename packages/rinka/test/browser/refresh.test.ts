@@ -1,15 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { defineElement as defineClient } from "../../src/client/element.ts";
+import { listenForms } from "../../src/client/form.ts";
 import { jsx as clientJsx } from "../../src/client/jsx-runtime.ts";
 import { applyRefresh, refreshPage } from "../../src/client/refresh.ts";
 import { bootstrapSource } from "../../src/server/bootstrap.ts";
 import { defineElement as defineServer } from "../../src/server/element.ts";
 import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
 import { renderRefresh, renderToStream } from "../../src/server/response.ts";
-import type { ElementOptions } from "../../src/shared/element.ts";
+import type { Ctx, ElementOptions } from "../../src/shared/element.ts";
 import type { RefreshJson } from "../../src/shared/refresh.ts";
 import { action, memo, optimistic, refresh, signal, wait } from "../../src/shared/signals.ts";
+import { rpcPath, wireFormat, wireHeader } from "../../src/shared/wire.ts";
 
 /** テストの前の `<head>` の子と、文書のタイトルである。 */
 let headBefore: Element[] = [];
@@ -214,6 +216,110 @@ describe("applyRefresh", () => {
 
     const timeout = new Promise((resolve) => setTimeout(resolve, 500, "timeout"));
     expect(await Promise.race([send?.().then(() => "done"), timeout])).toBe("done");
+  });
+});
+
+/** window に届いた submit のイベントで、ページを移動しないようにする。 */
+const block = (event: Event) => event.preventDefault();
+/** フォームの部品の要素と、ネイティブの部品の値を `value` にしたフォームのページを返す。`key` はフォームのキーである。 */
+const formPage = (element: unknown, value: string, key = "f") =>
+  server("main", {
+    children: server(
+      "form",
+      {
+        action: rpcPath("src/form-test.ts#save"),
+        method: "post",
+        children: [
+          server(element, { name: "body", content: value }),
+          server("input", { name: "text", value }),
+          server("textarea", { name: "note", value }),
+          server("select", {
+            name: "choice",
+            value,
+            children: ["old", "new"].map((option) =>
+              server("option", { value: option, children: option }),
+            ),
+          }),
+          server("input", { type: "checkbox", name: "check", checked: value === "new" }),
+          server("button", { children: "go" }),
+        ],
+      },
+      key,
+    ),
+  });
+
+/** `form.onReset` で props の `content` を値にし、読んだ `content` を `resets` に記録するフォームの部品を返す。 */
+const fieldView =
+  (h: H, resets: string[]) =>
+  (props: { content?: string }, { form }: Ctx) => {
+    const [value, setValue] = signal(props.content ?? "");
+    form.value(() => value());
+    form.onReset(() => {
+      resets.push(props.content ?? "");
+      setValue(props.content ?? "");
+    });
+    return h("span", {});
+  };
+
+/** `old` のページを配置して起動し、送信の後に `next` のページへ描き直すレスポンスを返すようにする。 */
+async function submitted(next: (element: unknown) => unknown) {
+  const tag = nextTag();
+  const resets: string[] = [];
+  const options: ElementOptions = { props: { content: "string" }, form: true };
+  const element = defineServer(tag, fieldView(server, resets), options);
+  await serve(formPage(element, "old"));
+  defineClient(tag, fieldView(client, resets), options);
+  await tick();
+  const json = (await (await renderRefresh(next(element))).json()) as RefreshJson;
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    Response.json(
+      { redirect: `${location.pathname}${location.search}`, page: json },
+      { headers: { [wireHeader]: wireFormat.rpc } },
+    ),
+  );
+  return resets;
+}
+
+/** フォームの値を、名前と値の組の配列で返す。 */
+const entries = () => [...new FormData(document.querySelector("form")!)];
+
+describe("フォームを送信した後の描き直し", () => {
+  beforeEach(() => {
+    listenForms();
+    window.addEventListener("submit", block);
+  });
+  afterEach(() => window.removeEventListener("submit", block));
+
+  it("移動先が現在のページなら、描き直しの結果を反映してからフォームをリセットするので、onReset は新しい props を読む", async () => {
+    const resets = await submitted((element) => formPage(element, "new"));
+    document.querySelector<HTMLInputElement>('input[name="text"]')!.value = "typed";
+    document.querySelector<HTMLTextAreaElement>("textarea")!.value = "typed";
+    document.querySelector<HTMLSelectElement>("select")!.value = "old";
+    document.querySelector<HTMLInputElement>('input[name="check"]')!.checked = false;
+    document.querySelector("button")!.click();
+    await vi.waitFor(() => expect(resets).toEqual(["new"]));
+    expect(entries()).toEqual([
+      ["body", "new"],
+      ["text", "new"],
+      ["note", "new"],
+      ["choice", "new"],
+      ["check", "on"],
+    ]);
+  });
+
+  it("描き直しでフォームが別のノードに置き換わっても、フォームの値は新しいページの値になる", async () => {
+    await submitted((element) => formPage(element, "new", "g"));
+    const before = document.querySelector("form");
+    document.querySelector("button")!.click();
+    await vi.waitFor(() => expect(document.querySelector("form")).not.toBe(before));
+    await tick();
+    expect(entries()).toEqual([
+      ["body", "new"],
+      ["text", "new"],
+      ["note", "new"],
+      ["choice", "new"],
+      ["check", "on"],
+    ]);
   });
 });
 

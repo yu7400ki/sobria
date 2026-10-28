@@ -101,7 +101,7 @@ describe("JS があるときのフォームの送信", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("送信先の URL で解決した移動先が現在のページなら、フォームを初期値に戻してから、レスポンスの page を反映する", async () => {
+  it("送信先の URL で解決した移動先が現在のページなら、レスポンスの page を反映してから、フォームを初期値に戻す", async () => {
     const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       Response.json(
         {
@@ -117,9 +117,31 @@ describe("JS があるときのフォームの送信", () => {
       titleAtReset = document.title;
     });
     button.click();
-    await vi.waitFor(() => expect(document.title).toBe("saved"));
-    expect(titleAtReset).toBe(titleBefore);
+    await vi.waitFor(() => expect(titleAtReset).toBe("saved"));
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("送信の後に始まった描き直しを先に反映したら、現在のページへの移動先を受け取っても、フォームを初期値に戻さない", async () => {
+    const submitted = Promise.withResolvers<Response>();
+    vi.spyOn(globalThis, "fetch")
+      .mockReturnValueOnce(submitted.promise)
+      .mockResolvedValueOnce(Response.json(refreshJson({ head: "<title>refreshed</title>" })));
+    const { form, button } = placeForm();
+    const reset = vi.spyOn(form, "reset");
+    button.click();
+    await refreshPage();
+    submitted.resolve(
+      Response.json(
+        {
+          redirect: `${location.pathname}${location.search}`,
+          page: refreshJson({ head: "<title>saved</title>" }),
+        },
+        { headers: rpcHeaders },
+      ),
+    );
+    await vi.waitFor(() => expect(form.hasAttribute("aria-busy")).toBe(false));
+    expect(document.title).toBe("refreshed");
+    expect(reset).not.toHaveBeenCalled();
   });
 
   it("rinka が組み立てたことを示すヘッダーの無い { redirect } は、移動せずにコンソールに記録する", async () => {

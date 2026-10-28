@@ -81,12 +81,16 @@ export const refreshPage: RefreshPage = async () => {
   reflectPage(reflect, received.kind === "response" ? received.body : undefined);
 };
 
-/** `startRewrite` が返した `reflect` で、`page` が描き直しの JSON ならページに反映し、そうでなければページを読み込み直す。ページを読み込み直したら真を返す。 */
-export function reflectPage(reflect: Reflect, page: unknown): boolean {
+/**
+ * `startRewrite` が返した `reflect` で、`page` が描き直しの JSON ならページに反映してから `afterReflect` を呼び、そうでなければページを読み込み直す。
+ * ページを読み込み直したら真を返す。
+ */
+export function reflectPage(reflect: Reflect, page: unknown, afterReflect?: () => void): boolean {
   let reloaded = false;
   reflect(() => {
     if (isRefreshJson(page)) {
       applyRefresh(page);
+      afterReflect?.();
       return;
     }
     reloaded = true;
@@ -96,7 +100,7 @@ export function reflectPage(reflect: Reflect, page: unknown): boolean {
 }
 
 /**
- * 移動先を伝える JSON `body` を反映する。`reflect` があり、移動先が現在のページなら、`beforeReflect` を呼んでから `page` を反映し、それ以外では移動先に移動する。
+ * 移動先を伝える JSON `body` を反映する。`reflect` があり、移動先が現在のページなら、`page` を反映してから `afterReflect` を呼び、それ以外では移動先に移動する。
  * `reflect` でページを読み込み直したときと、移動したときは真を返す。
  */
 export function redirected(
@@ -104,12 +108,11 @@ export function redirected(
   page: unknown,
   endpoint: URL,
   reflect: Reflect | undefined,
-  beforeReflect?: () => void,
+  afterReflect?: () => void,
 ): boolean {
   const target = new URL(body.redirect, endpoint);
   if (reflect && sameDocument(target, new URL(location.href))) {
-    beforeReflect?.();
-    return reflectPage(reflect, page);
+    return reflectPage(reflect, page, afterReflect);
   }
   location.assign(target);
   return true;
