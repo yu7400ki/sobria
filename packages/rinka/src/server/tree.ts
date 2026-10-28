@@ -61,11 +61,10 @@ export interface DepthNode {
   readonly children: unknown;
 }
 
-/** 子を、外側の描画の範囲にコンテキストの値を加えた範囲で描画するノードを表す。 */
+/** 子を、コンテキストの値を加えた描画の範囲 `scope` で描画するノードを表す。 */
 export interface ContextNode {
   readonly kind: "context";
-  /** 外側の描画の範囲 `outer` から、子を描画する範囲を返す。 */
-  readonly scope: (outer: RenderScope) => RenderScope;
+  readonly scope: RenderScope;
   readonly children: unknown;
 }
 

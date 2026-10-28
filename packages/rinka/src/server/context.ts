@@ -19,16 +19,20 @@ export async function loadStorage(
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   const global = (globalThis as { AsyncLocalStorage?: StorageClass }).AsyncLocalStorage;
   if (global) return () => new global();
-  try {
-    const { AsyncLocalStorage } = await importAsyncHooks();
-    if (typeof AsyncLocalStorage !== "function") throw new TypeError("AsyncLocalStorage");
-    return () => new AsyncLocalStorage();
-  } catch {
-    console.warn(
-      "[rinka] AsyncLocalStorage を使用できないので、サーバー関数が受け取るリクエストの Context と、useContext で読む値は、await をまたぐと失われ、同時に処理するリクエストのあいだで混在します。",
-    );
-    return synchronousStorage;
+  // 読み込めても、ブラウザ向けの代用品のように AsyncLocalStorage が関数でないことがある
+  const loaded: unknown = await importAsyncHooks().then(
+    (module) => module.AsyncLocalStorage,
+    () => undefined,
+  );
+  if (typeof loaded === "function") {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+    const Loaded = loaded as StorageClass;
+    return () => new Loaded();
   }
+  console.warn(
+    "[rinka] AsyncLocalStorage を使用できないので、サーバー関数が受け取るリクエストの Context と、useContext で読む値は、await をまたぐと失われ、同時に処理するリクエストのあいだで混在します。",
+  );
+  return synchronousStorage;
 }
 
 function synchronousStorage<T>(): Storage<T> {

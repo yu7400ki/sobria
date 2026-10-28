@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { Errored } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToString } from "../../src/server/response.ts";
@@ -148,6 +149,60 @@ describe("サーバーのコンテキスト", () => {
     );
     expect(html).toContain('label="dark"');
     expect(html).toContain("<b><!--[-->dark<!--]--></b>");
+  });
+
+  it("ネイティブのタグの子、<Errored> のフォールバック、<html> の属性、要素のスロットの getter は、記述した位置の値を読む", async () => {
+    const Boxed = defineElement("x-themed-slot", () => jsx("slot", {}), {
+      props: { children: "slot" },
+    });
+    const html = await renderToString(
+      jsx(Theme, {
+        value: "dark",
+        get children() {
+          return jsx("html", {
+            lang: () => useContext(Theme),
+            children: [
+              jsx("b", {
+                get children() {
+                  return useContext(Theme);
+                },
+              }),
+              jsx(Errored, {
+                fallback: () => jsx("u", { children: useContext(Theme) }),
+                children: () => {
+                  throw new Error("failed");
+                },
+              }),
+              jsx(Boxed, {
+                get children() {
+                  return useContext(Theme);
+                },
+              }),
+            ],
+          });
+        },
+      }),
+    );
+    expect(html).toContain('<html lang="dark">');
+    expect(html).toContain("<b>dark</b>");
+    expect(html).toContain("<u>dark</u>");
+    expect(html).toContain("</template>dark</x-themed-slot>");
+  });
+
+  it("コンテキストのコンポーネントの子の getter は、値を加えた範囲で読む", async () => {
+    const html = await renderToString(
+      jsx(Theme, {
+        value: "dark",
+        get children() {
+          return useContext(Theme);
+        },
+      }),
+    );
+    expect(html).toBe("dark");
+  });
+
+  it("描画の外でコンテキストのコンポーネントを呼ぶと、エラーを投げる", () => {
+    expect(() => Theme({ value: "dark" })).toThrow(/コンテキストのコンポーネントは/);
   });
 
   it("描画の外で useContext と createId を呼ぶと、エラーを投げる", () => {

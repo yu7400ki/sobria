@@ -591,6 +591,11 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   }
 
   private walk(node: Node, ctx: WalkCtx, out: Chunk[]): void {
+    runInScope(ctx.scope, () => this.walkInScope(node, ctx, out));
+  }
+
+  /** `walk` の本体である。`ctx` の描画の範囲の中で呼ぶ。 */
+  private walkInScope(node: Node, ctx: WalkCtx, out: Chunk[]): void {
     if (node === null || node === undefined || typeof node === "boolean") return;
     if (typeof node === "string" || typeof node === "number" || typeof node === "bigint") {
       const text = escapeText(String(node));
@@ -642,7 +647,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         this.walk(asNode(node.children), { ...ctx, depth: node.depth }, out);
         return;
       case "context":
-        this.walk(asNode(node.children), { ...ctx, scope: node.scope(ctx.scope) }, out);
+        this.walk(asNode(node.children), { ...ctx, scope: node.scope }, out);
         return;
       case "navigation":
         this.navigation(node.props, ctx, out);
@@ -1279,7 +1284,13 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
             if (after.kind === "navigate") throw error;
             if (after.kind === "catch" && after.noindex) flush.noindex = true;
           }
-          const fallback = await this.serialize(this.chunks(node.fallback(error), ctx), out);
+          const fallback = await this.serialize(
+            this.chunks(
+              runInScope(ctx.scope, () => node.fallback(error)),
+              ctx,
+            ),
+            out,
+          );
           return this.region(ctx) ? REGION_FALLBACK_MARK + fallback : fallback;
         }
       }
@@ -1396,10 +1407,13 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     let html: string;
     try {
       html = await this.serialize(
-        this.chunks(catcher.node.fallback(error), {
-          ...catcher.ctx,
-          head: restrict(catcher.ctx.head, "loading"),
-        }),
+        this.chunks(
+          runInScope(catcher.ctx.scope, () => catcher.node.fallback(error)),
+          {
+            ...catcher.ctx,
+            head: restrict(catcher.ctx.head, "loading"),
+          },
+        ),
         fallbackOut,
       );
     } catch (fallbackError) {

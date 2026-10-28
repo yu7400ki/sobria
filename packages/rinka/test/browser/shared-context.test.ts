@@ -156,6 +156,22 @@ describe("ブラウザのコンテキスト", () => {
     expect(shadow(host.shadowRoot?.querySelector(inner))).toBe("<b>dark</b>");
   });
 
+  it("子の getter は、コンテキストのコンポーネントの値を読む", async () => {
+    const tag = nextTag();
+    defineClient(
+      tag,
+      () =>
+        jsx(Theme, {
+          value: "dark",
+          get children() {
+            return useContext(Theme);
+          },
+        }),
+      { props: {} },
+    );
+    expect(shadow(await connect(tag))).toBe("dark");
+  });
+
   it("createId は、要素のインスタンスごとに 1 から連番の id を返す", async () => {
     const tag = nextTag();
     defineClient(tag, () => jsx("p", { id: createId(), children: jsx("i", { id: createId() }) }), {
