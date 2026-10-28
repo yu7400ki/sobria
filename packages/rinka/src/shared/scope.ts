@@ -9,7 +9,7 @@ import { isReservedKey } from "./transfer-keys.ts";
  */
 export type MemoCompute<T> = (
   prev: T | undefined,
-) => T | PromiseLike<T> | AsyncIterable<T> | PromiseLike<AsyncIterable<T>>;
+) => T | AsyncIterable<T> | PromiseLike<T | AsyncIterable<T>>;
 
 /**
  * `fn` の memo を作成する。`options` は `@solidjs/signals` の `createMemo` のオプションである。

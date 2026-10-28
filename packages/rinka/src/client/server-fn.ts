@@ -34,7 +34,7 @@ const never = (): Promise<never> => new Promise(() => {});
  * 2xx 以外のレスポンスは `ServerFnError` として投げ、rinka が組み立てていない 2xx のレスポンスは Response のまま返す。
  */
 export function serverFn(id: string, method: ServerFnMethod): RpcFn {
-  const call: RpcFn = async (input, { signal, headers, refresh = true } = {}) => {
+  const call: RpcFn = async (input, { signal, headers, refresh = true }: CallOptions = {}) => {
     if (isSeeding()) return never();
     const plain = input === undefined || isJson(input);
     const encoded =

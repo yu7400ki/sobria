@@ -1,7 +1,7 @@
 // TypeScript の DOM の型定義から、props と expose に使用できない名前の一覧の内容を作成する。
 import { resolve } from "node:path";
 
-import { API, SymbolFlags } from "typescript/unstable/sync";
+import { API, SymbolFlags } from "typescript/sync";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -23,6 +23,7 @@ const mutatingMethods = [
   "replaceChild",
   "replaceChildren",
   "replaceWith",
+  "setHTML",
   "setHTMLUnsafe",
 ];
 
@@ -45,7 +46,7 @@ export function domNameSources(): Record<string, string> {
   const config = resolve(root, "scripts/tsconfig.dom.json");
   const api = new API({ cwd: root });
   try {
-    const project = api.updateSnapshot({ openProjects: [config] }).getProject(config);
+    const project = api.createSnapshot({ openProjects: [config] }).getConfiguredProject(config);
     if (!project) throw new Error(`${config} を読み込めません。`);
     const { checker } = project;
     const location = { document: resolve(root, "scripts/dom-names.ts"), position: 0 };

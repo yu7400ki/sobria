@@ -10,7 +10,7 @@ catalog:
   seroval: ^1.6.11
   "@solidjs/signals": 2.0.0-rc.15
   "@types/node": ^26.6.5
-  typescript: ^7.0.2
+  typescript: 7.1.0-beta
   oxfmt: ^0.74.0
   oxlint: ^1.89.0
   oxlint-tsgolint: ^7.0.2004

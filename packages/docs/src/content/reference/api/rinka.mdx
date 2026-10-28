@@ -70,7 +70,7 @@ const memo: <T>(fn: MemoCompute<T>, options?: MemoOptions) => Memo<T>;
 
 type MemoCompute<T> = (
   prev: T | undefined,
-) => T | PromiseLike<T> | AsyncIterable<T> | PromiseLike<AsyncIterable<T>>;
+) => T | AsyncIterable<T> | PromiseLike<T | AsyncIterable<T>>;
 
 interface MemoOptions {
   /** 描画の範囲の中で、memo を識別するキーを表す。 */

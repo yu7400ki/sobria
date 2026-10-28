@@ -317,6 +317,7 @@ export const htmlElementMembers = [
   "setAttributeNS",
   "setAttributeNode",
   "setAttributeNodeNS",
+  "setHTML",
   "setHTMLUnsafe",
   "setPointerCapture",
   "shadowRoot",

@@ -58,9 +58,10 @@ describe("rinka create", () => {
       rinka: `^${rinka.version}`,
     });
     expect(installed("hono")).toContain("-");
+    expect(installed("typescript")).toContain("-");
     expect(pkg.devDependencies).toEqual({
       "@types/node": `^${installed("@types/node")}`,
-      typescript: `^${installed("typescript")}`,
+      typescript: installed("typescript"),
       vite: `^${installed("vite")}`,
     });
     expect(JSON.stringify(pkg)).not.toContain("catalog:");

@@ -3,14 +3,14 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { format, type Oxfmtrc } from "oxfmt";
-import { type Node, SyntaxKind } from "typescript/unstable/ast";
+import { type Node, SyntaxKind } from "typescript/ast";
 import {
   isExportDeclaration,
   isExportSpecifier,
   isStringLiteral,
   isTypeQueryNode,
-} from "typescript/unstable/ast/is";
-import { API, type Checker, type Symbol, SymbolFlags } from "typescript/unstable/sync";
+} from "typescript/ast/is";
+import { API, type Checker, type Symbol, SymbolFlags } from "typescript/sync";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -320,7 +320,7 @@ function itemMdx(item: Item, specifier: string, sideCount: number): string {
 export function referenceSources(packageDir: string, tsconfig: string): Record<string, string> {
   const api = new API({ cwd: root });
   try {
-    const project = api.updateSnapshot({ openProjects: [tsconfig] }).getProject(tsconfig);
+    const project = api.createSnapshot({ openProjects: [tsconfig] }).getConfiguredProject(tsconfig);
     if (!project) throw new Error(`${tsconfig} を読み込めません。`);
     const { program, checker } = project;
     const modules = entriesOf(packageDir).map((entry) => ({

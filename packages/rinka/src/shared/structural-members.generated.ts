@@ -38,6 +38,7 @@ export const structuralMembers = [
   "setAttributeNS",
   "setAttributeNode",
   "setAttributeNodeNS",
+  "setHTML",
   "setHTMLUnsafe",
   "shadowRoot",
   "toggleAttribute",
