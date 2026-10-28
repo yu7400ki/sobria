@@ -129,10 +129,10 @@ describe("本番のビルド", () => {
     expect(await response.json()).toEqual({ ok: "orphan" });
   });
 
-  it("フォームの送信は、スキーマを通過すると Referer に 303 を返し、失敗すると 422 の issues を返す", async () => {
+  it("フォームの送信は、スキーマを通過すると Referer のページを 200 で返し、失敗すると 422 の issues を返す", async () => {
     const accepted = await send("a");
-    expect(accepted.status).toBe(303);
-    expect(accepted.headers.get("location")).toBe("http://localhost/");
+    expect(accepted.status).toBe(200);
+    expect(accepted.headers.get("content-type")).toContain("text/html");
     const rejected = await send("");
     expect(rejected.status).toBe(422);
     expect(await rejected.json()).toMatchObject({ issues: [{ path: ["title"] }] });
@@ -172,7 +172,7 @@ async function checkServer(origin: string): Promise<void> {
       redirect: "manual",
     });
   };
-  expect((await form("a")).status).toBe(303);
+  expect((await form("a")).status).toBe(200);
   expect((await form("")).status).toBe(422);
 }
 

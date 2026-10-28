@@ -3,7 +3,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { getContext, setBlockingRender } from "../../src/server/api.ts";
+import { getContext, getServerFnResult, setBlockingRender } from "../../src/server/api.ts";
 import { Loading } from "../../src/server/control.ts";
 import { notFound, redirect } from "../../src/server/errors.ts";
 import { createApp, registerServerFn } from "../../src/server/internal.ts";
@@ -300,6 +300,117 @@ describe("createApp のミドルウェア", () => {
       [200, "1", "1"],
       [200, "1", null],
     ]);
+  });
+});
+
+/** 307 で `/form` に移動するミドルウェアである。 */
+const movedTo307: MiddlewareHandler = async (c) => c.redirect("/form", 307);
+
+describe("サーバー関数の戻り値をページに渡す", () => {
+  const save = defineServerFn(() => ({ saved: "a" }));
+  const other = defineServerFn(() => ({ saved: "b" }));
+  const cookied = defineServerFn((c) => {
+    setCookie(c, "flag", "1");
+    return { saved: "c" };
+  });
+  const failLate = defineServerFn(
+    async (_c: Context, next: Next) => {
+      await next();
+      throw new Error("late");
+    },
+    () => ({ saved: "late" }),
+  );
+  const nothing = defineServerFn(() => undefined);
+  registerServerFn("src/app-test.ts#resultSave", save);
+  registerServerFn("src/app-test.ts#resultOther", other);
+  registerServerFn("src/app-test.ts#resultCookied", cookied);
+  registerServerFn("src/app-test.ts#resultLate", failLate);
+  registerServerFn("src/app-test.ts#resultNothing", nothing);
+  /** `getServerFnResult` で読んだ `save`、`other`、`cookied`、`failLate` の値と、リクエストの Cookie を出力する。 */
+  const results = () =>
+    [save, other, cookied, failLate]
+      .map((fn) => JSON.stringify(getServerFnResult(fn) ?? null))
+      .join(" ") + ` ${String(getContext()?.req.header("cookie"))}`;
+  const routes: Routes = {
+    routes: [
+      pageRoute("/form", () => jsx("p", { children: results() }), [], [], {
+        error: fallbackOf(() => jsx("h1", { children: results() })),
+      }),
+      pageRoute("/moved", () => jsx("p", { children: "moved" }), [], [movedTo307]),
+    ],
+  };
+  /** `fn` のエンドポイントに、`headers` を付けて `body` を POST する。 */
+  const post = (id: string, headers: Record<string, string>, body = "a=1") =>
+    request(routes, rpcPath(id), {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", ...headers },
+      body,
+    });
+
+  it("JS が無いフォームの送信で handler が値を返したら、送信したページを 200 で描画し、ページは getServerFnResult でその値を読む", async () => {
+    const response = await post("src/app-test.ts#resultSave", { referer: "http://localhost/form" });
+    expect(response.status).toBe(200);
+    expect(await bodyOf(response)).toContain('<p>{"saved":"a"} null null null undefined</p>');
+  });
+
+  it("値を返した送信のレスポンスには handler が設定した Cookie を 1 回付け、描画するページのリクエストにもその Cookie を渡す", async () => {
+    const response = await post("src/app-test.ts#resultCookied", {
+      referer: "http://localhost/form",
+    });
+    expect(response.headers.getSetCookie()).toEqual(["flag=1; Path=/"]);
+    expect(await bodyOf(response)).toContain('<p>null null {"saved":"c"} null flag=1</p>');
+  });
+
+  it("JS が無いときに値を返した送信で、送信したページの middleware.ts が 307 で移動したら、303 にする", async () => {
+    const response = await post("src/app-test.ts#resultSave", {
+      referer: "http://localhost/moved",
+    });
+    expect([response.status, response.headers.get("location")]).toEqual([303, "/form"]);
+  });
+
+  it("handler が値を返した後にサーバー関数のミドルウェアが例外を投げたら、error.tsx の描画では値を読めない", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    onTestFinished(() => error.mockRestore());
+    const response = await post("src/app-test.ts#resultLate", { referer: "http://localhost/form" });
+    expect(response.status).toBe(500);
+    expect(await bodyOf(response)).toContain("<h1>null null null null undefined</h1>");
+  });
+
+  it("フォームの送信で handler が undefined を返したら、送信したページへ 303 で移動する", async () => {
+    const response = await post("src/app-test.ts#resultNothing", {
+      referer: "http://localhost/form",
+    });
+    expect([response.status, response.headers.get("location")]).toEqual([
+      303,
+      "http://localhost/form",
+    ]);
+  });
+
+  it("JS があるフォームの送信で handler が値を返したら、送信したページの描き直しの JSON を返し、ページは値を読む", async () => {
+    const response = await post("src/app-test.ts#resultSave", {
+      "x-rinka-page": "http://localhost/form",
+    });
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { body: string }).body).toBe(
+      '<p>{"saved":"a"} null null null undefined</p>',
+    );
+  });
+
+  it("JS から RPC で呼び出したサーバー関数の戻り値を、描き直すページが読む", async () => {
+    const response = await post(
+      "src/app-test.ts#resultOther",
+      { "content-type": "application/json", "x-rinka-page": "http://localhost/form" },
+      "null",
+    );
+    expect(((await response.json()) as { page: { body: string } }).page.body).toBe(
+      '<p>null {"saved":"b"} null null undefined</p>',
+    );
+  });
+
+  it("サーバー関数を呼び出していないリクエストのページでは、undefined を返す", async () => {
+    expect(await bodyOf(await request(routes, "/form"))).toContain(
+      "<p>null null null null undefined</p>",
+    );
   });
 });
 
@@ -725,7 +836,7 @@ describe("JS からのサーバー関数の呼び出し", () => {
     ];
   };
 
-  it("PRG、redirect()、handler とサーバー関数のミドルウェアとルートの middleware.ts が返したリダイレクトを、Location の値を持つ JSON にして 200 で返す。PRG の移動先は x-rinka-page の URL で、そのページの描き直しを page に含める", async () => {
+  it("redirect()、handler とサーバー関数のミドルウェアとルートの middleware.ts が返したリダイレクトを、Location の値を持つ JSON にして 200 で返す。handler が値を返したら、x-rinka-page の URL のページの描き直しの JSON を返す", async () => {
     expect(
       await Promise.all([
         result(ids.saved),
@@ -735,15 +846,7 @@ describe("JS からのサーバー関数の呼び出し", () => {
         result(ids.saved, { "x-login": "1" }),
       ]),
     ).toEqual([
-      [
-        200,
-        null,
-        "rpc",
-        {
-          redirect: "http://localhost/form?x=1#top",
-          page: refreshedTo("<p>undefined t undefined</p>"),
-        },
-      ],
+      [200, null, null, refreshedTo("<p>undefined t undefined</p>")],
       [200, null, "rpc", { redirect: "/done" }],
       [200, null, "rpc", { redirect: "https://auth.example.com/login" }],
       [200, null, "rpc", { redirect: "/login" }],
@@ -776,16 +879,30 @@ describe("JS からのサーバー関数の呼び出し", () => {
     });
   });
 
-  it("描き直しのレスポンスが JSON でないときと、JSON として読めないときは、page を含めない", async () => {
+  it("RPC の描き直しのレスポンスが JSON でないときと、JSON として読めないときは、page を含めない", async () => {
     const results = await Promise.all(
       ["http://localhost/guarded", "http://localhost/broken"].map(async (url) => {
-        const response = await submit(ids.saved, { "x-rinka-page": url });
+        const response = await request(routes, rpcPath(ids.saved), {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-rinka-page": url },
+          body: "null",
+        });
         return response.json();
       }),
     );
+    expect(results).toEqual([{ ok: "saved" }, { ok: "saved" }]);
+  });
+
+  it("handler が値を返したフォームの送信で、送信したページの middleware.ts がリダイレクトしたら、移動先の { redirect } の JSON を返す。JSON として読めない描き直しのレスポンスは、そのまま返す", async () => {
+    const results = await Promise.all(
+      ["http://localhost/guarded", "http://localhost/broken"].map(async (url) => {
+        const response = await submit(ids.saved, { "x-rinka-page": url });
+        return [response.status, await response.text()];
+      }),
+    );
     expect(results).toEqual([
-      { redirect: "http://localhost/guarded" },
-      { redirect: "http://localhost/broken" },
+      [200, JSON.stringify({ redirect: "/login" })],
+      [200, "{"],
     ]);
   });
 

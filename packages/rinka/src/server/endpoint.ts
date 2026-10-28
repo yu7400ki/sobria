@@ -28,6 +28,7 @@ import { classify, isSafeLocation, navigableLocation } from "./errors.ts";
 import { formDataToInput } from "./form-data.ts";
 import { Relay } from "./relay.ts";
 import { handledMethod } from "./request.ts";
+import { forgetResult, inheritResult, recordResult } from "./server-fn-result.ts";
 import { definitionOf, runChain, SchemaError, type Definition } from "./server-fn.ts";
 import { fromRpcInput, toRpcBody } from "./wire.ts";
 
@@ -56,8 +57,13 @@ export function serverFnModule(fnModule: string): typeof registerServerFn {
 /**
  * サーバー関数のエンドポイントへのリクエストを処理し、それ以外のリクエストを後続の処理に渡す Hono のミドルウェアを返す。
  * rinka が扱わない例外は、リクエストの種類に対応する `failures` の関数が返すレスポンスにする。
+ * フォームの送信で handler が値を返したら、`submitted` が返すレスポンスにする。
  */
-export function serverFnMiddleware(options: AppOptions, failures: Failures): MiddlewareHandler {
+export function serverFnMiddleware(
+  options: AppOptions,
+  failures: Failures,
+  submitted: Submitted,
+): MiddlewareHandler {
   return async (c, next) => {
     const kind = requestKind(c);
     if (kind === undefined) {
@@ -71,7 +77,7 @@ export function serverFnMiddleware(options: AppOptions, failures: Failures): Mid
     } catch {
       return responder.reject(c, 404);
     }
-    return endpoint(c, id, kind, options, failures[kind]);
+    return endpoint(c, id, kind, options, failures[kind], submitted);
   };
 }
 
@@ -94,6 +100,7 @@ async function endpoint(
   kind: RequestKind,
   options: AppOptions,
   fail: Failure,
+  submitted: Submitted,
 ): Promise<Response> {
   const responder = responders[kind];
   const definition = await find(id, options);
@@ -117,18 +124,25 @@ async function endpoint(
     async () => {
       const value = await handle(c, input);
       if (value instanceof Response) return value;
-      if (!isAsyncIterable(value)) return responder.respond(c, { kind: "value", value }, fail);
+      if (!isAsyncIterable(value)) {
+        recordResult(c.req.raw, id, value);
+        return responder.respond(c, { kind: "value", value }, fail, submitted);
+      }
       const relay = new Relay(value);
       opened.relay = relay;
       const streamed = await responder.respond(
         c,
         { kind: "stream", relay, first: await relay.first },
         fail,
+        submitted,
       );
       opened.body = streamed.body;
       return streamed;
     },
-    (error) => respondThrown(c, kind, error, fail),
+    (error) => {
+      forgetResult(c.req.raw);
+      return respondThrown(c, kind, error, fail);
+    },
   );
   // ミドルウェアがストリームの本文を使わないレスポンスに置換したら、本文から反復を終えられないので、ここで終える
   const { relay, body } = opened;
@@ -143,7 +157,7 @@ function respondThrown(
   error: unknown,
   fail: Failure,
 ): Response | Promise<Response> {
-  const { respond, reject } = responders[kind];
+  const { refuse, reject } = responders[kind];
   const thrown = classify(error);
   switch (thrown.kind) {
     case "redirect":
@@ -154,18 +168,22 @@ function respondThrown(
     case "notFound":
       return reject(c, 404);
     case "schema":
-      return respond(c, thrown, fail);
+      return refuse(c, thrown, fail);
     case "error":
-      return respond(c, { kind: "error", error }, fail);
+      return refuse(c, { kind: "error", error }, fail);
   }
 }
 
-/** handler の戻り値と、handler が投げた値のうち、レスポンスの形をリクエストの種類ごとの `respond` で決めるものを表す。 */
-type Outcome =
-  | { readonly kind: "value"; readonly value: unknown }
-  | Streamed
+/** handler の戻り値のうち、レスポンスの形をリクエストの種類ごとの `respond` で決めるものを表す。 */
+type Settled = { readonly kind: "value"; readonly value: unknown } | Streamed;
+
+/** handler が投げた値のうち、レスポンスの形をリクエストの種類ごとの `refuse` で決めるものを表す。 */
+type Refused =
   | { readonly kind: "schema"; readonly issues: SchemaError["issues"] }
   | { readonly kind: "error"; readonly error: unknown };
+
+/** handler の結果のうち、レスポンスの形をリクエストの種類ごとに決めるものを表す。 */
+type Outcome = Settled | Refused;
 
 /** handler が返した async iterable の Relay と、その最初の `next()` の結果を表す。 */
 interface Streamed {
@@ -186,6 +204,9 @@ export type Failure = (c: Context, error: unknown) => Response | Promise<Respons
 /** リクエストの種類ごとの `Failure` である。 */
 export type Failures = Readonly<Record<RequestKind, Failure>>;
 
+/** フォームの送信 `c` で handler が値を返したときに、送信したページを描画したレスポンスを返す関数の型である。 */
+export type Submitted = (c: Context) => Promise<Response>;
+
 /** rinka がリクエストを拒否するときのステータスである。 */
 type Rejection = 400 | 403 | 404 | 405;
 
@@ -195,8 +216,15 @@ interface Responder {
   readonly read: (c: Context) => Promise<unknown>;
   /** リクエストを拒否するレスポンスを返す。 */
   readonly reject: (c: Context, status: Rejection) => Response;
-  /** handler の結果のレスポンスを返す。 */
-  readonly respond: (c: Context, outcome: Outcome, fail: Failure) => Response | Promise<Response>;
+  /** handler の戻り値のレスポンスを返す。 */
+  readonly respond: (
+    c: Context,
+    outcome: Settled,
+    fail: Failure,
+    submitted: Submitted,
+  ) => Response | Promise<Response>;
+  /** handler が投げた値のレスポンスを返す。 */
+  readonly refuse: (c: Context, outcome: Refused, fail: Failure) => Response | Promise<Response>;
 }
 
 const rejectionText = {
@@ -210,35 +238,21 @@ const responders = {
   rpc: {
     read: readInput,
     reject: (c, status) => rpc(c, null, status),
-    respond: (c, outcome, fail) => {
-      switch (outcome.kind) {
-        case "value":
-          return rpc(c, toRpcBody(outcome.value));
-        case "stream":
-          return stream(c, outcome, fail);
-        case "schema":
-          return rpc(c, { issues: outcome.issues }, 422);
-        case "error":
-          return fail(c, outcome.error);
-      }
-    },
+    respond: (c, outcome, fail) =>
+      outcome.kind === "value" ? rpc(c, toRpcBody(outcome.value)) : stream(c, outcome, fail),
+    refuse: (c, outcome, fail) =>
+      outcome.kind === "schema" ? rpc(c, { issues: outcome.issues }, 422) : fail(c, outcome.error),
   },
   form: {
     read: async (c) => formDataToInput(await c.req.formData()),
     reject: (c, status) => c.text(rejectionText[status], status),
-    respond: async (c, outcome, fail) => {
-      switch (outcome.kind) {
-        case "stream":
-          for await (const _ of outcome.relay.rest());
-          return c.redirect(submittedPage(c).page?.href ?? "/", 303);
-        case "value":
-          return c.redirect(submittedPage(c).page?.href ?? "/", 303);
-        case "schema":
-          return c.json({ issues: outcome.issues }, 422);
-        case "error":
-          return fail(c, outcome.error);
-      }
+    respond: async (c, outcome, _fail, submitted) => {
+      if (outcome.kind === "value" && outcome.value !== undefined) return submitted(c);
+      if (outcome.kind === "stream") for await (const _ of outcome.relay.rest());
+      return c.redirect(submittedPage(c).page?.href ?? "/", 303);
     },
+    refuse: (c, outcome, fail) =>
+      outcome.kind === "schema" ? c.json({ issues: outcome.issues }, 422) : fail(c, outcome.error),
   },
 } satisfies Record<RequestKind, Responder>;
 
@@ -396,6 +410,7 @@ function locationOf(location: string, c: Context, page: URL): URL {
 /**
  * リクエスト `c` のヘッダーを引き継いで、ページ `page` を取得する GET のリクエストを返す。`refresh` が真なら、描き直しの JSON を要求する。
  * 本文、圧縮、条件付きのリクエストのヘッダーと `x-rinka-page` は除外し、`Cookie` は、`c` のレスポンスの `Set-Cookie` を反映した値にする。
+ * `c` でサーバー関数が返した値は、このリクエストで描画するページからも `getServerFnResult` で読める。
  */
 export function pageRequest(c: Context, page: URL, refresh: boolean): Request {
   const headers = new Headers(c.req.raw.headers);
@@ -415,7 +430,9 @@ export function pageRequest(c: Context, page: URL, refresh: boolean): Request {
   const cookie = cookieAfter(c.req.header("cookie"), c.res.headers.getSetCookie());
   if (cookie === "") headers.delete("cookie");
   else headers.set("cookie", cookie);
-  return new Request(new URL(`${page.pathname}${page.search}`, c.req.url), { headers });
+  const request = new Request(new URL(`${page.pathname}${page.search}`, c.req.url), { headers });
+  inheritResult(c.req.raw, request);
+  return request;
 }
 
 /** `c` のレスポンスを、`from` のヘッダーを引き継いだ、ステータスが `status` の `body` の JSON に置換する。`Location` と `Content-Length` は引き継がず、`x-rinka-wire: rpc` を付与する。 */

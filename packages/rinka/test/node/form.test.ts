@@ -56,7 +56,7 @@ describe("form の action に渡したサーバー関数", () => {
 });
 
 describe("JS が無いときのフォームの送信", () => {
-  it("FormData を名前の構造で入力にし、値を返したら Referer に 303 でリダイレクトする", async () => {
+  it("FormData を名前の構造で handler の入力にする", async () => {
     let received: unknown;
     const { id } = register(
       defineServerFn((_c, { input }) => {
@@ -67,9 +67,7 @@ describe("JS が無いときのフォームの送信", () => {
     const body = new FormData();
     body.append("title", "a");
     body.append("tags[]", "x");
-    const response = await submit(id, body, { referer: "http://localhost/posts/1" });
-    expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe("http://localhost/posts/1");
+    await submit(id, body, { referer: "http://localhost/posts/1" });
     expect(received).toEqual({ title: "a", tags: ["x"] });
   });
 

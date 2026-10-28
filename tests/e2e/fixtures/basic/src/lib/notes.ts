@@ -5,7 +5,6 @@ export const notes: string[] = [];
 
 export const addNote = defineServerFn(() => {
   notes.push(`note ${notes.length + 1}`);
-  return null;
 });
 
 export const failNote = defineServerFn(() => {

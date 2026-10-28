@@ -128,6 +128,18 @@ function getContext(): Context | undefined;
 function setBlockingRender(c: Context, value: boolean): void;
 ```
 
+## getServerFnResult
+
+ページを描画するきっかけになったリクエストで、サーバー関数 `fn` が返した値を返す。対象のリクエストは、フォームの送信と、JS からの呼び出しの後に、送信したページや呼び出したページを描画するリクエストである。そのリクエストで `fn` が値を返していなければ、別のサーバー関数が値を返していても `undefined` を返す。`fn` がストリームを返したときと、サーバー関数のミドルウェアが例外を投げたときも `undefined` を返す。
+
+```ts
+function getServerFnResult<In, R, M extends ServerFnMethod>(
+  fn: ServerFn<In, R, M>,
+): ResultOf<R> | undefined;
+
+type ResultOf<R> = Awaited<R> extends AsyncIterable<unknown> ? never : Awaited<R>;
+```
+
 ## defineHandler
 
 `hono/factory` の `defineHandler` を、`rinka/server` から再 export する。

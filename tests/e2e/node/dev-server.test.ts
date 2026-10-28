@@ -240,7 +240,7 @@ writeFileSync(${JSON.stringify(marker)}, "x");
     }
   });
 
-  it("form の action に渡したサーバー関数に、JS が無いときと同じ multipart の送信をすると、Referer に 303 でリダイレクトする", async () => {
+  it("form の action に渡したサーバー関数に、JS が無いときと同じ multipart の送信をすると、Referer のページを 200 で返す", async () => {
     const html = await (await fetch(`${origin}/fns`)).text();
     const action = `/_rinka/fn/${encodeURIComponent("src/lib/fns.ts#save")}`;
     expect(html).toContain(`<form action="${action}" method="post" enctype="multipart/form-data">`);
@@ -252,8 +252,8 @@ writeFileSync(${JSON.stringify(marker)}, "x");
       headers: { referer: `${origin}/fns` },
       redirect: "manual",
     });
-    expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe(`${origin}/fns`);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain(`<form action="${action}"`);
   });
 
   it("ページの要素の中から、props で受け取ったサーバー関数と import したサーバー関数を RPC で呼び出せる", async () => {

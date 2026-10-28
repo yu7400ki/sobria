@@ -1,5 +1,5 @@
 import type { StandardSchema } from "hono/factory";
-import { defineMiddleware, defineServerFn } from "rinka/server";
+import { defineMiddleware, defineServerFn, getServerFnResult } from "rinka/server";
 import { expectTypeOf, test } from "vitest";
 
 declare const numberFromString: StandardSchema<string, number>;
@@ -88,4 +88,17 @@ test("handler が async iterable を返すと、呼び出しは yield する値�
     for (const n of [1, 2]) yield n;
   });
   expectTypeOf(stream()).toEqualTypeOf<Promise<AsyncIterable<number>>>();
+});
+
+test("getServerFnResult は、サーバー関数の戻り値の型か undefined を返し、入力のあるサーバー関数も受け付ける", () => {
+  const save = defineServerFn({ input: numberFromString })(() => ({ errors: ["e"] }));
+  const reset = defineServerFn(() => "done");
+  expectTypeOf(getServerFnResult(save)).toEqualTypeOf<{ errors: string[] } | undefined>();
+  expectTypeOf(getServerFnResult(reset)).toEqualTypeOf<string | undefined>();
+  const streamed = defineServerFn(async function* () {
+    yield 1;
+  });
+  expectTypeOf(getServerFnResult(streamed)).toEqualTypeOf<undefined>();
+  // @ts-expect-error サーバー関数でない関数は受け付けない
+  getServerFnResult(() => 1);
 });

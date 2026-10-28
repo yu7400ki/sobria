@@ -100,7 +100,7 @@ describe("@cloudflare/vite-plugin との組み合わせ", () => {
           redirect: "manual",
         });
       };
-      expect((await form("a")).status).toBe(303);
+      expect((await form("a")).status).toBe(200);
       expect((await form("")).status).toBe(422);
     } finally {
       await server.stop();

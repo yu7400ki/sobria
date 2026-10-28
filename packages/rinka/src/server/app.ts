@@ -29,6 +29,7 @@ import {
   serverFnMiddleware,
   submittedPage,
   type Failure,
+  type Submitted,
   type FetchPage,
 } from "./endpoint.ts";
 import { classify, notFound } from "./errors.ts";
@@ -119,6 +120,12 @@ const missing = (): never => {
   throw notFound();
 };
 
+/** フォームの送信 `c` が JS からの送信かどうかと、送信したページへのサブリクエストを返す。送信したページが無ければ `undefined` を返す。 */
+function submittedRequest(c: Context) {
+  const { js, page } = submittedPage(c);
+  return page === undefined ? undefined : { js, request: pageRequest(c, page, js) };
+}
+
 /** ルートの表から、各ページと `route.ts` を登録した Hono のアプリを作成する。 */
 export const createApp = (({ routes, middleware }: Routes, options: AppOptions = {}): Hono => {
   const app = new Hono();
@@ -198,24 +205,34 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   };
   /** サブリクエスト `request` を、リクエスト `c` と同じ env と executionCtx で、このアプリに送信する。 */
   const fetchPage: FetchPage = (c, request) => app.fetch(request, c.env, executionCtxOf(c));
-  const formFailure: Failure = async (c, error) => {
-    const { js, page: url } = submittedPage(c);
-    if (url === undefined) return fail(c, error);
-    const request = pageRequest(c, url, js);
-    formErrors.set(request, { error });
+  /** フォームの送信 `c` の、送信したページへのサブリクエスト `request` のレスポンスを返す。JS が無いときは、307 と 308 のリダイレクトを 303 に変換する。 */
+  const submittedResponse = async (
+    c: Context,
+    { js, request }: { readonly js: boolean; readonly request: Request },
+  ): Promise<Response> => {
     const response = await fetchPage(c, request);
-    // error.tsx と onError のどちらにも渡らなかった値は、ここで記録する
-    if (formErrors.has(request)) console.error(error);
-    // JS が無いときは、307 と 308 のリダイレクトを 303 に変換する
     const resend = !js && (response.status === 307 || response.status === 308);
     return withContextHeaders(
       c,
       resend ? new Response(response.body, { status: 303, headers: response.headers }) : response,
     );
   };
+  const formFailure: Failure = async (c, error) => {
+    const submitted = submittedRequest(c);
+    if (submitted === undefined) return fail(c, error);
+    formErrors.set(submitted.request, { error });
+    const response = await submittedResponse(c, submitted);
+    // error.tsx と onError のどちらにも渡らなかった値は、ここで記録する
+    if (formErrors.has(submitted.request)) console.error(error);
+    return response;
+  };
+  const formSubmitted: Submitted = async (c) => {
+    const submitted = submittedRequest(c);
+    return submitted === undefined ? c.redirect("/", 303) : submittedResponse(c, submitted);
+  };
   app.onError(async (c) => withContextHeaders(c, await fail(c, c.error)));
   const failures = { rpc: fail, form: formFailure };
-  const serverFns = serverFnMiddleware(options, failures);
+  const serverFns = serverFnMiddleware(options, failures, formSubmitted);
   const rinka =
     middleware === undefined
       ? serverFns

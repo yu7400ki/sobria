@@ -8,6 +8,7 @@ export {
   type ResponseOptions,
 } from "./response.ts";
 export { getContext, setBlockingRender } from "./context.ts";
+export { getServerFnResult } from "./server-fn-result.ts";
 export { defineHandler, defineMiddleware } from "hono/factory";
 export {
   defineServerFn,
