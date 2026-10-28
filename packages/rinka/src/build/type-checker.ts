@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -91,14 +90,15 @@ export interface FileChanges {
 /** TypeScript の型チェッカーで、要素の関数の引数の型を解析するオブジェクトを表す。 */
 export interface TypeChecker {
   /**
-   * `code` を `file` の内容として、位置 `position` にある要素の関数の型から、第 1 引数の型を Props の型として解析する。
+   * 要素のファイル `file` を変換するコード `code` の、位置 `position` にある要素の関数の型から、第 1 引数の型を Props の型として解析する。
+   * ほかのファイルが import した `file` の型は、ディスクの内容で解決する。
    * 第 1 引数の型から `undefined` と `null` を除外した型を解析する。
    * 第 1 引数が無いときと、除外した型がオブジェクトの型でないとき（ユニオン型、`any`、`unknown`、プリミティブなど）と、型チェッカーが解決できない型のときは、`undefined` を返す。
    */
   readonly param: (file: string, code: string, position: number) => ParamType | undefined;
   /**
-   * `code` を `file` の内容として、位置 `position` にある要素の関数の型から、Props の型と `Ctx<M>` の `M` を解析する。
-   * `file` は、`export default function` で要素の関数を宣言したファイルである。
+   * 要素のファイル `file` を変換するコード `code` の、位置 `position` にある要素の関数の型から、Props の型と `Ctx<M>` の `M` を解析する。
+   * `code` は、`export default function` で要素の関数を宣言したコードである。
    * 要素の関数の型を呼び出せないときと、Props の型として解析できないときは、`undefined` を返す。
    * 第 1 引数が無ければ `props` を、第 2 引数が無いか、`M` が `object` なら `exposed` を、空にする。
    */
@@ -108,8 +108,8 @@ export interface TypeChecker {
     position: number,
   ) => ElementDescription | undefined;
   /**
-   * ディスクで作成、変更、削除されたファイルを通知する。次の解析から、`param` と `describe` に渡していないファイルは、通知した後のディスクの内容で型を解決する。
-   * 削除されたファイルが `param` か `describe` に渡したファイルなら、root から除外する。そのファイルが作成されたら、作成されたディスクの内容で型を解決する。
+   * ディスクで作成、変更、削除されたファイルを通知する。次の解析から、通知した後のディスクの内容で型を解決する。
+   * 削除されたファイルが、`param` か `describe` に渡した要素のファイルなら、そのファイルについて渡したコードを、以降の型の解決に使用しない。
    */
   readonly notify: (changes: FileChanges) => void;
   /** 型チェッカーのプロセスを終了する。 */
@@ -125,6 +125,9 @@ const elementTypes = fileURLToPath(new URL("../shared/element.js", import.meta.u
   "/",
 );
 
+/** 要素のファイル `file` の、変換するコードを型チェッカーに渡す仮想のパスを返す。 */
+const virtualPath = (file: string) => `${file}.rinka.tsx`;
+
 /**
  * 要素のファイル `file` の要素の関数の型から、`props`、`details`、`exposed` を宣言するファイルの内容を返す。
  * `props` と `exposed` は、Props の型と `M` の各メンバーの型から、省略できるメンバーの `undefined` を除外した型を持つ。
@@ -132,7 +135,7 @@ const elementTypes = fileURLToPath(new URL("../shared/element.js", import.meta.u
  */
 const typesProbe = (file: string) => `import type { Ctx } from "rinka";
 import type { DetailMap } from ${JSON.stringify(elementTypes)};
-import type Element from ${JSON.stringify(`./${basename(file)}`)};
+import type Element from ${JSON.stringify(`./${basename(virtualPath(file))}`)};
 type P = NonNullable<Parameters<typeof Element>[0]>;
 type M = NonNullable<Parameters<typeof Element>[1]> extends Ctx<infer T> ? T : never;
 export declare const props: { [K in keyof P]-?: P[K] };
@@ -142,17 +145,18 @@ export declare const exposed: { [K in keyof M]-?: M[K] };
 
 /**
  * tsconfig `config` のコンパイラの設定で、`config` が含むファイルを root にしたプログラムの型チェッカーを起動する。
- * `param` と `describe` に渡したファイルも、root に追加する。
+ * `param` と `describe` に渡した要素のファイルの変換するコードも、root に追加する。
  */
 export function createTypeChecker(options: { readonly config: string }): TypeChecker {
   const probe = join(dirname(options.config), "rinka-slot.ts");
   const api = new API({ cwd: dirname(options.config) });
   const { options: compilerOptions, fileNames } = api.parseConfigFile(options.config);
-  const roots = new Set([probe, ...fileNames]);
+  /** 型チェッカーに渡したファイルのパスごとの内容である。 */
   const files = new Map([[probe, slotProbe]]);
-  /** `param` か `describe` に渡したファイルのうち、削除を通知されたファイルの集合である。 */
-  const removed = new Set<string>();
-  const program = () => ({ rootFiles: [...roots], compilerOptions });
+  const program = () => ({
+    rootFiles: [...new Set([...fileNames, ...files.keys()])],
+    compilerOptions,
+  });
   const created = api.createSnapshot({
     createPrograms: [program()],
     fileSystem: { kind: "layer", files: Object.fromEntries(files) },
@@ -169,12 +173,8 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
   const load = (contents: Readonly<Record<string, string>>): Checker => {
     const changes = Object.entries(contents).filter(([file, code]) => files.get(file) !== code);
     if (changes.length > 0) {
-      const added = changes.some(([file]) => !roots.has(file));
-      for (const [file, code] of changes) {
-        roots.add(file);
-        files.set(file, code);
-        removed.delete(file);
-      }
+      const added = changes.some(([file]) => !files.has(file));
+      for (const [file, code] of changes) files.set(file, code);
       update({
         fileSystem: { kind: "layer", files: Object.fromEntries(changes) },
         ...(added && { reconfigurePrograms: [{ id, ...program() }] }),
@@ -202,8 +202,9 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
   };
   return {
     param(file, code, position) {
-      const checker = load({ [file]: code });
-      const [propsParam] = signatureAt(checker, file, position)?.getParameters() ?? [];
+      const virtual = virtualPath(file);
+      const checker = load({ [virtual]: code });
+      const [propsParam] = signatureAt(checker, virtual, position)?.getParameters() ?? [];
       const result = propsParam && membersOf(checker, checker.getTypeOfSymbol(propsParam));
       return (
         result && {
@@ -215,8 +216,9 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
     describe(file, code, position) {
       const types = `${file}.rinka-types.ts`;
       const typesCode = typesProbe(file);
-      const checker = load({ [file]: code, [types]: typesCode });
-      const signature = signatureAt(checker, file, position);
+      const virtual = virtualPath(file);
+      const checker = load({ [virtual]: code, [types]: typesCode });
+      const signature = signatureAt(checker, virtual, position);
       if (signature === undefined) return undefined;
       const [propsParam, ctxParam] = signature.getParameters();
       const result =
@@ -247,7 +249,7 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
         methods === undefined
           ? []
           : describeExposed(checker, methods, (name) => textOf("exposed", name));
-      const symbol = checker.getTypeAtPosition(file, position)?.getSymbol();
+      const symbol = checker.getTypeAtPosition(virtual, position)?.getSymbol();
       return {
         docs: symbol ? docsOf(checker, symbol) : { description: "", tags: [] },
         props,
@@ -257,35 +259,14 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
     },
     notify(changes) {
       const deleted = changes.deleted ?? [];
-      const loaded = deleted.filter((file) => files.delete(file));
-      for (const file of loaded) {
-        roots.delete(file);
-        removed.add(file);
-      }
-      const restored = (changes.created ?? []).flatMap((file) => {
-        if (!removed.has(file)) return [];
-        try {
-          const code = readFileSync(file, "utf8");
-          removed.delete(file);
-          return [[file, code] as const];
-        } catch {
-          return [];
-        }
-      });
-      for (const [file, code] of restored) {
-        roots.add(file);
-        files.set(file, code);
-      }
+      const removed = deleted.filter((file) => files.delete(virtualPath(file)));
       update({
-        fileSystem: { kind: "layer", files: Object.fromEntries(restored), removedPaths: loaded },
         fileNotifications: {
           created: [...(changes.created ?? [])],
           changed: [...(changes.changed ?? [])],
           deleted: [...deleted],
         },
-        ...(loaded.length + restored.length > 0 && {
-          reconfigurePrograms: [{ id, ...program() }],
-        }),
+        ...(removed.length > 0 && { reconfigurePrograms: [{ id, ...program() }] }),
       });
     },
     close() {
