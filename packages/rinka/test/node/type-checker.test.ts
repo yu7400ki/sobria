@@ -248,6 +248,27 @@ export default function X(props: Base) { return null; }`;
     }
   });
 
+  it("describe に渡した要素のファイルの削除を通知すると、そのファイルに渡したコードの宣言を解決しない", async () => {
+    const dir = await mkdtemp(join(fixture, "described-"));
+    const owner = join(dir, "owner.tsx").replaceAll("\\", "/");
+    const file = join(dir, "element.tsx").replaceAll("\\", "/");
+    const ownerCode = `declare global { interface DescribedGlobal { a: number } }
+export default function O(props: { b: string }) { return null; }`;
+    const code = "export default function X(props: DescribedGlobal) { return null; }";
+    try {
+      await writeFile(owner, ownerCode);
+      checker.describe(owner, ownerCode, nameAt(ownerCode));
+      expect(checker.param(file, code, nameAt(code))?.props).toEqual([
+        { name: "a", kind: "number" },
+      ]);
+      await rm(owner);
+      checker.notify({ deleted: [owner] });
+      expect(checker.param(file, code, nameAt(code))).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true });
+    }
+  });
+
   it("解析したファイルの削除を通知すると、そのファイルから import した Props の型を解決しない", async () => {
     const dir = await mkdtemp(join(fixture, "removed-"));
     const shared = join(dir, "shared.tsx").replaceAll("\\", "/");

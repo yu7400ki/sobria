@@ -129,6 +129,9 @@ const elementTypes = fileURLToPath(new URL("../shared/element.js", import.meta.u
 /** 要素のファイル `file` の、変換するコードを型チェッカーに渡す仮想のパスを返す。 */
 const virtualPath = (file: string) => `${file}.rinka.tsx`;
 
+/** 要素のファイル `file` の、`typesProbe` の内容を型チェッカーに渡す仮想のパスを返す。 */
+const typesPath = (file: string) => `${file}.rinka-types.ts`;
+
 /**
  * 要素のファイル `file` の要素の関数の型から、`props`、`details`、`exposed` を宣言するファイルの内容を返す。
  * `props` と `exposed` は、Props の型と `M` の各メンバーの型から、省略できるメンバーの `undefined` を除外した型を持つ。
@@ -146,7 +149,7 @@ export declare const exposed: { [K in keyof M]-?: M[K] };
 
 /**
  * tsconfig `config` のコンパイラの設定で、`config` が含むファイルを root にしたプログラムの型チェッカーを起動する。
- * `param` と `describe` に渡した要素のファイルの変換するコードも、root に追加する。
+ * `param` と `describe` に渡した要素のファイルの変換するコードと、`describe` が作成する型の宣言も、root に追加する。
  */
 export function createTypeChecker(options: { readonly config: string }): TypeChecker {
   const probe = join(dirname(options.config), "rinka-slot.ts");
@@ -228,7 +231,7 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
       return type;
     },
     describe(file, code, position) {
-      const types = `${file}.rinka-types.ts`;
+      const types = typesPath(file);
       const typesCode = typesProbe(file);
       const virtual = virtualPath(file);
       const checker = load({ [virtual]: code, [types]: typesCode });
@@ -273,7 +276,9 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
     },
     notify(changes) {
       const deleted = changes.deleted ?? [];
-      const removed = deleted.filter((file) => files.delete(virtualPath(file)));
+      const removed = deleted.filter((file) =>
+        [typesPath(file), virtualPath(file)].map((path) => files.delete(path)).includes(true),
+      );
       for (const file of removed) analyses.delete(file);
       update({
         fileNotifications: {
