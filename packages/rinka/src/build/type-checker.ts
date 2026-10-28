@@ -91,7 +91,7 @@ export interface FileChanges {
 export interface TypeChecker {
   /**
    * 要素のファイル `file` を変換するコード `code` の、位置 `position` にある要素の関数の型から、第 1 引数の型を Props の型として解析する。
-   * ほかのファイルが import した `file` の型は、ディスクの内容で解決する。同じファイルの同じコードと位置には、前回の結果を返す。
+   * ほかのファイルが import した `file` の型は、ディスクの内容で解決する。
    * 第 1 引数の型から `undefined` と `null` を除外した型を解析する。
    * 第 1 引数が無いときと、除外した型がオブジェクトの型でないとき（ユニオン型、`any`、`unknown`、プリミティブなど）と、型チェッカーが解決できない型のときは、`undefined` を返す。
    */
@@ -157,10 +157,10 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
   const { options: compilerOptions, fileNames } = api.parseConfigFile(options.config);
   /** 型チェッカーに渡したファイルのパスごとの内容である。 */
   const files = new Map([[probe, slotProbe]]);
-  /** `param` に渡した要素のファイルごとの、位置と、最後の解析の結果である。 */
+  /** `param` に渡した要素のファイルごとの、最後に渡したコードと位置と、解析の結果である。 */
   const analyses = new Map<
     string,
-    { readonly position: number; readonly type: ParamType | undefined }
+    { readonly code: string; readonly position: number; readonly type: ParamType | undefined }
   >();
   const program = () => ({
     rootFiles: [...new Set([...fileNames, ...files.keys()])],
@@ -225,9 +225,9 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
   return {
     param(file, code, position) {
       const last = analyses.get(file);
-      if (files.get(virtualPath(file)) === code && last?.position === position) return last.type;
+      if (last?.code === code && last.position === position) return last.type;
       const type = analyze(file, code, position);
-      analyses.set(file, { position, type });
+      analyses.set(file, { code, position, type });
       return type;
     },
     describe(file, code, position) {
@@ -288,8 +288,10 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
         },
         ...(removed.length > 0 && { reconfigurePrograms: [{ id, ...program() }] }),
       });
-      return [...analyses].flatMap(([file, last]) => {
-        const type = analyze(file, files.get(virtualPath(file))!, last.position);
+      const results = [...analyses].map(
+        ([file, last]) => [file, last, analyze(file, last.code, last.position)] as const,
+      );
+      return results.flatMap(([file, last, type]) => {
         if (JSON.stringify(type) === JSON.stringify(last.type)) return [];
         analyses.set(file, { ...last, type });
         return [file];
