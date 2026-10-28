@@ -7,7 +7,9 @@ import { manifestOf } from "./element-manifest.ts";
 import type { ElementFile } from "./elements.ts";
 import { findUp, readJson } from "./libraries.ts";
 import { inside, relativePath } from "./paths.ts";
+import { elementsConfig } from "./prepare.ts";
 import { DEFAULT_PREFIX, sceneOf, type SceneContext, type Settings } from "./settings.ts";
+import { createTypeChecker } from "./type-checker.ts";
 
 /** ライブラリのビルドが出力する、Custom Elements Manifest のファイルの名前である。 */
 const MANIFEST = "custom-elements.json";
@@ -65,19 +67,26 @@ export function libraryBuild({ options, settings }: SceneContext): Plugin {
           output.type === "chunk" && output.isEntry ? [[output.name, output.fileName]] : [],
         ),
       );
-      const manifest = manifestOf(
-        ownElements(settings()).map(({ tag, path }) => ({
-          tag,
-          file: relativePath(root, path),
-          code: readFileSync(path, "utf8"),
-          path: relativePath(dir, join(clientDir, entries.get(tag)!)),
-        })),
-      );
-      this.emitFile({
-        type: "asset",
-        fileName: MANIFEST,
-        source: `${JSON.stringify(manifest, null, 2)}\n`,
-      });
+      const checker = createTypeChecker({ config: elementsConfig(root) });
+      try {
+        const manifest = manifestOf(
+          ownElements(settings()).map(({ tag, path }) => ({
+            tag,
+            file: relativePath(root, path),
+            code: readFileSync(path, "utf8"),
+            path: relativePath(dir, join(clientDir, entries.get(tag)!)),
+            source: path,
+          })),
+          checker,
+        );
+        this.emitFile({
+          type: "asset",
+          fileName: MANIFEST,
+          source: `${JSON.stringify(manifest, null, 2)}\n`,
+        });
+      } finally {
+        checker.close();
+      }
     },
   };
 }

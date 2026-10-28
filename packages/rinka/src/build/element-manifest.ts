@@ -7,14 +7,13 @@ import { customEventName } from "../shared/names.ts";
 import { langs, parseWithComments, walk } from "./ast.ts";
 import { elementFunction } from "./element-transform.ts";
 import { usesForm } from "./form-usage.ts";
-import {
-  exposedMembers,
-  fileTypes,
-  memberName,
-  optionsOf,
-  propMembers,
-  type FileTypes,
-} from "./props.ts";
+import { optionsOf, propsParamStart, unresolvedProps } from "./props.ts";
+import type {
+  DocComment,
+  ElementDescription,
+  ExposedDescription,
+  TypeChecker,
+} from "./type-checker.ts";
 
 /** Custom Elements Manifest の型の記述を表す。 */
 export interface ManifestType {
@@ -117,14 +116,21 @@ export interface ManifestElement {
   readonly code: string;
   /** パッケージのルートからの、`/` で区切ったビルドしたモジュールのパスである。 */
   readonly path: string;
+  /** ソースの絶対パスである。 */
+  readonly source: string;
 }
 
-/** 要素ごとに、自分自身を登録するモジュールを記述したマニフェストを返す。 */
-export function manifestOf(elements: readonly ManifestElement[]): ManifestPackage {
+/** 要素ごとに、自分自身を登録するモジュールを記述したマニフェストを返す。型は `checker` で解析する。 */
+export function manifestOf(
+  elements: readonly ManifestElement[],
+  checker: TypeChecker,
+): ManifestPackage {
   return {
     schemaVersion: "2.1.0",
-    modules: elements.map(({ tag, file, code, path }) => {
-      const declaration = describeElement(code, { tag, file });
+    modules: elements.map(({ tag, file, code, path, source }) => {
+      const declaration = describeElement(code, { tag, file }, (text, position) =>
+        checker.describe(source, text, position),
+      );
       return {
         kind: "javascript-module",
         path,
@@ -141,26 +147,35 @@ export function manifestOf(elements: readonly ManifestElement[]): ManifestPackag
   };
 }
 
+/** 要素のファイルのコード `code` の、位置 `position` にある要素の関数の型を、マニフェストのために解析する関数を表す。 */
+export type DescribeTypes = (code: string, position: number) => ElementDescription | undefined;
+
 /**
  * タグ名 `tag` の要素のファイル `file` のコード `code` から、要素の宣言を返す。
  * 属性、イベント、スロットは、要素を登録するときと同じ props の分類から算出する。
- * 型は型注釈のソースの文字列で記述し、説明は JSDoc から取得する。
+ * props と `Ctx<M>` の `M` のメンバーの型、説明、イベントの `detail` の型は型チェッカーから取得し、要素の関数の説明は JSDoc から取得する。
  */
 export function describeElement(
   code: string,
   { tag, file }: { readonly tag: string; readonly file: string },
+  describeTypes: DescribeTypes,
 ): CustomElementDeclaration {
   const { program, comments } = parseWithComments(code, {
     id: file,
     file,
     lang: langs.get(extname(file)) ?? "tsx",
   });
-  const source = new Source(code, comments, fileTypes(program));
-  const { exported, fn, name, ctx } = elementFunction(program, file);
+  const source = new Source(code, comments);
+  const { exported, fn, id, ctx } = elementFunction(program, file);
   const { tags, ...docs } = source.docsOf(exported);
-  const props = propMembers(program, fn, file);
+  propsParamStart(fn, file);
+  const described = describeTypes(code, id.start);
+  if (described === undefined) throw unresolvedProps(file);
   const kinds = propKinds(
-    optionsOf(new Map([...props].map(([prop, { kind }]) => [prop, kind])), usesForm(fn, ctx, file)),
+    optionsOf(
+      new Map(described.props.map(({ name: prop, kind }) => [prop, kind])),
+      usesForm(fn, ctx, file),
+    ),
   );
   const attributeOf = new Map(
     [...kinds.attributes].map(([attribute, { name: prop }]) => [prop, attribute]),
@@ -169,34 +184,32 @@ export function describeElement(
   const events: ManifestEvent[] = [];
   const slots: ManifestSlot[] = [];
   const members: ManifestMember[] = [];
-  for (const [prop, { signature }] of props) {
-    const { tags: _, ...doc } = source.docsOf(signature);
+  for (const { name: prop, type, docs: comment, detail } of described.props) {
+    const doc = documented(comment);
     if (kinds.slots.has(prop)) {
       slots.push({ name: prop === "children" ? "" : prop, ...doc });
       continue;
     }
-    const type = source.signatureType(signature);
-    const typed = type === undefined ? {} : { type: { text: type } };
+    const typed = { type: { text: type } };
     members.push({ kind: "field", name: prop, ...typed, ...doc });
     const attribute = attributeOf.get(prop);
     if (attribute !== undefined) {
       attributes.push({ name: attribute, fieldName: prop, ...typed, ...doc });
     }
     if (kinds.events.has(prop)) {
-      const detail = source.detailType(signature);
       events.push({
         name: customEventName(prop),
-        type: { text: `CustomEvent<${detail}>` },
+        type: { text: `CustomEvent<${detail ?? "unknown"}>` },
         ...doc,
       });
     }
   }
   for (const [attribute, type] of Object.entries(formAttributeTypes)) {
-    if (kinds.reflects.has(attribute) && !props.has(attribute)) {
+    if (kinds.reflects.has(attribute) && !kinds.names.includes(attribute)) {
       attributes.push({ name: attribute, type: { text: type } });
     }
   }
-  members.push(...source.exposed(exposedMembers(program, ctx, file)));
+  members.push(...described.exposed.map(exposedMember));
   const cssProperties = tags.flatMap((entry) =>
     entry.tag === "cssprop" ? cssPropertyOf(entry.text) : [],
   );
@@ -204,7 +217,7 @@ export function describeElement(
     kind: "class",
     customElement: true,
     tagName: tag,
-    name,
+    name: id.name,
     ...docs,
     attributes: nonEmpty(attributes),
     events: nonEmpty(events),
@@ -212,6 +225,44 @@ export function describeElement(
     members: nonEmpty(members),
     cssParts: nonEmpty(partsOf(fn).map((part) => ({ name: part }))),
     cssProperties: nonEmpty(cssProperties),
+  };
+}
+
+/** `Ctx<M>` の `M` のメンバーを、マニフェストのメソッドかフィールドにする。 */
+function exposedMember(member: ExposedDescription): ManifestMember {
+  const doc = documented(member.docs);
+  if (member.kind === "method") {
+    return {
+      kind: "method",
+      name: member.name,
+      parameters: member.parameters.map(({ name, type, optional, rest }) => ({
+        name,
+        type: { text: type },
+        ...(optional && { optional: true }),
+        ...(rest && { rest: true }),
+      })),
+      return: { type: { text: member.returnType } },
+      ...doc,
+    };
+  }
+  return {
+    kind: "field",
+    name: member.name,
+    type: { text: member.type },
+    ...(member.readonly && { readonly: true }),
+    ...doc,
+  };
+}
+
+/** 型チェッカーが返した JSDoc から、説明と、`@summary` と `@deprecated` のタグを返す。 */
+function documented({ description, tags }: DocComment): Documented {
+  const text = description.trim();
+  const summary = tags.find(({ name }) => name === "summary")?.text.trim();
+  const deprecated = tags.find(({ name }) => name === "deprecated")?.text.trim();
+  return {
+    ...(text === "" ? {} : { description: text }),
+    ...(summary ? { summary } : {}),
+    ...(deprecated === undefined ? {} : { deprecated: deprecated === "" ? true : deprecated }),
   };
 }
 
@@ -224,30 +275,12 @@ interface Docs extends Documented {
   readonly tags: readonly { readonly tag: string; readonly text: string }[];
 }
 
-/** 関数の引数のノードを表す。 */
-type Param = ESTree.ParamPattern;
-
-/** 関数の型の、引数と戻り値の型注釈を表す。 */
-interface Callable {
-  readonly params: readonly Param[];
-  readonly returnType?: ESTree.TSTypeAnnotation | null;
-}
-
-/** Props の型のメンバーの宣言を表す。 */
-type PropSignature = ESTree.TSPropertySignature | ESTree.TSMethodSignature;
-
-/** 要素のファイルのコードとコメントから、型の文字列と説明を取得する。 */
+/** 要素のファイルのコードとコメントから、JSDoc の説明を取得する。 */
 class Source {
   constructor(
     private readonly code: string,
     private readonly comments: ParseResult["comments"],
-    private readonly types: FileTypes,
   ) {}
-
-  /** ノードのソースの文字列を返す。 */
-  text(node: { readonly start: number; readonly end: number }): string {
-    return this.code.slice(node.start, node.end);
-  }
 
   /** ノードの直前に、空白だけを挟んで記述した JSDoc の説明とタグを返す。 */
   docsOf(node: { readonly start: number }): Docs {
@@ -261,192 +294,6 @@ class Source {
     }
     return parseJsDoc(comment.value.slice(1));
   }
-
-  /** Props の型のメンバーの型を返す。メソッドは関数型の文字列にし、getter は戻り値の型を、setter は引数の型を返す。 */
-  signatureType(signature: PropSignature): string | undefined {
-    if (signature.type === "TSPropertySignature") {
-      return this.annotationText(signature.typeAnnotation);
-    }
-    if (signature.kind === "get") return this.annotationText(signature.returnType);
-    if (signature.kind === "set") return this.paramType(signature.params[0]);
-    return `(${this.paramsText(signature.params)}) => ${this.returnText(signature.returnType)}`;
-  }
-
-  /**
-   * イベントの props の宣言から、`CustomEvent` の `detail` の型を返す。
-   * 引数が無ければ `null` にし、第 1 引数の型から `undefined` を除き、第 1 引数を省略できるか、型が `undefined` を受け付ければ `null` を加える。
-   */
-  detailType(signature: PropSignature): string {
-    const params = this.signatureParams(signature);
-    if (params === undefined) return "unknown";
-    const [first] = params;
-    if (first === undefined) return "null";
-    if (first.type === "RestElement") {
-      const rest = first.typeAnnotation && this.types.resolve(first.typeAnnotation.typeAnnotation);
-      return rest?.type === "TSArrayType" ? this.text(rest.elementType) : "unknown";
-    }
-    const annotation = first.type === "Identifier" ? first.typeAnnotation : undefined;
-    if (!annotation) return "unknown";
-    const type = this.types.resolve(annotation.typeAnnotation);
-    const members = type.type === "TSUnionType" ? type.types : [type];
-    const defined = members.filter((member) => member.type !== "TSUndefinedKeyword");
-    const optional =
-      (first.type === "Identifier" && first.optional) ||
-      defined.length < members.length ||
-      defined.some((member) => member.type === "TSVoidKeyword");
-    if (!optional) return this.text(withoutParens(annotation.typeAnnotation));
-    if (defined.length === 0) return "null";
-    const text =
-      defined.length === members.length
-        ? this.text(type)
-        : defined.map((member) => this.text(member)).join(" | ");
-    return defined.some((member) => member.type === "TSNullKeyword") ? text : `${text} | null`;
-  }
-
-  /** `Ctx<M>` の `M` のメンバーの宣言 `signatures` を、メソッドとフィールドにする。 */
-  exposed(signatures: readonly ESTree.TSSignature[]): ManifestMember[] {
-    const setters = new Set(
-      signatures.flatMap((signature) =>
-        signature.type === "TSMethodSignature" && signature.kind === "set"
-          ? [memberName(signature)]
-          : [],
-      ),
-    );
-    const accessors = new Set<string>();
-    return signatures.flatMap((signature): ManifestMember[] => {
-      const name = memberName(signature);
-      if (name === undefined) return [];
-      const { tags: _, ...doc } = this.docsOf(signature);
-      if (signature.type === "TSMethodSignature") {
-        if (signature.kind === "method") {
-          return [this.method(name, signature.params, signature.returnType, doc)];
-        }
-        if (accessors.has(name)) return [];
-        accessors.add(name);
-        const type = this.signatureType(signature);
-        return [
-          {
-            kind: "field",
-            name,
-            ...(type === undefined ? {} : { type: { text: type } }),
-            ...(signature.kind === "get" && !setters.has(name) ? { readonly: true } : {}),
-            ...doc,
-          },
-        ];
-      }
-      if (signature.type !== "TSPropertySignature") return [];
-      const fnType = this.functionType(signature.typeAnnotation?.typeAnnotation);
-      if (fnType) return [this.method(name, fnType.params, fnType.returnType, doc)];
-      const type = this.annotationText(signature.typeAnnotation);
-      return [
-        {
-          kind: "field",
-          name,
-          ...(type === undefined ? {} : { type: { text: type } }),
-          ...(signature.readonly ? { readonly: true } : {}),
-          ...doc,
-        },
-      ];
-    });
-  }
-
-  /** Props の型のメンバーが関数なら、その引数を返す。getter は戻り値の型を、setter は引数の型を、関数型として扱う。 */
-  private signatureParams(signature: PropSignature): readonly Param[] | undefined {
-    if (signature.type === "TSPropertySignature") {
-      return this.functionType(signature.typeAnnotation?.typeAnnotation)?.params;
-    }
-    if (signature.kind === "get") {
-      return this.functionType(signature.returnType?.typeAnnotation)?.params;
-    }
-    if (signature.kind === "set") {
-      const [param] = signature.params;
-      const annotation =
-        param && param.type !== "TSParameterProperty" ? param.typeAnnotation : undefined;
-      return this.functionType(annotation?.typeAnnotation)?.params;
-    }
-    return signature.params;
-  }
-
-  /**
-   * 型の記述から、括弧と、`undefined` と `null` との合併と、同じファイルで宣言した type の名前を外した関数の型の、引数と戻り値の型を返す。
-   * 呼び出しのシグネチャだけを持つ interface と型リテラルは、最初のシグネチャを返す。関数の型でなければ `undefined` を返す。
-   */
-  private functionType(type: ESTree.TSType | null | undefined): Callable | undefined {
-    if (!type) return undefined;
-    const resolved = this.types.resolve(type);
-    if (resolved.type === "TSUnionType") {
-      const [only, ...rest] = resolved.types.filter(
-        (member) => member.type !== "TSUndefinedKeyword" && member.type !== "TSNullKeyword",
-      );
-      return rest.length === 0 ? this.functionType(only) : undefined;
-    }
-    if (resolved.type === "TSFunctionType") return resolved;
-    const signatures = this.types.members(resolved);
-    const [signature] = signatures ?? [];
-    return signature?.type === "TSCallSignatureDeclaration" &&
-      signatures?.every((member) => member.type === "TSCallSignatureDeclaration")
-      ? signature
-      : undefined;
-  }
-
-  /** メソッドのメンバーを返す。 */
-  private method(
-    name: string,
-    params: readonly Param[],
-    returnType: ESTree.TSTypeAnnotation | null | undefined,
-    doc: Documented,
-  ): ManifestMember {
-    return {
-      kind: "method",
-      name,
-      parameters: params.map((param) => this.parameter(param)),
-      return: { type: { text: this.returnText(returnType) } },
-      ...doc,
-    };
-  }
-
-  /** 引数のノードから、メソッドの引数を返す。 */
-  private parameter(param: Param): ManifestParameter {
-    const binding = param.type === "RestElement" ? param.argument : param;
-    const name = binding.type === "Identifier" ? binding.name : this.text(binding);
-    const type = this.paramType(param);
-    return {
-      name,
-      ...(type === undefined ? {} : { type: { text: type } }),
-      ...(param.type === "Identifier" && param.optional ? { optional: true } : {}),
-      ...(param.type === "RestElement" ? { rest: true } : {}),
-    };
-  }
-
-  /** 引数の型注釈の文字列を返す。 */
-  private paramType(param: Param | undefined): string | undefined {
-    if (param === undefined || param.type === "TSParameterProperty") return undefined;
-    return this.annotationText(param.typeAnnotation);
-  }
-
-  /** 型注釈の型の文字列を返す。 */
-  private annotationText(
-    annotation: ESTree.TSTypeAnnotation | null | undefined,
-  ): string | undefined {
-    return annotation ? this.text(annotation.typeAnnotation) : undefined;
-  }
-
-  /** 引数の並びのソースの文字列を返す。 */
-  private paramsText(params: readonly Param[]): string {
-    const first = params[0];
-    const last = params.at(-1);
-    return first && last ? this.code.slice(first.start, last.end) : "";
-  }
-
-  /** 戻り値の型注釈の文字列を返す。型注釈が無ければ `unknown` を返す。 */
-  private returnText(returnType: ESTree.TSTypeAnnotation | null | undefined): string {
-    return this.annotationText(returnType) ?? "unknown";
-  }
-}
-
-/** 型を囲む括弧を外した型を返す。 */
-function withoutParens(type: ESTree.TSType): ESTree.TSType {
-  return type.type === "TSParenthesizedType" ? withoutParens(type.typeAnnotation) : type;
 }
 
 /** JSDoc の本文（先頭の `/**` の 2 つ目の `*` から後）から、説明とタグを返す。 */

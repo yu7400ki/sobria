@@ -292,9 +292,7 @@ type ElementEventMap<P> = {
         : never
       : never
   ]-?: K extends EventPropName
-    ? NonNullable<P[K]> extends infer F extends (...args: never[]) => unknown
-      ? WithNativeEvent<CustomEventName<K>, CustomEvent<DetailOf<F>>>
-      : never
+    ? WithNativeEvent<CustomEventName<K>, CustomEvent<DetailMap<P>[K]>>
     : never;
 };
 
@@ -348,6 +346,12 @@ type LowerOrDigit =
   Lowercase<UpperLetter> | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
 
 type WithNativeEvent<N, E> = N extends keyof HTMLElementEventMap ? E | HTMLElementEventMap[N] : E;
+
+type DetailMap<P> = {
+  [K in keyof P]-?: NonNullable<P[K]> extends infer F extends (...args: never[]) => unknown
+    ? DetailOf<F>
+    : never;
+};
 
 type DetailOf<F extends (...args: never[]) => unknown> =
   Parameters<F> extends []

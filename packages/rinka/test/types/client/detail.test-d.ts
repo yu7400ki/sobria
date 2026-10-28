@@ -17,6 +17,10 @@ const Element = defineElement("type-detail", Detail, {
     onCallable: "function",
     onGetter: "function",
     onSetter: "function",
+    onNamed: "function",
+    onUnion: "function",
+    onOverload: "function",
+    onGeneric: "function",
   },
 });
 
@@ -45,5 +49,13 @@ test("ElementRef のイベントの型は、fixture の Expected に記述した
   );
   ref.addEventListener("setter", (event) =>
     expectTypeOf(event).toEqualTypeOf<Expected["setter"]>(),
+  );
+  ref.addEventListener("named", (event) => expectTypeOf(event).toEqualTypeOf<Expected["named"]>());
+  ref.addEventListener("union", (event) => expectTypeOf(event).toEqualTypeOf<Expected["union"]>());
+  ref.addEventListener("overload", (event) =>
+    expectTypeOf(event).toEqualTypeOf<Expected["overload"]>(),
+  );
+  ref.addEventListener("generic", (event) =>
+    expectTypeOf(event).toEqualTypeOf<Expected["generic"]>(),
   );
 });

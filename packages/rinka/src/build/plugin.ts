@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { transformWithOxc, type Plugin, type ResolvedConfig } from "vite";
@@ -15,7 +14,7 @@ import { transformJsx } from "./jsx.ts";
 import { libraryBuild } from "./library-build.ts";
 import { fromApp } from "./package.ts";
 import { devPath, inside, relativePath } from "./paths.ts";
-import { PREPARED_DIR, preparedFiles, projectConfig, writePrepared } from "./prepare.ts";
+import { elementsConfig, preparedFiles, writePrepared } from "./prepare.ts";
 import type { ParamTypeOf } from "./props.ts";
 import { routesModule } from "./routes.ts";
 import { hashedFnModule, isServerFnSource, serverFnModules } from "./server-fns.ts";
@@ -115,9 +114,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
     (code, position) => {
       const last = analyzed.get(path);
       if (last?.code === code && last.position === position) return last.type;
-      checker ??= createTypeChecker({
-        config: join(current().root, PREPARED_DIR, projectConfig("elements")),
-      });
+      checker ??= createTypeChecker({ config: elementsConfig(current().root) });
       const type = checker.param(path, code, position);
       analyzed.set(path, { code, position, type });
       return type;

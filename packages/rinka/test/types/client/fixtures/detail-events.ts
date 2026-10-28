@@ -4,6 +4,8 @@
 
 type Handler = (id: string) => void;
 
+type Mode = "on" | "off";
+
 interface Callable {
   (count: number): void;
 }
@@ -22,6 +24,11 @@ export type Props = {
   onCallable: Callable;
   get onGetter(): (count: number) => void;
   set onSetter(fn: (reason: string) => void);
+  onNamed: (value?: Mode) => void;
+  onUnion: ((value: string) => void) | ((value: number) => void);
+  onOverload: { (): void; (value: string): void };
+  // oxlint-disable-next-line typescript/no-unnecessary-type-parameters
+  onGeneric: <T>(value: T) => void;
 };
 
 export type Expected = {
@@ -37,6 +44,10 @@ export type Expected = {
   callable: CustomEvent<number>;
   getter: CustomEvent<number>;
   setter: CustomEvent<string>;
+  named: CustomEvent<Mode | null>;
+  union: CustomEvent<string | number>;
+  overload: CustomEvent<string>;
+  generic: CustomEvent<unknown>;
 };
 
 export default function Detail(_props: Props) {

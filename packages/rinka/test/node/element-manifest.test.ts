@@ -1,14 +1,36 @@
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { parseModule } from "../../src/build/ast.ts";
 import { describeElement, manifestOf } from "../../src/build/element-manifest.ts";
 import { CompileError } from "../../src/build/errors.ts";
+import { createTypeChecker, type TypeChecker } from "../../src/build/type-checker.ts";
+
+const fixture = resolve(import.meta.dirname, "../fixtures/type-checker");
+let checker: TypeChecker;
+
+beforeAll(() => {
+  checker = createTypeChecker({ config: join(fixture, "tsconfig.json") });
+});
+
+afterAll(() => {
+  checker.close();
+});
+
+/** パス `source` のコードとして、型チェッカーで要素の引数の型を解析する関数を返す。 */
+const typesOf = (source: string) => (code: string, position: number) =>
+  checker.describe(source.replaceAll("\\", "/"), code, position);
 
 /** `src/elements/card.tsx` の `<x-card>` として `code` を記述する。 */
 const describeCard = (code: string) =>
-  describeElement(code, { tag: "x-card", file: "src/elements/card.tsx" });
+  describeElement(
+    code,
+    { tag: "x-card", file: "src/elements/card.tsx" },
+    typesOf(join(fixture, "card.tsx")),
+  );
 
 describe("要素の記述", () => {
   it("要素の関数の名前と JSDoc から、名前と説明と非推奨を記述する", () => {
@@ -56,7 +78,7 @@ export default function Card(props: Props) {
       },
       { name: "label", fieldName: "label", type: { text: "string" } },
       { name: "open", fieldName: "open", type: { text: "boolean" } },
-      { name: "tone", fieldName: "tone", type: { text: '"light" | "dark"' } },
+      { name: "tone", fieldName: "tone", type: { text: '"dark" | "light"' } },
       { name: "value", fieldName: "value", type: { text: "string | number" } },
     ]);
     expect(members).toEqual([
@@ -68,9 +90,29 @@ export default function Card(props: Props) {
       },
       { kind: "field", name: "label", type: { text: "string" } },
       { kind: "field", name: "open", type: { text: "boolean" } },
-      { kind: "field", name: "tone", type: { text: '"light" | "dark"' } },
+      { kind: "field", name: "tone", type: { text: '"dark" | "light"' } },
       { kind: "field", name: "value", type: { text: "string | number" } },
     ]);
+  });
+
+  it("省略できる props の型から undefined を除外し、true と false は boolean にまとめる", () => {
+    const { attributes } = describeCard(`
+type Props = { compact?: boolean; tone?: boolean | null };
+export default function Card(props: Props) {
+  return <div />;
+}`);
+    expect(attributes?.map(({ type }) => type?.text)).toEqual(["boolean", "boolean | null"]);
+  });
+
+  it("省略できる props の型は、型の別名と enum の名前で記述する", () => {
+    const { attributes } = describeCard(`
+type Tone = "dark" | "light";
+enum Size { Small, Large }
+type Props = { tone?: Tone; size?: Size; note?: Tone | null };
+export default function Card(props: Props) {
+  return <div />;
+}`);
+    expect(attributes?.map(({ type }) => type?.text)).toEqual(["Tone", "Size", "Tone | null"]);
   });
 
   it("onX の関数の props を、detail の型を持つ CustomEvent のイベントとフィールドに記述する", () => {
@@ -104,7 +146,7 @@ export default function Card(props: Props) {
         description: "いいねを押したときに呼ぶ。",
       },
       { kind: "field", name: "onClose", type: { text: "() => void" } },
-      { kind: "field", name: "onPick", type: { text: "(item?: string) => void" } },
+      { kind: "field", name: "onPick", type: { text: "(item?: string | undefined) => void" } },
       { kind: "field", name: "onMaybe", type: { text: "(value: number | undefined) => void" } },
     ]);
   });
@@ -171,6 +213,28 @@ export default function Card(props: {}, { expose }: Ctx<Methods>) {
       },
       { kind: "field", name: "value", type: { text: "number" }, readonly: true },
       { kind: "field", name: "label", type: { text: "string" } },
+    ]);
+  });
+
+  it("分割代入した ctx の Ctx<M> から、省略できるメソッドと、型の別名を型に持つ引数とフィールドを記述する", () => {
+    const { members } = describeCard(`
+import type { Ctx } from "rinka";
+type Reason = "user" | "timeout";
+interface Methods {
+  close?(reason?: Reason): void;
+  last?: Reason;
+}
+export default function Card(props: {}, { css }: Ctx<Methods>) {
+  return <div />;
+}`);
+    expect(members).toEqual([
+      {
+        kind: "method",
+        name: "close",
+        parameters: [{ name: "reason", type: { text: "Reason" }, optional: true }],
+        return: { type: { text: "void" } },
+      },
+      { kind: "field", name: "last", type: { text: "Reason" } },
     ]);
   });
 
@@ -290,7 +354,7 @@ export default function Card(props: Props) {
     expect(events?.map(({ type }) => type.text)).toEqual([
       "CustomEvent<null>",
       "CustomEvent<string | null>",
-      "CustomEvent<Plain>",
+      "CustomEvent<string>",
       "CustomEvent<number>",
     ]);
   });
@@ -304,15 +368,51 @@ export default function Card(props: {}, ctx: Ctx<object>) {
     expect(members).toBeUndefined();
   });
 
-  it("Ctx<M> の M が、型リテラルでも同じファイルの type と interface の名前でもなければ、ビルドのエラーにする", () => {
-    expect(() =>
-      describeCard(`
-import type { Ctx } from "rinka";
-import type { Methods } from "./methods.ts";
-export default function Card(props: {}, { expose }: Ctx<Methods>) {
+  it("別のファイルから import した Props の型と Ctx<M> の M のメンバーを記述する", async () => {
+    const dir = await mkdtemp(join(fixture, "manifest-"));
+    try {
+      await writeFile(
+        join(dir, "types.ts"),
+        `export interface Props {
+  /** 見出しである。 */
+  heading: string;
+}
+export interface Methods {
+  /** 閉じる。 */
+  close(): void;
+}`,
+      );
+      const code = `import type { Ctx } from "rinka";
+import type { Methods, Props } from "./types.ts";
+export default function Card(props: Props, ctx: Ctx<Methods>) {
   return <div />;
-}`),
-    ).toThrow("Ctx<M> の M には");
+}`;
+      const { attributes, members } = describeElement(
+        code,
+        { tag: "x-card", file: "src/elements/card.tsx" },
+        typesOf(join(dir, "card.tsx")),
+      );
+      expect(attributes).toEqual([
+        {
+          name: "heading",
+          fieldName: "heading",
+          type: { text: "string" },
+          description: "見出しである。",
+        },
+      ]);
+      expect(members).toEqual([
+        { kind: "field", name: "heading", type: { text: "string" }, description: "見出しである。" },
+        {
+          kind: "method",
+          name: "close",
+          parameters: [],
+          return: { type: { text: "void" } },
+          description: "閉じる。",
+        },
+      ]);
+    } finally {
+      await rm(dir, { recursive: true });
+    }
   });
 
   it("@cssprop の {構文} を、CSS のカスタムプロパティの構文に記述する", () => {
@@ -334,14 +434,18 @@ export default function Card() {
 describe("マニフェスト", () => {
   it("要素ごとに、自分自身を登録するモジュールと、タグ名の定義を記述する", () => {
     expect(
-      manifestOf([
-        {
-          tag: "x-card",
-          file: "src/elements/card.tsx",
-          code: "export default function Card() { return <div />; }",
-          path: "dist/x-card.js",
-        },
-      ]),
+      manifestOf(
+        [
+          {
+            tag: "x-card",
+            file: "src/elements/card.tsx",
+            code: "export default function Card() { return <div />; }",
+            path: "dist/x-card.js",
+            source: join(fixture, "card.tsx").replaceAll("\\", "/"),
+          },
+        ],
+        checker,
+      ),
     ).toEqual({
       schemaVersion: "2.1.0",
       modules: [
@@ -395,7 +499,9 @@ describe("detail の型", () => {
           : [],
       );
     });
-    expect(expected).toHaveLength(12);
-    expect(describeElement(code, { tag: "x-detail", file }).events).toEqual(expected);
+    expect(expected).toHaveLength(16);
+    expect(
+      describeElement(code, { tag: "x-detail", file }, typesOf(fileURLToPath(path))).events,
+    ).toEqual(expected);
   });
 });

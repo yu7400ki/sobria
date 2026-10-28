@@ -18,6 +18,10 @@ type Project = (typeof PROJECTS)[number];
 /** プロジェクト `project` の tsconfig の、`.rinka/` の中のファイルの名前を返す。 */
 export const projectConfig = (project: Project): string => `tsconfig.${project}.json`;
 
+/** ルートが `root` のアプリで、要素のプロジェクトの tsconfig のパスを返す。 */
+export const elementsConfig = (root: string): string =>
+  join(root, PREPARED_DIR, projectConfig("elements"));
+
 /** 生成する tsconfig が extends する、アプリの tsconfig のファイルの名前である。 */
 const BASE_CONFIG = "tsconfig.base.json";
 

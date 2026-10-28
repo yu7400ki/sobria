@@ -49,7 +49,7 @@ export function registerElement(
   file: string,
   client: boolean,
 ): ElementInfo {
-  const { exported, fn, name, ctx } = elementFunction(program, file);
+  const { exported, fn, id, ctx } = elementFunction(program, file);
   const kinds = paramKinds(fn, output.original, file, paramType);
   const elementOptions = optionsOf(kinds, usesForm(fn, ctx, file));
   convertSlots(fn, elementOptions, output, file);
@@ -65,7 +65,7 @@ export function registerElement(
         "",
       ];
   output.append(`
-export default ${DEFINE}(${[JSON.stringify(tag), name, JSON.stringify(elementOptions), last].join(", ")});
+export default ${DEFINE}(${[JSON.stringify(tag), id.name, JSON.stringify(elementOptions), last].join(", ")});
 ${accept}`);
   output.prepend(importInternalAs(client ? "client" : "server", "defineElement", DEFINE));
   return { tag, options: elementOptions };
@@ -75,7 +75,7 @@ ${accept}`);
 export interface ElementFunction {
   readonly exported: ESTree.ExportDefaultDeclaration;
   readonly fn: ESTree.Function;
-  readonly name: string;
+  readonly id: ESTree.BindingIdentifier;
   readonly ctx: CtxParam | undefined;
 }
 
@@ -98,7 +98,7 @@ export function elementFunction(program: ESTree.Program, file: string): ElementF
       `${file}: 要素の関数の 2 番目の引数は、ctx のような名前か、{ form } のような分割代入で受け取ってください。`,
     );
   }
-  return { exported, fn, name: fn.id.name, ctx };
+  return { exported, fn, id: fn.id, ctx };
 }
 
 /** 要素のファイルの最上位の `export const load` の値を返す。記述が無ければ `load` を返す。ほかの形で `load` を export すると、ビルドのエラーにする。 */

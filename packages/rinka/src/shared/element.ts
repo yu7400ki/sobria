@@ -207,6 +207,13 @@ type DetailOf<F extends (...args: never[]) => unknown> =
     ? null
     : Exclude<Parameters<F>[0], undefined> | (undefined extends Parameters<F>[0] ? null : never);
 
+/** Props の型 `P` の props ごとに、関数の型の props なら、その props を呼んだときに発行する `CustomEvent` の `detail` の型を表す。ほかの props では `never` を表す。 */
+export type DetailMap<P> = {
+  [K in keyof P]-?: NonNullable<P[K]> extends infer F extends (...args: never[]) => unknown
+    ? DetailOf<F>
+    : never;
+};
+
 /** イベント名 `N` の `CustomEvent` の型 `E` を表す。`HTMLElement` のイベントと同じ名前なら、そのイベントの型との合併を表す。 */
 type WithNativeEvent<N, E> = N extends keyof HTMLElementEventMap ? E | HTMLElementEventMap[N] : E;
 
@@ -219,9 +226,7 @@ type ElementEventMap<P> = {
         : never
       : never
   ]-?: K extends EventPropName
-    ? NonNullable<P[K]> extends infer F extends (...args: never[]) => unknown
-      ? WithNativeEvent<CustomEventName<K>, CustomEvent<DetailOf<F>>>
-      : never
+    ? WithNativeEvent<CustomEventName<K>, CustomEvent<DetailMap<P>[K]>>
     : never;
 };
 
