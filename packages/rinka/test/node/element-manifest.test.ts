@@ -56,6 +56,33 @@ export default function Card() {
     });
   });
 
+  it("改行が CRLF のファイルでも、説明の改行を LF にする", () => {
+    const declaration = describeCard(
+      [
+        "/**",
+        " * 1 行目。",
+        " *",
+        " * 2 行目。",
+        " * @deprecated a",
+        " * b",
+        " */",
+        "export default function Card(props: {",
+        "  /**",
+        "   * 名前。",
+        "   *",
+        "   * 続き。",
+        "   */",
+        "  label?: string;",
+        "}) {",
+        "  return <div />;",
+        "}",
+      ].join("\r\n"),
+    );
+    expect(declaration.description).toBe("1 行目。\n\n2 行目。");
+    expect(declaration.deprecated).toBe("a\nb");
+    expect(declaration.attributes?.[0]?.description).toBe("名前。\n\n続き。");
+  });
+
   it("属性で受け取る props を、属性とフィールドに記述し、属性の名前を kebab-case にする", () => {
     const { attributes, members } = describeCard(`
 type Props = {

@@ -97,7 +97,7 @@ export interface TypeChecker {
    */
   readonly param: (file: string, code: string, position: number) => ParamType | undefined;
   /**
-   * 要素のファイル `file` を変換するコード `code` の、位置 `position` にある要素の関数の型から、Props の型と `Ctx<M>` の `M` を解析する。
+   * 要素のファイル `file` を変換するコード `code` の、位置 `position` にある要素の関数の型から、要素の関数の JSDoc と、Props の型と、`Ctx<M>` の `M` を解析する。
    * `code` は、`export default function` で要素の関数を宣言したコードである。
    * 要素の関数の型を呼び出せないときと、Props の型として解析できないときは、`undefined` を返す。
    * 第 1 引数が無ければ `props` を、第 2 引数が無いか、`M` が `object` なら `exposed` を、空にする。
@@ -282,13 +282,16 @@ function signatureAt(checker: Checker, file: string, position: number): Signatur
   return type && checker.getSignaturesOfType(type, SignatureKind.Call)[0];
 }
 
-/** `symbol` の JSDoc の説明とタグを返す。 */
+/** `text` の改行を LF にする。 */
+const lf = (text: string) => text.replaceAll("\r\n", "\n");
+
+/** `symbol` の JSDoc の説明とタグを返す。改行は LF にする。 */
 function docsOf(checker: Checker, symbol: TypeSymbol): DocComment {
   return {
-    description: checker.getDocumentationCommentOfSymbol(symbol),
+    description: lf(checker.getDocumentationCommentOfSymbol(symbol)),
     tags: checker
       .getJsDocTagsOfSymbol(symbol)
-      .map(({ name, text }) => ({ name, text: text ?? "" })),
+      .map(({ name, text }) => ({ name, text: lf(text ?? "") })),
   };
 }
 
