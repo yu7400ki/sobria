@@ -109,6 +109,47 @@ describe("サーバーのコンテキスト", () => {
     expect(await renderToString(page())).toBe(html);
   });
 
+  it("getter の value は、コンテキストのコンポーネントを記述した位置の範囲で読む", async () => {
+    const html = await renderToString(
+      jsx(Theme, {
+        value: "dark",
+        get children() {
+          return jsx(Theme, {
+            get value() {
+              return `${useContext(Theme)} ${createId()}`;
+            },
+            get children() {
+              return jsx(ThemeName, {});
+            },
+          });
+        },
+      }),
+    );
+    expect(html).toBe("<i>dark rinka-i1</i>");
+  });
+
+  it("要素の props の getter は、要素を記述した位置の範囲で読む", async () => {
+    const Labeled = defineElement(
+      "x-themed-label",
+      (props: { label?: string }) => jsx("b", { children: () => props.label }),
+      { props: { label: "unknown" } },
+    );
+    const html = await renderToString(
+      jsx(Theme, {
+        value: "dark",
+        get children() {
+          return jsx(Labeled, {
+            get label() {
+              return useContext(Theme);
+            },
+          });
+        },
+      }),
+    );
+    expect(html).toContain('label="dark"');
+    expect(html).toContain("<b><!--[-->dark<!--]--></b>");
+  });
+
   it("描画の外で useContext と createId を呼ぶと、エラーを投げる", () => {
     expect(() => useContext(Theme)).toThrow(/描画の中/);
     expect(() => createId()).toThrow(/描画の中/);

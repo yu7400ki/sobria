@@ -978,10 +978,13 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     }
     const kinds = propKinds(options);
     const descriptors = Object.getOwnPropertyDescriptors(props);
+    /** props の `name` の値を返す。getter は、要素を記述した位置の描画の範囲で呼ぶ。 */
     const read = (name: string): unknown => {
       const descriptor = descriptors[name];
       const getter = descriptor?.get;
-      return getter ? (getter.call(props) as unknown) : descriptor?.value;
+      return getter
+        ? runInScope(ctx.scope, () => getter.call(props) as unknown)
+        : descriptor?.value;
     };
     /** 要素の関数に渡す値を返す。関数の props でない props に渡した関数は、呼び出した値にする。 */
     const propValue = (name: string): unknown => {

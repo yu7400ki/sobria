@@ -33,9 +33,10 @@ function currentScope(name: string): RenderScope {
 /** コンテキストを作成する。`<Theme value={…}>` の子孫の `useContext(Theme)` は `value` を返し、子孫でない位置では `defaultValue` を返す。 */
 export function createContext<T>(defaultValue: T): SharedContext<T> {
   const context: SharedContext<T> = (props) => {
+    const { value } = props;
     const node: ContextNode = {
       kind: "context",
-      scope: (outer) => provide(outer, context, props.value),
+      scope: (outer) => provide(outer, context, value),
       children: props.children,
     };
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion

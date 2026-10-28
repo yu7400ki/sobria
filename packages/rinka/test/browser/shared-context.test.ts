@@ -127,6 +127,35 @@ describe("ブラウザのコンテキスト", () => {
     ]);
   });
 
+  it("入れ子の要素の props の getter は、外側の要素の値を読む", async () => {
+    const inner = nextTag();
+    const outer = nextTag();
+    const Inner = defineClient(
+      inner,
+      (props: { label?: string }) => jsx("b", { children: () => props.label }),
+      {
+        props: { label: "unknown" },
+      },
+    );
+    defineClient(
+      outer,
+      () =>
+        jsx(Theme, {
+          value: "dark",
+          get children() {
+            return jsx(Inner, {
+              get label() {
+                return useContext(Theme);
+              },
+            });
+          },
+        }),
+      { props: {} },
+    );
+    const host = await connect(outer);
+    expect(shadow(host.shadowRoot?.querySelector(inner))).toBe("<b>dark</b>");
+  });
+
   it("createId は、要素のインスタンスごとに 1 から連番の id を返す", async () => {
     const tag = nextTag();
     defineClient(tag, () => jsx("p", { id: createId(), children: jsx("i", { id: createId() }) }), {
