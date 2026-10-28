@@ -91,7 +91,7 @@ export interface FileChanges {
 export interface TypeChecker {
   /**
    * 要素のファイル `file` を変換するコード `code` の、位置 `position` にある要素の関数の型から、第 1 引数の型を Props の型として解析する。
-   * ほかのファイルが import した `file` の型は、ディスクの内容で解決する。
+   * ほかのファイルが import した `file` の型は、ディスクの内容で解決する。同じファイルの同じコードと位置には、前回の結果を返す。
    * 第 1 引数の型から `undefined` と `null` を除外した型を解析する。
    * 第 1 引数が無いときと、除外した型がオブジェクトの型でないとき（ユニオン型、`any`、`unknown`、プリミティブなど）と、型チェッカーが解決できない型のときは、`undefined` を返す。
    */
@@ -110,8 +110,9 @@ export interface TypeChecker {
   /**
    * ディスクで作成、変更、削除されたファイルを通知する。次の解析から、通知した後のディスクの内容で型を解決する。
    * 削除されたファイルが、`param` か `describe` に渡した要素のファイルなら、そのファイルについて渡したコードを、以降の型の解決に使用しない。
+   * 通知を反映した後で、`param` に渡した要素のファイルを、最後に渡したコードで解析し直し、解析の結果が変わったファイルを返す。
    */
-  readonly notify: (changes: FileChanges) => void;
+  readonly notify: (changes: FileChanges) => readonly string[];
   /** 型チェッカーのプロセスを終了する。 */
   readonly close: () => void;
 }
@@ -153,6 +154,11 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
   const { options: compilerOptions, fileNames } = api.parseConfigFile(options.config);
   /** 型チェッカーに渡したファイルのパスごとの内容である。 */
   const files = new Map([[probe, slotProbe]]);
+  /** `param` に渡した要素のファイルごとの、位置と、最後の解析の結果である。 */
+  const analyses = new Map<
+    string,
+    { readonly position: number; readonly type: ParamType | undefined }
+  >();
   const program = () => ({
     rootFiles: [...new Set([...fileNames, ...files.keys()])],
     compilerOptions,
@@ -200,18 +206,26 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
       indexed: checker.getIndexInfosOfType(props).length > 0,
     };
   };
+  /** 要素のファイル `file` を変換するコード `code` の、位置 `position` にある要素の関数の第 1 引数の型を解析する。 */
+  const analyze = (file: string, code: string, position: number): ParamType | undefined => {
+    const virtual = virtualPath(file);
+    const checker = load({ [virtual]: code });
+    const [propsParam] = signatureAt(checker, virtual, position)?.getParameters() ?? [];
+    const result = propsParam && membersOf(checker, checker.getTypeOfSymbol(propsParam));
+    return (
+      result && {
+        props: result.members.map(({ symbol, kind }) => ({ name: symbol.name, kind })),
+        indexed: result.indexed,
+      }
+    );
+  };
   return {
     param(file, code, position) {
-      const virtual = virtualPath(file);
-      const checker = load({ [virtual]: code });
-      const [propsParam] = signatureAt(checker, virtual, position)?.getParameters() ?? [];
-      const result = propsParam && membersOf(checker, checker.getTypeOfSymbol(propsParam));
-      return (
-        result && {
-          props: result.members.map(({ symbol, kind }) => ({ name: symbol.name, kind })),
-          indexed: result.indexed,
-        }
-      );
+      const last = analyses.get(file);
+      if (files.get(virtualPath(file)) === code && last?.position === position) return last.type;
+      const type = analyze(file, code, position);
+      analyses.set(file, { position, type });
+      return type;
     },
     describe(file, code, position) {
       const types = `${file}.rinka-types.ts`;
@@ -260,6 +274,7 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
     notify(changes) {
       const deleted = changes.deleted ?? [];
       const removed = deleted.filter((file) => files.delete(virtualPath(file)));
+      for (const file of removed) analyses.delete(file);
       update({
         fileNotifications: {
           created: [...(changes.created ?? [])],
@@ -267,6 +282,12 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
           deleted: [...deleted],
         },
         ...(removed.length > 0 && { reconfigurePrograms: [{ id, ...program() }] }),
+      });
+      return [...analyses].flatMap(([file, last]) => {
+        const type = analyze(file, files.get(virtualPath(file))!, last.position);
+        if (JSON.stringify(type) === JSON.stringify(last.type)) return [];
+        analyses.set(file, { ...last, type });
+        return [file];
       });
     },
     close() {

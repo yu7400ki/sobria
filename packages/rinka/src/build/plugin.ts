@@ -1,12 +1,6 @@
 import { fileURLToPath } from "node:url";
 
-import {
-  normalizePath,
-  transformWithOxc,
-  type Plugin,
-  type ResolvedConfig,
-  type ViteDevServer,
-} from "vite";
+import { normalizePath, transformWithOxc, type Plugin, type ResolvedConfig } from "vite";
 
 import { appBuild } from "./app-build.ts";
 import { sourceLangOf, type SourceLang } from "./ast.ts";
@@ -34,12 +28,7 @@ import {
   type Settings,
 } from "./settings.ts";
 import { SHEET_QUERY, sheetId, sheetModule, sheetPath } from "./sheets.ts";
-import {
-  createTypeChecker,
-  type FileChanges,
-  type ParamType,
-  type TypeChecker,
-} from "./type-checker.ts";
+import { createTypeChecker, type FileChanges, type TypeChecker } from "./type-checker.ts";
 
 export type { RinkaOptions } from "./settings.ts";
 
@@ -117,66 +106,13 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
   const api: RinkaApi = { prepare: writeTypes };
   /** 型チェッカーである。要素の Props の型を初めて解析するときに起動し、`closeBundle` で終了する。 */
   let checker: TypeChecker | undefined;
-  /** 要素のファイルのパスごとに保持する、最後に解析したコードと、第 1 引数の開始位置と、解析の結果である。 */
-  const analyzed = new Map<
-    string,
-    { readonly code: string; readonly position: number; readonly type: ParamType | undefined }
-  >();
-  /** パス `path` の要素のファイルの、第 1 引数の型を解析する関数を返す。同じコードと位置の解析には、前の結果を返す。 */
+  /** パス `path` の要素のファイルの、第 1 引数の型を解析する関数を返す。 */
   const paramTypeOf =
     (path: string): ParamTypeOf =>
     (code, position) => {
-      const last = analyzed.get(path);
-      if (last?.code === code && last.position === position) return last.type;
       checker ??= createTypeChecker({ config: elementsConfig(current().root) });
-      const type = checker.param(path, code, position);
-      analyzed.set(path, { code, position, type });
-      // 要素のファイルが export する型を、ほかの要素が import していることがある
-      if (last !== undefined) reanalyze();
-      return type;
+      return checker.param(path, code, position);
     };
-  /** 開発サーバーである。`configureServer` で受け取る。 */
-  let devServer: ViteDevServer | undefined;
-  /**
-   * 開発サーバーで、解析したすべての要素の第 1 引数の型を、最後に解析したコードで解析し直す。
-   * 解析の結果が変わった要素のモジュールを、すべての環境で無効にし、HMR が有効なら読み込み直す。
-   */
-  const reanalyze = (): void => {
-    const server = devServer;
-    if (server === undefined || checker === undefined) return;
-    /** `error` を開発サーバーのログに出力する。 */
-    const log = (error: unknown) => {
-      server.config.logger.error(error instanceof Error ? error.message : String(error));
-    };
-    const reloads: Promise<void>[] = [];
-    try {
-      for (const [element, last] of analyzed) {
-        const type = checker.param(element, last.code, last.position);
-        if (JSON.stringify(type) === JSON.stringify(last.type)) continue;
-        analyzed.set(element, { ...last, type });
-        for (const environment of Object.values(server.environments)) {
-          for (const module of environment.moduleGraph.getModulesByFile(element) ?? []) {
-            environment.moduleGraph.invalidateModule(module);
-            reloads.push(environment.reloadModule(module));
-          }
-        }
-      }
-    } catch (error) {
-      log(error);
-    }
-    Promise.all(reloads).catch(log);
-  };
-  /**
-   * スクリプトのファイル `path` の作成、変更、削除を型チェッカーに通知し、要素を解析し直す。
-   * 解析した要素のファイルの変更では、通知した時点では解析し直さずに、Vite が変換し直したときに解析し直す。
-   */
-  const onFile = (kind: keyof FileChanges, path: string): void => {
-    if (checker === undefined || !SCRIPT.test(path)) return;
-    const file = normalizePath(path);
-    if (kind === "deleted") analyzed.delete(file);
-    checker.notify({ [kind]: [file] });
-    if (kind !== "changed" || !analyzed.has(file)) reanalyze();
-  };
   const build = appBuild({ options, settings: current });
 
   /**
@@ -273,10 +209,32 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       closeBundle() {
         checker?.close();
         checker = undefined;
-        analyzed.clear();
       },
       configureServer(server) {
-        devServer = server;
+        /** `error` を開発サーバーのログに出力する。 */
+        const log = (error: unknown) => {
+          server.config.logger.error(error instanceof Error ? error.message : String(error));
+        };
+        /**
+         * スクリプトのファイル `path` の作成、変更、削除を型チェッカーに通知する。
+         * 解析の結果が変わった要素のモジュールを、すべての環境で無効にし、HMR が有効なら読み込み直す。
+         */
+        const onFile = (kind: keyof FileChanges, path: string): void => {
+          if (checker === undefined || !SCRIPT.test(path)) return;
+          try {
+            const reloads = checker.notify({ [kind]: [normalizePath(path)] }).flatMap((element) =>
+              Object.values(server.environments).flatMap((environment) =>
+                [...(environment.moduleGraph.getModulesByFile(element) ?? [])].map((module) => {
+                  environment.moduleGraph.invalidateModule(module);
+                  return environment.reloadModule(module);
+                }),
+              ),
+            );
+            Promise.all(reloads).catch(log);
+          } catch (error) {
+            log(error);
+          }
+        };
         server.watcher.on("add", (path) => onFile("created", path));
         server.watcher.on("change", (path) => onFile("changed", path));
         server.watcher.on("unlink", (path) => onFile("deleted", path));

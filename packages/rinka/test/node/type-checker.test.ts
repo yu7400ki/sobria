@@ -225,6 +225,29 @@ export default function X(props: Base) { return null; }`;
     }
   });
 
+  it("通知を反映すると、解析した要素のファイルのうち、解析の結果が変わったファイルを返す", async () => {
+    const dir = await mkdtemp(join(fixture, "notified-"));
+    const shared = join(dir, "shared.ts").replaceAll("\\", "/");
+    const changed = join(dir, "changed.tsx").replaceAll("\\", "/");
+    const kept = join(dir, "kept.tsx").replaceAll("\\", "/");
+    const code = `import type { Base } from "./shared.ts";
+export default function X(props: Base) { return null; }`;
+    const keptCode = "export default function Y(props: { a: string }) { return null; }";
+    try {
+      await writeFile(shared, "export interface Base { value: number }");
+      checker.param(changed, code, nameAt(code));
+      checker.param(kept, keptCode, nameAt(keptCode));
+      await writeFile(shared, "export interface Base { value: string }");
+      expect(checker.notify({ changed: [shared] })).toEqual([changed]);
+      expect(checker.param(changed, code, nameAt(code))?.props).toEqual([
+        { name: "value", kind: "string" },
+      ]);
+      expect(checker.notify({ changed: [shared] })).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true });
+    }
+  });
+
   it("解析したファイルの削除を通知すると、そのファイルから import した Props の型を解決しない", async () => {
     const dir = await mkdtemp(join(fixture, "removed-"));
     const shared = join(dir, "shared.tsx").replaceAll("\\", "/");
