@@ -6,6 +6,7 @@ export {
   optimistic,
   refresh,
   signal,
+  untrack,
   wait,
   type Accessor,
   type Action,

@@ -1,5 +1,5 @@
 import { createRoot, flush } from "@solidjs/signals";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { effect } from "../../src/client/effect.ts";
 import {
@@ -9,6 +9,7 @@ import {
   optimistic,
   refresh,
   signal,
+  untrack,
   wait,
 } from "../../src/shared/signals.ts";
 
@@ -40,6 +41,57 @@ describe("signal と memo", () => {
     setCount(2);
     flush();
     expect(doubled()).toBe(4);
+  });
+});
+
+describe("untrack", () => {
+  it("effect の apply の中で読むと STRICT_READ_UNTRACKED の警告を出力し、untrack で包んで読むと出力しない", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const [a] = signal(1);
+    const [b] = signal(2);
+    /** `apply` の中で `read` を呼ぶ effect を作成し、flush した後に出力された警告を返す。 */
+    const warnings = (read: () => number) => {
+      warn.mockClear();
+      createRoot(() =>
+        effect(
+          () => a(),
+          () => {
+            read();
+          },
+        ),
+      );
+      flush();
+      return warn.mock.calls.flat().join(" ");
+    };
+    expect(warnings(() => b())).toContain("STRICT_READ_UNTRACKED");
+    expect(warnings(() => untrack(() => b()))).not.toContain("STRICT_READ_UNTRACKED");
+    warn.mockRestore();
+  });
+
+  it("untrack は fn の戻り値を返す", () => {
+    const [b] = signal(2);
+    expect(untrack(() => b() + 1)).toBe(3);
+  });
+
+  it("memo の中で untrack で読んだ signal が変化しても、memo を計算し直さない", () => {
+    const [a, setA] = signal(1);
+    const [b, setB] = signal(10);
+    let runs = 0;
+    const sum = createRoot(() =>
+      memo(() => {
+        runs++;
+        return a() + untrack(() => b());
+      }),
+    );
+    const seen = createRoot(() => watch(() => sum()));
+    flush();
+    setB(20);
+    flush();
+    expect(seen).toEqual([11]);
+    setA(2);
+    flush();
+    expect(seen).toEqual([11, 22]);
+    expect(runs).toBe(2);
   });
 });
 

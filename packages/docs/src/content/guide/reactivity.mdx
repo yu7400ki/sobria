@@ -80,6 +80,7 @@ export default function SearchBox() {
 ```
 
 - `apply` の中で読み取った値は追跡しません。`apply` を呼び直すきっかけになるのは、`read` が読み取った値だけです
+- `apply` の中で signal や memo を読むときは、`untrack(() => value())` のように `untrack` で包みます。包まずに読むと、開発中にコンソールに `STRICT_READ_UNTRACKED` の警告が表示されます。`untrack` は `rinka` から import します
 - `apply` が関数を返すと、rinka はその関数を、次に `apply` を呼ぶ前と、要素を破棄するときに呼びます
 - `read` が非同期の memo を読むときは、memo が新しい値に解決してから `apply` を呼びます
 

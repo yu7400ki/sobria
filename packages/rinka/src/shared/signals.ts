@@ -4,6 +4,7 @@ import {
   createSignal,
   isPending as solidIsPending,
   refresh as solidRefresh,
+  untrack as solidUntrack,
   type SourceAccessor,
 } from "@solidjs/signals";
 
@@ -89,6 +90,9 @@ export const optimistic: {
  * `refresh` で取り直している間は `false` を返す。
  */
 export const isPending: (target: Accessor<unknown>) => boolean = solidIsPending;
+
+/** `fn` を、読み取った値を追跡せずに実行し、`fn` の戻り値を返す。 */
+export const untrack: <T>(fn: () => T) => T = solidUntrack;
 
 /** memo を取り直す。取り直した値が解決すると解決する Promise を返す。 */
 export function refresh<T>(target: Memo<T>): Promise<T> {

@@ -109,6 +109,14 @@ const signal: {
 };
 ```
 
+## untrack
+
+`fn` を、読み取った値を追跡せずに実行し、`fn` の戻り値を返す。
+
+```ts
+const untrack: <T>(fn: () => T) => T;
+```
+
 ## wait
 
 action の generator の中で `yield* wait(promise)` と記述すると、その式の値は Promise が解決した値になる。Promise が reject すると、その理由が `yield*` の位置で投げられる。
