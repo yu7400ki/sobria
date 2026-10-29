@@ -101,8 +101,7 @@ export const acceptsSubmission: MiddlewareHandler = (_c, next) => next();
 
 /**
  * ルートの表の行のうち、フォームの送信を受け付けない行の先頭に登録するミドルウェアである。
- * `requestKind` が `form` のリクエストには、行の処理を実行せずに、アプリの notFound の 404 を返す。
- * `form` のリクエストがこの印に到達するのは、本文に `_rinka_fn` の欄が無かったときだけである。
+ * フォームの送信を受け付ける行が先に一致したフォームの POST には、行の処理を実行せずに、アプリの notFound の 404 を返す。
  */
 export const refusesSubmission: MiddlewareHandler = async (c, next) =>
   requestKind(c) === "form" ? c.notFound() : next();

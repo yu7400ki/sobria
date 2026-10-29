@@ -13,7 +13,7 @@ export const wireHeader = "x-rinka-wire";
  */
 export const wireFormat = { rpc: "rpc", seroval: "seroval", stream: "stream" } as const;
 
-/** サーバー関数のレスポンスで移動先を伝える JSON を表す。`redirect` は `Location` の値で、相対の URL はエンドポイントの URL を基準にする。 */
+/** サーバー関数のレスポンスで移動先を伝える JSON を表す。`redirect` は `Location` の値で、相対の URL はリクエストの URL を基準にする。 */
 export interface RedirectJson {
   readonly redirect: string;
 }
@@ -166,11 +166,11 @@ function check(value: unknown, path: string, serverFns: boolean, seen: Set<objec
 
 /**
  * `<form>` の props を返す。`action` がサーバー関数なら、`action` を除き、`method` を `post` に、`enctype` を `multipart/form-data` にし、
- * `hidden` が作成する、`_rinka_fn` の名前でサーバー関数の ID を値に持つ hidden input を、子の先頭に加える。`enctype` を記述していれば、その値を使用する。
+ * `_rinka_fn` の名前でサーバー関数の ID を値に持つ hidden input を `create` で作成し、子の先頭に加える。`enctype` を記述していれば、その値を使用する。
  */
 export function formProps(
   props: Record<string, unknown>,
-  hidden: (name: string, value: string) => unknown,
+  create: (tag: string, props: Record<string, unknown>) => unknown,
 ): Record<string, unknown> {
   const ref = serverFnRefOf(props.action);
   if (!ref) return props;
@@ -179,6 +179,9 @@ export function formProps(
     ...rest,
     method: "post",
     enctype,
-    children: [hidden(submissionField, ref.id), props.children],
+    children: [
+      create("input", { type: "hidden", name: submissionField, value: ref.id }),
+      props.children,
+    ],
   };
 }

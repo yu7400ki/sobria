@@ -116,10 +116,6 @@ export type Target =
     }
   | { readonly kind: "refresh" };
 
-/** フォームの送信先のサーバー関数を示す、名前が `name` で値が `value` の hidden input のノードを返す。 */
-const fnIdInput = (name: string, value: string): Node =>
-  createNode("input", { type: "hidden", name, value });
-
 /** 境界の差し替えを表す。 */
 interface Patch {
   readonly id: string;
@@ -852,7 +848,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     const label =
       tag === "label" && this.runsElements && !ctx.fallback ? this.labelOf(props, ctx) : undefined;
     const attributesOf =
-      tag === "form" ? formProps(props, fnIdInput) : label ? { ...props, id: label.id } : props;
+      tag === "form" ? formProps(props, createNode) : label ? { ...props, id: label.id } : props;
     if (ctx.owner === null) warnHandlers(tag, props);
     const outputs = propertiesOf(tag);
     const { selectValue } = ctx.parent;
