@@ -1,5 +1,6 @@
 import { realpathSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { SourceMap, type SourceMapPayload } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,6 +59,26 @@ describe("Vite プラグイン", () => {
       expect(result?.map && "sources" in result.map ? result.map.sources : undefined).toEqual([
         "counter.tsx",
       ]);
+    }
+  });
+
+  it("変換したモジュールのソースマップは、2 段階の変換の後のコードの位置を、元のソースの位置に対応させる", async () => {
+    const original = await readFile(join(root, "src/elements/counter.tsx"), "utf8");
+    for (const name of ["client", "ssr"] as const) {
+      // oxlint-disable-next-line no-await-in-loop
+      const result = await server.environments[name].transformRequest("/src/elements/counter.tsx");
+      if (!result?.map || !("mappings" in result.map))
+        throw new Error("ソースマップがありません。");
+      const map = new SourceMap(result.map as SourceMapPayload);
+      for (const token of ['"count"', "setCount(", "props.start * 2"]) {
+        const entry = map.findEntry(...positionOf(result.code, token));
+        if (!("originalLine" in entry)) throw new Error(`${token} の位置の対応がありません。`);
+        expect([name, token, entry.originalLine, entry.originalColumn]).toEqual([
+          name,
+          token,
+          ...positionOf(original, token),
+        ]);
+      }
     }
   });
 
@@ -543,3 +564,11 @@ describe("開発中の HMR", () => {
     );
   });
 });
+
+/** `code` で `token` が最初に現れる位置の、0 から数えた行と列を返す。 */
+function positionOf(code: string, token: string): [number, number] {
+  const index = code.indexOf(token);
+  if (index < 0) throw new Error(`${token} がありません。`);
+  const before = code.slice(0, index).split("\n");
+  return [before.length - 1, before.at(-1)!.length];
+}
