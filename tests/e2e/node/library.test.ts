@@ -135,6 +135,26 @@ describe("library: true のビルド", () => {
     120_000,
   );
 
+  it("ライブラリの要素がサーバー関数を定義したファイルを import すると、そのファイルを示して警告を出力する", async () => {
+    const { warnings } = await buildCopy(
+      { prefix: "acme" },
+      (json) => {
+        json["customElements"] = "dist/custom-elements.json";
+      },
+      {
+        "src/fns.ts": `import { defineServerFn } from "rinka/server";
+export const like = defineServerFn(() => null);
+`,
+        "src/elements/liker.tsx": `import { like } from "../fns.ts";
+export default function Liker() {
+  return <button type="button">{String(typeof like)}</button>;
+}
+`,
+      },
+    );
+    expect(warnings.join("\n")).toContain("src/fns.ts");
+  }, 120_000);
+
   it("vite preview は、出力先をそのまま配信する", async () => {
     const config = await resolveConfig(
       {
@@ -154,11 +174,12 @@ describe("library: true のビルド", () => {
 
 /**
  * テスト用のライブラリのコピーを、`library: true` と `options` でビルドし、出力した警告と、出力した Custom Elements Manifest を返す。
- * `edit` は、コピーの package.json を書き換える。出力先は、コピーの中の `dist` である。
+ * `edit` は、コピーの package.json を書き換える。`files` は、コピーのルートからの相対パスごとに、追加するファイルの内容を持つ。出力先は、コピーの中の `dist` である。
  */
 async function buildCopy(
   options: { prefix: string },
   edit?: (json: Record<string, unknown>) => void,
+  files: Readonly<Record<string, string>> = {},
 ): Promise<{ warnings: string[]; manifest: unknown }> {
   // ビルドは .rinka/ に書き込むので、ライブラリのコピーをビルドする。rinka を解決できるように、コピーは tests/e2e の中に置く
   const copy = await mkdtemp(fileURLToPath(new URL("../.rinka-tmp-library-", import.meta.url)));
@@ -172,6 +193,9 @@ async function buildCopy(
     edit(json);
     await writeFile(path, JSON.stringify(json));
   }
+  await Promise.all(
+    Object.entries(files).map(([file, content]) => writeFile(join(copy, file), content)),
+  );
   const warnings: string[] = [];
   const logger = createLogger("warn");
   logger.warn = (message) => {

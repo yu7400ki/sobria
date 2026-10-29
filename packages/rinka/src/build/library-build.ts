@@ -7,6 +7,7 @@ import { manifestOf } from "./element-manifest.ts";
 import type { ElementFile } from "./elements.ts";
 import { findUp, readJson } from "./libraries.ts";
 import { inside, relativePath } from "./paths.ts";
+import { serverFnModules } from "./server-fns.ts";
 import { DEFAULT_PREFIX, sceneOf, type SceneContext, type Settings } from "./settings.ts";
 import type { TypeChecker } from "./type-checker.ts";
 
@@ -22,6 +23,7 @@ export interface LibraryContext extends SceneContext {
 /**
  * `library: true` の `vite build` で、アプリの要素を、自分自身を登録する ES モジュールとして
  * 出力先のタグ名のファイルに出力し、要素を記述した Custom Elements Manifest を出力先に出力するプラグインを返す。
+ * 要素がサーバー関数を定義したファイルを import していれば、そのファイルを列挙して警告する。
  */
 export function libraryBuild({ options, settings, typeChecker }: LibraryContext): Plugin {
   return {
@@ -67,6 +69,18 @@ export function libraryBuild({ options, settings, typeChecker }: LibraryContext)
     generateBundle(_options, bundle) {
       const { root, clientDir } = settings();
       const { dir } = packageOf(root);
+      const defined = new Set(serverFnModules(root));
+      const bundled = new Set(
+        Object.values(bundle).flatMap((output) =>
+          output.type === "chunk" ? output.moduleIds.map((id) => relativePath(root, id)) : [],
+        ),
+      );
+      const used = [...defined].filter((file) => bundled.has(file));
+      if (used.length > 0) {
+        this.environment.logger.warn(
+          `[rinka] library: true のビルドで、要素が、サーバー関数を定義した ${used.join("、")} を import しています。ライブラリを使うアプリには、このサーバー関数を処理するサーバーがありません。`,
+        );
+      }
       const entries = new Map(
         Object.values(bundle).flatMap((output) =>
           output.type === "chunk" && output.isEntry ? [[output.name, output.fileName]] : [],
