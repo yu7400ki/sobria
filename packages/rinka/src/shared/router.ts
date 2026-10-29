@@ -4,6 +4,9 @@ import { fillPattern } from "./route-segments.ts";
 /** ページと `route.ts` のファイルの形のパスごとに、そのルートのパラメータの名前から値への対応を表す。`declare module "rinka/router"` で拡張できる。 */
 export interface RouteParams {}
 
+/** `route.ts` のファイルの形のパスごとに、そのルートの Hono のパスを表す。`declare module "rinka/router"` で拡張できる。 */
+export interface RouteHandlerPaths {}
+
 /** `Route` のページが受け取る props を表す。`url` はリクエストの URL である。 */
 export interface PageProps<Route extends keyof RouteParams> {
   readonly params: RouteParams[Route];

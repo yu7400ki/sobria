@@ -132,16 +132,24 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
   ]);
 }
 
-/** アプリのルート `root` の、登録した拡張子 `extensions` のものを含むページと `route.ts` から、`RouteParams` を拡張する型宣言を返す。 */
+/** アプリのルート `root` の、登録した拡張子 `extensions` のものを含むページと `route.ts` から、`RouteParams` と `RouteHandlerPaths` を拡張する型宣言を返す。 */
 function routesDeclaration(root: string, extensions: readonly string[]): string {
-  const lines: string[] = [];
-  for (const { path, params } of scanRouteParams(root, extensions)) {
+  const params: string[] = [];
+  const handlers: string[] = [];
+  for (const { path, params: names, handlerPath } of scanRouteParams(root, extensions)) {
     const type =
-      params.length === 0 ? "{}" : `{ ${params.map((name) => `${name}: string`).join("; ")} }`;
-    lines.push(`    ${JSON.stringify(path)}: ${type};\n`);
+      names.length === 0 ? "{}" : `{ ${names.map((name) => `${name}: string`).join("; ")} }`;
+    params.push(`    ${JSON.stringify(path)}: ${type};\n`);
+    if (handlerPath !== undefined) {
+      handlers.push(`    ${JSON.stringify(path)}: ${JSON.stringify(handlerPath)};\n`);
+    }
   }
-  return `${HEADER}export {};\n\ndeclare module "${entries.router}" {\n  interface RouteParams {\n${lines.toSorted().join("")}  }\n}\n`;
+  return `${HEADER}export {};\n\ndeclare module "${entries.router}" {\n${block("RouteParams", params)}${block("RouteHandlerPaths", handlers)}}\n`;
 }
+
+/** `declare module` の中に出力する、`lines` を並べ替えてプロパティにした interface `name` を返す。 */
+const block = (name: string, lines: readonly string[]): string =>
+  `  interface ${name} {\n${lines.toSorted().join("")}  }\n`;
 
 /** Vite の `ImportMeta` とアセットのモジュールの型を参照し、`*.css` の型と、`globalJSX` が真ならグローバルの `JSX.Element` を宣言する、モジュールではない型宣言を返す。 */
 function envDeclaration(globalJSX: boolean): string {

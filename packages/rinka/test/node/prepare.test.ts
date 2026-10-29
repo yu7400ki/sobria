@@ -51,6 +51,17 @@ describe("routes.d.ts", () => {
     expect(content).toContain('    "/api/items/[id]": { id: string };');
     expect(content).not.toContain("(shop)");
   });
+
+  it("route.ts のファイルの形のパスごとに、Hono のパスを RouteHandlerPaths に出力し、ページのパスは出力しない", () => {
+    const content = fileOf("routes.d.ts");
+    const start = content.indexOf("interface RouteHandlerPaths {");
+    const paths = content.slice(start, content.indexOf("\n  }", start));
+    expect(paths).toContain('    "/api": "/api";');
+    expect(paths).toContain('    "/api/items/[id]": "/api/items/:id";');
+    expect(paths).toContain('    "/files/[...path]": "/files/:path{.+}";');
+    expect(paths).not.toContain("/users");
+    expect(paths).not.toContain('"/"');
+  });
 });
 
 describe("elements.d.ts", () => {

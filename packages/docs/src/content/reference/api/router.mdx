@@ -12,6 +12,14 @@ title: rinka/router
 interface RouteParams {}
 ```
 
+## RouteHandlerPaths
+
+`route.ts` のファイルの形のパスごとに、そのルートの Hono のパスを表す。`declare module "rinka/router"` で拡張できる。
+
+```ts
+interface RouteHandlerPaths {}
+```
+
 ## PageProps
 
 `Route` のページが受け取る props を表す。`url` はリクエストの URL である。
