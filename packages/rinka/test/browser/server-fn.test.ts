@@ -67,7 +67,7 @@ describe("serverFn", () => {
     expect(new URL(request.url).searchParams.get("d")).toBe('{"id":1}');
   });
 
-  it("素の JSON で表せない入力は、GET では ?s= に、POST では x-rinka-wire: seroval を付けた本文に、seroval の形式で送る。{ s } の値を読む", async () => {
+  it("素の JSON で表せない入力は、GET では ?s= に、POST では multipart の input の部分に、seroval の形式で送る。{ s } の値を読む", async () => {
     const date = new Date("2026-01-02T00:00:00Z");
     const sentGet = stubFetch(() => Response.json({ s: toJSON(date) }, { headers: rpcHeaders }));
     expect(await serverFn("src/fns.ts#get", "GET")(date)).toEqual(date);
@@ -76,8 +76,10 @@ describe("serverFn", () => {
     const sentPost = stubFetch(() => Response.json({ ok: null }, { headers: rpcHeaders }));
     await serverFn("src/fns.ts#post", "POST")(new Map([["a", 1]]), { refresh: false });
     const request = sentPost();
-    expect(request.headers.get("x-rinka-wire")).toBe("seroval");
-    expect(await request.json()).toEqual(toJSON(new Map([["a", 1]])));
+    expect(request.headers.get("x-rinka-wire")).toBeNull();
+    const parts = await request.formData();
+    expect([...parts.keys()]).toEqual(["input"]);
+    expect(JSON.parse(parts.get("input") as string)).toEqual(toJSON(new Map([["a", 1]])));
   });
 
   it("Blob を含む入力は、Blob を参照にした seroval の JSON の input の部分と、Blob の番号の部分を持つ multipart で送る", async () => {

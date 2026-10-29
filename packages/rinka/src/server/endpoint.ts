@@ -456,7 +456,6 @@ export function pageRequest(c: Context, page: URL, refresh: boolean): Request {
     "accept-encoding",
     "if-none-match",
     "if-modified-since",
-    wireHeader,
     PAGE_HEADER,
     REFRESH_HEADER,
   ]) {
@@ -524,7 +523,7 @@ async function readInput(c: Context): Promise<unknown> {
   }
   const text = await c.req.text();
   if (text === "") return undefined;
-  return c.req.header(wireHeader) === wireFormat.seroval ? fromRpcInput(text) : parseJson(text);
+  return parseJson(text);
 }
 
 /**

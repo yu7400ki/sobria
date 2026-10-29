@@ -66,7 +66,7 @@ export interface RpcRequest {
  * ID が `id` のサーバー関数を `method` で呼び出すリクエストのうち、入力 `input` から決まる部分を返す。
  * 入力が無いときと、素の JSON で表せるときは、Promise ではない値を返す。素の JSON は、GET では `?d=` に、POST では本文に入れる。
  * 素の JSON で表せない入力は、seroval の JSON の形式にした値の Promise を返す。GET では `?s=` に入れ、入力に Blob があれば TypeError で reject する。
- * POST では、入力に Blob があれば multipart に、無ければ `x-rinka-wire: seroval` を付けた本文にする。
+ * POST では、seroval の JSON の形式を `input` の部分に、Blob をその番号の部分にした multipart にする。
  */
 export function rpcRequest(
   id: string,
@@ -96,13 +96,6 @@ function serovalRequest(
       throw new TypeError("GET のサーバー関数の入力には、File と Blob を含められません。");
     }
     return { url: `${url}?${rpcQuery.seroval}=${encodeURIComponent(text)}`, headers: {} };
-  }
-  if (blobs.length === 0) {
-    return {
-      url,
-      body: text,
-      headers: { "content-type": "application/json", [wireHeader]: wireFormat.seroval },
-    };
   }
   const parts = new FormData();
   parts.append(rpcInputPart, text);

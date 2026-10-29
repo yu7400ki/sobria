@@ -107,7 +107,7 @@ describe("サーバー関数のエンドポイント", () => {
     expect(await response.json()).toEqual({ ok: 5 });
   });
 
-  it("seroval の形式の入力を、GET の ?s= と、x-rinka-wire: seroval の POST から読み、素の JSON で表せない戻り値を { s } で返す", async () => {
+  it("seroval の形式の入力を、GET の ?s= と、POST の multipart の input の部分から読み、素の JSON で表せない戻り値を { s } で返す", async () => {
     const id = register(
       defineServerFn({ method: "GET", input: (value: Date) => value })((_c, { input }) => input),
     );
@@ -123,10 +123,7 @@ describe("サーバー関数のエンドポイント", () => {
         input.get("a"),
       ),
     );
-    const response = await call(
-      posted,
-      post(toJSON(new Map([["a", 1]])), { [wireHeader]: "seroval" }),
-    );
+    const response = await call(posted, multipart(new Map([["a", 1]]), []));
     expect(await response.json()).toEqual({ ok: 1 });
   });
 
@@ -139,7 +136,9 @@ describe("サーバー関数のエンドポイント", () => {
     );
     const broken = { method: "POST", headers: { "content-type": "application/json" }, body: "{" };
     expect((await call(id, broken)).status).toBe(400);
-    expect((await call(id, post({ a: 1 }, { [wireHeader]: "seroval" }))).status).toBe(400);
+    const mismatched = new FormData();
+    mismatched.append(rpcInputPart, JSON.stringify({ a: 1 }));
+    expect((await call(id, { method: "POST", body: mismatched })).status).toBe(400);
     expect(called).toBe(false);
   });
 
@@ -183,10 +182,13 @@ describe("サーバー関数のエンドポイント", () => {
     expect(called).toBe(false);
   });
 
-  it("multipart でない seroval の入力が Blob の参照を含むときは、400 を返す", async () => {
-    const id = register(defineServerFn({ input: (value: unknown) => value })(() => null));
+  it("GET の ?s= の入力が Blob の参照を含むときは、400 を返す", async () => {
+    const id = register(
+      defineServerFn({ method: "GET", input: (value: unknown) => value })(() => null),
+    );
     const { json } = toRpcInput({ photo: new File(["x"], "x.txt") });
-    expect((await call(id, post(json, { [wireHeader]: "seroval" }))).status).toBe(400);
+    const query = `?s=${encodeURIComponent(JSON.stringify(json))}`;
+    expect((await call(id, {}, { query })).status).toBe(400);
   });
 
   it("handler が返した Response は、そのまま返す", async () => {

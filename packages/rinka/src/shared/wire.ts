@@ -4,14 +4,14 @@ import { serverJsxNodes } from "./nodes.ts";
 import { isPlainObject } from "./objects.ts";
 import { serverFnRefOf } from "./server-fn.ts";
 
-/** RPC のリクエストとレスポンスで、値の形式を示すヘッダーの名前。 */
+/** RPC のレスポンスで、値の形式を示すヘッダーの名前。 */
 export const wireHeader = "x-rinka-wire";
 
 /**
- * `wireHeader` に設定する値。`rpc` は rinka が構築したレスポンスを示し、`seroval` は本文が seroval の JSON の形式であることを示す。
+ * `wireHeader` に設定する値。`rpc` は rinka が構築したレスポンスを示す。
  * `stream` は、本文が改行で区切った `StreamLine` の JSON の行であることを示す。
  */
-export const wireFormat = { rpc: "rpc", seroval: "seroval", stream: "stream" } as const;
+export const wireFormat = { rpc: "rpc", stream: "stream" } as const;
 
 /** サーバー関数のレスポンスで移動先を伝える JSON を表す。`redirect` は `Location` の値で、相対の URL はリクエストの URL を基準にする。 */
 export interface RedirectJson {
