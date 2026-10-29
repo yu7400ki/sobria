@@ -134,17 +134,17 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
 
 /** アプリのルート `root` の、登録した拡張子 `extensions` のものを含むページと `route.ts` から、`RouteParams` と `RouteHandlerPaths` を拡張する型宣言を返す。 */
 function routesDeclaration(root: string, extensions: readonly string[]): string {
-  const params: string[] = [];
-  const handlers: string[] = [];
-  for (const { path, params: names, handlerPath } of scanRouteParams(root, extensions)) {
+  const paramLines: string[] = [];
+  const handlerLines: string[] = [];
+  for (const { path, params, handlerPath } of scanRouteParams(root, extensions)) {
     const type =
-      names.length === 0 ? "{}" : `{ ${names.map((name) => `${name}: string`).join("; ")} }`;
-    params.push(`    ${JSON.stringify(path)}: ${type};\n`);
+      params.length === 0 ? "{}" : `{ ${params.map((name) => `${name}: string`).join("; ")} }`;
+    paramLines.push(`    ${JSON.stringify(path)}: ${type};\n`);
     if (handlerPath !== undefined) {
-      handlers.push(`    ${JSON.stringify(path)}: ${JSON.stringify(handlerPath)};\n`);
+      handlerLines.push(`    ${JSON.stringify(path)}: ${JSON.stringify(handlerPath)};\n`);
     }
   }
-  return `${HEADER}export {};\n\ndeclare module "${entries.router}" {\n${block("RouteParams", params)}${block("RouteHandlerPaths", handlers)}}\n`;
+  return `${HEADER}export {};\n\ndeclare module "${entries.router}" {\n${block("RouteParams", paramLines)}${block("RouteHandlerPaths", handlerLines)}}\n`;
 }
 
 /** `declare module` の中に出力する、`lines` を並べ替えてプロパティにした interface `name` を返す。 */
