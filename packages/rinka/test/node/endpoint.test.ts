@@ -3,7 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import { fromJSON, toJSON } from "seroval";
 import { describe, expect, it, vi } from "vitest";
 
-import { rpcRequest } from "../../src/client/server-fn.ts";
+import { rpcRequest, type RpcRequest } from "../../src/client/server-fn.ts";
 import { toRpcInput } from "../../src/client/wire-codec.ts";
 import { getContext } from "../../src/server/context.ts";
 import type { OutcomeKind } from "../../src/server/endpoint.ts";
@@ -13,7 +13,13 @@ import { jsx } from "../../src/server/jsx-runtime.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
 import type { AppOptions, Routes } from "../../src/shared/routes.ts";
 import type { ServerFnMethod } from "../../src/shared/server-fn.ts";
-import { rpcInputPart, rpcPath, submissionField, wireHeader } from "../../src/shared/wire.ts";
+import {
+  rpcInputPart,
+  rpcPath,
+  rpcQuery,
+  submissionField,
+  wireHeader,
+} from "../../src/shared/wire.ts";
 import { loadOf } from "./load.ts";
 
 /** `value` が数の文字列なら数を返し、そうでなければ issues を返す Standard Schema である。 */
@@ -795,8 +801,17 @@ describe("async iterable を返すサーバー関数", () => {
   });
 });
 
-/** `rpcRequest` で `method` のリクエストを組み立てて送り、サーバー関数が受け取った入力を返す。 */
-async function roundTrip(method: ServerFnMethod, input: unknown): Promise<unknown> {
+/** `rpcRequest` が組み立てた `request` の入力の形式を返す。 */
+function formatOf(request: RpcRequest): string {
+  const query = new URL(request.url, "http://localhost").searchParams;
+  if (query.has(rpcQuery.json)) return "?d=";
+  if (query.has(rpcQuery.seroval)) return "?s=";
+  if (request.body instanceof FormData) return "multipart";
+  return typeof request.body === "string" ? "JSON の本文" : "入力なし";
+}
+
+/** `rpcRequest` で `method` のリクエストを組み立て、入力の形式が `format` であることを確認してから送り、サーバー関数が受け取った入力を返す。 */
+async function roundTrip(method: ServerFnMethod, input: unknown, format: string): Promise<unknown> {
   let received: unknown = "未呼び出し";
   const id = register(
     defineServerFn({ method, input: (value: unknown) => value })((_c, { input: value }) => {
@@ -804,6 +819,7 @@ async function roundTrip(method: ServerFnMethod, input: unknown): Promise<unknow
     }),
   );
   const request = await rpcRequest(id, method, input);
+  expect(formatOf(request)).toBe(format);
   const response = await createApp({ routes: [] }).fetch(
     new Request(`http://localhost${request.url}`, {
       method,
@@ -816,18 +832,21 @@ async function roundTrip(method: ServerFnMethod, input: unknown): Promise<unknow
 }
 
 describe("rpcRequest で組み立てたリクエスト", () => {
-  describe.each(["GET", "POST"] as const)("%s", (method) => {
+  describe.each([
+    ["GET", "?d=", "?s="],
+    ["POST", "JSON の本文", "multipart"],
+  ] as const)("%s", (method, plain, seroval) => {
     it("入力が無いとき、素の JSON のとき、Map と Date を含むときは、同じ値を受け取る", async () => {
-      expect(await roundTrip(method, undefined)).toBeUndefined();
-      expect(await roundTrip(method, { a: [1, "b", null] })).toEqual({ a: [1, "b", null] });
+      expect(await roundTrip(method, undefined, "入力なし")).toBeUndefined();
+      expect(await roundTrip(method, { a: [1, "b", null] }, plain)).toEqual({ a: [1, "b", null] });
       const rich = { map: new Map([["k", 1]]), at: new Date(0) };
-      expect(await roundTrip(method, rich)).toEqual(rich);
+      expect(await roundTrip(method, rich, seroval)).toEqual(rich);
     });
 
     it("自身を参照するオブジェクトは、参照の形を保って受け取る", async () => {
       const cyclic: { self?: unknown } = {};
       cyclic.self = cyclic;
-      const value = (await roundTrip(method, cyclic)) as { self: unknown };
+      const value = (await roundTrip(method, cyclic, seroval)) as { self: unknown };
       expect(value.self).toBe(value);
     });
   });
@@ -835,7 +854,7 @@ describe("rpcRequest で組み立てたリクエスト", () => {
   it("POST では、オブジェクトの中の File と、2 か所から参照した Blob を受け取る", async () => {
     const photo = new File(["photo"], "photo.png", { type: "image/png" });
     const note = new Blob(["note"], { type: "text/plain" });
-    const value = (await roundTrip("POST", { photo, notes: [note, note] })) as {
+    const value = (await roundTrip("POST", { photo, notes: [note, note] }, "multipart")) as {
       photo: File;
       notes: [File, File];
     };

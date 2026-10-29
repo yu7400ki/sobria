@@ -1,4 +1,4 @@
-import { isPlainObject, isPromiseLike } from "../shared/objects.ts";
+import { isPlainObject } from "../shared/objects.ts";
 import { PAGE_HEADER } from "../shared/refresh.ts";
 import { isSeeding } from "../shared/scope.ts";
 import type { CallOptions, ServerFnMethod } from "../shared/server-fn.ts";
@@ -27,7 +27,7 @@ const never = (): Promise<never> => new Promise(() => {});
 /**
  * ID が `id` のサーバー関数を、`method` の RPC で呼び出す関数を返す。
  * 返す関数は、シードの間は通信せずに、解決しない Promise を返す。
- * GET 以外では、呼び出しのオプションの `refresh` が `false` でなければ、現在のページの URL を `x-rinka-page` で送る。
+ * GET 以外では、呼び出しのオプションの `refresh` が `false` でなければ、現在のページの URL を `x-rinka-page` で送る。描き直しの新旧の順序は、呼び出した時点で決まる。
  * rinka が組み立てたレスポンスなら、`{ ok }` と `{ s }` の値を返す。`x-rinka-page` を送ったときは、値を返す前にレスポンスの `page` を反映し、`page` が描き直しの JSON でなければページを読み込み直す。
  * `{ redirect }` は、`x-rinka-page` を送り、移動先が現在のページ（hash を除く）なら、`page` を反映して `undefined` を返す。`page` が描き直しの JSON でなければ、ページを読み込み直す。
  * それ以外の `{ redirect }` では、その URL に移動する。`{ redirect }` でページを読み込み直すときと移動するときは、返す Promise は解決しない。
@@ -41,8 +41,7 @@ export function serverFn(id: string, method: ServerFnMethod): RpcFn {
     const reflect = method !== "GET" && refresh ? startRewrite() : undefined;
     const sent = new Headers(headers);
     if (reflect) sent.set(PAGE_HEADER, location.href);
-    const made = rpcRequest(id, method, input);
-    const request = isPromiseLike(made) ? await made : made;
+    const request = await rpcRequest(id, method, input);
     for (const [name, value] of Object.entries(request.headers)) sent.set(name, value);
     const response = await fetch(request.url, {
       method,
@@ -55,7 +54,7 @@ export function serverFn(id: string, method: ServerFnMethod): RpcFn {
   return withServerFnRef(call, { id, method });
 }
 
-/** RPC のリクエストの URL と本文と、入力の形式を示すヘッダーを表す。 */
+/** RPC のリクエストの URL、本文、本文の `Content-Type` のヘッダーを表す。 */
 export interface RpcRequest {
   readonly url: string;
   readonly body?: string | FormData;
@@ -64,15 +63,15 @@ export interface RpcRequest {
 
 /**
  * ID が `id` のサーバー関数を `method` で呼び出すリクエストのうち、入力 `input` から決まる部分を返す。
- * 入力が無いときと、素の JSON で表せるときは、Promise ではない値を返す。素の JSON は、GET では `?d=` に、POST では本文に入れる。
- * 素の JSON で表せない入力は、seroval の JSON の形式にした値の Promise を返す。GET では `?s=` に入れ、入力に Blob があれば TypeError で reject する。
+ * 素の JSON で表せる入力は、GET では `?d=` に、POST では本文に入れる。
+ * 素の JSON で表せない入力は、seroval の JSON の形式にする。GET では `?s=` に入れ、入力に Blob があれば TypeError で reject する。
  * POST では、seroval の JSON の形式を `input` の部分に、Blob をその番号の部分にした multipart にする。
  */
-export function rpcRequest(
+export async function rpcRequest(
   id: string,
   method: ServerFnMethod,
   input: unknown,
-): RpcRequest | Promise<RpcRequest> {
+): Promise<RpcRequest> {
   const url = rpcPath(id);
   if (input === undefined) return { url, headers: {} };
   if (isJson(input)) {
@@ -81,7 +80,7 @@ export function rpcRequest(
       ? { url: `${url}?${rpcQuery.json}=${encodeURIComponent(json)}`, headers: {} }
       : { url, body: json, headers: { "content-type": "application/json" } };
   }
-  return codec().then(({ toRpcInput }) => serovalRequest(url, method, toRpcInput(input)));
+  return serovalRequest(url, method, (await codec()).toRpcInput(input));
 }
 
 /** URL が `url` のサーバー関数を `method` で呼び出すリクエストのうち、seroval の JSON の形式にした入力 `json` と、その Blob の `blobs` から決まる部分を返す。 */

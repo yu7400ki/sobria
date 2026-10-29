@@ -59,6 +59,9 @@ test("GET のサーバー関数は、入力の型が File か Blob を含むと 
   const passThrough = defineMiddleware(async (_c, next) => {
     await next();
   });
+  expectTypeOf(defineServerFn({ method: "GET", input: withPhoto })).parameters.toEqualTypeOf<
+    "GET のサーバー関数の入力の型には、File と Blob を含められません"[]
+  >();
   // @ts-expect-error ミドルウェアを渡しても、GET の入力に File を含められない
   defineServerFn({ method: "GET", input: withPhoto })(passThrough, () => null);
   const post = defineServerFn({ input: withPhoto })(() => null);

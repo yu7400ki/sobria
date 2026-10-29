@@ -280,22 +280,28 @@ describe("RPC の描き直し", () => {
     expect([value, document.title]).toEqual([1, "liked"]);
   });
 
-  it("呼び出しの後に始まった描き直しを反映済みなら、同じページへの { redirect } は、ページを読み込み直さずに undefined を返す", async () => {
-    const response = Promise.withResolvers<Response>();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => response.promise),
-    );
-    const calling = serverFn("src/fns.ts#move", "POST")();
-    startRewrite()(() => {});
-    response.resolve(
-      Response.json(
-        { redirect: `${location.pathname}${location.search}` },
-        { headers: rpcHeaders },
-      ),
-    );
-    expect(await calling).toBeUndefined();
-  });
+  it.each([
+    ["入力が無いとき", undefined],
+    ["入力が素の JSON で表せないとき", new Map([["a", 1]])],
+  ])(
+    "%s、呼び出しの後に始まった描き直しを反映済みなら、同じページへの { redirect } は、ページを読み込み直さずに undefined を返す",
+    async (_label, input) => {
+      const response = Promise.withResolvers<Response>();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => response.promise),
+      );
+      const calling = serverFn("src/fns.ts#move", "POST")(input);
+      startRewrite()(() => {});
+      response.resolve(
+        Response.json(
+          { redirect: `${location.pathname}${location.search}` },
+          { headers: rpcHeaders },
+        ),
+      );
+      expect(await calling).toBeUndefined();
+    },
+  );
 
   it("page を含む { redirect } は、移動せずに page を反映し、undefined を返す", async () => {
     const before = location.href;
