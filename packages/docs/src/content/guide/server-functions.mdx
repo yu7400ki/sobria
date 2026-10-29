@@ -312,4 +312,4 @@ export const POST = defineHandler({ json: z.object({ title: z.string().min(1) })
 });
 ```
 
-`rinka/server` の `defineHandler` は、Hono の `defineHandler` と同じものです。handler が返したオブジェクトは JSON のレスポンスになります。`route.ts` の配置の規則は [ルーティング](/guide/routing) を、Hono との組み合わせは [Hono との連携](/guide/hono) を参照してください。
+`rinka/server` の `defineHandler` は、Hono の `defineHandler` と同じものです。handler が返したオブジェクトは JSON のレスポンスになります。パスのパラメータに型を付けるときは、`forRoute()` の `defineHandler` を使用します（[ルーティング](/guide/routing#ルートのパラメータの型)）。`route.ts` の配置の規則は [ルーティング](/guide/routing) を、Hono との組み合わせは [Hono との連携](/guide/hono) を参照してください。

@@ -244,7 +244,7 @@ export default function RootLayout(props: LayoutProps) {
 
 ## ルートのパラメータの型
 
-`rinka prepare` は、`src/routes/` のページから、ルートごとのパラメータの型を生成します。開発サーバーとビルドは、開始するときと、ページのファイルを追加か削除したときに、同じ処理を実行します。手動で実行するのは、Vite を起動せずに型を検査するときだけです。`rinka create` で作成したアプリでは、`pnpm typecheck` が `rinka prepare` を実行してから型を検査します。
+`rinka prepare` は、`src/routes/` のページと `route.ts` から、ルートごとのパラメータの型を生成します。開発サーバーとビルドは、開始するときと、`src/routes/` のファイルを追加か削除したときに、同じ処理を実行します。手動で実行するのは、Vite を起動せずに型を検査するときだけです。`rinka create` で作成したアプリでは、`pnpm typecheck` が `rinka prepare` を実行してから型を検査します。
 
 `PageProps` には、`/users/[id]` のように、ページのディレクトリの名前を `/` で連結したパスを指定します。グループの名前は含めません。指定したルートのパラメータが、`params` の型になります。
 
@@ -256,6 +256,21 @@ export default function User({ params }: PageProps<"/users/[id]">) {
   return <h1>ユーザー {params.id}</h1>;
 }
 ```
+
+`route.ts` の handler には、`rinka/server` の `forRoute()` にルートを指定して、パラメータの型を付けます。`forRoute()` が返す `defineHandler` は Hono の `defineHandler` と同じもので、handler の `c.req.param(name)` は、指定したルートのパラメータの値を `string` で返します。
+
+```ts
+// src/routes/api/users/[id]/route.ts
+import { forRoute } from "rinka/server";
+
+import { db } from "../../../../lib/db.ts";
+
+export const GET = forRoute("/api/users/[id]").defineHandler((c) =>
+  db.users.find(c.req.param("id")),
+);
+```
+
+`PageProps` と `forRoute()` に指定したルートが、ファイルの位置と一致するかは検査しません。
 
 `href()` は、ルートとパラメータから URL を作成します。存在しないルートと、不足したパラメータは型エラーになります。`href()` は、ページ、要素、`src/lib/` などのそれ以外のファイルのどれでも使用できます。
 
