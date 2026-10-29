@@ -1,6 +1,6 @@
 import { defineMiddleware, type StandardSchema } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
-import { fromJSON, toJSON } from "seroval";
+import { createPlugin, fromJSON, toJSON, type SerovalNode } from "seroval";
 import { describe, expect, it, vi } from "vitest";
 
 import { getContext } from "../../src/server/context.ts";
@@ -10,7 +10,13 @@ import { createApp, registerServerFn, serverFnModule } from "../../src/server/in
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
 import type { AppOptions, Routes } from "../../src/shared/routes.ts";
-import { rpcPath, submissionField, wireHeader } from "../../src/shared/wire.ts";
+import {
+  blobPluginTag,
+  rpcInputPart,
+  rpcPath,
+  submissionField,
+  wireHeader,
+} from "../../src/shared/wire.ts";
 import { loadOf } from "./load.ts";
 
 /** `value` が数の文字列なら数を返し、そうでなければ issues を返す Standard Schema である。 */
@@ -72,6 +78,27 @@ const post = (body: unknown, headers: Record<string, string> = {}): RequestInit 
   body: JSON.stringify(body),
 });
 
+/** `value` の Blob を出現した順の番号の参照にした seroval の JSON と、その順の Blob を返す。 */
+function withBlobs(value: unknown): { json: unknown; blobs: Blob[] } {
+  const blobs: Blob[] = [];
+  const plugin = createPlugin<Blob, { index: SerovalNode }>({
+    tag: blobPluginTag,
+    test: (item) => item instanceof Blob,
+    parse: { sync: (item, ctx) => ({ index: ctx.parse(blobs.push(item) - 1) }) },
+    serialize: () => "",
+    deserialize: () => new Blob(),
+  });
+  return { json: toJSON(value, { plugins: [plugin] }), blobs };
+}
+
+/** `value` を、input の部分と、`parts` を番号の部分にした multipart で POST するリクエストを返す。 */
+function multipart(value: unknown, parts: readonly Blob[]): RequestInit {
+  const body = new FormData();
+  body.append(rpcInputPart, JSON.stringify(withBlobs(value).json));
+  parts.forEach((part, index) => body.append(String(index), part));
+  return { method: "POST", body };
+}
+
 describe("サーバー関数のエンドポイント", () => {
   it("POST の本文の JSON を入力にし、戻り値を { ok } で返す。c.status と c.header の設定を付ける", async () => {
     const id = register(
@@ -130,6 +157,52 @@ describe("サーバー関数のエンドポイント", () => {
     expect((await call(id, broken)).status).toBe(400);
     expect((await call(id, post({ a: 1 }, { [wireHeader]: "seroval" }))).status).toBe(400);
     expect(called).toBe(false);
+  });
+
+  it("multipart の入力は、input の部分の seroval の JSON から、Blob の参照を番号の部分の File に置き換えて読む", async () => {
+    let received: unknown;
+    const id = register(
+      defineServerFn({ input: (value: unknown) => value })((_c, { input }) => {
+        received = input;
+      }),
+    );
+    const photo = new File(["photo"], "photo.png", { type: "image/png" });
+    const note = new Blob(["note"], { type: "text/plain" });
+    const response = await call(id, multipart({ photo, pages: [note, photo] }, [photo, note]));
+    expect(response.status).toBe(200);
+    const value = received as { photo: File; pages: [File, File] };
+    expect(value.photo).toBeInstanceOf(File);
+    expect([value.photo.name, value.photo.type, await value.photo.text()]).toEqual([
+      "photo.png",
+      "image/png",
+      "photo",
+    ]);
+    expect([value.pages[0].type, await value.pages[0].text()]).toEqual(["text/plain", "note"]);
+    expect(value.pages[1]).toBe(value.photo);
+  });
+
+  it("multipart の入力の input の部分が無いとき、参照した番号の部分が無いとき、番号の部分が File でないときは、400 を返す", async () => {
+    let called = false;
+    const id = register(
+      defineServerFn({ input: (value: unknown) => value })(() => {
+        called = true;
+      }),
+    );
+    const photo = new File(["x"], "x.txt");
+    const missingInput = new FormData();
+    missingInput.append("0", photo);
+    expect((await call(id, { method: "POST", body: missingInput })).status).toBe(400);
+    expect((await call(id, multipart({ photo }, []))).status).toBe(400);
+    const text = multipart({ photo }, []);
+    (text.body as FormData).append("0", "x");
+    expect((await call(id, text)).status).toBe(400);
+    expect(called).toBe(false);
+  });
+
+  it("multipart でない seroval の入力が Blob の参照を含むときは、400 を返す", async () => {
+    const id = register(defineServerFn({ input: (value: unknown) => value })(() => null));
+    const { json } = withBlobs({ photo: new File(["x"], "x.txt") });
+    expect((await call(id, post(json, { [wireHeader]: "seroval" }))).status).toBe(400);
   });
 
   it("handler が返した Response は、そのまま返す", async () => {

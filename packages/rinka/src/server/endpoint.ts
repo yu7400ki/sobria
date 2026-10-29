@@ -12,6 +12,7 @@ import {
 } from "../shared/server-fn.ts";
 import {
   internalPrefix,
+  rpcInputPart,
   rpcPrefix,
   rpcQuery,
   isEndOrRedirectLineText,
@@ -518,9 +519,26 @@ async function readInput(c: Context): Promise<unknown> {
     const serialized = c.req.query(rpcQuery.seroval);
     return serialized === undefined ? undefined : fromRpcInput(serialized);
   }
+  if (c.req.header("content-type")?.startsWith("multipart/form-data")) return readParts(c);
   const text = await c.req.text();
   if (text === "") return undefined;
   return c.req.header(wireHeader) === wireFormat.seroval ? fromRpcInput(text) : parseJson(text);
+}
+
+/**
+ * multipart の RPC の入力を読む。`rpcInputPart` の部分の seroval の JSON の Blob の参照を、`0` から連続する番号の部分の File にする。
+ * `rpcInputPart` の部分が文字列でないときと、番号の部分が File でないときは、例外を投げる。
+ */
+async function readParts(c: Context): Promise<unknown> {
+  const parts = await c.req.formData();
+  const input = parts.get(rpcInputPart);
+  if (typeof input !== "string") throw new TypeError("入力の部分がありません。");
+  const blobs: File[] = [];
+  for (let part = parts.get("0"); part !== null; part = parts.get(String(blobs.length))) {
+    if (!(part instanceof File)) throw new TypeError("番号の部分が File ではありません。");
+    blobs.push(part);
+  }
+  return fromRpcInput(input, blobs);
 }
 
 const parseJson = (text: string): unknown => JSON.parse(text);

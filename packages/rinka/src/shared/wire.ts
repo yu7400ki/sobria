@@ -185,3 +185,9 @@ export function formProps(
     ],
   };
 }
+
+/** multipart で送る RPC の入力で、Blob を参照に置き換えた入力の seroval の JSON を値に持つ部分の名前である。Blob は、出現した順に `0`、`1`、… の部分に入れる。 */
+export const rpcInputPart = "input";
+
+/** RPC の入力の Blob を、multipart の番号の部分への参照にする seroval のプラグインの名前である。 */
+export const blobPluginTag = "rinka/blob";

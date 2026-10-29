@@ -1,7 +1,13 @@
 import { createPlugin, fromJSON, serialize, toJSON, type SerovalNode } from "seroval";
 
 import { serverFnRefOf, type ServerFnRef } from "../shared/server-fn.ts";
-import { checkSerializable, isJson, isSerovalJson, type RpcBody } from "../shared/wire.ts";
+import {
+  blobPluginTag,
+  checkSerializable,
+  isJson,
+  isSerovalJson,
+  type RpcBody,
+} from "../shared/wire.ts";
 import { serverFnCall } from "./bootstrap.ts";
 import { replacedOnPage } from "./html.ts";
 
@@ -79,9 +85,30 @@ export function toRpcBody(value: unknown): RpcBody {
   };
 }
 
-/** seroval の JSON の形式の文字列で送られた RPC の入力を読む。関数の参照は復元しない。形式に合わなければ例外を投げる。 */
-export function fromRpcInput(text: string): unknown {
+/** seroval のプラグインが扱う、multipart の番号の部分への参照のノードを表す。 */
+type BlobNode = { readonly index: SerovalNode };
+
+/** multipart の番号の部分への参照を、`blobs` のその番号の値にする seroval のプラグインを返す。`blobs` に無い番号を参照したら例外を投げる。 */
+const blobsOf = (blobs: readonly Blob[]) =>
+  createPlugin<Blob, BlobNode>({
+    tag: blobPluginTag,
+    test: () => false,
+    parse: { sync: refuseError, async: refuseError, stream: refuseError },
+    serialize: refuseError,
+    deserialize: (node, ctx) => {
+      const index = ctx.deserialize(node.index);
+      const blob = typeof index === "number" ? blobs[index] : undefined;
+      if (blob === undefined) throw new TypeError("参照した部分がありません。");
+      return blob;
+    },
+  });
+
+/**
+ * seroval の JSON の形式の文字列で送られた RPC の入力を読む。Blob の参照は、`blobs` のその番号の値にする。関数の参照は復元しない。
+ * 形式に合わないときと、`blobs` に無い番号を参照したときは、例外を投げる。
+ */
+export function fromRpcInput(text: string, blobs: readonly Blob[] = []): unknown {
   const json: unknown = JSON.parse(text);
   if (!isSerovalJson(json)) throw new TypeError("seroval の JSON の形式ではありません。");
-  return fromJSON(json);
+  return fromJSON(json, { plugins: [blobsOf(blobs)] });
 }
