@@ -1,7 +1,7 @@
 import type { ServerNode } from "./nodes.ts";
 import { fillPattern } from "./route-segments.ts";
 
-/** ページのファイルの形のパスごとに、そのルートのパラメータの名前から値への対応を表す。`declare module "rinka/router"` で拡張できる。 */
+/** ページと `route.ts` のファイルの形のパスごとに、そのルートのパラメータの名前から値への対応を表す。`declare module "rinka/router"` で拡張できる。 */
 export interface RouteParams {}
 
 /** `Route` のページが受け取る props を表す。`url` はリクエストの URL である。 */

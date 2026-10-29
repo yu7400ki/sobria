@@ -41,13 +41,14 @@ describe("生成するファイル", () => {
 });
 
 describe("routes.d.ts", () => {
-  it("ページのファイルの形のパスを、グループを除いてキーにし、パラメータとキャッチオールの名前を string にする", () => {
+  it("ページと route.ts のファイルの形のパスを、グループを除いてキーにし、パラメータとキャッチオールの名前を string にする", () => {
     const content = fileOf("routes.d.ts");
     expect(content).toContain('declare module "rinka/router" {');
     expect(content).toContain('    "/": {};');
     expect(content).toContain('    "/docs/[...slug]": { slug: string };');
     expect(content).toContain('    "/users/[id]": { id: string };');
-    expect(content).not.toContain("/api");
+    expect(content).toContain('    "/api": {};');
+    expect(content).toContain('    "/api/items/[id]": { id: string };');
     expect(content).not.toContain("(shop)");
   });
 });

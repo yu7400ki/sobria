@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { scanElements, type ElementSource } from "./elements.ts";
 import { entries } from "./entries.ts";
 import { inside, relativePath } from "./paths.ts";
-import { ROUTES_DIR, scanPages } from "./routes.ts";
+import { ROUTES_DIR, scanRouteParams } from "./routes.ts";
 
 /** 生成したファイルを置く、アプリのルートからの相対パスのディレクトリである。 */
 export const PREPARED_DIR = ".rinka";
@@ -132,10 +132,10 @@ export function preparedFiles(options: PrepareOptions): Map<string, string> {
   ]);
 }
 
-/** アプリのルート `root` の、登録した拡張子 `extensions` のものを含むページから、`RouteParams` を拡張する型宣言を返す。 */
+/** アプリのルート `root` の、登録した拡張子 `extensions` のものを含むページと `route.ts` から、`RouteParams` を拡張する型宣言を返す。 */
 function routesDeclaration(root: string, extensions: readonly string[]): string {
   const lines: string[] = [];
-  for (const { path, params } of scanPages(root, extensions)) {
+  for (const { path, params } of scanRouteParams(root, extensions)) {
     const type =
       params.length === 0 ? "{}" : `{ ${params.map((name) => `${name}: string`).join("; ")} }`;
     lines.push(`    ${JSON.stringify(path)}: ${type};\n`);

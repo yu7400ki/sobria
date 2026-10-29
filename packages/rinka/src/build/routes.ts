@@ -273,15 +273,17 @@ export function scanRoutes(root: string, extensions: readonly string[]): Routes<
 }
 
 /**
- * プロジェクトのルート `root` にある `ROUTES_DIR` の、登録した拡張子 `extensions` のものを含むページごとに、グループを除いたファイルの形のパスと、パラメータとキャッチオールの名前を返す。
+ * プロジェクトのルート `root` にある `ROUTES_DIR` の、登録した拡張子 `extensions` のものを含むページと `route.ts` ごとに、グループを除いたファイルの形のパスと、パラメータとキャッチオールの名前を返す。
  * ルートのファイルの配置が不正なら、エラーを投げる。
  */
-export function scanPages(
+export function scanRouteParams(
   root: string,
   extensions: readonly string[],
 ): { readonly path: string; readonly params: readonly string[] }[] {
   return scan(root, extensions)
-    .scanned.flatMap(({ route, segments }) => (route.kind === "page" ? [{ route, segments }] : []))
+    .scanned.flatMap(({ route, segments }) =>
+      route.kind === "not-found" ? [] : [{ route, segments }],
+    )
     .map(({ route, segments }) => ({
       path: route.pattern,
       params: segments.flatMap((segment) => (segment.kind === "static" ? [] : [segment.name])),
