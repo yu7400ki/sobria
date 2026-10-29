@@ -119,6 +119,32 @@ describe("serverFn", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("入力に FormData、URLSearchParams、Headers を含めると、送信する前に TypeError を投げる", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ ok: 1 }, { headers: rpcHeaders }));
+    vi.stubGlobal("fetch", fetchMock);
+    const withFile = new FormData();
+    withFile.append("photo", new File(["x"], "x.txt"));
+    const withText = new FormData();
+    withText.append("title", "x");
+    const values = [
+      ["FormData", withFile],
+      ["FormData", withText],
+      ["URLSearchParams", new URLSearchParams("a=1")],
+      ["Headers", new Headers({ a: "1" })],
+    ] as const;
+    const messages = await Promise.all(
+      values.map(async ([, value]) => {
+        const error: unknown = await serverFn("src/fns.ts#post", "POST")(
+          { value },
+          { refresh: false },
+        ).catch((caught: unknown) => caught);
+        return error instanceof TypeError ? error.message : error;
+      }),
+    );
+    for (const [index, [name]] of values.entries()) expect(messages[index]).toContain(name);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("signal を fetch に渡す", async () => {
     const controller = new AbortController();
     const fetchMock = vi.fn(async () => Response.json({ ok: 1 }, { headers: rpcHeaders }));
