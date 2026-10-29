@@ -12,12 +12,13 @@ import { reloadEvent } from "../shared/hmr.ts";
 import type { CreateApp } from "../shared/routes.ts";
 import { entries, serverImports, virtualId, virtualUrl } from "./entries.ts";
 import { appCode, serverEntry, serverFnLoaderCode, type AppModuleOptions } from "./entry.ts";
+import { ParseError } from "./errors.ts";
 import { fromApp } from "./package.ts";
 import { inside } from "./paths.ts";
 import { isPrepareInput } from "./prepare.ts";
 import { routeStyles } from "./route-styles.ts";
 import { isRouteFile, ROUTES_DIR } from "./routes.ts";
-import { isServerFnSource } from "./server-fns.ts";
+import { isServerFnSource, serverFnModules } from "./server-fns.ts";
 import { SERVER_ENTRY_NAME, isClient, type SceneContext } from "./settings.ts";
 
 /** `rinka/styles` の仮想モジュールの ID の、ルートのファイルの一覧を表すクエリの前までである。 */
@@ -120,9 +121,19 @@ export function serve({ settings, writeTypes }: ServeContext): Plugin {
           if (node) environment.moduleGraph.invalidateModule(node);
         }
       };
+      /** サーバー関数を定義したファイルの一覧を、改行で区切って返す。構文エラーで解析できないファイルがあれば、`previous` を返す。 */
+      const scanServerFns = (previous: string): string => {
+        try {
+          return serverFnModules(root).join("\n");
+        } catch (error) {
+          if (error instanceof ParseError) return previous;
+          throw error;
+        }
+      };
+      let serverFnFiles = scanServerFns("");
       /**
-       * ファイル `path` が追加、変更、削除されたら、すべての環境の `rinka/styles` を無効にし、
-       * サーバー関数を定義できるファイルなら `rinka/app` も無効にする。
+       * ファイル `path` が追加、変更、削除されたら、すべての環境の `rinka/styles` を無効にする。
+       * サーバー関数を定義できるファイルで、サーバー関数を定義したファイルの集合が変わったら、`rinka/app` も無効にする。
        */
       const onSource = (path: string): void => {
         for (const environment of Object.values(server.environments)) {
@@ -131,7 +142,11 @@ export function serve({ settings, writeTypes }: ServeContext): Plugin {
           }
         }
         const file = inside(root, path);
-        if (file !== undefined && isServerFnSource(file)) invalidate(entries.app);
+        if (file === undefined || !isServerFnSource(file)) return;
+        const files = scanServerFns(serverFnFiles);
+        if (files === serverFnFiles) return;
+        serverFnFiles = files;
+        invalidate(entries.app);
       };
       const rewriteTypes = (): void => {
         try {

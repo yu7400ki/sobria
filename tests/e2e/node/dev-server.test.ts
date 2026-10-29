@@ -44,6 +44,12 @@ afterAll(async () => {
 const removedSource = (name: string) =>
   `import { defineServerFn } from "rinka/server";\nexport const ${name} = defineServerFn(() => "${name}");\n`;
 
+/** 開発サーバーの、`src/lib/broken.ts` の `gone` のサーバー関数を RPC で呼び出す。 */
+const callBroken = () =>
+  fetch(`${origin}/_rinka/fn/${encodeURIComponent("src/lib/broken.ts#gone")}`, {
+    method: "POST",
+  });
+
 /** 開発サーバーの、`src/lib/removed.ts` の `name` のサーバー関数を RPC で呼び出す。 */
 const callRemoved = (name: string) =>
   fetch(`${origin}/_rinka/fn/${encodeURIComponent(`src/lib/removed.ts#${name}`)}`, {
@@ -158,6 +164,21 @@ writeFileSync(${JSON.stringify(marker)}, "x");
       server.watcher.emit("change", posix(file));
       // Vite は変更の通知を非同期に処理するので、変換の結果が変わるまで待つ
       await vi.waitUntil(async () => (await callRemoved("gone")).status === 404, { timeout: 2000 });
+    } finally {
+      await rm(file, { force: true });
+    }
+  });
+
+  it("サーバー関数を定義したファイルに構文エラーがあっても開発サーバーは停止せず、直したら、そのファイルのサーバー関数を呼び出せる", async () => {
+    const file = join(root, "src/lib/broken.ts");
+    try {
+      await writeFile(file, `${removedSource("gone")}export const = ;\n`);
+      server.watcher.emit("add", posix(file));
+      // 構文エラーの表示は Vite のエラーのオーバーレイの 500 になる
+      expect([200, 500]).toContain((await fetch(`${origin}/`)).status);
+      await writeFile(file, removedSource("gone"));
+      server.watcher.emit("change", posix(file));
+      await vi.waitUntil(async () => (await callBroken()).status === 200, { timeout: 10_000 });
     } finally {
       await rm(file, { force: true });
     }

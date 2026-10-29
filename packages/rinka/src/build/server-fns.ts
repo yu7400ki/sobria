@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { extname, join, posix } from "node:path";
+import { extname, join, posix, sep } from "node:path";
 
 import { langs, parseModule } from "./ast.ts";
 import { relativePath } from "./paths.ts";
@@ -21,9 +21,27 @@ export const isServerFnSource = (file: string): boolean =>
   langs.has(extname(file)) &&
   !file.endsWith(".d.ts");
 
+/** ファイルのパスごとに、最後に解析したソースの SHA-256 と、サーバー関数を定義していたかどうかを保持する。 */
+const scanned = new Map<string, { readonly hash: string; readonly defines: boolean }>();
+
+/** パス `path` のファイルのソース `code` が、サーバー関数を定義しているかどうかを返す。前回と同じソースなら、解析せずに前回の結果を返す。 */
+function definesServerFn(path: string, file: string, code: string): boolean {
+  const hash = createHash("sha256").update(code).digest("base64url");
+  const cached = scanned.get(path);
+  if (cached?.hash === hash) return cached.defines;
+  const defines =
+    code.includes("defineServerFn") &&
+    serverFnNames(
+      findDefinitions(parseModule(code, { id: path, file, lang: langs.get(extname(file))! }), file),
+    ).length > 0;
+  scanned.set(path, { hash, defines });
+  return defines;
+}
+
 /** アプリのルート `root` で、サーバー関数を定義したファイルを走査し、ルートからの相対パスを文字列の順に返す。 */
 export function serverFnModules(root: string): string[] {
   const modules: string[] = [];
+  const visited = new Set<string>();
   const visit = (dir: string): void => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
@@ -33,14 +51,15 @@ export function serverFnModules(root: string): string[] {
       }
       const file = relativePath(root, path);
       if (!isServerFnSource(file)) continue;
-      const code = readFileSync(path, "utf8");
-      if (!code.includes("defineServerFn")) continue;
-      const lang = langs.get(extname(file))!;
-      const program = parseModule(code, { id: path, file, lang });
-      if (serverFnNames(findDefinitions(program, file)).length > 0) modules.push(file);
+      visited.add(path);
+      if (definesServerFn(path, file, readFileSync(path, "utf8"))) modules.push(file);
     }
   };
   const start = join(root, SERVER_FN_DIR);
   if (existsSync(start)) visit(start);
+  // 走査したディレクトリの中で、無くなったファイルの解析の結果を捨てる
+  for (const path of scanned.keys()) {
+    if (path.startsWith(start + sep) && !visited.has(path)) scanned.delete(path);
+  }
   return modules.toSorted();
 }
