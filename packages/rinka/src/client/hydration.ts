@@ -151,7 +151,7 @@ export interface Region {
 export const isRegionStart = (node: Node | null): node is Comment =>
   node instanceof Comment && node.data === REGION_START;
 
-/** 領域の開始の目印 `start` の後から、入れ子の目印を数えて、対応する終了の目印を返す。`until` までに無ければ `null` を返す。 */
+/** 領域の開始の目印 `start` の後から、入れ子の目印を数えて、対応する終了の目印を返す。`until` が `null` なら兄弟の末尾まで探索し、`until` までに無ければ `null` を返す。 */
 export function regionEnd(start: Comment, until: Node | null): Comment | null {
   let depth = 0;
   for (let node = start.nextSibling; node !== null && node !== until; node = node.nextSibling) {
