@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6.1.0
+        with:
+          version: 12.9.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter rinka exec playwright install --with-deps chromium firefox webkit
+      - run: pnpm --filter @rinka/docs run prepare
+      - run: pnpm format:check
+      # lint は、test が生成する tests/fixture-library の型を検査するので、test の後に実行する
+      - run: pnpm test
+      - run: pnpm typecheck
+      - run: pnpm lint
