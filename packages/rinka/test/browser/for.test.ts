@@ -101,6 +101,27 @@ describe("<For>", () => {
     expect(div.textContent).toBe("0:c12;1:a12;");
   });
 
+  it("項目の中の領域と配列が同じ flush で変化しても、領域の新しい中身を描画する", () => {
+    const [list, setList] = signal(["a", "b", "c"]);
+    const [inner, setInner] = signal("1");
+    const div = createRoot(() =>
+      toNode<HTMLDivElement>(
+        jsx("div", {
+          children: jsx(For<string>, {
+            get each() {
+              return list();
+            },
+            children: (item: string) => [`${item}:`, () => inner(), ";"],
+          }),
+        }),
+      ),
+    );
+    setInner("2");
+    setList(["c", "a"]);
+    flush();
+    expect(div.textContent).toBe("c:2;a:2;");
+  });
+
   it("each が null なら何も描画せず、配列に変化したら項目を描画する", () => {
     const [list, setList] = signal<readonly string[] | null>(null);
     const { ul } = mountList(list, (item) => item);
