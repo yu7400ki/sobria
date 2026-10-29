@@ -270,7 +270,7 @@ export const GET = forRoute("/api/users/[id]").defineHandler((c) =>
 );
 ```
 
-`PageProps` と `forRoute()` に指定したルートが、ファイルの位置と一致するかは検査しません。
+`PageProps` にはページのルートだけを、`forRoute()` には `route.ts` のルートだけを指定できます。指定したルートが、ファイルの位置と一致するかは検査しません。
 
 `href()` は、ルートとパラメータから URL を作成します。存在しないルートと、不足したパラメータは型エラーになります。`href()` は、ページ、要素、`src/lib/` などのそれ以外のファイルのどれでも使用できます。
 
