@@ -3,11 +3,11 @@ import { isCSSRequest, type EnvironmentModuleNode } from "vite";
 import { directUrl } from "./paths.ts";
 
 /**
- * モジュール `roots` から import をたどり、普通の import で読み込んだ CSS を開発サーバーが CSS として配信する URL を返す。
+ * モジュール `roots` から import をたどり、普通の import で読み込んだ CSS を開発サーバーが CSS として配信する、アプリを配置するパス `base` で始まる URL を返す。
  * 依存先の CSS を、それを import するモジュールの CSS より先に配置し、同じ CSS は 1 回だけ出力する。
  * クエリを付けた import と、仮想のモジュールは、たどらない。
  */
-export function routeStyles(roots: readonly EnvironmentModuleNode[]): string[] {
+export function routeStyles(roots: readonly EnvironmentModuleNode[], base: string): string[] {
   const visited = new Set<EnvironmentModuleNode>();
   const links: string[] = [];
   const visit = (node: EnvironmentModuleNode): void => {
@@ -22,7 +22,7 @@ export function routeStyles(roots: readonly EnvironmentModuleNode[]): string[] {
     visited.add(node);
     for (const imported of node.importedModules) visit(imported);
     if (isCSSRequest(node.id)) {
-      links.push(directUrl(node.url));
+      links.push(directUrl(base + node.url.slice(1)));
     }
   };
   for (const root of roots) visit(root);

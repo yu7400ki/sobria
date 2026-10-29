@@ -12,9 +12,9 @@ type CssMetadata = { readonly viteMetadata?: { readonly importedCss: ReadonlySet
 
 /**
  * サーバーのビルドの `bundle` から、ルートのファイルごとに、そのチャンクと静的に import するチャンクが import した CSS の URL を、依存する側を後にして集め、
- * 目印の文字列のリテラルを、引用符の種類に関わらず、その一覧に置き換える。目印が無ければ、エラーを投げる。
+ * 目印の文字列のリテラルを、引用符の種類に関わらず、その一覧に置き換える。CSS の URL は、アプリを配置するパス `base` で始める。目印が無ければ、エラーを投げる。
  */
-export function embedRouteStyles(bundle: Rolldown.OutputBundle, root: string): void {
+export function embedRouteStyles(bundle: Rolldown.OutputBundle, root: string, base: string): void {
   const cssOf = (fileName: string, seen: Set<string>): string[] => {
     if (seen.has(fileName)) return [];
     seen.add(fileName);
@@ -25,7 +25,7 @@ export function embedRouteStyles(bundle: Rolldown.OutputBundle, root: string): v
     ];
     return chunk.imports
       .flatMap((imported) => cssOf(imported, seen))
-      .concat(own.map((file) => `/${file}`));
+      .concat(own.map((file) => `${base}${file}`));
   };
   const table: Record<string, string[]> = {};
   const chunks = Object.values(bundle).filter((output) => output.type === "chunk");

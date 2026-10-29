@@ -22,10 +22,10 @@ export interface ClientAssets {
 }
 
 /**
- * ルート `root` のアプリのクライアントのビルドの出力先 `outDir` の manifest を読み込み、ファイルの URL を返す関数の組を返す。
+ * ルート `root` のアプリのクライアントのビルドの出力先 `outDir` の manifest を読み込み、アプリを配置するパス `base` で始まるファイルの URL を返す関数の組を返す。
  * manifest に無いファイルの URL を求めると、関数はエラーを投げる。
  */
-export function readClientAssets(outDir: string, root: string): ClientAssets {
+export function readClientAssets(outDir: string, root: string, base: string): ClientAssets {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   const manifest = JSON.parse(
     readFileSync(join(outDir, MANIFEST_DIR, "manifest.json"), "utf8"),
@@ -35,10 +35,10 @@ export function readClientAssets(outDir: string, root: string): ClientAssets {
       if (seen.has(imported)) return [];
       seen.add(imported);
       const chunk = manifest[imported];
-      return chunk ? [`/${chunk.file}`].concat(chunksOf(imported, seen)) : [];
+      return chunk ? [`${base}${chunk.file}`].concat(chunksOf(imported, seen)) : [];
     });
   const files = new Map(
-    Object.entries(manifest).map(([key, chunk]) => [resolve(root, key), `/${chunk.file}`]),
+    Object.entries(manifest).map(([key, chunk]) => [resolve(root, key), `${base}${chunk.file}`]),
   );
   return {
     element: (file) => {
@@ -48,7 +48,7 @@ export function readClientAssets(outDir: string, root: string): ClientAssets {
           `[rinka] 要素のファイル ${file} が、クライアントのビルドの manifest にありません。`,
         );
       }
-      return { module: `/${entry.file}`, chunks: chunksOf(file, new Set([file])) };
+      return { module: `${base}${entry.file}`, chunks: chunksOf(file, new Set([file])) };
     },
     sheet: (path) => {
       const url = files.get(resolve(path));

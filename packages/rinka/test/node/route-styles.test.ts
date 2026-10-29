@@ -9,7 +9,7 @@ const node = (id: string, imported: EnvironmentModuleNode[] = []) =>
 
 describe("routeStyles", () => {
   it("CSS の URL の、URL に使用できない文字をパーセントエンコードする", () => {
-    expect(routeStyles([node("/src/page.tsx", [node("/src/a b#c.css")])])).toEqual([
+    expect(routeStyles([node("/src/page.tsx", [node("/src/a b#c.css")])], "/")).toEqual([
       "/src/a%20b%23c.css?direct",
     ]);
   });

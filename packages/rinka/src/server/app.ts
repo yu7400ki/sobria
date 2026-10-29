@@ -1,6 +1,7 @@
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { every } from "hono/combine";
 
+import { base } from "../shared/base.ts";
 import { prerenderKindOf, type Output } from "../shared/prerender.ts";
 import { REFRESH_HEADER } from "../shared/refresh.ts";
 import {
@@ -128,9 +129,12 @@ function submittedRequest(c: Context) {
   return page === undefined ? undefined : { js, request: pageRequest(c, page, js) };
 }
 
-/** ルートの表から、各ページと `route.ts` を登録した Hono のアプリを作成する。 */
+/**
+ * ルートの表から、各ページと `route.ts` を登録した Hono のアプリを作成する。
+ * ルートは、アプリを配置するパス（Vite の `base`）の下に登録する。
+ */
 export const createApp = (({ routes, middleware }: Routes, options: AppOptions = {}): Hono => {
-  const app = new Hono();
+  const app = new Hono().basePath(decodeURI(base()));
   const onError = options.onError ?? defaultFailure;
   /** ページとレイアウトのファイル `files` が import した CSS の `<link>` を、`options.head` の後に連結したマークアップを返す。 */
   const headOf = async (files: readonly string[]): Promise<string> => {

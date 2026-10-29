@@ -128,9 +128,9 @@ export function appBuild({ options, settings }: SceneContext): {
           buildApp: async (builder) => {
             await builder.build(builder.environments.client!);
             await builder.build(builder.environments.ssr!);
-            const { clientDir: client, serverDir: server } = settings();
+            const { clientDir: client, serverDir: server, base } = settings();
             if (scope === undefined) return;
-            await writePrerendered(server, client);
+            await writePrerendered(server, client, base);
             if (scope.output === "static") {
               rmSync(server, { recursive: true, force: true });
               return;
@@ -151,13 +151,13 @@ export function appBuild({ options, settings }: SceneContext): {
           }
         : null,
     buildStart() {
-      assets = readClientAssets(settings().clientDir, settings().root);
+      assets = readClientAssets(settings().clientDir, settings().root, settings().base);
     },
     resolveId: (id) => (id === entries.prerender ? virtualId(id) : null),
     load: (id) =>
       id === virtualId(entries.prerender) && scope !== undefined ? prerenderModule(scope) : null,
     generateBundle(_output, bundle) {
-      embedRouteStyles(bundle, settings().root);
+      embedRouteStyles(bundle, settings().root, settings().base);
       this.emitFile({
         type: "asset",
         fileName: "package.json",

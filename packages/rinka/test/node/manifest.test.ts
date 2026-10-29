@@ -20,7 +20,7 @@ beforeAll(async () => {
     [join(root, "src/styles/app.css").replaceAll("\\", "/")]: { file: "assets/3.css" },
   };
   await writeFile(join(outDir, ".vite/manifest.json"), JSON.stringify(manifest));
-  assets = readClientAssets(outDir, root);
+  assets = readClientAssets(outDir, root, "/");
 });
 
 afterAll(async () => {

@@ -71,18 +71,22 @@ export interface Settings {
   readonly elements: readonly ElementFile[];
   /** プラグインの設定の `extensions` を検証し、デフォルト値の空の配列を補った値である。 */
   readonly extensions: readonly string[];
+  /** アプリを配置するパス（Vite の `base`）である。`/` で始まり、`/` で終わる。 */
+  readonly base: string;
 }
 
 /**
- * Vite のユーザーの設定のルート `userRoot`、`command`、プラグインの設定 `options`、`parseExtensions` で検証した `extensions` から、プラグインの設定を求める。
- * 2 つの要素のファイルが同じタグになれば、エラーを投げる。
+ * Vite のユーザーの設定のルート `userRoot` と `base` の `userBase`、`command`、プラグインの設定 `options`、`parseExtensions` で検証した `extensions` から、プラグインの設定を求める。
+ * 2 つの要素のファイルが同じタグになれば、エラーを投げる。ライブラリのビルドでなければ、`/` で始まらない `userBase` をエラーにする。
  */
 export function settingsOf(
   userRoot: string | undefined,
+  userBase: string | undefined,
   command: "build" | "serve",
   options: RinkaOptions,
   extensions: readonly string[],
 ): Settings {
+  const base = baseOf(userBase, options.library === true);
   const root = normalizePath(resolve(userRoot ?? "."));
   const elementsDir = resolve(root, options.elementsDir ?? "src/elements");
   const libraries = findLibraries(root);
@@ -101,7 +105,22 @@ export function settingsOf(
     sources,
     elements: scanElements(sources),
     extensions,
+    base,
   };
+}
+
+/**
+ * Vite の `base` の `userBase` から、アプリを配置するパスを返す。末尾に `/` が無ければ補う。ライブラリのビルドでは `/` を返す。
+ * ライブラリのビルドでなければ、`/` で始まらない `userBase`（相対のパスと完全な URL）をエラーにする。
+ */
+function baseOf(userBase: string | undefined, library: boolean): string {
+  if (library || userBase === undefined) return "/";
+  if (!userBase.startsWith("/") || userBase.startsWith("//")) {
+    throw new Error(
+      `[rinka] Vite の base には、/ で始まるパス（/app/ など）を指定してください。指定された base: ${JSON.stringify(userBase)}`,
+    );
+  }
+  return userBase.endsWith("/") ? userBase : `${userBase}/`;
 }
 
 /** rinka や Vite が拡張子で扱いを決める、`extensions` に登録できない拡張子である。 */

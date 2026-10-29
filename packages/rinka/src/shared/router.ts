@@ -1,3 +1,4 @@
+import { withBase } from "./base.ts";
 import type { ServerNode } from "./nodes.ts";
 import { fillPattern } from "./route-segments.ts";
 
@@ -64,7 +65,7 @@ type HrefArgs<Route extends keyof RouteParams> =
       : [params: Params<Route>, query?: Query];
 
 /**
- * ページか `route.ts` のファイルの形のパス `route` とパラメータから、URL を返す。
+ * ページか `route.ts` のファイルの形のパス `route` とパラメータから、アプリを配置するパス（Vite の `base`）で始まる URL を返す。
  * パラメータの値は URL エンコードし、キャッチオールの値は `/` を区切りとして残す。クエリが空でなければ、`?` に続けて付ける。
  */
 export function href<Route extends keyof RouteParams>(
@@ -78,5 +79,5 @@ export function href<Route extends keyof RouteParams>(
       ? query
       : Object.entries(query ?? {}).map(([key, value]) => [key, String(value)]),
   ).toString();
-  return search === "" ? path : `${path}?${search}`;
+  return withBase(search === "" ? path : `${path}?${search}`);
 }

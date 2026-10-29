@@ -150,7 +150,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           paramType: (source, position) => typeChecker().param(target.path, source, position),
           ...(scene === "app" && !client
             ? build.clientAssets.element(target.file)
-            : { module: devPath(target.path, root) }),
+            : { module: current().base + devPath(target.path, root).slice(1) }),
         },
       }),
       fnModule: fnModuleOf(target.file),
@@ -175,7 +175,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       api,
       sharedDuringBuild: true,
       config: (user, { command }) => {
-        settings = settingsOf(user.root, command, options, extensions);
+        settings = settingsOf(user.root, user.base, command, options, extensions);
         const { clientDir, libraries } = settings;
         return {
           appType: "custom",
@@ -263,14 +263,23 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
         if (id === APP) {
           const serverFns = new Map(serverFnModules(root).map((file) => [fnModuleOf(file), file]));
           return scene === "serve"
-            ? devAppModule({ serverFns, trustedOrigins, output: current().output })
+            ? devAppModule({
+                serverFns,
+                trustedOrigins,
+                output: current().output,
+                base: current().base,
+              })
             : buildAppModule({ serverFns, trustedOrigins });
         }
         const sheet = sheetPath(id);
         return sheet === undefined
           ? null
-          : sheetModule(devPath(sheet, root), scene, isClient(this.environment), () =>
-              build.clientAssets.sheet(sheet),
+          : sheetModule(
+              devPath(sheet, root),
+              current().base,
+              scene,
+              isClient(this.environment),
+              () => build.clientAssets.sheet(sheet),
             );
       },
       generateBundle(_output, bundle) {

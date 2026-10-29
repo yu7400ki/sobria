@@ -83,11 +83,16 @@ function fileOf(clientDir: string, pathname: string, kind: "page" | "route"): st
 const expectedStatus = { page: 200, route: 200, "not-found": 404 } as const;
 
 /**
- * サーバーの出力先 `serverDir` の書き出すモジュールを読み込み、書き出す URL があれば、サーバーのエントリーを読み込んで、各 URL のレスポンスの本文をクライアントの出力先 `clientDir` に保存する。
+ * サーバーの出力先 `serverDir` の書き出すモジュールを読み込み、書き出す URL があれば、サーバーのエントリーを読み込んで、各 URL に `base` を前置して要求し、レスポンスの本文をクライアントの出力先 `clientDir` に保存する。
+ * 保存先のパスには `base` を含めない。
  * ページは `<パス>/index.html` に、`route.ts` は URL のパスのとおりに、`404.html` の対象は `404.html` に保存する。
  * 対象の種類ごとに期待するステータスと異なるレスポンスと、既にあるファイルと重なる保存先は、エラーにする。
  */
-export async function writePrerendered(serverDir: string, clientDir: string): Promise<void> {
+export async function writePrerendered(
+  serverDir: string,
+  clientDir: string,
+  base: string,
+): Promise<void> {
   const load = async (name: string): Promise<unknown> =>
     import(pathToFileURL(join(serverDir, `${name}.js`)).href);
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
@@ -106,9 +111,12 @@ export async function writePrerendered(serverDir: string, clientDir: string): Pr
     for (const url of target.urls) {
       // 書き出しの順序とエラーを決定的にするため、URL を 1 つずつ取得する
       // oxlint-disable-next-line no-await-in-loop
-      const response = await entry.default.fetch(new Request(new URL(url, "http://localhost")), {
-        [prerenderEnv]: target.kind,
-      });
+      const response = await entry.default.fetch(
+        new Request(new URL(base + url.slice(1), "http://localhost")),
+        {
+          [prerenderEnv]: target.kind,
+        },
+      );
       const expected = expectedStatus[target.kind];
       const source = target.kind === "not-found" ? "404.html" : target.file;
       if (response.status !== expected) {

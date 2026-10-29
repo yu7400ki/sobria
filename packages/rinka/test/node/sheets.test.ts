@@ -50,7 +50,7 @@ describe("with { type: 'css' } の書き換え", () => {
 
 describe("シートのモジュール", () => {
   it("クライアントのモジュールは、?inline の CSS からシートを作成して default export し、?inline の更新で同じシートを差し替える", () => {
-    const code = sheetModule("/src/a b.css", "serve", true, noBuiltHref);
+    const code = sheetModule("/src/a b.css", "/", "serve", true, noBuiltHref);
     expect(code).toContain('import { createSheet, updateSheet } from "rinka/internal";');
     expect(code).toContain('import css from "/src/a b.css?inline";');
     expect(code).toContain("const sheet = createSheet(css);");
@@ -60,7 +60,7 @@ describe("シートのモジュール", () => {
   });
 
   it("サーバーのモジュールは、<link> の URL からシートの情報を作成して default export する", () => {
-    const code = sheetModule("/src/a.css", "serve", false, noBuiltHref);
+    const code = sheetModule("/src/a.css", "/", "serve", false, noBuiltHref);
     expect(code).toContain('import { serverSheet } from "rinka/internal";');
     expect(code).toContain('export default serverSheet("/src/a.css?direct");');
     expect(code).not.toContain("rinka.sheet");
@@ -69,14 +69,14 @@ describe("シートのモジュール", () => {
 
 describe("本番のシートのモジュール", () => {
   it("クライアントのモジュールは、?url の CSS を fetch して作成したシートを default export する", () => {
-    const code = sheetModule("/src/a.css", "app", true, noBuiltHref);
+    const code = sheetModule("/src/a.css", "/", "app", true, noBuiltHref);
     expect(code).toContain('import { loadSheet } from "rinka/internal";');
     expect(code).toContain('import url from "/src/a.css?url";');
     expect(code).toContain("export default await loadSheet(url);");
   });
 
   it("サーバーのモジュールは、クライアントのビルドが出力した CSS の URL からシートの情報を作成し、CSS を import しない", () => {
-    const code = sheetModule("/src/a.css", "app", false, () => "/assets/abc.css");
+    const code = sheetModule("/src/a.css", "/", "app", false, () => "/assets/abc.css");
     expect(code).toContain('export default serverSheet("/assets/abc.css");');
     expect(code).not.toContain("/src/a.css");
   });
@@ -84,7 +84,7 @@ describe("本番のシートのモジュール", () => {
 
 describe("ライブラリのビルドのシートのモジュール", () => {
   it("?inline の CSS から作成したシートを default export し、HMR のコードを含まない", () => {
-    const code = sheetModule("/src/a.css", "library", true, noBuiltHref);
+    const code = sheetModule("/src/a.css", "/", "library", true, noBuiltHref);
     expect(code).toContain(`import { createSheet } from "rinka/internal";`);
     expect(code).toContain(`import css from "/src/a.css?inline";`);
     expect(code).toContain("export default createSheet(css);");

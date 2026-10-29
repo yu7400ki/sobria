@@ -1,5 +1,6 @@
 import type { SerovalJSON, SerovalNode } from "seroval";
 
+import { withBase } from "./base.ts";
 import { serverJsxNodes } from "./nodes.ts";
 import { isPlainObject } from "./objects.ts";
 import { serverFnRefOf } from "./server-fn.ts";
@@ -25,14 +26,14 @@ export const isRedirectJson = (value: unknown): value is RedirectJson =>
 /** GET の RPC で入力を送るクエリの名前を表す。`json` は素の JSON を、`seroval` は seroval の JSON の形式を示す。 */
 export const rpcQuery = { json: "d", seroval: "s" } as const;
 
-/** rinka が処理する URL のパスの接頭辞である。 */
+/** rinka が処理する、アプリの中のパスの接頭辞である。 */
 export const internalPrefix = "/_rinka/";
 
-/** サーバー関数のエンドポイントの URL のパスの接頭辞である。 */
+/** サーバー関数のエンドポイントの、アプリの中のパスの接頭辞である。 */
 export const rpcPrefix = `${internalPrefix}fn/`;
 
-/** ID が `id` のサーバー関数のエンドポイントの URL のパスを返す。 */
-export const rpcPath = (id: string): string => rpcPrefix + encodeURIComponent(id);
+/** ID が `id` のサーバー関数のエンドポイントの URL のパスを、アプリを配置するパスを前置して返す。 */
+export const rpcPath = (id: string): string => withBase(rpcPrefix + encodeURIComponent(id));
 
 /** フォームの送信で、宛先のサーバー関数の ID を値に持つ欄の名前である。 */
 export const submissionField = "_rinka_fn";

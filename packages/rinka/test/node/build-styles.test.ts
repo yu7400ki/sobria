@@ -29,15 +29,15 @@ describe("ルートのファイルごとの CSS の一覧の埋め込み", () =>
   it("圧縮で引用符が変わった目印も一覧に置き換え、CSS のファイル名の $ をそのまま埋め込む", () => {
     for (const quote of ['"', "'", "`"]) {
       const bundle = bundleOf(`const s=${quote}__rinka_route_styles__${quote};`, "assets/a$&b.css");
-      embedRouteStyles(bundle, "/app");
+      embedRouteStyles(bundle, "/app", "/sub/");
       expect((bundle["entry.js"] as Rolldown.OutputChunk).code).toBe(
-        'const s={"src/routes/page.tsx":["/assets/a$&b.css"]};',
+        'const s={"src/routes/page.tsx":["/sub/assets/a$&b.css"]};',
       );
     }
   });
 
   it("目印が無ければ、エラーを投げる", () => {
-    expect(() => embedRouteStyles(bundleOf("const s = 1;", "assets/a.css"), "/app")).toThrow(
+    expect(() => embedRouteStyles(bundleOf("const s = 1;", "assets/a.css"), "/app", "/")).toThrow(
       /目印/,
     );
   });

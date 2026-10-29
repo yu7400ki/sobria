@@ -1,6 +1,7 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { matchedRoutes } from "hono/route";
 
+import { base, withBase } from "../shared/base.ts";
 import { isAsyncIterable, isPlainObject } from "../shared/objects.ts";
 import { PAGE_HEADER, REFRESH_HEADER, sameDocument } from "../shared/refresh.ts";
 import type { AppOptions } from "../shared/routes.ts";
@@ -77,7 +78,7 @@ export function serverFnMiddleware(
     if (kind === "rpc") {
       let id: string;
       try {
-        id = decodeURIComponent(new URL(c.req.url).pathname.slice(rpcPrefix.length));
+        id = decodeURIComponent(new URL(c.req.url).pathname.slice(withBase(rpcPrefix).length));
       } catch {
         return responders.rpc.reject(c, 404);
       }
@@ -280,7 +281,7 @@ const responders = {
     respond: async (c, outcome, _fail, submitted) => {
       const { js, page } = submittedPage(c);
       if (outcome.kind === "stream") for await (const _ of outcome.relay.rest());
-      if (page === undefined) return c.redirect("/", 303);
+      if (page === undefined) return c.redirect(withBase("/"), 303);
       if (outcome.kind === "value" && outcome.value !== undefined)
         return submitted(c, { js, page });
       return c.redirect(localPath(page), 303);
@@ -413,11 +414,13 @@ export function callerOf(c: Context): Caller | undefined {
   return { page: handledMethod(c) === "GET" ? undefined : localPageOf(value, c) };
 }
 
-/** `value` が、ホストがリクエスト `c` の URL と同じで、パスが `/_rinka/` の下にない URL なら、その URL を返す。 */
+/** `value` が、ホストがリクエスト `c` の URL と同じで、アプリを配置するパスの下にあり、その下の `_rinka/` の下にない URL なら、その URL を返す。 */
 function localPageOf(value: string | undefined, c: Context): URL | undefined {
   if (value === undefined || !URL.canParse(value)) return undefined;
   const url = new URL(value);
-  return url.host === new URL(c.req.url).host && !url.pathname.startsWith(internalPrefix)
+  return url.host === new URL(c.req.url).host &&
+    url.pathname.startsWith(base()) &&
+    !url.pathname.startsWith(withBase(internalPrefix))
     ? url
     : undefined;
 }
@@ -482,13 +485,13 @@ function replaceJson(c: Context, body: object, from: Headers, status: number): v
 
 /**
  * リクエスト `c` がサーバー関数を呼び出すリクエストなら、その種類を返す。それ以外のリクエストでは `undefined` を返す。
- * パスが `/_rinka/fn/` の下なら `rpc` を返す。`/_rinka/` の下にない、フォームと同じ `Content-Type` の POST で、Hono が一致させたルートのうち
+ * パスがアプリを配置するパスの下の `_rinka/fn/` の下なら `rpc` を返す。`_rinka/` の下にない、フォームと同じ `Content-Type` の POST で、Hono が一致させたルートのうち
  * 最初の `acceptsSubmission` か `refusesSubmission` が `acceptsSubmission` なら、`form` を返す。
  */
 function requestKind(c: Context): RequestKind | undefined {
   const { pathname } = new URL(c.req.url);
-  if (pathname.startsWith(rpcPrefix)) return "rpc";
-  if (pathname.startsWith(internalPrefix) || !isFormSubmission(c)) return undefined;
+  if (pathname.startsWith(withBase(rpcPrefix))) return "rpc";
+  if (pathname.startsWith(withBase(internalPrefix)) || !isFormSubmission(c)) return undefined;
   const row = matchedRoutes(c).find(
     ({ handler }) => handler === acceptsSubmission || handler === refusesSubmission,
   );

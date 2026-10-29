@@ -27,18 +27,24 @@ const STYLES = `${virtualId(entries.styles)}?files=`;
 /** ランナーが動的に import して、`rinka/styles` の仮想モジュールを読み込む指定子の、クエリの前までである。 */
 const STYLES_URL = `${virtualUrl(entries.styles)}?files=`;
 
-/** 開発中のページの `<head>` に出力する、Vite のクライアントを読み込むスクリプトである。 */
-const VITE_CLIENT = '<script type="module" src="/@vite/client"></script>';
+/** アプリを配置するパス `base` の開発サーバーで、Vite のクライアントを読み込むタグを返す。 */
+const viteClient = (base: string): string =>
+  `<script type="module" src="${base}@vite/client"></script>`;
 
 /**
  * 開発中の `rinka/app` のコードを返す。アプリは、Vite のクライアントを読み込み、
  * サーバーコンポーネントの CSS の一覧を `rinka/styles` から読み込み、エラーを Vite のエラーのオーバーレイで表示する。
  */
-export const devAppModule = ({ serverFns, trustedOrigins, output }: AppModuleOptions): string =>
+export const devAppModule = ({
+  serverFns,
+  trustedOrigins,
+  output,
+  base,
+}: AppModuleOptions & { readonly base: string }): string =>
   appCode(
     ["createApp", "serverFnLoader", "devErrorResponse"],
     [
-      `  head: ${JSON.stringify(VITE_CLIENT)},`,
+      `  head: ${JSON.stringify(viteClient(base))},`,
       `  styles: async (files) => (await import(/* @vite-ignore */ ${JSON.stringify(STYLES_URL)} + encodeURIComponent(JSON.stringify(files)))).default,`,
       "  onError: devErrorResponse,",
       `  loadServerFn: ${serverFnLoaderCode(serverFns)},`,
@@ -64,10 +70,16 @@ export function serve({ settings, writeTypes }: ServeContext): Plugin {
         : null,
     configurePreviewServer(server) {
       return () => {
-        const { serverDir, clientDir, output } = settings();
+        const { serverDir, clientDir, output, base } = settings();
         const entry = pathToFileURL(join(serverDir, `${SERVER_ENTRY_NAME}.js`)).href;
         // 本番の Node のサーバーと同じく、書き出したページをサーバーのエントリーより先に返す
-        const statics = new Hono().use(serveStatic({ root: clientDir }));
+        const statics = new Hono().use(
+          serveStatic({
+            root: clientDir,
+            rewriteRequestPath: (path) =>
+              path.startsWith(base) ? path.slice(base.length - 1) : path,
+          }),
+        );
         if (output === "static") {
           // 一致するファイルが無い URL には、404.html を 404 で返す
           const missing = join(clientDir, "404.html");
@@ -108,7 +120,10 @@ export function serve({ settings, writeTypes }: ServeContext): Plugin {
         );
       }
       const nodes = await Promise.all(files.map((file) => moduleGraph.getModuleByUrl(`/${file}`)));
-      const links = routeStyles(nodes.filter((node) => node !== undefined));
+      const links = routeStyles(
+        nodes.filter((node) => node !== undefined),
+        settings().base,
+      );
       return `export default ${JSON.stringify(links)};\n`;
     },
     configureServer(server) {
@@ -230,6 +245,9 @@ function entryMiddleware(
         next();
         return;
       }
+      // アプリには、Vite が base を除く前の URL を渡す
+      request.url =
+        (request as IncomingMessage & { originalUrl?: string }).originalUrl ?? request.url;
       await getRequestListener(
         async (incoming) => {
           const result = await entry.default.fetch(incoming);

@@ -99,19 +99,22 @@ export default await loadSheet(url);
 }
 
 /**
- * 開発サーバーのパス `path` の CSS から、場面 `scene` の、`client` が真ならクライアントの、偽ならサーバーのシートのモジュールのコードを返す。
+ * 開発サーバーのパス `path` の CSS から、場面 `scene` の、`client` が真ならクライアントの、偽ならサーバーのシートのモジュールのコードを返す。開発中のサーバーのシートの URL は、アプリを配置するパス `base` で始める。
  * ライブラリのビルドはクライアントの環境だけを持ち、CSS をモジュールに埋め込む。
  * アプリの本番のビルドのサーバーのモジュールは、`builtHref` が返す、クライアントのビルドが出力した CSS の URL を使用する。
  */
 export function sheetModule(
   path: string,
+  base: string,
   scene: Scene,
   client: boolean,
   builtHref: () => string,
 ): string {
   switch (scene) {
     case "serve":
-      return client ? clientSheetModule(`${path}?inline`) : serverSheetModule(directUrl(path));
+      return client
+        ? clientSheetModule(`${path}?inline`)
+        : serverSheetModule(directUrl(base + path.slice(1)));
     case "app":
       return client ? clientBuildSheetModule(`${path}?url`) : serverSheetModule(builtHref());
     case "library":
