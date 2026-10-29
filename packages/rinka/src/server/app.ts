@@ -25,7 +25,6 @@ import {
 import {
   acceptsSubmission,
   callerResponses,
-  identifyCall,
   pageRequest,
   refusesSubmission,
   serverFnFailure,
@@ -236,9 +235,8 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   const serverFns = serverFnMiddleware(options, failures, formSubmitted);
   const rinka =
     middleware === undefined
-      ? every(identifyCall, serverFns)
+      ? serverFns
       : every(
-          identifyCall,
           // サーバー関数を呼び出すリクエストでは、ルートのミドルウェアが投げた値を、サーバー関数が投げた値と同じレスポンスにする
           catching(lazy(middleware), (c, error) => serverFnFailure(c, error, failures)),
           serverFns,

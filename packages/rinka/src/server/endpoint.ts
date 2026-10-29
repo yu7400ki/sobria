@@ -58,7 +58,7 @@ export function serverFnModule(fnModule: string): typeof registerServerFn {
 
 /**
  * サーバー関数を呼び出すリクエスト（エンドポイントへの RPC と、ページの URL へのフォームの送信）を処理し、それ以外のリクエストを後続の処理に渡す Hono のミドルウェアを返す。
- * 判別には、`identifyCall` が保持した結果を使用する。フォームの送信は、本文の `_rinka_fn` の値の ID のサーバー関数を実行する。本文を読めなければ 400 を返し、欄が無ければ後続の処理に渡す。
+ * フォームの送信は、本文の `_rinka_fn` の値の ID のサーバー関数を実行する。本文を読めなければ 400 を返し、欄が無ければ後続の処理に渡す。
  * rinka が扱わない例外は、リクエストの種類に対応する `failures` の関数が返すレスポンスにする。
  * フォームの送信で handler が `undefined` 以外の値を返し、送信したページがあれば、`submitted` が返すレスポンスにする。
  */
@@ -68,14 +68,19 @@ export function serverFnMiddleware(
   submitted: Submitted,
 ): MiddlewareHandler {
   return async (c, next) => {
-    const call = calls.get(c);
-    if (call === undefined || call.kind === "read") {
+    const kind = requestKind(c);
+    if (kind === undefined) {
       await next();
       return undefined;
     }
-    if (call.kind === "rpc") {
-      if (call.id === undefined) return responders.rpc.reject(c, 404);
-      return endpoint(c, call.id, "rpc", options, failures.rpc, submitted);
+    if (kind === "rpc") {
+      let id: string;
+      try {
+        id = decodeURIComponent(new URL(c.req.url).pathname.slice(rpcPrefix.length));
+      } catch {
+        return responders.rpc.reject(c, 404);
+      }
+      return endpoint(c, id, "rpc", options, failures.rpc, submitted);
     }
     let id: FormDataEntryValue | null;
     try {
@@ -84,7 +89,6 @@ export function serverFnMiddleware(
       return responders.form.reject(c, 400);
     }
     if (typeof id !== "string") {
-      calls.set(c, { kind: "read" });
       await next();
       return undefined;
     }
@@ -92,56 +96,16 @@ export function serverFnMiddleware(
   };
 }
 
-/**
- * サーバー関数を呼び出すリクエストの判別の結果を表す。`rpc` の `id` は、パスをデコードできなければ `undefined` である。
- * `form` は、フォームの送信を受け付ける行に一致したフォームの POST で、ID は本文から読む。
- * `read` は、`form` のうち、本文を読んだ結果、`_rinka_fn` の欄が無かったリクエストである。
- */
-type Call =
-  | { readonly kind: "rpc"; readonly id: string | undefined }
-  | { readonly kind: "form" }
-  | { readonly kind: "read" };
-
-/** 判別の結果を、リクエストの Context をキーにして保持する。 */
-const calls = new WeakMap<Context, Call>();
-
-/**
- * リクエストがサーバー関数を呼び出すリクエストかどうかを、本文を読まずに判別して保持し、後続の処理を実行するミドルウェアである。
- * パスが `/_rinka/fn/` の下なら `rpc` にする。`/_rinka/` の下にない、フォームと同じ `Content-Type` の POST で、Hono が一致させたルートのうち
- * 最初の `acceptsSubmission` か `refusesSubmission` が `acceptsSubmission` なら、`form` にする。
- */
-export const identifyCall: MiddlewareHandler = async (c, next) => {
-  const call = callOf(c);
-  if (call !== undefined) calls.set(c, call);
-  await next();
-};
-
-/** リクエスト `c` の `Call` を返す。サーバー関数を呼び出すリクエストでなければ `undefined` を返す。 */
-function callOf(c: Context): Call | undefined {
-  const { pathname } = new URL(c.req.url);
-  if (pathname.startsWith(rpcPrefix)) {
-    try {
-      return { kind: "rpc", id: decodeURIComponent(pathname.slice(rpcPrefix.length)) };
-    } catch {
-      return { kind: "rpc", id: undefined };
-    }
-  }
-  if (pathname.startsWith(internalPrefix) || !isFormSubmission(c)) return undefined;
-  const row = matchedRoutes(c).find(
-    ({ handler }) => handler === acceptsSubmission || handler === refusesSubmission,
-  );
-  return row?.handler === acceptsSubmission ? { kind: "form" } : undefined;
-}
-
 /** ルートの表の行のうち、フォームの送信を受け付ける行の先頭に登録するミドルウェアである。 */
 export const acceptsSubmission: MiddlewareHandler = (_c, next) => next();
 
 /**
  * ルートの表の行のうち、フォームの送信を受け付けない行の先頭に登録するミドルウェアである。
- * フォームの送信を受け付ける行が先に一致し、`_rinka_fn` の欄が無かったリクエストには、行の処理を実行せずに、アプリの notFound の 404 を返す。
+ * `requestKind` が `form` のリクエストには、行の処理を実行せずに、アプリの notFound の 404 を返す。
+ * `form` のリクエストがこの印に到達するのは、本文に `_rinka_fn` の欄が無かったときだけである。
  */
 export const refusesSubmission: MiddlewareHandler = async (c, next) =>
-  calls.get(c)?.kind === "read" ? c.notFound() : next();
+  requestKind(c) === "form" ? c.notFound() : next();
 
 /**
  * サーバー関数を呼び出すリクエスト `c` では、投げられた値 `error` から、サーバー関数が投げた値と同じレスポンスを作成する。
@@ -517,10 +481,19 @@ function replaceJson(c: Context, body: object, from: Headers, status: number): v
   replaceResponse(c, new Response(JSON.stringify(body), { status, headers }));
 }
 
-/** リクエスト `c` が、`identifyCall` がサーバー関数を呼び出すと判別したリクエストなら、その種類を返す。それ以外のリクエストでは `undefined` を返す。 */
+/**
+ * リクエスト `c` がサーバー関数を呼び出すリクエストなら、その種類を返す。それ以外のリクエストでは `undefined` を返す。
+ * パスが `/_rinka/fn/` の下なら `rpc` を返す。`/_rinka/` の下にない、フォームと同じ `Content-Type` の POST で、Hono が一致させたルートのうち
+ * 最初の `acceptsSubmission` か `refusesSubmission` が `acceptsSubmission` なら、`form` を返す。
+ */
 function requestKind(c: Context): RequestKind | undefined {
-  const call = calls.get(c);
-  return call === undefined || call.kind === "read" ? undefined : call.kind;
+  const { pathname } = new URL(c.req.url);
+  if (pathname.startsWith(rpcPrefix)) return "rpc";
+  if (pathname.startsWith(internalPrefix) || !isFormSubmission(c)) return undefined;
+  const row = matchedRoutes(c).find(
+    ({ handler }) => handler === acceptsSubmission || handler === refusesSubmission,
+  );
+  return row?.handler === acceptsSubmission ? "form" : undefined;
 }
 
 /** フォームの送信と同じ `Content-Type` の POST かどうかを返す。 */

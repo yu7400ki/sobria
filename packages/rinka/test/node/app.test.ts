@@ -465,6 +465,9 @@ describe("ページの URL へのフォームの送信", () => {
       apiRoute("/about", { POST: async (c) => c.text(await c.req.text()) }),
       pageRoute("/list", show),
       pageRoute("/guarded", show, [], [deny]),
+      pageRoute("/edit", show, [], [], {
+        error: fallbackOf(() => jsx("h1", { children: "edit" })),
+      }),
       pageRoute("/docs/intro", show),
       apiRoute("/docs/:slug", { POST: async (c) => c.text(await c.req.text()) }),
       pageRoute("/:slug", show),
@@ -564,6 +567,35 @@ describe("ページの URL へのフォームの送信", () => {
     expect(((await js.json()) as { redirect: string }).redirect).toBe("/evil.com");
     const saved = await request(routes, "//evil.com/x", submission("src/app-test.ts#pageSave"));
     expect([saved.status, await bodyOf(saved)]).toEqual([404, '<p>{"saved":"page"}</p>']);
+  });
+
+  it("欄の無いフォームの POST でも、ルートの middleware.ts が next() の後に投げた値は、フォームの送信の規則で送信したページの error.tsx にする", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    onTestFinished(() => error.mockRestore());
+    const throwingLate: Routes = {
+      ...routes,
+      middleware: loadOf<MiddlewareHandler>(async (c, next) => {
+        await next();
+        if (c.req.method === "POST") throw new Error("late");
+      }),
+    };
+    const response = await request(throwingLate, "/edit", fieldless);
+    expect([response.status, await bodyOf(response)]).toEqual([500, "<h1>edit</h1>"]);
+  });
+
+  it("欄の無いフォームの POST に x-rinka-page があれば、後続のレスポンスのリダイレクトを { redirect } にする", async () => {
+    const moving: Routes = {
+      ...routes,
+      middleware: loadOf<MiddlewareHandler>(async (c, next) => {
+        await next();
+        if (c.req.method === "POST") c.res = c.redirect("/login", 302);
+      }),
+    };
+    const response = await request(moving, "/list", {
+      ...fieldless,
+      headers: { ...fieldless.headers, "x-rinka-page": "http://localhost/list" },
+    });
+    expect([response.status, await response.json()]).toEqual([200, { redirect: "/login" }]);
   });
 
   it("/_rinka/ の下の URL への送信では、サーバー関数を実行しない", async () => {
