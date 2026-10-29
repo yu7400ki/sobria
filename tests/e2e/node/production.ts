@@ -5,11 +5,13 @@ import { createServer, type AddressInfo } from "node:net";
 import { rinka, type RinkaOptions } from "rinka/vite";
 import { createBuilder, type InlineConfig, type PluginOption } from "vite";
 
+/** 本番のビルドでの、ファイル `file` のサーバー関数 `name` の ID を返す。 */
+export const fnId = (file: string, name: string) =>
+  `m${createHash("sha256").update(file).digest("base64url").slice(0, 10)}#${name}`;
+
 /** 本番のビルドでの、ファイル `file` のサーバー関数 `name` の RPC のパスを返す。 */
-export const rpcPath = (file: string, name: string) => {
-  const module = `m${createHash("sha256").update(file).digest("base64url").slice(0, 10)}`;
-  return `/_rinka/fn/${encodeURIComponent(`${module}#${name}`)}`;
-};
+export const rpcPath = (file: string, name: string) =>
+  `/_rinka/fn/${encodeURIComponent(fnId(file, name))}`;
 
 /** テスト用のアプリのルート `root` を、rinka のプラグイン（接頭辞は `app`）と `plugins` と Vite の設定 `config` で `outDir` にビルドする。 */
 export async function buildFixture(

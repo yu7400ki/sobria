@@ -62,6 +62,7 @@ export const serverImports = [
   "hono/combine",
   "hono/factory",
   "hono/http-exception",
+  "hono/route",
 ] as const;
 
 /** oxc の変換の設定である。`sourceType` は Vite の型に無い項目で、oxc の変換にはそのまま渡される。 */

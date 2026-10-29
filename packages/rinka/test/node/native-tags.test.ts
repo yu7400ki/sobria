@@ -123,7 +123,7 @@ describe("ネイティブのタグの出力の全体", () => {
         jsx("form", { action: fn, children: jsx("input", { value: "v", checked: true }) }),
       ]),
     ).toMatchInlineSnapshot(
-      `"<label for="f" id="rinka-l1">名前</label><x-native-field data-oh="h1" id="f" name="n" aria-labelledby="rinka-l1"><template shadowrootmode="open" shadowrootdelegatesfocus><!--[--><button></button><!--]--></template><input type="hidden" name="n" value="v" data-rinka-form></x-native-field><form action="/_rinka/fn/src%2Fnative-tags.ts%23fn" method="post" enctype="multipart/form-data"><input value="v" checked></form>"`,
+      `"<label for="f" id="rinka-l1">名前</label><x-native-field data-oh="h1" id="f" name="n" aria-labelledby="rinka-l1"><template shadowrootmode="open" shadowrootdelegatesfocus><!--[--><button></button><!--]--></template><input type="hidden" name="n" value="v" data-rinka-form></x-native-field><form method="post" enctype="multipart/form-data"><input type="hidden" name="_rinka_fn" value="src/native-tags.ts#fn"><input value="v" checked></form>"`,
     );
   });
 });

@@ -453,10 +453,15 @@ describe("serverFn のストリーム", () => {
 });
 
 describe("クライアントの form の action に渡したサーバー関数", () => {
-  it("action をエンドポイントの URL に、method を post に、enctype を multipart/form-data にする", () => {
+  it("action を出力せず、サーバー関数の ID を持つ hidden input を最初の子にし、method を post に、enctype を multipart/form-data にする", () => {
     const save = serverFn("src/fns.ts#save", "POST");
-    const form = toNode<HTMLFormElement>(clientJsx("form", { action: save }));
-    expect(form.getAttribute("action")).toBe("/_rinka/fn/src%2Ffns.ts%23save");
+    const form = toNode<HTMLFormElement>(
+      clientJsx("form", { action: save, children: clientJsx("input", { name: "a" }) }),
+    );
+    expect(form.hasAttribute("action")).toBe(false);
+    expect(form.innerHTML).toBe(
+      '<input type="hidden" name="_rinka_fn" value="src/fns.ts#save"><input name="a">',
+    );
     expect(form.getAttribute("method")).toBe("post");
     expect(form.getAttribute("enctype")).toBe("multipart/form-data");
     const encoded = toNode<HTMLFormElement>(

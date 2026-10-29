@@ -240,20 +240,17 @@ writeFileSync(${JSON.stringify(marker)}, "x");
     }
   });
 
-  it("form の action に渡したサーバー関数に、JS が無いときと同じ multipart の送信をすると、Referer のページを 200 で返す", async () => {
+  it("form の action に渡したサーバー関数に、JS が無いときと同じ multipart の送信をページの URL にすると、そのページを 200 で返す", async () => {
     const html = await (await fetch(`${origin}/fns`)).text();
-    const action = `/_rinka/fn/${encodeURIComponent("src/lib/fns.ts#save")}`;
-    expect(html).toContain(`<form action="${action}" method="post" enctype="multipart/form-data">`);
+    const form =
+      '<form method="post" enctype="multipart/form-data"><input type="hidden" name="_rinka_fn" value="src/lib/fns.ts#save">';
+    expect(html).toContain(form);
     const body = new FormData();
+    body.append("_rinka_fn", "src/lib/fns.ts#save");
     body.append("title", "a");
-    const response = await fetch(`${origin}${action}`, {
-      method: "POST",
-      body,
-      headers: { referer: `${origin}/fns` },
-      redirect: "manual",
-    });
+    const response = await fetch(`${origin}/fns`, { method: "POST", body, redirect: "manual" });
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain(`<form action="${action}"`);
+    expect(await response.text()).toContain(form);
   });
 
   it("ページの要素の中から、props で受け取ったサーバー関数と import したサーバー関数を RPC で呼び出せる", async () => {
@@ -377,11 +374,7 @@ writeFileSync(${JSON.stringify(marker)}, "x");
         if (javaScriptEnabled) {
           expect(await page.locator("app-refresher #count").textContent()).toBe("signup 1");
         }
-        expect(new URL(page.url()).pathname).toBe(
-          javaScriptEnabled
-            ? "/signup"
-            : "/_rinka/fn/" + encodeURIComponent("src/lib/signup.ts#signup"),
-        );
+        expect(new URL(page.url()).pathname).toBe("/signup");
       } finally {
         await browser.close();
       }

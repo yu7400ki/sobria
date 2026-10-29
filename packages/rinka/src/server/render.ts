@@ -98,7 +98,7 @@ import { Relay } from "./relay.ts";
 import { scriptJson } from "./script.ts";
 import { prepareRenderScopes, runInScope } from "./shared-context.ts";
 import { elementCss } from "./styles.ts";
-import { asNode, type ErroredNode, type Node } from "./tree.ts";
+import { asNode, createNode, type ErroredNode, type Node } from "./tree.ts";
 import { toScript } from "./wire.ts";
 
 /**
@@ -115,6 +115,10 @@ export type Target =
       readonly blocking: boolean;
     }
   | { readonly kind: "refresh" };
+
+/** フォームの送信先のサーバー関数を示す、名前が `name` で値が `value` の hidden input のノードを返す。 */
+const fnIdInput = (name: string, value: string): Node =>
+  createNode("input", { type: "hidden", name, value });
 
 /** 境界の差し替えを表す。 */
 interface Patch {
@@ -848,7 +852,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     const label =
       tag === "label" && this.runsElements && !ctx.fallback ? this.labelOf(props, ctx) : undefined;
     const attributesOf =
-      tag === "form" ? formProps(props) : label ? { ...props, id: label.id } : props;
+      tag === "form" ? formProps(props, fnIdInput) : label ? { ...props, id: label.id } : props;
     if (ctx.owner === null) warnHandlers(tag, props);
     const outputs = propertiesOf(tag);
     const { selectValue } = ctx.parent;
@@ -889,7 +893,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     if (voidTags.has(tag)) return;
     const text = propertyOf(outputs, "text");
     this.walk(
-      asNode(text === undefined || !(text in props) ? props.children : ["\n", props[text]]),
+      asNode(text === undefined || !(text in props) ? attributesOf.children : ["\n", props[text]]),
       {
         ...ctx,
         head: childPlacement(tag, ctx.head),

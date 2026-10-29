@@ -7,7 +7,7 @@ import type { ViteDevServer } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createDevServer, originOf } from "../dev-server.ts";
-import { buildFixture, rpcPath, startServer } from "./production.ts";
+import { buildFixture, fnId, rpcPath, startServer } from "./production.ts";
 
 /** wrangler の CLI のスクリプトである。 */
 const wranglerBin = fileURLToPath(
@@ -92,13 +92,9 @@ describe("@cloudflare/vite-plugin との組み合わせ", () => {
       expect(await rpc.json()).toEqual({ ok: "orphan" });
       const form = (title: string) => {
         const body = new FormData();
+        body.append("_rinka_fn", fnId("src/lib/fns.ts", "save"));
         body.append("title", title);
-        return fetch(`${origin}${rpcPath("src/lib/fns.ts", "save")}`, {
-          method: "POST",
-          body,
-          headers: { referer: `${origin}/` },
-          redirect: "manual",
-        });
+        return fetch(`${origin}/`, { method: "POST", body, redirect: "manual" });
       };
       expect((await form("a")).status).toBe(200);
       expect((await form("")).status).toBe(422);

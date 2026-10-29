@@ -4,9 +4,10 @@ import { defineElement } from "../../src/client/element.ts";
 import { listenForms } from "../../src/client/form.ts";
 import { jsx } from "../../src/client/jsx-runtime.ts";
 import { refreshPage } from "../../src/client/refresh.ts";
+import { serverFn } from "../../src/client/server-fn.ts";
 import { bootstrapSource } from "../../src/server/bootstrap.ts";
 import type { RefreshJson } from "../../src/shared/refresh.ts";
-import { rpcPath, wireFormat, wireHeader } from "../../src/shared/wire.ts";
+import { submissionField, wireFormat, wireHeader } from "../../src/shared/wire.ts";
 
 /** 最後の submit のイベントが、window に届いた時点でデフォルトの動作を止められていたかどうかである。 */
 let prevented: boolean | undefined;
@@ -34,13 +35,17 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const action = rpcPath("src/form-test.ts#save");
+/** 送信先のサーバー関数の ID である。 */
+const fnId = "src/form-test.ts#save";
+
+/** 送信先のサーバー関数を示す hidden input である。 */
+const fnInput = `<input type="hidden" name="${submissionField}" value="${fnId}">`;
 
 /** rinka が組み立てた RPC のレスポンスを示すヘッダーである。 */
 const rpcHeaders = { [wireHeader]: wireFormat.rpc };
 
 /** サーバー関数を送信先にするフォームを body に配置し、フォームと送信のボタンを返す。 */
-function placeForm(html = `<form action="${action}" method="post">`): {
+function placeForm(html = `<form method="post">${fnInput}`): {
   form: HTMLFormElement;
   button: HTMLButtonElement;
 } {
@@ -63,14 +68,14 @@ const refreshJson = (json: Partial<RefreshJson>): RefreshJson => ({
 
 /** スロットに配置したフォームを持つ要素を配置し、要素が描画した後に送信のボタンを返す。 */
 const placeSlotted = async () => {
-  document.body.innerHTML = `<div id="wrap"><test-form-slot><form action="${action}" method="post"><button>go</button></form></test-form-slot></div>`;
+  document.body.innerHTML = `<div id="wrap"><test-form-slot><form method="post">${fnInput}<button>go</button></form></test-form-slot></div>`;
   const host = document.querySelector("test-form-slot")!;
   await vi.waitFor(() => expect(host.shadowRoot?.querySelector("slot")).toBeTruthy());
   return document.querySelector("button")!;
 };
 
 describe("JS があるときのフォームの送信", () => {
-  it("押したボタンの値を含む FormData を、x-rinka-page に現在の URL を付けて送信先に POST し、送信中は aria-busy を付与する", async () => {
+  it("押したボタンの値を含む FormData を、x-rinka-page に現在の URL を付けて現在のページの URL に POST し、送信中は aria-busy を付与する", async () => {
     const response = Promise.withResolvers<Response>();
     const fetch = vi.spyOn(globalThis, "fetch").mockReturnValue(response.promise);
     const { form, button } = placeForm();
@@ -78,11 +83,12 @@ describe("JS があるときのフォームの送信", () => {
     expect(prevented).toBe(true);
     expect(form.getAttribute("aria-busy")).toBe("true");
     const [url, init] = fetch.mock.calls[0] ?? [];
-    expect(url).toEqual(new URL(action, location.href));
+    expect(url).toEqual(new URL(location.href));
     expect(init?.method).toBe("POST");
     expect(new Headers(init?.headers).get("x-rinka-page")).toBe(location.href);
     const body = init?.body;
     expect(body instanceof FormData && [...body]).toEqual([
+      [submissionField, fnId],
       ["a", "1"],
       ["b", "2"],
     ]);
@@ -191,7 +197,7 @@ describe("JS があるときのフォームの送信", () => {
         Response.json(refreshJson({ head: "<title>error page</title>" }), { status: 500 }),
       )
       .mockReturnValueOnce(new Promise(() => {}));
-    document.body.innerHTML = `<form id="a" action="${action}" method="post"><button>a</button></form><form id="b" action="${action}" method="post"><button>b</button></form>`;
+    document.body.innerHTML = `<form id="a" method="post">${fnInput}<button>a</button></form><form id="b" method="post">${fnInput}<button>b</button></form>`;
     const first = document.querySelector<HTMLFormElement>("#a")!;
     first.querySelector("button")!.click();
     document.querySelector<HTMLButtonElement>("#b button")!.click();
@@ -240,17 +246,26 @@ describe("JS があるときのフォームの送信", () => {
     const { form, button } = placeForm();
     form.addEventListener("submit", (event) => event.preventDefault());
     button.click();
-    placeForm('<form action="/other" method="post">').button.click();
-    expect(prevented).toBe(false);
-    placeForm(`<form action="${action}">`).button.click();
+    for (const html of [
+      `<form action="/other" method="post">${fnInput}`,
+      `<form>${fnInput}`,
+      '<form method="post">',
+      `<form method="post"><input name="${submissionField}" value="${fnId}">`,
+    ]) {
+      placeForm(html).button.click();
+      expect(prevented).toBe(false);
+    }
+    const other = placeForm();
+    other.button.setAttribute("formaction", "/other");
+    other.button.click();
     expect(prevented).toBe(false);
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("action と method という名前のコントロールがあるフォームも、属性の送信先と method で送信する", () => {
+  it("action と method という名前のコントロールがあるフォームも、属性の method で送信する", () => {
     const fetch = vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise(() => {}));
     const { button } = placeForm(
-      `<form action="${action}" method="post"><input name="action" value="x"><input name="method" value="get">`,
+      `<form method="post">${fnInput}<input name="action" value="x"><input name="method" value="get">`,
     );
     button.click();
     expect(fetch).toHaveBeenCalledTimes(1);
@@ -273,8 +288,7 @@ describe("JS があるときのフォームの送信", () => {
       "test-form-host",
       () =>
         jsx("form", {
-          action,
-          method: "post",
+          action: serverFn(fnId, "POST"),
           children: jsx("button", { name: "b", value: "2", children: "go" }),
         }),
       { props: {} },

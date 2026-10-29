@@ -7,7 +7,9 @@ import { createApp, registerServerFn } from "../../src/server/internal.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToString } from "../../src/server/response.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
-import { rpcPath, wireHeader } from "../../src/shared/wire.ts";
+import type { AppOptions, Routes } from "../../src/shared/routes.ts";
+import { submissionField, wireHeader } from "../../src/shared/wire.ts";
+import { loadOf } from "./load.ts";
 
 let count = 0;
 
@@ -17,14 +19,33 @@ function register<F extends Parameters<typeof registerServerFn>[1]>(fn: F): { id
   return { id, fn: registerServerFn(id, fn) };
 }
 
-/** ID が `id` のサーバー関数に、`body` をフォームとして送信したレスポンスを返す。 */
+/** `/posts/:id` のページの行だけを持つルートの表である。 */
+const routes: Routes = {
+  routes: [
+    {
+      kind: "page",
+      path: "/posts/:id",
+      pattern: "/posts/[id]",
+      module: loadOf(() => jsx("p", { children: "post" })),
+      layouts: [],
+      middlewares: [],
+    },
+  ],
+};
+
+/**
+ * `/posts/1` のページから、ID が `id` のサーバー関数を宛先にして、`body` をフォームとして送信したレスポンスを返す。
+ * `body` には、`_rinka_fn` の欄を加えてから送信する。
+ */
 function submit(
   id: string,
   body: FormData | URLSearchParams,
   headers: Record<string, string> = {},
+  options: AppOptions = {},
 ) {
-  return createApp({ routes: [] }).fetch(
-    new Request(`http://localhost${rpcPath(id)}`, { method: "POST", body, headers }),
+  body.append(submissionField, id);
+  return createApp(routes, options).fetch(
+    new Request("http://localhost/posts/1", { method: "POST", body, headers }),
   );
 }
 
@@ -38,11 +59,11 @@ const title: StandardSchema<{ title: string }> = {
 };
 
 describe("form の action に渡したサーバー関数", () => {
-  it("action をエンドポイントの URL に、method を post に、enctype を multipart/form-data にする", async () => {
+  it("action を出力せずに、method を post に、enctype を multipart/form-data にし、サーバー関数の ID を持つ hidden input を最初の子にする", async () => {
     const { id, fn } = register(defineServerFn(() => null));
     const html = await renderToString(jsx("form", { action: fn, children: "x" }));
     expect(html).toBe(
-      `<form action="${rpcPath(id)}" method="post" enctype="multipart/form-data">x</form>`,
+      `<form method="post" enctype="multipart/form-data"><input type="hidden" name="${submissionField}" value="${id}">x</form>`,
     );
   });
 
@@ -56,7 +77,7 @@ describe("form の action に渡したサーバー関数", () => {
 });
 
 describe("JS が無いときのフォームの送信", () => {
-  it("FormData を名前の構造で handler の入力にする", async () => {
+  it("_rinka_fn の欄を除いた FormData を、名前の構造で handler の入力にする", async () => {
     let received: unknown;
     const { id } = register(
       defineServerFn((_c, { input }) => {
@@ -67,11 +88,11 @@ describe("JS が無いときのフォームの送信", () => {
     const body = new FormData();
     body.append("title", "a");
     body.append("tags[]", "x");
-    await submit(id, body, { referer: "http://localhost/posts/1" });
+    await submit(id, body);
     expect(received).toEqual({ title: "a", tags: ["x"] });
   });
 
-  it("handler が async iterable を返したら、最後まで反復してから Referer に 303 でリダイレクトする", async () => {
+  it("handler が async iterable を返したら、最後まで反復してから送信したページに 303 でリダイレクトする", async () => {
     const steps: number[] = [];
     const { id } = register(
       defineServerFn(async function* () {
@@ -81,28 +102,18 @@ describe("JS が無いときのフォームの送信", () => {
         }
       }),
     );
-    const response = await submit(id, new FormData(), { referer: "http://localhost/posts/1" });
-    expect([response.status, response.headers.get("location")]).toEqual([
-      303,
-      "http://localhost/posts/1",
-    ]);
+    const response = await submit(id, new FormData());
+    expect([response.status, response.headers.get("location")]).toEqual([303, "/posts/1"]);
     expect(steps).toEqual([1, 2, 3]);
   });
 
-  it("Referer が無ければ / に 303 でリダイレクトし、urlencoded の送信も受け付ける", async () => {
-    const { id } = register(defineServerFn(() => null));
-    const response = await submit(id, new URLSearchParams({ title: "a" }));
-    expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe("/");
-  });
-
   it.each([
-    ["ホストがリクエストと異なる", "http://example.com/posts/1"],
+    ["ホストがリクエストと異なる", "http://example.com/other"],
     ["パスが /_rinka/ の下にある", "http://localhost/_rinka/fn/x"],
   ])(
-    "Referer の%s URL なら、値を返したときも async iterable を返したときも / に 303 でリダイレクトする",
+    "送信の Referer の URL の%s場合も、Referer を参照せずに、undefined を返したときも async iterable を返したときも送信したページに 303 でリダイレクトする",
     async (_, referer) => {
-      const value = register(defineServerFn(() => null));
+      const value = register(defineServerFn(() => undefined));
       const stream = register(
         defineServerFn(async function* () {
           yield 1;
@@ -111,7 +122,7 @@ describe("JS が無いときのフォームの送信", () => {
       for (const { id } of [value, stream]) {
         // oxlint-disable-next-line no-await-in-loop
         const response = await submit(id, new FormData(), { referer });
-        expect([response.status, response.headers.get("location")]).toEqual([303, "/"]);
+        expect([response.status, response.headers.get("location")]).toEqual([303, "/posts/1"]);
       }
     },
   );
@@ -152,14 +163,11 @@ describe("JS が無いときのフォームの送信", () => {
     expect(response.status).toBe(500);
     expect(await response.text()).toBe("Internal Server Error");
     error.mockRestore();
-    const app = createApp(
-      { routes: [] },
-      {
-        onError: (thrown) => new Response(String(thrown), { status: 500 }),
-      },
-    );
-    const handled = await app.fetch(
-      new Request(`http://localhost${rpcPath(id)}`, { method: "POST", body: new FormData() }),
+    const handled = await submit(
+      id,
+      new FormData(),
+      {},
+      { onError: (thrown) => new Response(String(thrown), { status: 500 }) },
     );
     expect(await handled.text()).toBe("Error: boom");
   });
@@ -190,16 +198,13 @@ describe("JS が無いときのフォームの送信", () => {
     expect(await response.text()).toBe("Bad Request");
   });
 
-  it("GET のサーバー関数への送信は 405 に、別のサイトからの送信は 403 に、未登録の ID と形式が不正な ID への送信は 404 にし、本文を素のテキストにする", async () => {
+  it("GET のサーバー関数への送信は 405 に、別のサイトからの送信は 403 に、未登録の ID への送信は 404 にし、本文を素のテキストにする", async () => {
     const { id: get } = register(defineServerFn({ method: "GET" })(() => null));
     const { id: post } = register(defineServerFn(() => null));
     const responses = await Promise.all([
       submit(get, new FormData()),
       submit(post, new FormData(), { "sec-fetch-site": "cross-site" }),
       submit("src/forms-missing.ts#fn", new FormData()),
-      createApp({ routes: [] }).fetch(
-        new Request("http://localhost/_rinka/fn/%E0", { method: "POST", body: new FormData() }),
-      ),
     ]);
     const actual = await Promise.all(
       responses.map(async (response) => [
@@ -211,7 +216,6 @@ describe("JS が無いときのフォームの送信", () => {
     expect(actual).toEqual([
       [405, false, "Method Not Allowed"],
       [403, false, "Forbidden"],
-      [404, false, "Not Found"],
       [404, false, "Not Found"],
     ]);
   });

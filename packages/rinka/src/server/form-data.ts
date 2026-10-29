@@ -15,7 +15,9 @@ type Form = "leaf" | "list" | "array" | "object";
  * 値は文字列か File のまま渡す。名前の区切りに `__proto__`、`constructor`、`prototype` を含むフィールドと、
  * それまでと異なる形で同じ位置を使用するフィールドと、それまでの要素の数より大きい添字のフィールドは捨てる。
  */
-export function formDataToInput(form: FormData): Record<string, unknown> {
+export function formDataToInput(
+  form: Iterable<readonly [string, FormDataEntryValue]>,
+): Record<string, unknown> {
   const root: Record<string, unknown> = {};
   const forms = new Map<string, Form>();
   for (const [name, value] of form) {

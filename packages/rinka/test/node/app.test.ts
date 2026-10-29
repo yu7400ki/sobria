@@ -1,4 +1,5 @@
 import type { Context, Handler, MiddlewareHandler, Next } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
@@ -19,7 +20,7 @@ import type {
   RouteMethod,
   Routes,
 } from "../../src/shared/routes.ts";
-import { rpcPath } from "../../src/shared/wire.ts";
+import { rpcPath, submissionField } from "../../src/shared/wire.ts";
 import { loadOf } from "./load.ts";
 
 /** `tag` の要素で子を包み、`id` 属性を付与するレイアウトを返す。 */
@@ -183,6 +184,22 @@ function request(routes: Routes, path: string, init?: RequestInit): Promise<Resp
   return Promise.resolve(createApp(routes).fetch(new Request(`http://localhost${path}`, init)));
 }
 
+/**
+ * サーバー関数 `id` を宛先にした、JS が無いときのフォームの送信を表すリクエストの初期値を返す。
+ * 本文は、`_rinka_fn` の欄の後に `fields` を続けた urlencoded の文字列で、`headers` をヘッダーに加える。
+ */
+function submission(
+  id: string,
+  fields = "a=1",
+  headers: Record<string, string> = {},
+): RequestInit & { readonly body: string } {
+  return {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded", ...headers },
+    body: `${submissionField}=${encodeURIComponent(id)}${fields === "" ? "" : `&${fields}`}`,
+  };
+}
+
 /** レスポンスの本文から、`<body>` の中身を返す。 */
 async function bodyOf(response: Response): Promise<string> {
   const html = await response.text();
@@ -339,49 +356,41 @@ describe("サーバー関数の戻り値をページに渡す", () => {
       pageRoute("/moved", () => jsx("p", { children: "moved" }), [], [movedTo307]),
     ],
   };
-  /** `fn` のエンドポイントに、`headers` を付けて `body` を POST する。 */
-  const post = (id: string, headers: Record<string, string>, body = "a=1") =>
-    request(routes, rpcPath(id), {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded", ...headers },
-      body,
-    });
+  /** `path` のページから、`headers` を付けて、`id` のサーバー関数を宛先にしたフォームを送信する。 */
+  const post = (id: string, path: string, headers: Record<string, string> = {}) =>
+    request(routes, path, submission(id, "a=1", headers));
 
   it("JS が無いフォームの送信で handler が値を返したら、送信したページを 200 で描画し、ページは getServerFnResult でその値を読む", async () => {
-    const response = await post("src/app-test.ts#resultSave", { referer: "http://localhost/form" });
+    const response = await post("src/app-test.ts#resultSave", "/form");
     expect(response.status).toBe(200);
     expect(await bodyOf(response)).toContain('<p>{"saved":"a"} null null null undefined</p>');
   });
 
   it("値を返した送信のレスポンスには handler が設定した Cookie を 1 回付け、描画するページのリクエストにもその Cookie を渡す", async () => {
-    const response = await post("src/app-test.ts#resultCookied", {
-      referer: "http://localhost/form",
-    });
+    const response = await post("src/app-test.ts#resultCookied", "/form");
     expect(response.headers.getSetCookie()).toEqual(["flag=1; Path=/"]);
     expect(await bodyOf(response)).toContain('<p>null null {"saved":"c"} null flag=1</p>');
   });
 
   it("JS が無いときに値を返した送信で、送信したページの middleware.ts が 307 で移動したら、303 にする", async () => {
-    const response = await post("src/app-test.ts#resultSave", {
-      referer: "http://localhost/moved",
-    });
+    const response = await post("src/app-test.ts#resultSave", "/moved");
     expect([response.status, response.headers.get("location")]).toEqual([303, "/form"]);
   });
 
   it("handler が値を返した後にサーバー関数のミドルウェアが例外を投げたら、error.tsx の描画では値を読めない", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     onTestFinished(() => error.mockRestore());
-    const response = await post("src/app-test.ts#resultLate", { referer: "http://localhost/form" });
+    const response = await post("src/app-test.ts#resultLate", "/form");
     expect(response.status).toBe(500);
     expect(await bodyOf(response)).toContain("<h1>null null null null undefined</h1>");
   });
 
-  /** サーバー関数のエンドポイントへのリクエストで、`next()` の後に `thrown` を投げるルートの middleware.ts を加えた、ルートの表を返す。 */
+  /** POST のリクエストで、`next()` の後に `thrown` を投げるルートの middleware.ts を加えた、ルートの表を返す。 */
   const throwingAfter = (thrown: unknown): Routes => ({
     ...routes,
     middleware: loadOf<MiddlewareHandler>(async (c, next) => {
       await next();
-      if (c.req.path.startsWith("/_rinka/fn/")) throw thrown;
+      if (c.req.method === "POST") throw thrown;
     }),
   });
 
@@ -390,15 +399,8 @@ describe("サーバー関数の戻り値をページに渡す", () => {
     onTestFinished(() => error.mockRestore());
     const response = await request(
       throwingAfter(new Error("root late")),
-      rpcPath("src/app-test.ts#resultSave"),
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/x-www-form-urlencoded",
-          referer: "http://localhost/form",
-        },
-        body: "a=1",
-      },
+      "/form",
+      submission("src/app-test.ts#resultSave"),
     );
     expect(response.status).toBe(500);
     expect(await bodyOf(response)).toContain("<h1>null null null null undefined</h1>");
@@ -420,17 +422,12 @@ describe("サーバー関数の戻り値をページに渡す", () => {
   });
 
   it("フォームの送信で handler が undefined を返したら、送信したページへ 303 で移動する", async () => {
-    const response = await post("src/app-test.ts#resultNothing", {
-      referer: "http://localhost/form",
-    });
-    expect([response.status, response.headers.get("location")]).toEqual([
-      303,
-      "http://localhost/form",
-    ]);
+    const response = await post("src/app-test.ts#resultNothing", "/form");
+    expect([response.status, response.headers.get("location")]).toEqual([303, "/form"]);
   });
 
   it("JS があるフォームの送信で handler が値を返したら、送信したページの描き直しの JSON を返し、ページは値を読む", async () => {
-    const response = await post("src/app-test.ts#resultSave", {
+    const response = await post("src/app-test.ts#resultSave", "/form", {
       "x-rinka-page": "http://localhost/form",
     });
     expect(response.status).toBe(200);
@@ -440,11 +437,11 @@ describe("サーバー関数の戻り値をページに渡す", () => {
   });
 
   it("JS から RPC で呼び出したサーバー関数の戻り値を、描き直すページが読む", async () => {
-    const response = await post(
-      "src/app-test.ts#resultOther",
-      { "content-type": "application/json", "x-rinka-page": "http://localhost/form" },
-      "null",
-    );
+    const response = await request(routes, rpcPath("src/app-test.ts#resultOther"), {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-rinka-page": "http://localhost/form" },
+      body: "null",
+    });
     expect(((await response.json()) as { page: { body: string } }).page.body).toBe(
       '<p>null {"saved":"b"} null null undefined</p>',
     );
@@ -454,6 +451,169 @@ describe("サーバー関数の戻り値をページに渡す", () => {
     expect(await bodyOf(await request(routes, "/form"))).toContain(
       "<p>null null null null undefined</p>",
     );
+  });
+});
+
+describe("ページの URL へのフォームの送信", () => {
+  const save = defineServerFn(() => ({ saved: "page" }));
+  const nothing = defineServerFn(() => undefined);
+  registerServerFn("src/app-test.ts#pageSave", save);
+  registerServerFn("src/app-test.ts#pageNothing", nothing);
+  const show = () => jsx("p", { children: JSON.stringify(getServerFnResult(save) ?? null) });
+  const routes: Routes = {
+    routes: [
+      apiRoute("/about", { POST: async (c) => c.text(await c.req.text()) }),
+      pageRoute("/list", show),
+      pageRoute("/guarded", show, [], [deny]),
+      pageRoute("/docs/intro", show),
+      apiRoute("/docs/:slug", { POST: async (c) => c.text(await c.req.text()) }),
+      pageRoute("/:slug", show),
+      notFoundRoute("/", fallbackOf(show)),
+    ],
+  };
+  /** `_rinka_fn` の欄が無い、フォームの Content-Type の POST の初期値である。 */
+  const fieldless = {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: "a=1",
+  } as const;
+
+  it("JS が無い送信で handler が undefined を返したら、クエリを含めた送信したページの URL へ 303 で移動する", async () => {
+    const response = await request(
+      routes,
+      "/list?page=2",
+      submission("src/app-test.ts#pageNothing"),
+    );
+    expect([response.status, response.headers.get("location")]).toEqual([303, "/list?page=2"]);
+  });
+
+  it("Referer が無い送信で handler が値を返したら、送信したページを値と一緒に描画する", async () => {
+    const response = await request(routes, "/list?page=2", submission("src/app-test.ts#pageSave"));
+    expect(response.status).toBe(200);
+    expect(await bodyOf(response)).toContain('<p>{"saved":"page"}</p>');
+  });
+
+  it("not-found.tsx の URL への送信でも、サーバー関数を実行して値を読める", async () => {
+    const response = await request(routes, "/missing/deep", submission("src/app-test.ts#pageSave"));
+    expect(response.status).toBe(404);
+    expect(await bodyOf(response)).toContain('<p>{"saved":"page"}</p>');
+  });
+
+  it("route.ts と動的なページの両方に一致する URL への POST は、route.ts に届き、本文をそのまま読める", async () => {
+    const init = submission("src/app-test.ts#pageNothing");
+    const response = await request(routes, "/about", init);
+    expect(await response.text()).toBe(init.body);
+  });
+
+  it("_rinka_fn の欄が無いページの URL への POST は 404 になる", async () => {
+    const response = await request(routes, "/list", fieldless);
+    expect(response.status).toBe(404);
+  });
+
+  it("静的なページの後に動的な route.ts が一致する URL への、欄の無いフォームの POST は、route.ts に渡さずに 404 にする", async () => {
+    const owned = await request(routes, "/docs/intro", fieldless);
+    expect(owned.status).toBe(404);
+    const api = await request(routes, "/docs/other", fieldless);
+    expect(await api.text()).toBe("a=1");
+  });
+
+  it("ルートの middleware.ts は、本文が読まれる前のフォームの送信を受け取り、bodyLimit で本文を制限できる", async () => {
+    const used: boolean[] = [];
+    const limited: Routes = {
+      ...routes,
+      middleware: loadOf<MiddlewareHandler>(async (c, next) => {
+        used.push(c.req.raw.bodyUsed);
+        await bodyLimit({ maxSize: 1000 })(c, next);
+      }),
+    };
+    const { body } = submission("src/app-test.ts#pageNothing");
+    const chunked = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(body));
+        controller.close();
+      },
+    });
+    const response = await request(limited, "/list", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: chunked,
+      duplex: "half",
+    } as RequestInit);
+    expect([response.status, response.headers.get("location"), used]).toEqual([
+      303,
+      "/list",
+      [false],
+    ]);
+  });
+
+  it("欄の無いページの URL へのフォームの POST は、後続の not-found.tsx の行で 404 のページにする", async () => {
+    const response = await request(routes, "/missing/deep", fieldless);
+    expect([response.status, await bodyOf(response)]).toEqual([404, "<p>null</p>"]);
+  });
+
+  it("パスが // で始まる URL からの送信でも、移動先と描画するページは同じオリジンのパスにする", async () => {
+    const plain = await request(routes, "//evil.com/x", submission("src/app-test.ts#pageNothing"));
+    expect([plain.status, plain.headers.get("location")]).toEqual([303, "/evil.com/x"]);
+    const js = await request(
+      routes,
+      "/list",
+      submission("src/app-test.ts#pageNothing", "a=1", {
+        "x-rinka-page": "http://localhost//evil.com",
+      }),
+    );
+    expect(((await js.json()) as { redirect: string }).redirect).toBe("/evil.com");
+    const saved = await request(routes, "//evil.com/x", submission("src/app-test.ts#pageSave"));
+    expect([saved.status, await bodyOf(saved)]).toEqual([404, '<p>{"saved":"page"}</p>']);
+  });
+
+  it("/_rinka/ の下の URL への送信では、サーバー関数を実行しない", async () => {
+    const response = await request(
+      routes,
+      "/_rinka/other",
+      submission("src/app-test.ts#pageNothing"),
+    );
+    expect(response.status).toBe(404);
+  });
+
+  it("ディレクトリの middleware.ts は、サーバー関数の実行には適用せず、値を返した後のページの描画には適用する", async () => {
+    const nothingResponse = await request(
+      routes,
+      "/guarded",
+      submission("src/app-test.ts#pageNothing"),
+    );
+    expect([nothingResponse.status, nothingResponse.headers.get("location")]).toEqual([
+      303,
+      "/guarded",
+    ]);
+    const saved = await request(routes, "/guarded", submission("src/app-test.ts#pageSave"));
+    expect([saved.status, await saved.text()]).toEqual([401, "denied"]);
+  });
+
+  it("ルートの middleware.ts が投げた redirect() は、JS が無いときは 303 に、JS があるときは { redirect } になる", async () => {
+    const rootRedirecting: Routes = {
+      ...routes,
+      middleware: loadOf<MiddlewareHandler>(async (c, next) => {
+        if (c.req.method === "POST") throw redirect("/login");
+        await next();
+      }),
+    };
+    const plain = await request(rootRedirecting, "/list", submission("src/app-test.ts#pageSave"));
+    expect([plain.status, plain.headers.get("location")]).toEqual([303, "/login"]);
+    const js = await request(
+      rootRedirecting,
+      "/list",
+      submission("src/app-test.ts#pageSave", "a=1", { "x-rinka-page": "http://localhost/list" }),
+    );
+    expect([js.status, await js.json()]).toEqual([200, { redirect: "/login" }]);
+  });
+
+  it("サーバー関数のエンドポイントへのフォームの POST は 400 になる", async () => {
+    const response = await request(routes, rpcPath("src/app-test.ts#pageSave"), {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "a=1",
+    });
+    expect(response.status).toBe(400);
   });
 });
 
@@ -474,28 +634,20 @@ describe("フォームの送信先のサーバー関数が投げたエラー", (
       notFoundRoute("/", fallbackOf(fallback("missing")), [], fallbackOf(fallback("root"))),
     ],
   };
-  /** Referer を `referer` にして、フォームの送信を `id` のサーバー関数に送る。 */
-  const submit = async (referer: string | undefined, headers: Record<string, string> = {}) => {
+  /** `path` のページから、`headers` を付けて、`id` のサーバー関数を宛先にしたフォームを送信する。 */
+  const submit = async (path: string, headers: Record<string, string> = {}) => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     onTestFinished(() => {
       error.mockRestore();
     });
     const response = await createApp(routes, { onError: handled }).fetch(
-      new Request(`http://localhost${rpcPath(id)}`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/x-www-form-urlencoded",
-          ...(referer !== undefined && { referer }),
-          ...headers,
-        },
-        body: "a=1",
-      }),
+      new Request(`http://localhost${path}`, submission(id, "a=1", headers)),
     );
     return { response, logged: error.mock.calls.map(([value]) => value) };
   };
 
-  it("Referer のページの error.tsx を、そのレイアウトで包み、投げられた値とともに 500 で返し、エラーを記録する", async () => {
-    const { response, logged } = await submit("http://localhost/users/3/edit");
+  it("送信したページの error.tsx を、そのレイアウトで包み、投げられた値とともに 500 で返し、エラーを記録する", async () => {
+    const { response, logged } = await submit("/users/3/edit");
     expect(response.status).toBe(500);
     expect(await bodyOf(response)).toContain(
       '<main id="users"><h1>user /users/3/edit kaboom</h1></main>',
@@ -503,14 +655,14 @@ describe("フォームの送信先のサーバー関数が投げたエラー", (
     expect(logged).toEqual([expect.objectContaining({ message: "kaboom" })]);
   });
 
-  it("Referer が表に無い URL なら、その URL に一致する not-found.tsx の行の error.tsx を返す", async () => {
-    const { response } = await submit("http://localhost/other");
+  it("送信したページの URL が表に無いなら、その URL に一致する not-found.tsx の行の error.tsx を返す", async () => {
+    const { response } = await submit("/other");
     expect(response.status).toBe(500);
     expect(await bodyOf(response)).toContain("<h1>root /other kaboom</h1>");
   });
 
-  it("x-rinka-page のある送信には、Referer の代わりに x-rinka-page の URL のページの error.tsx を、描き直しの JSON で 500 にして返す", async () => {
-    const { response } = await submit("http://localhost/other", {
+  it("x-rinka-page のある送信には、リクエストの URL の代わりに x-rinka-page の URL のページの error.tsx を、描き直しの JSON で 500 にして返す", async () => {
+    const { response } = await submit("/other", {
       "x-rinka-page": "http://localhost/users/3/edit",
     });
     expect(response.status).toBe(500);
@@ -519,16 +671,28 @@ describe("フォームの送信先のサーバー関数が投げたエラー", (
     );
   });
 
-  it("Referer のスキームがリクエストの URL と異なっても、ホストが同じなら Referer のページの error.tsx を返す", async () => {
-    const { response } = await submit("https://localhost/users/3/edit");
+  it("x-rinka-page の URL のスキームがリクエストの URL と異なっても、ホストが同じなら x-rinka-page の URL のページの error.tsx を返す", async () => {
+    const { response } = await submit("/users/3/edit", {
+      "x-rinka-page": "https://localhost/users/3/edit",
+    });
+    expect(response.status).toBe(500);
+    expect(((await response.json()) as { body: string }).body).toContain(
+      "<h1>user /users/3/edit kaboom</h1>",
+    );
+  });
+
+  it("JS が無い送信では Referer を参照しないので、Referer のホストが異なっても、リクエストの URL のページの error.tsx を返す", async () => {
+    const { response } = await submit("/users/3/edit", {
+      referer: "http://example.com/other",
+    });
     expect(response.status).toBe(500);
     expect(await bodyOf(response)).toContain("<h1>user /users/3/edit kaboom</h1>");
   });
 
-  it("Referer が無いときと、ホストが異なるときは、onError のレスポンスを返す", async () => {
+  it("x-rinka-page が空のときと、ホストが異なるときは、onError のレスポンスを返す", async () => {
     const results = await Promise.all([
-      submit(undefined),
-      submit("http://example.com/users/3/edit"),
+      submit("/users/3/edit", { "x-rinka-page": "" }),
+      submit("/users/3/edit", { "x-rinka-page": "http://example.com/users/3/edit" }),
     ]);
     expect(
       await Promise.all(
@@ -632,8 +796,8 @@ describe("フォームの送信が失敗したときの、送信したページ�
       apiRoute("/api/html", { GET: (c) => c.html("<form>api</form>") }),
     ],
   };
-  /** Referer を `referer` にしてフォームを送信する。`js` が真なら、`x-rinka-page` も `referer` にする。`logged` には、`console.error` に渡した値を加える。 */
-  const submit = async (referer: string, js = false, logged: unknown[] = []) => {
+  /** `path` のページから、`headers` を付けてフォームを送信する。`logged` には、`console.error` に渡した値を加える。 */
+  const send = async (path: string, headers: Record<string, string>, logged: unknown[] = []) => {
     const error = vi.spyOn(console, "error").mockImplementation((value: unknown) => {
       logged.push(value);
     });
@@ -641,20 +805,15 @@ describe("フォームの送信が失敗したときの、送信したページ�
       error.mockRestore();
     });
     return createApp(routes, { onError: handled }).fetch(
-      new Request(`http://localhost${rpcPath(id)}`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/x-www-form-urlencoded",
-          referer,
-          ...(js && { "x-rinka-page": referer }),
-        },
-        body: "a=1",
-      }),
+      new Request(`http://localhost${path}`, submission(id, "a=1", headers)),
     );
   };
+  /** `path` のページからフォームを送信する。`js` が真なら、`x-rinka-page` を `path` の URL にする。`logged` には、`console.error` に渡した値を加える。 */
+  const submit = (path: string, js = false, logged: unknown[] = []) =>
+    send(path, js ? { "x-rinka-page": `http://localhost${path}` } : {}, logged);
 
   it("ページのディレクトリの middleware.ts を実行してから error.tsx を描画するので、レイアウトは middleware.ts が c.set した値を参照できる", async () => {
-    const response = await submit("http://localhost/orgs/7");
+    const response = await submit("/orgs/7");
     expect([response.status, await bodyOf(response)]).toEqual([
       500,
       '<section data-org="org-7"><h1>org /orgs/7 kaboom</h1></section>',
@@ -662,29 +821,24 @@ describe("フォームの送信が失敗したときの、送信したページ�
   });
 
   it("middleware.ts がリダイレクトしたら、JS が無いときはリダイレクトのレスポンスに、JS があるときは { redirect } にする", async () => {
-    const [plain, js] = await Promise.all([
-      submit("http://localhost/private"),
-      submit("http://localhost/private", true),
-    ]);
+    const [plain, js] = await Promise.all([submit("/private"), submit("/private", true)]);
     expect([plain.status, plain.headers.get("location")]).toEqual([303, "/login"]);
     expect([js.status, await js.json()]).toEqual([200, { redirect: "/login" }]);
   });
 
   it("JS が無いときは、middleware.ts の 307 のリダイレクトを 303 にする", async () => {
-    const [plain, js] = await Promise.all([
-      submit("http://localhost/kept"),
-      submit("http://localhost/kept", true),
-    ]);
+    const [plain, js] = await Promise.all([submit("/kept"), submit("/kept", true)]);
     expect([plain.status, plain.headers.get("location")]).toEqual([303, "/login"]);
     expect([js.status, await js.json()]).toEqual([200, { redirect: "/login" }]);
   });
 
   it("サーバー関数が投げた値は、error.tsx を描画したときも、middleware.ts が拒否したときも、1 回だけ記録する", async () => {
     const logged: unknown[] = [];
-    await submit("http://localhost/orgs/7", false, logged);
-    await submit("http://localhost/private", false, logged);
-    await submit("http://localhost/hidden", true, logged);
-    await submit("http://localhost/api/html", false, logged);
+    await submit("/orgs/7", false, logged);
+    await submit("/private", false, logged);
+    await submit("/hidden", true, logged);
+    await submit("/plain", false, logged);
+    await send("/plain", { "x-rinka-page": "http://localhost/api/html" }, logged);
     expect(logged.map((value) => (value instanceof Error ? value.message : value))).toEqual([
       "kaboom",
       "kaboom",
@@ -693,10 +847,7 @@ describe("フォームの送信が失敗したときの、送信したページ�
   });
 
   it("middleware.ts が notFound() を投げたら、親から探索した not-found.tsx を 404 で返す", async () => {
-    const [plain, js] = await Promise.all([
-      submit("http://localhost/hidden"),
-      submit("http://localhost/hidden", true),
-    ]);
+    const [plain, js] = await Promise.all([submit("/hidden"), submit("/hidden", true)]);
     expect([plain.status, await bodyOf(plain)]).toEqual([404, "<h1>root /hidden</h1>"]);
     expect([js.status, ((await js.json()) as { body: string }).body]).toEqual([
       404,
@@ -706,9 +857,9 @@ describe("フォームの送信が失敗したときの、送信したページ�
 
   it("サブリクエストの middleware.ts が設定した Cookie を、ルートの middleware.ts の Cookie とともに、フォームの送信のレスポンスに 1 回ずつ付ける", async () => {
     const responses = await Promise.all([
-      submit("http://localhost/session"),
-      submit("http://localhost/session", true),
-      submit("http://localhost/session-moved"),
+      submit("/session"),
+      submit("/session", true),
+      submit("/session-moved"),
     ]);
     expect(responses.map((response) => [response.status, response.headers.getSetCookie()])).toEqual(
       [
@@ -719,33 +870,22 @@ describe("フォームの送信が失敗したときの、送信したページ�
     );
   });
 
-  it("JS があるときは、x-rinka-page の URL のホストが異なれば、同じホストの Referer があっても onError のレスポンスを返す", async () => {
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    onTestFinished(() => {
-      error.mockRestore();
-    });
-    const response = await createApp(routes, { onError: handled }).fetch(
-      new Request(`http://localhost${rpcPath(id)}`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/x-www-form-urlencoded",
-          referer: "http://localhost/orgs/7",
-          "x-rinka-page": "http://example.com/orgs/7",
-        },
-        body: "a=1",
-      }),
-    );
+  it("JS があるときは、x-rinka-page の URL のホストが異なれば、リクエストの URL が error.tsx のあるページでも onError のレスポンスを返す", async () => {
+    const response = await send("/orgs/7", { "x-rinka-page": "http://example.com/orgs/7" });
     expect([response.status, await response.text()]).toEqual([503, "handled"]);
   });
 
-  it("送信したページの URL に一致する行が、error.tsx の無いページか、route.ts か、/_rinka/ の下か、無いときは、onError のレスポンスを返す", async () => {
+  it("JS が無いときは送信したページが error.tsx の無いページなら、JS があるときは x-rinka-page の URL に一致する行が、error.tsx の無いページか、route.ts か、/_rinka/ の下か、無いときは、onError のレスポンスを返す", async () => {
     const urls = ["/plain", "/api/html", rpcPath(id), "/nowhere"];
-    const responses = await Promise.all(urls.map((url) => submit(`http://localhost${url}`)));
+    const responses = await Promise.all([
+      submit("/plain"),
+      ...urls.map((url) => send("/plain", { "x-rinka-page": `http://localhost${url}` })),
+    ]);
     expect(
       await Promise.all(
         responses.map(async (response) => [response.status, await response.text()]),
       ),
-    ).toEqual(urls.map(() => [503, "handled"]));
+    ).toEqual([[503, "handled"], ...urls.map(() => [503, "handled"])]);
   });
 });
 
@@ -856,18 +996,16 @@ describe("JS からのサーバー関数の呼び出し", () => {
   };
   /** `id` のサーバー関数に、`/form?x=1` のページからフォームを送信する。 */
   const submit = (id: string, headers: Record<string, string> = {}) =>
-    request(routes, rpcPath(id), {
-      method: "POST",
-      headers: {
-        "content-type": "application/x-www-form-urlencoded",
-        referer: "http://localhost/referer",
+    request(
+      routes,
+      "/form?x=1",
+      submission(id, "a=1", {
         "x-rinka-page": "http://localhost/form?x=1#top",
         "x-test": "t",
         "accept-encoding": "gzip",
         ...headers,
-      },
-      body: "a=1",
-    });
+      }),
+    );
   /** `id` のサーバー関数にフォームを送信し、ステータス、Location、本文の JSON を返す。 */
   const result = async (id: string, headers?: Record<string, string>) => {
     const response = await submit(id, headers);
@@ -954,7 +1092,7 @@ describe("JS からのサーバー関数の呼び出し", () => {
     expect(response.headers.get("content-type")).toContain("text/html");
   });
 
-  it("x-rinka-page の URL のホストがリクエストと異なるときと、/_rinka/ の下にあるときは、Referer が同じホストの URL でも / に戻り、描き直さない", async () => {
+  it("x-rinka-page の URL のホストがリクエストと異なるときと、/_rinka/ の下にあるときは、リクエストの URL がページでも / に戻り、描き直さない", async () => {
     const results = await Promise.all(
       ["http://example.com/form?x=1", "http://localhost/_rinka/fn/x"].map(async (url) => {
         const response = await submit(ids.saved, { "x-rinka-page": url });
@@ -965,11 +1103,7 @@ describe("JS からのサーバー関数の呼び出し", () => {
   });
 
   it("x-rinka-page の無いフォームの送信には、リダイレクトのまま返す", async () => {
-    const plain = await request(routes, rpcPath(ids.moved), {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: "a=1",
-    });
+    const plain = await request(routes, "/form", submission(ids.moved));
     expect([plain.status, plain.headers.get("location")]).toEqual([303, "/done"]);
   });
 
@@ -1737,13 +1871,20 @@ describe("サーバー関数のリクエストで、ルートの middleware.ts �
       notFoundRoute("/", fallbackOf(fallback("missing"))),
     ],
   };
-  /** `x-throw` を `kind` にして、`body` をサーバー関数のエンドポイントに送る。 */
-  const send = (kind: string, type: string, body: string, headers: Record<string, string> = {}) =>
+  /** `x-throw` を `kind` にして、`null` の JSON をサーバー関数のエンドポイントに送る。 */
+  const send = (kind: string) =>
     request(routes, rpcPath("src/app-test.ts#unknown"), {
       method: "POST",
-      headers: { "content-type": type, "x-throw": kind, ...headers },
-      body,
+      headers: { "content-type": "application/json", "x-throw": kind },
+      body: "null",
     });
+  /** `x-throw` を `kind` にして、`/users/3/edit` のページからフォームを送信する。 */
+  const sendForm = (kind: string) =>
+    request(
+      routes,
+      "/users/3/edit",
+      submission("src/app-test.ts#unknown", "a=1", { "x-throw": kind }),
+    );
 
   it("ページのリクエストでは、URL に一致する not-found.tsx を使用せずに、notFound() を Not Found のテキストの 404 にする", async () => {
     const response = await request(routes, "/nope", { headers: { "x-throw": "notFound" } });
@@ -1751,24 +1892,20 @@ describe("サーバー関数のリクエストで、ルートの middleware.ts �
   });
 
   it("RPC では、サーバー関数が投げた値と同じく、redirect() を { redirect } に、notFound() を本文の無い 404 にする", async () => {
-    const [moved, gone] = await Promise.all([
-      send("redirect", "application/json", "null"),
-      send("notFound", "application/json", "null"),
-    ]);
+    const [moved, gone] = await Promise.all([send("redirect"), send("notFound")]);
     expect([moved.status, await moved.json()]).toEqual([200, { redirect: "/login" }]);
     expect([gone.status, await gone.text()]).toEqual([404, ""]);
   });
 
-  it("フォームの送信では、redirect() を 303 に、notFound() を素のテキストの 404 に、通常のエラーを Referer のページの error.tsx にする", async () => {
+  it("フォームの送信では、redirect() を 303 に、notFound() を素のテキストの 404 に、通常のエラーを送信したページの error.tsx にする", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     onTestFinished(() => {
       error.mockRestore();
     });
-    const form = "application/x-www-form-urlencoded";
     const [moved, gone, broken] = await Promise.all([
-      send("redirect", form, "a=1"),
-      send("notFound", form, "a=1"),
-      send("error", form, "a=1", { referer: "http://localhost/users/3/edit" }),
+      sendForm("redirect"),
+      sendForm("notFound"),
+      sendForm("error"),
     ]);
     expect([moved.status, moved.headers.get("location")]).toEqual([303, "/login"]);
     expect([gone.status, await gone.text()]).toEqual([404, "Not Found"]);
@@ -1798,15 +1935,7 @@ describe("サーバー関数のリクエストで、ルートの middleware.ts �
     const submit = (id: string, kind: string) =>
       Promise.resolve(
         app.fetch(
-          new Request(`http://localhost${rpcPath(id)}`, {
-            method: "POST",
-            headers: {
-              "content-type": "application/x-www-form-urlencoded",
-              referer: "http://localhost/broken",
-              "x-throw": kind,
-            },
-            body: "a=1",
-          }),
+          new Request("http://localhost/broken", submission(id, "a=1", { "x-throw": kind })),
         ),
       );
     const [fromHandler, fromMiddleware] = await Promise.all([

@@ -34,6 +34,9 @@ export const rpcPrefix = `${internalPrefix}fn/`;
 /** ID が `id` のサーバー関数のエンドポイントの URL のパスを返す。 */
 export const rpcPath = (id: string): string => rpcPrefix + encodeURIComponent(id);
 
+/** フォームの送信で、宛先のサーバー関数の ID を値に持つ欄の名前である。 */
+export const submissionField = "_rinka_fn";
+
 /** rinka が構築した RPC のレスポンスのうち、値を返すときの本文を表す。 */
 export type RpcBody = { ok: unknown } | { s: SerovalJSON };
 
@@ -162,12 +165,20 @@ function check(value: unknown, path: string, serverFns: boolean, seen: Set<objec
 }
 
 /**
- * `<form>` の props を返す。`action` がサーバー関数なら、`action` をエンドポイントの URL に、`method` を `post` に、
- * `enctype` を `multipart/form-data` にする。`enctype` を記述していれば、その値を使用する。
+ * `<form>` の props を返す。`action` がサーバー関数なら、`action` を除き、`method` を `post` に、`enctype` を `multipart/form-data` にし、
+ * `hidden` が作成する、`_rinka_fn` の名前でサーバー関数の ID を値に持つ hidden input を、子の先頭に加える。`enctype` を記述していれば、その値を使用する。
  */
-export function formProps(props: Record<string, unknown>): Record<string, unknown> {
+export function formProps(
+  props: Record<string, unknown>,
+  hidden: (name: string, value: string) => unknown,
+): Record<string, unknown> {
   const ref = serverFnRefOf(props.action);
   if (!ref) return props;
-  const { enctype = "multipart/form-data" } = props;
-  return { ...props, action: rpcPath(ref.id), method: "post", enctype };
+  const { action: _action, enctype = "multipart/form-data", ...rest } = props;
+  return {
+    ...rest,
+    method: "post",
+    enctype,
+    children: [hidden(submissionField, ref.id), props.children],
+  };
 }

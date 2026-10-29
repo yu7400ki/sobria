@@ -8,7 +8,7 @@ import { rinka } from "rinka/vite";
 import { preview, type InlineConfig } from "vite";
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from "vitest";
 
-import { buildFixture, rpcPath, startServer } from "./production.ts";
+import { buildFixture, fnId, rpcPath, startServer } from "./production.ts";
 
 /** ビルドするテスト用のアプリのルートである。 */
 const root = fileURLToPath(new URL("../fixtures/deploy", import.meta.url));
@@ -42,17 +42,17 @@ async function contents(dir: string): Promise<string> {
 const stylesheets = (html: string) =>
   [...html.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map(([, href]) => href!);
 
-/** ビルドしたアプリの `save` のサーバー関数に、`title` を入力したフォームを JS が無いときの形で送る。 */
-function send(title: string) {
+/** `save` のサーバー関数を宛先にして `title` を入力したフォームの、JS が無いときの本文を返す。 */
+function saveForm(title: string): FormData {
   const body = new FormData();
+  body.append("_rinka_fn", fnId("src/lib/fns.ts", "save"));
   body.append("title", title);
-  return request(rpcPath("src/lib/fns.ts", "save"), {
-    method: "POST",
-    body,
-    headers: { referer: "http://localhost/" },
-    redirect: "manual",
-  });
+  return body;
 }
+
+/** ビルドしたアプリのページ `/` に、`save` のサーバー関数を宛先にしたフォームを JS が無いときの形で送る。 */
+const send = (title: string) =>
+  request("/", { method: "POST", body: saveForm(title), redirect: "manual" });
 
 /** ビルドしたアプリに、パス `path` のリクエストを送る。 */
 const request = (path: string, init?: RequestInit) =>
@@ -129,7 +129,7 @@ describe("本番のビルド", () => {
     expect(await response.json()).toEqual({ ok: "orphan" });
   });
 
-  it("フォームの送信は、スキーマを通過すると Referer のページを 200 で返し、失敗すると 422 の issues を返す", async () => {
+  it("フォームの送信は、スキーマを通過すると送信したページを 200 で返し、失敗すると 422 の issues を返す", async () => {
     const accepted = await send("a");
     expect(accepted.status).toBe(200);
     expect(accepted.headers.get("content-type")).toContain("text/html");
@@ -162,16 +162,8 @@ async function checkServer(origin: string): Promise<void> {
   expect((await fetch(`${origin}/..%2f..%2fpackage.json`)).status).toBe(404);
   const rpc = await fetch(`${origin}${rpcPath("src/lib/orphan.ts", "orphan")}`, { method: "POST" });
   expect(await rpc.json()).toEqual({ ok: "orphan" });
-  const form = (title: string) => {
-    const body = new FormData();
-    body.append("title", title);
-    return fetch(`${origin}${rpcPath("src/lib/fns.ts", "save")}`, {
-      method: "POST",
-      body,
-      headers: { referer: `${origin}/` },
-      redirect: "manual",
-    });
-  };
+  const form = (title: string) =>
+    fetch(`${origin}/`, { method: "POST", body: saveForm(title), redirect: "manual" });
   expect((await form("a")).status).toBe(200);
   expect((await form("")).status).toBe(422);
 }

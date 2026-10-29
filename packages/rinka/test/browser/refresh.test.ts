@@ -4,6 +4,7 @@ import { defineElement as defineClient } from "../../src/client/element.ts";
 import { listenForms } from "../../src/client/form.ts";
 import { jsx as clientJsx } from "../../src/client/jsx-runtime.ts";
 import { applyRefresh, refreshPage } from "../../src/client/refresh.ts";
+import { serverFn } from "../../src/client/server-fn.ts";
 import { bootstrapSource } from "../../src/server/bootstrap.ts";
 import { defineElement as defineServer } from "../../src/server/element.ts";
 import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
@@ -11,7 +12,7 @@ import { renderRefresh, renderToStream } from "../../src/server/response.ts";
 import type { Ctx, ElementOptions } from "../../src/shared/element.ts";
 import type { RefreshJson } from "../../src/shared/refresh.ts";
 import { action, memo, optimistic, refresh, signal, wait } from "../../src/shared/signals.ts";
-import { rpcPath, wireFormat, wireHeader } from "../../src/shared/wire.ts";
+import { wireFormat, wireHeader } from "../../src/shared/wire.ts";
 
 /** テストの前の `<head>` の子と、文書のタイトルである。 */
 let headBefore: Element[] = [];
@@ -227,7 +228,7 @@ const formPage = (element: unknown, value: string, key = "f") =>
     children: server(
       "form",
       {
-        action: rpcPath("src/form-test.ts#save"),
+        action: serverFn("src/form-test.ts#save", "POST"),
         method: "post",
         children: [
           server(element, { name: "body", content: value }),
@@ -299,6 +300,7 @@ describe("フォームを送信した後の描き直し", () => {
     document.querySelector("button")!.click();
     await vi.waitFor(() => expect(resets).toEqual(["new"]));
     expect(entries()).toEqual([
+      ["_rinka_fn", "src/form-test.ts#save"],
       ["body", "new"],
       ["text", "new"],
       ["note", "new"],
@@ -314,6 +316,7 @@ describe("フォームを送信した後の描き直し", () => {
     await vi.waitFor(() => expect(document.querySelector("form")).not.toBe(before));
     await tick();
     expect(entries()).toEqual([
+      ["_rinka_fn", "src/form-test.ts#save"],
       ["body", "new"],
       ["text", "new"],
       ["note", "new"],

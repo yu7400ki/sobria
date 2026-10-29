@@ -219,6 +219,10 @@ function edited(el: Element): boolean {
   return false;
 }
 
+/** フォームの送信先のサーバー関数を示す、名前が `name` で値が `value` の hidden input のノードを返す。 */
+const fnIdInput = (name: string, value: string): ClientNode =>
+  createNode("input", { type: "hidden", name, value });
+
 /**
  * ネイティブのタグのノードを作成する。子、属性、プロパティの順に設定する。
  * `<svg>` は SVG の名前空間で、それ以外のタグは名前空間 `ns` で作成する。
@@ -230,7 +234,7 @@ function createTag(
   at: Cursor | undefined,
   ns: Namespace,
 ): Element {
-  const props = tag === "form" ? formProps(given) : given;
+  const props = tag === "form" ? formProps(given, fnIdInput) : given;
   const space = tag === "svg" ? SVG_NS : ns;
   const claimed = at && takeElement(at, tag);
   if (at && !claimed) return document.createElementNS(space, tag);

@@ -7,9 +7,11 @@ import { getContext } from "../../src/server/context.ts";
 import type { OutcomeKind } from "../../src/server/endpoint.ts";
 import { notFound, redirect } from "../../src/server/errors.ts";
 import { createApp, registerServerFn, serverFnModule } from "../../src/server/internal.ts";
+import { jsx } from "../../src/server/jsx-runtime.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
-import type { AppOptions } from "../../src/shared/routes.ts";
-import { rpcPath, wireHeader } from "../../src/shared/wire.ts";
+import type { AppOptions, Routes } from "../../src/shared/routes.ts";
+import { rpcPath, submissionField, wireHeader } from "../../src/shared/wire.ts";
+import { loadOf } from "./load.ts";
 
 /** `value` が数の文字列なら数を返し、そうでなければ issues を返す Standard Schema である。 */
 const numeric: StandardSchema<string, number> = {
@@ -38,6 +40,29 @@ async function call(
 ): Promise<Response> {
   const app = createApp({ routes: [] }, options);
   return app.fetch(new Request(`http://localhost${rpcPath(id)}${query}`, init));
+}
+
+/** `/form` のページの行だけを持つルートの表である。ページは `<p>page</p>` を描画する。 */
+const formRoutes: Routes = {
+  routes: [
+    {
+      kind: "page",
+      path: "/form",
+      pattern: "/form",
+      module: loadOf(() => jsx("p", { children: "page" })),
+      layouts: [],
+      middlewares: [],
+    },
+  ],
+};
+
+/** `/form` のページから、ID が `id` のサーバー関数を宛先にして、空のフォームを multipart/form-data で送信する。 */
+async function submit(id: string): Promise<Response> {
+  const body = new FormData();
+  body.append(submissionField, id);
+  return createApp(formRoutes).fetch(
+    new Request("http://localhost/form", { method: "POST", body }),
+  );
 }
 
 /** `body` を JSON で POST するリクエストを返す。 */
@@ -297,10 +322,7 @@ describe("サーバー関数のエンドポイント", () => {
       await next();
     });
     const id = register(defineServerFn(cookie, async () => inner()));
-    const responses = await Promise.all([
-      call(id, post(null)),
-      call(id, { method: "POST", body: new FormData() }),
-    ]);
+    const responses = await Promise.all([call(id, post(null)), submit(id)]);
     const actual = await Promise.all(
       responses.map(async (response) => [
         response.status,
@@ -409,10 +431,13 @@ describe("リクエストの種類ごとのレスポンス", () => {
   const ids = Object.fromEntries(
     Object.entries(handlers).map(([name, fn]) => [name, register(fn)]),
   ) as Record<keyof typeof handlers, string>;
+  /** 送信したページの `/form` を描画した文書である。 */
+  const page =
+    '<!doctype html><html><head><meta charset="utf-8"></head><body><p>page</p></body></html>';
   const issues = JSON.stringify({ issues: [{ message: "数ではありません", path: ["n"] }] });
   const requests = {
-    rpc: () => post(null),
-    form: (): RequestInit => ({ method: "POST", body: new FormData() }),
+    rpc: (id: string) => call(id, post(null)),
+    form: (id: string) => submit(id),
   };
   const table: [keyof typeof requests, keyof typeof handlers, number, boolean, string][] = [
     ["rpc", "value", 200, true, '{"ok":1}'],
@@ -421,7 +446,7 @@ describe("リクエストの種類ごとのレスポンス", () => {
     ["rpc", "notFound", 404, true, ""],
     ["rpc", "schema", 422, true, issues],
     ["rpc", "http", 418, false, "teapot"],
-    ["form", "value", 303, false, ""],
+    ["form", "value", 200, false, page],
     ["form", "stream", 303, false, ""],
     ["form", "redirect", 303, false, ""],
     ["form", "notFound", 404, false, "Not Found"],
@@ -435,7 +460,7 @@ describe("リクエストの種類ごとのレスポンス", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const actual = await Promise.all(
       table.map(async ([kind, result]) => {
-        const response = await call(ids[result], requests[kind]());
+        const response = await requests[kind](ids[result]);
         return [
           kind,
           result,

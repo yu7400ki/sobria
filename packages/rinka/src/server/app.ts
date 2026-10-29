@@ -23,8 +23,11 @@ import {
   withContextHeaders,
 } from "./context.ts";
 import {
+  acceptsSubmission,
   callerResponses,
+  identifyCall,
   pageRequest,
+  refusesSubmission,
   serverFnFailure,
   serverFnMiddleware,
   submittedPage,
@@ -233,9 +236,10 @@ export const createApp = (({ routes, middleware }: Routes, options: AppOptions =
   const serverFns = serverFnMiddleware(options, failures, formSubmitted);
   const rinka =
     middleware === undefined
-      ? serverFns
+      ? every(identifyCall, serverFns)
       : every(
-          // サーバー関数のエンドポイントへのリクエストでは、ルートのミドルウェアが投げた値を、サーバー関数が投げた値と同じレスポンスにする
+          identifyCall,
+          // サーバー関数を呼び出すリクエストでは、ルートのミドルウェアが投げた値を、サーバー関数が投げた値と同じレスポンスにする
           catching(lazy(middleware), (c, error) => serverFnFailure(c, error, failures)),
           serverFns,
         );
@@ -299,6 +303,7 @@ const directoryOf = (respond: Respond, middlewares: Route["middlewares"]): Middl
 
 /**
  * `route` を、ディレクトリのミドルウェアの後に `app` に登録する。
+ * ページと `not-found.tsx` の行の先頭には、フォームの送信を受け付ける印の `acceptsSubmission` を、`route.ts` の行の先頭には `refusesSubmission` を登録する。ページの行の POST には、ディレクトリのミドルウェアを登録しない。
  * `formErrorOf` がそのリクエストに対して値を返したら、行の処理を実行せずに、ページと `not-found.tsx` の行では行の `error.tsx` にその値を渡して描画し、`error.tsx` が無い行と `route.ts` の行ではその値を投げる。
  * 行の処理が投げた `notFound()` には、行の `not-found.tsx` を使用する。
  * `output` が `static` なら、パラメータのあるページのリクエストのパラメータが、そのページの `prerender` が返すパラメータに無いときに、`notFound()` を投げる。
@@ -344,10 +349,12 @@ function register(
           });
         }, route.error),
       );
+      app.post(route.path, acceptsSubmission);
       return;
     case "route":
       app.all(
         route.path,
+        refusesSubmission,
         ...chain(async (c, next) => {
           const handlers = await route.module();
           const requested = handledMethod(c);
@@ -369,6 +376,7 @@ function register(
     case "not-found":
       app.all(
         route.path,
+        acceptsSubmission,
         ...chain(async (c) => respond(c, jsx(missing, {}), route, propsOf(c)), route.error),
       );
       return;

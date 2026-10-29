@@ -1,35 +1,34 @@
 import { PAGE_HEADER } from "../shared/refresh.ts";
-import { isRedirectJson, rpcPrefix, wireFormat, wireHeader } from "../shared/wire.ts";
+import { isRedirectJson, submissionField, wireFormat, wireHeader } from "../shared/wire.ts";
 import { applyRefresh, isRefreshJson, redirected, sendRefresh, startRewrite } from "./refresh.ts";
 
 /** 送信中のフォームである。 */
 const busy = new WeakSet<HTMLFormElement>();
 
 /**
- * 起動スクリプトを読み込んだページで、リスナーを登録した `document` か `ShadowRoot` の木の中にあり、サーバー関数を送信先にして `post` で送信するフォームの submit のイベントで、
- * ブラウザの通常の送信を止めて、fetch で送信した結果をページに反映する。送信中のフォームのイベントは、デフォルトの動作だけを止める。
+ * 起動スクリプトを読み込んだページで、リスナーを登録した `document` か `ShadowRoot` の木の中にあるフォームの submit のイベントで、
+ * フォームが `action` 属性を持たず、送信ボタンが `formaction` 属性を持たず、`post` で送信し、`_rinka_fn` の hidden input を持つなら、
+ * ブラウザの通常の送信を止めて、現在のページの URL に fetch で送信した結果をページに反映する。送信中のフォームのイベントは、デフォルトの動作だけを止める。
  */
 export function handleSubmit(event: Event): void {
   if (!globalThis.$rinka || !(event instanceof SubmitEvent) || event.defaultPrevented) return;
   const form = event.target;
   if (!(form instanceof HTMLFormElement) || form.getRootNode() !== event.currentTarget) return;
   const { submitter } = event;
-  const action = new URL(
-    submitter?.getAttribute("formaction") ?? form.getAttribute("action") ?? "",
-    document.baseURI,
-  );
   const method = (
     submitter?.getAttribute("formmethod") ??
     form.getAttribute("method") ??
     "get"
   ).toLowerCase();
-  if (action.origin !== location.origin || !action.pathname.startsWith(rpcPrefix)) return;
+  if (form.hasAttribute("action") || submitter?.hasAttribute("formaction") === true) return;
+  const field = form.elements.namedItem(submissionField);
+  if (!(field instanceof HTMLInputElement) || field.type !== "hidden") return;
   if (method !== "post") return;
   event.preventDefault();
   if (busy.has(form)) return;
   busy.add(form);
   form.setAttribute("aria-busy", "true");
-  submit(form, action, submitter)
+  submit(form, new URL(location.href), submitter)
     .catch((error: unknown) => {
       console.error(
         "[rinka] フォームを送信できなかったか、送信した結果をページに反映できませんでした。",
