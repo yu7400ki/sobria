@@ -257,7 +257,7 @@ export default function User({ params }: PageProps<"/users/[id]">) {
 }
 ```
 
-`route.ts` の handler には、`rinka/server` の `forRoute()` にルートを指定して、パラメータの型を付けます。`forRoute()` が返す `defineHandler` は Hono の `defineHandler` と同じもので、handler の `c.req.param(name)` は、指定したルートのパラメータの値を `string` で返します。
+`route.ts` の handler には、`rinka/server` の `forRoute()` に `PageProps` と同じ形のルートを指定して、パラメータの型を付けます。`forRoute()` の `defineHandler` は Hono の `defineHandler` と同じもので、handler の `c.req.param(name)` は、指定したルートのパラメータの値を `string` で返します。
 
 ```ts
 // src/routes/api/users/[id]/route.ts
