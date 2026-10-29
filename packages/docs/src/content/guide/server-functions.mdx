@@ -75,7 +75,7 @@ export default function LikeButton(props: { postId: number }) {
 
 rinka はタイムアウトと再試行の機能を持ちません。タイムアウトは、例のように `AbortSignal.timeout()` を `signal` に渡して設定します。
 
-入力と戻り値には、JSON で表せない値（Date や Map など）も使用できます。
+入力と戻り値には、JSON で表せない値（Date や Map など）も使用できます。入力には File と Blob も使用でき、handler は File として受け取ります。戻り値には File と Blob を使用できないので、ファイルを返すときは handler から Response を返します。
 
 ### props で渡す
 
@@ -164,7 +164,7 @@ export default function ReloadButton() {
 
 ## GET のサーバー関数
 
-`method: "GET"` を指定したサーバー関数は、入力を URL に含めて送信します。要素の中では、非同期の memo でそのまま使用できます。
+`method: "GET"` を指定したサーバー関数は、入力を URL に含めて送信します。そのため、入力の型が File か Blob を含むと、呼び出しが型エラーになります。`as` などで型の検査を回避して File か Blob を渡すと、送信せずに TypeError を投げます。要素の中では、非同期の memo でそのまま使用できます。
 
 ```ts
 // src/lib/posts.ts
