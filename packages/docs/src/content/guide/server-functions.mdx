@@ -164,7 +164,7 @@ export default function ReloadButton() {
 
 ## GET のサーバー関数
 
-`method: "GET"` を指定したサーバー関数は、入力を URL に含めて送信します。そのため、入力の型が File か Blob を含むと、呼び出しが型エラーになります。`as` などで型の検査を回避して File か Blob を渡すと、送信せずに TypeError を投げます。要素の中では、非同期の memo でそのまま使用できます。
+`method: "GET"` を指定したサーバー関数は、入力を URL に含めて送信します。そのため、入力の型が File か Blob を含むと、`defineServerFn` の `input` が型エラーになります。`as` などで型の検査を回避して File か Blob を渡すと、送信せずに TypeError を投げます。要素の中では、非同期の memo でそのまま使用できます。
 
 ```ts
 // src/lib/posts.ts
