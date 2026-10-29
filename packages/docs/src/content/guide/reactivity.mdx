@@ -146,6 +146,44 @@ export default function Posts({ url }: PageProps<"/posts">) {
 - 要素を破棄すると、購読を解除します
 - ページの内容もクエリに合わせて変えるときは、URL を書き換えた後に `refreshPage()` を呼びます（[サーバー関数](/guide/server-functions)）
 
+## 配列を描画する
+
+要素の中で `{todos().map((todo) => <li>…</li>)}` と記述すると、`todos` が変化するたびに、すべての項目の `<li>` を作成し直します。項目の中で作成した Signal と、入力中の `<input>` の値やフォーカスは失われます。配列の項目を追加、削除、並べ替えするときは、`<For>` で描画します。
+
+```tsx
+// src/elements/todo-list.tsx
+import { For, signal } from "rinka";
+
+export default function TodoList(props: { todos: string[] }) {
+  const [todos, setTodos] = signal(props.todos);
+  return (
+    <ul>
+      <For each={todos()}>
+        {(todo, index) => {
+          const [done, setDone] = signal(false);
+          return (
+            <li>
+              <input type="checkbox" checked={done()} onChange={() => setDone(!done())} />
+              {index() + 1}. {todo}
+              <button onClick={() => setTodos(todos().filter((item) => item !== todo))}>
+                削除
+              </button>
+            </li>
+          );
+        }}
+      </For>
+    </ul>
+  );
+}
+```
+
+`<For>` は、子の関数を、項目が配列に追加されたときに 1 回だけ呼び出します。配列が変化しても、残った項目の `<li>` と、その中の Signal を保持します。
+
+- `<For>` は、更新の前と後の配列で、`===` で等しい項目同士を対応付けます。オブジェクトの配列では、内容が同じでも、新しいオブジェクトに置換した項目は作成し直します
+- `index` は、項目の現在の位置を返す関数です。並べ替えると、`index()` の値が変化します
+- 並べ替えで位置が移動した項目の中の要素は、フォーカスが外れます
+- `each` が `null` か `undefined` のときは、何も描画しません
+
 ## 非同期の値を待つ
 
 ### Loading
