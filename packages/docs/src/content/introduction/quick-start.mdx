@@ -47,3 +47,5 @@ pnpm typecheck
 ```
 
 `rinka prepare` で、ページのパスのパラメータ（`[id]` など）と要素の型を生成してから、`tsc -b` で検査します。
+
+rinka が対応する TypeScript は 7.1 です。VS Code に組み込みの TypeScript は、rinka が対応する版ではありません。VS Code では、拡張機能 `TypeScriptTeam.native-preview` を導入し、設定に `"js/ts.experimental.useTsgo": true` を追加します。
