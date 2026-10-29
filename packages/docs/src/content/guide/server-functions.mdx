@@ -164,7 +164,7 @@ export default function ReloadButton() {
 
 ## GET のサーバー関数
 
-`method: "GET"` を指定したサーバー関数は、入力を URL に含めて送信します。そのため、入力の型が File か Blob を含むと、`defineServerFn` の `input` が型エラーになります。`as` などで型の検査を回避して File か Blob を渡すと、送信せずに TypeError を投げます。要素の中では、非同期の memo でそのまま使用できます。
+`method: "GET"` を指定したサーバー関数は、入力を URL に含めて送信します。そのため、入力の型が File か Blob を含むときは、`defineServerFn` が返す関数にミドルウェアか handler を渡すと型エラーになります。`as` などで型の検査を回避して File か Blob を渡すと、送信せずに TypeError を投げます。要素の中では、非同期の memo でそのまま使用できます。
 
 ```ts
 // src/lib/posts.ts
@@ -286,7 +286,7 @@ import { defineMiddleware } from "rinka/server";
 export default defineMiddleware(bodyLimit({ maxSize: 10 * 1024 * 1024 }));
 ```
 
-ルートの `middleware.ts` は、rinka が本文を読む前のリクエストを受け取ります。大きさを超えた本文は、読み取りを中止して 413 を返します。サーバー関数のミドルウェアは、rinka が本文を読んだ後に実行するので、`bodyLimit` を配置しても、rinka が読み取る本文の大きさは制限できません。
+ルートの `middleware.ts` は、rinka が本文を読む前のリクエストを受け取ります。大きさを超えた本文は、読み取りを中止して 413 を返します。サーバー関数のミドルウェアは、rinka が本文を読んだ後に実行するので、`bodyLimit` を配置しても、rinka が読み取る本文の大きさは制限できません。サーバー関数のミドルウェアの `bodyLimit` は、`Content-Length` のあるリクエストには本文を読んだ後に 413 を返し、`Content-Length` の無いリクエストには大きさに関わらず 500 を返します。
 
 ## 別のオリジンからのリクエスト
 
