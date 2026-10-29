@@ -90,7 +90,7 @@ export function formElementClass(
 
 /**
  * フォームの部品のホスト `host` の要素の関数に渡す ctx の `form` を返す。
- * `form.value` は、値を設定した後に、サーバーが Light DOM に出力した hidden input を削除する。`form.onReset` と `form.onRestore` に渡した関数は、呼び出した root を破棄すると登録を解除する。
+ * `form.value` は、値を設定した後に、サーバーが Light DOM に出力したすべての hidden input を削除する。`form.onReset` と `form.onRestore` に渡した関数は、呼び出した root を破棄すると登録を解除する。
  */
 export function formControls(host: HTMLElement, internals: ElementInternals): FormControls {
   const state = formHostOf(host);
@@ -98,7 +98,9 @@ export function formControls(host: HTMLElement, internals: ElementInternals): Fo
     value: (fn) => {
       createEffect(fn, (value) => {
         internals.setFormValue(value ?? null);
-        host.querySelector(`:scope > input[${FORM_VALUE_ATTRIBUTE}]`)?.remove();
+        for (const input of host.querySelectorAll(`:scope > input[${FORM_VALUE_ATTRIBUTE}]`)) {
+          input.remove();
+        }
       });
     },
     validity: (fn) => {

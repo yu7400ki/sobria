@@ -67,6 +67,58 @@ describe("フォームの部品", () => {
     expect(new FormData(form).get("score")).toBe("b");
   });
 
+  it("form.value が FormData を返すとエントリーごとにエントリーの名前で、File を返すとホストの name で、FormData に入れる", async () => {
+    const tag = nextTag();
+    defineElement(
+      tag,
+      (props: { kind?: string }, { form }: Ctx) => {
+        form.value(() => {
+          if (props.kind === "file") return new File(["y"], "y.txt");
+          const entries = new FormData();
+          entries.append("tag", "a");
+          entries.append("photo", new File(["x"], "x.txt"));
+          return entries;
+        });
+        return null;
+      },
+      { props: { kind: "string" }, form: true },
+    );
+    await place(`<form><${tag}></${tag}><${tag} name="avatar" kind="file"></${tag}></form>`);
+    const entries = [...new FormData(document.querySelector("form")!)].map(([name, value]) => [
+      name,
+      typeof value === "string" ? value : value.name,
+    ]);
+    expect(entries).toEqual([
+      ["tag", "a"],
+      ["photo", "x.txt"],
+      ["avatar", "y.txt"],
+    ]);
+  });
+
+  it("復元で、form.onRestore の関数に File と FormData をそのまま渡す", async () => {
+    const tag = nextTag();
+    const restored: unknown[] = [];
+    defineElement(
+      tag,
+      (_props: object, { form }: Ctx) => {
+        form.value(() => null);
+        form.onRestore((state) => restored.push(state));
+        return null;
+      },
+      { props: {}, form: true },
+    );
+    await place(`<form><${tag} name="n"></${tag}></form>`);
+    const host = document.querySelector(tag) as HTMLElement & {
+      formStateRestoreCallback: (state: unknown, mode: string) => void;
+    };
+    const file = new File(["x"], "x.txt");
+    const entries = new FormData();
+    host.formStateRestoreCallback(file, "restore");
+    host.formStateRestoreCallback(entries, "restore");
+    expect(restored[0]).toBe(file);
+    expect(restored[1]).toBe(entries);
+  });
+
   it("form.validity が返した制約と文言で無効にし、null で有効にする。制約を指定しなければ customError にする", async () => {
     const setters: ((value: string) => void)[] = [];
     const tag = defineField(setters);
@@ -350,6 +402,28 @@ describe("SSR したフォームの部品の起動", () => {
     await tick();
     expect(host.querySelector("input[data-rinka-form]")).toBeNull();
     expect(new FormData(form).getAll("n")).toEqual(["v"]);
+  });
+
+  it("FormData の値で出力した複数の hidden input を、起動して値を設定したときにすべて削除し、値を 1 回だけ送信する", async () => {
+    const tag = nextTag();
+    const { server, client } = defineBoth(tag, (_props, { form }) => {
+      form.value(() => {
+        const entries = new FormData();
+        entries.append("tag", "a");
+        entries.append("tag", "b");
+        return entries;
+      });
+      return null;
+    });
+    const form = await serve(serverJsx(server, {}));
+    const host = document.querySelector(tag)!;
+    expect(new FormData(form).getAll("tag")).toEqual(["a", "b"]);
+    client();
+    await tick();
+    flush();
+    await tick();
+    expect(host.querySelectorAll("input[data-rinka-form]")).toHaveLength(0);
+    expect(new FormData(form).getAll("tag")).toEqual(["a", "b"]);
   });
 
   it("定義した後でも、起動するまでは hidden input を残す", async () => {
