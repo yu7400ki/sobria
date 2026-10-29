@@ -496,13 +496,15 @@ function requestKind(c: Context): RequestKind | undefined {
 }
 
 /** フォームの送信と同じ `Content-Type` の POST かどうかを返す。 */
-function isFormSubmission(c: Context): boolean {
-  if (c.req.method !== "POST") return false;
-  const type = c.req.header("content-type")?.toLowerCase() ?? "";
-  return (
-    type.startsWith("multipart/form-data") || type.startsWith("application/x-www-form-urlencoded")
-  );
-}
+const isFormSubmission = (c: Context): boolean =>
+  c.req.method === "POST" &&
+  (isMultipart(c) || contentType(c).startsWith("application/x-www-form-urlencoded"));
+
+/** 本文が multipart/form-data のリクエストかどうかを返す。 */
+const isMultipart = (c: Context): boolean => contentType(c).startsWith("multipart/form-data");
+
+/** リクエストの `Content-Type` を、小文字にして返す。ヘッダーが無ければ空の文字列を返す。 */
+const contentType = (c: Context): string => c.req.header("content-type")?.toLowerCase() ?? "";
 
 /** ID が `id` のサーバー関数の定義を返す。`options.loadServerFn` があれば、それが真を返したときだけ検索する。 */
 async function find(id: string, options: AppOptions): Promise<Definition | undefined> {
@@ -518,9 +520,7 @@ async function readInput(c: Context): Promise<unknown> {
     const serialized = c.req.query(rpcQuery.seroval);
     return serialized === undefined ? undefined : fromRpcInput(serialized);
   }
-  if (c.req.header("content-type")?.toLowerCase().startsWith("multipart/form-data")) {
-    return readParts(c);
-  }
+  if (isMultipart(c)) return readParts(c);
   const text = await c.req.text();
   if (text === "") return undefined;
   return parseJson(text);
