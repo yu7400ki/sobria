@@ -7,8 +7,11 @@ export interface RouteParams {}
 /** `route.ts` のファイルの形のパスごとに、そのルートの Hono のパスを表す。`declare module "rinka/router"` で拡張できる。 */
 export interface RouteHandlerPaths {}
 
+/** ページのファイルの形のパスを表す。 */
+type PageRoute = Exclude<keyof RouteParams, keyof RouteHandlerPaths>;
+
 /** `Route` のページが受け取る props を表す。`url` はリクエストの URL である。 */
-export interface PageProps<Route extends keyof RouteParams> {
+export interface PageProps<Route extends PageRoute> {
   readonly params: RouteParams[Route];
   readonly url: URL;
 }
@@ -39,10 +42,15 @@ type Params<Route extends keyof RouteParams> = {
   readonly [Name in keyof RouteParams[Route]]: string | number;
 };
 
-/** `Route` のパラメータがあれば、そのパラメータの配列を返す関数を、無ければ `true` を表す。 */
+/**
+ * `Route` のパラメータが無ければ `true` を表す。パラメータのあるページなら、そのパラメータの配列を返す関数を表す。
+ * パラメータのある `route.ts` のルートでは `never` を表す。
+ */
 export type Prerender<Route extends keyof RouteParams> = keyof RouteParams[Route] extends never
   ? true
-  : () => readonly Params<Route>[] | Promise<readonly Params<Route>[]>;
+  : Route extends keyof RouteHandlerPaths
+    ? never
+    : () => readonly Params<Route>[] | Promise<readonly Params<Route>[]>;
 
 /** `T` が 2 つ以上の型のユニオンかどうかを表す。 */
 type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;

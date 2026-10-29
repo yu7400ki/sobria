@@ -25,10 +25,12 @@ interface RouteHandlerPaths {}
 `Route` のページが受け取る props を表す。`url` はリクエストの URL である。
 
 ```ts
-interface PageProps<Route extends keyof RouteParams> {
+interface PageProps<Route extends PageRoute> {
   readonly params: RouteParams[Route];
   readonly url: URL;
 }
+
+type PageRoute = Exclude<keyof RouteParams, keyof RouteHandlerPaths>;
 ```
 
 ## LayoutProps
@@ -66,12 +68,14 @@ interface ErrorProps extends NotFoundProps {
 
 ## Prerender
 
-`Route` のパラメータがあれば、そのパラメータの配列を返す関数を、無ければ `true` を表す。
+`Route` のパラメータが無ければ `true` を表す。パラメータのあるページなら、そのパラメータの配列を返す関数を表す。パラメータのある `route.ts` のルートでは `never` を表す。
 
 ```ts
 type Prerender<Route extends keyof RouteParams> = keyof RouteParams[Route] extends never
   ? true
-  : () => readonly Params<Route>[] | Promise<readonly Params<Route>[]>;
+  : Route extends keyof RouteHandlerPaths
+    ? never
+    : () => readonly Params<Route>[] | Promise<readonly Params<Route>[]>;
 
 type Params<Route extends keyof RouteParams> = {
   readonly [Name in keyof RouteParams[Route]]: string | number;

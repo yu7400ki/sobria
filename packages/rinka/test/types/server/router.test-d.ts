@@ -23,6 +23,11 @@ declare module "rinka/router" {
     "/users/[id]": { id: string };
     "/docs/[...slug]": { slug: string };
     "/api/[model]/[id]": { model: string; id: string };
+    "/files/[...path]": { path: string };
+  }
+  interface RouteHandlerPaths {
+    "/api/[model]/[id]": "/api/:model/:id";
+    "/files/[...path]": "/files/:path{.+}";
   }
 }
 
@@ -75,6 +80,15 @@ describe("rinka/router", () => {
       () => readonly Users[] | Promise<readonly Users[]>
     >();
   });
+
+  it("Prerender は、パラメータのある route.ts のルートでは never である", () => {
+    expectTypeOf<Prerender<"/api/[model]/[id]">>().toEqualTypeOf<never>();
+  });
+
+  it("PageProps は、route.ts のルートを受け付けない", () => {
+    // @ts-expect-error route.ts のルートである
+    expectTypeOf<PageProps<"/api/[model]/[id]">>();
+  });
 });
 
 describe("rinka/server のルーティングの API", () => {
@@ -102,8 +116,8 @@ describe("forRoute", () => {
   });
 
   it("キャッチオールのパラメータも string で返す", () => {
-    forRoute("/docs/[...slug]").defineHandler((c) => {
-      expectTypeOf(c.req.param("slug")).toEqualTypeOf<string>();
+    forRoute("/files/[...path]").defineHandler((c) => {
+      expectTypeOf(c.req.param("path")).toEqualTypeOf<string>();
       return null;
     });
   });
@@ -129,8 +143,10 @@ describe("forRoute", () => {
     });
   });
 
-  it("RouteParams に無いルートは受け付けない", () => {
-    // @ts-expect-error RouteParams に無いルート
+  it("RouteHandlerPaths に無いルートと、ページのルートは受け付けない", () => {
+    // @ts-expect-error RouteHandlerPaths に無いルート
     forRoute("/missing");
+    // @ts-expect-error ページのルート
+    forRoute("/users/[id]");
   });
 });

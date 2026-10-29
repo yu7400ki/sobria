@@ -150,22 +150,12 @@ type ResultOf<R> = Exclude<Awaited<R>, Response | AsyncIterable<unknown>>;
 
 ## forRoute
 
-`defineHandler` を持つオブジェクトを返す。`defineHandler` は `hono/factory` の `defineHandler` で、その型は、ファイルの形のパス `_route` を Hono のパスにした型を持つ。その `defineHandler` で定義した handler の `c.req.param(name)` は、`_route` のパラメータの値を `string` で返す。
+`defineHandler` を持つオブジェクトを返す。`defineHandler` は `hono/factory` の `defineHandler` で、引数のファイルの形のパスの、`RouteHandlerPaths` の Hono のパスを型に持つ。その `defineHandler` で定義した handler の `c.req.param(name)` は、ルートのパラメータの値を `string` で返す。
 
 ```ts
-function forRoute<Route extends keyof RouteParams>(
+function forRoute<Route extends keyof RouteHandlerPaths>(
   _route: Route,
-): Pick<Factory<any, HonoPath<Route & string>>, "defineHandler">;
-
-type HonoPath<Path extends string> = Path extends `${infer Part}/${infer Rest}`
-  ? `${HonoPart<Part>}/${HonoPath<Rest>}`
-  : HonoPart<Path>;
-
-type HonoPart<Part extends string> = Part extends `[...${infer Name}]`
-  ? `:${Name}{.+}`
-  : Part extends `[${infer Name}]`
-    ? `:${Name}`
-    : Part;
+): Pick<Factory<any, RouteHandlerPaths[Route] & string>, "defineHandler">;
 ```
 
 ## defineServerFn
