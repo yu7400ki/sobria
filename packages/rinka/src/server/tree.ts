@@ -1,5 +1,5 @@
 import type { NavigationProps } from "../shared/navigation.ts";
-import { serverJsxNodes, type ServerNode } from "../shared/nodes.ts";
+import { serverJsxNodes, type ServerNode, type SharedNode } from "../shared/nodes.ts";
 import type { ScopedChild } from "../shared/scope.ts";
 import type { RenderScope } from "../shared/shared-context.ts";
 
@@ -84,6 +84,10 @@ export const withDepth = (depth: number, children: unknown): Node => ({
 /** 木のノードを、`ServerNode` の型として扱う。 */
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion
 export const asServerNode = (node: Node): ServerNode => node as unknown as ServerNode;
+
+/** 木のノードを、`SharedNode` の型として扱う。 */
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion
+export const asSharedNode = (node: Node): SharedNode => node as unknown as SharedNode;
 
 /** `ServerNode` の型の値を、木のノードとして扱う。 */
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion

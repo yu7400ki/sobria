@@ -5,7 +5,7 @@ import type { ClientChild } from "../shared/jsx-types.ts";
 import type { NavigationProps } from "../shared/navigation.ts";
 import type { ClientNode, SharedNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
-import { asClientNode, build, buildAt, DeferredRegion, type Child } from "./dom.ts";
+import { asClientNode, asSharedNode, build, buildAt, DeferredRegion, type Child } from "./dom.ts";
 import { withHydrating } from "./hydration.ts";
 
 /** 関数で渡された内容は、境界の中で呼び出して評価する。 */
@@ -57,8 +57,7 @@ export function Errored(props: {
  * 配列が変化しても、残った項目の内容は作成し直さない。項目は値の同一性で対応付ける。
  */
 export function For<T>(props: ForProps<T, ClientChild>): SharedNode {
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-  return asClientNode(
+  return asSharedNode(
     new DeferredRegion((at, ns, place) => {
       const items = mapArray(
         () => props.each,
@@ -66,7 +65,7 @@ export function For<T>(props: ForProps<T, ClientChild>): SharedNode {
       );
       return () => items().flat();
     }, "replace"),
-  ) as SharedNode;
+  );
 }
 
 /** 何も描画しない。 */

@@ -1,4 +1,3 @@
-import type { SharedNode } from "../shared/nodes.ts";
 import {
   nextId,
   outsideRender,
@@ -9,7 +8,7 @@ import {
   type SharedContext,
 } from "../shared/shared-context.ts";
 import { createStorage, type Storage } from "./context.ts";
-import type { ContextNode } from "./tree.ts";
+import { asSharedNode, type ContextNode } from "./tree.ts";
 
 let storage: Storage<RenderScope> | undefined;
 let loading: Promise<Storage<RenderScope>> | undefined;
@@ -48,8 +47,7 @@ export function createContext<T>(defaultValue: T): SharedContext<T> {
       scope,
       children: runInScope(scope, () => props.children),
     };
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-    return node as unknown as SharedNode;
+    return asSharedNode(node);
   };
   return withDefault(context, defaultValue);
 }

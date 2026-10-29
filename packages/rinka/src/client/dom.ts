@@ -16,7 +16,7 @@ import {
   tagAttributeName,
 } from "../shared/attributes.ts";
 import { isEventProp, listenerEventName, slotNameOf } from "../shared/names.ts";
-import type { ClientNode } from "../shared/nodes.ts";
+import type { ClientNode, SharedNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
 import { outsideScope } from "../shared/scope.ts";
 import { formProps } from "../shared/wire.ts";
@@ -180,6 +180,10 @@ export type Component<P> = (props: P) => unknown;
 /** JSX を評価した実行時の値（DOM のノードと、挿入できる値）を、`ClientNode` の型として扱う。 */
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion
 export const asClientNode = (value: unknown): ClientNode => value as ClientNode;
+
+/** JSX を評価した実行時の値を、`SharedNode` の型として扱う。 */
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion
+export const asSharedNode = (value: unknown): SharedNode => value as SharedNode;
 
 /** `ref` を呼び、`ref` が返した関数を描画の範囲の後始末に登録する。`ref` は `runWithOwner(null, …)` の中で呼ぶ。 */
 export function callRef<T>(ref: (node: T) => unknown, node: T): void {

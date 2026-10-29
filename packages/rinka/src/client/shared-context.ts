@@ -8,7 +8,6 @@ import {
   type Owner,
 } from "@solidjs/signals";
 
-import type { SharedNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
 import {
   createRenderScope,
@@ -20,6 +19,7 @@ import {
   type RenderScope,
   type SharedContext,
 } from "../shared/shared-context.ts";
+import { asSharedNode } from "./dom.ts";
 
 /** owner に、その位置の描画の範囲を保持するコンテキストである。 */
 const ScopeContext = createOwnerContext<RenderScope | null>(null);
@@ -54,8 +54,7 @@ export function createContext<T>(defaultValue: T): SharedContext<T> {
       setContext(ScopeContext, scope);
       return props.children;
     });
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-    return withOwner(owner, children) as SharedNode;
+    return asSharedNode(withOwner(owner, children));
   };
   return withDefault(context, defaultValue);
 }
