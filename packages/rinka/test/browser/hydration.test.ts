@@ -1,12 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Errored as ClientErrored, Loading as ClientLoading } from "../../src/client/control.ts";
+import {
+  Errored as ClientErrored,
+  For as ClientFor,
+  Loading as ClientLoading,
+} from "../../src/client/control.ts";
 import { SVG_NS } from "../../src/client/dom.ts";
 import { defineElement as defineClient } from "../../src/client/element.ts";
 import { serverOnly, serverStyles } from "../../src/client/hydration.ts";
 import { jsx as clientJsx } from "../../src/client/jsx-runtime.ts";
 import { bootstrapSource } from "../../src/server/bootstrap.ts";
-import { Errored as ServerErrored, Loading as ServerLoading } from "../../src/server/control.ts";
+import {
+  Errored as ServerErrored,
+  For as ServerFor,
+  Loading as ServerLoading,
+} from "../../src/server/control.ts";
 import { defineElement as defineServer } from "../../src/server/element.ts";
 import { jsx as serverJsx } from "../../src/server/jsx-runtime.ts";
 import { renderToStream } from "../../src/server/response.ts";
@@ -31,6 +39,7 @@ interface Side {
   readonly h: H;
   readonly Loading: unknown;
   readonly Errored: unknown;
+  readonly For: unknown;
   readonly define: (tag: string, fn: () => unknown, props?: Record<string, string>) => unknown;
   /** 要素のタグ名の接頭辞である。 */
   readonly prefix: string;
@@ -40,6 +49,7 @@ const serverSide: Side = {
   h: serverJsx as unknown as H,
   Loading: ServerLoading,
   Errored: ServerErrored,
+  For: ServerFor,
   define: (tag, fn, props = {}) => defineServer(tag, fn as never, { props: props as never }),
   prefix: "test-hy-s",
 };
@@ -48,6 +58,7 @@ const clientSide: Side = {
   h: clientJsx as unknown as H,
   Loading: ClientLoading,
   Errored: ClientErrored,
+  For: ClientFor,
   define: (tag, fn, props = {}) => defineClient(tag, fn as never, { props: props as never }),
   prefix: "test-hy-c",
 };
@@ -167,6 +178,17 @@ describe("サーバーとクライアントの DOM の構造", () => {
       ({ h }) =>
         () =>
           h("div", { children: [h("span", {}), () => false, h("b", {})] }),
+    ],
+    [
+      "<For> の項目",
+      ({ h, For }) =>
+        () =>
+          h("ul", {
+            children: h(For, {
+              each: ["x", "y"],
+              children: (item: string) => [h("li", { children: item }), " "],
+            }),
+          }),
     ],
     [
       "配列を返す領域",
@@ -410,6 +432,39 @@ describe("SSR の DOM の引き取り", () => {
     await tick();
     expect(button.textContent).toBe("n=1");
     expect(text?.isConnected).toBe(false);
+  });
+
+  it("<For> は SSR の項目のノードを引き取り、項目を加えても残った項目のノードを作成し直さない", async () => {
+    const [list, setList] = signal(["a", "b"]);
+    const runs: string[] = [];
+    const { host, boot } = await served(
+      ({ h, For }) =>
+        () =>
+          h("ul", {
+            children: h(For, {
+              get each() {
+                return list();
+              },
+              children: (item: string) => {
+                runs.push(item);
+                return h("li", { children: item });
+              },
+            }),
+          }),
+    );
+    const before = [...host.shadowRoot!.querySelectorAll("li")];
+    runs.length = 0;
+    await boot();
+    const booted = [...host.shadowRoot!.querySelectorAll("li")];
+    expect(booted.map((li, index) => li === before[index])).toEqual([true, true]);
+    setList(["a", "b", "c"]);
+    await tick();
+    const after = [...host.shadowRoot!.querySelectorAll("li")];
+    expect([after[0] === before[0], after[1] === before[1]]).toEqual([true, true]);
+    expect([after.map((li) => li.textContent), runs]).toEqual([
+      ["a", "b", "c"],
+      ["a", "b", "c"],
+    ]);
   });
 
   it("入れ子の子要素のホストと、その Shadow DOM のノードを引き取る", async () => {

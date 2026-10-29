@@ -1,9 +1,11 @@
-import { createErrorBoundary, createLoadingBoundary } from "@solidjs/signals";
+import { createErrorBoundary, createLoadingBoundary, mapArray } from "@solidjs/signals";
 
+import type { ForProps } from "../shared/for.ts";
+import type { ClientChild } from "../shared/jsx-types.ts";
 import type { NavigationProps } from "../shared/navigation.ts";
-import type { ClientNode } from "../shared/nodes.ts";
+import type { ClientNode, SharedNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
-import { asClientNode, build, DeferredRegion, type Child } from "./dom.ts";
+import { asClientNode, build, buildAt, DeferredRegion, type Child } from "./dom.ts";
 import { withHydrating } from "./hydration.ts";
 
 /** 関数で渡された内容は、境界の中で呼び出して評価する。 */
@@ -13,9 +15,9 @@ const read = (value: Child): Child => (isFunction(value) ? value() : value);
 export function Loading(props: { fallback?: Child; children?: Child }): ClientNode {
   return asClientNode(
     new DeferredRegion(
-      (at, ns) =>
+      (at, ns, place) =>
         createLoadingBoundary(
-          () => build(read(props.children), at, ns),
+          () => build(read(props.children), at, ns, place),
           () => read(props.fallback),
         ),
       "loading",
@@ -35,9 +37,9 @@ export function Errored(props: {
 }): ClientNode {
   return asClientNode(
     new DeferredRegion(
-      (at, ns) =>
+      (at, ns, place) =>
         createErrorBoundary(
-          () => build(read(props.children), at, ns),
+          () => build(read(props.children), at, ns, place),
           // フォールバックは SSR のノードを引き取らずに表示する
           (error, retry) =>
             withHydrating(false, () => {
@@ -48,6 +50,23 @@ export function Errored(props: {
       "errored",
     ),
   );
+}
+
+/**
+ * `each` の項目ごとに `children` が返した内容を、項目の順に描画する。`children` は、項目が配列に加わったときに 1 回だけ呼び、
+ * 配列が変化しても、残った項目の内容は作成し直さない。項目は値の同一性で対応付ける。
+ */
+export function For<T>(props: ForProps<T, ClientChild>): SharedNode {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  return asClientNode(
+    new DeferredRegion((at, ns, place) => {
+      const items = mapArray(
+        () => props.each,
+        (item, index) => buildAt(props.children(item, index), at, ns, place),
+      );
+      return () => items().flat();
+    }, "list"),
+  ) as SharedNode;
 }
 
 /** 何も描画しない。 */

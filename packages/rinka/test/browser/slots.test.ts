@@ -1,6 +1,7 @@
 import { createRoot, flush, onCleanup } from "@solidjs/signals";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { For, Loading } from "../../src/client/control.ts";
 import { defineElement } from "../../src/client/element.ts";
 import { jsx, jsxs } from "../../src/client/jsx-runtime.ts";
 import { signal } from "../../src/shared/signals.ts";
@@ -58,6 +59,41 @@ describe("Light DOM への配置", () => {
     setRich(true);
     flush();
     expect(light(el)).toBe('<b slot="header">B</b>');
+  });
+
+  it("名前付きのスロットの Loading と For は、中の領域のテキストを span で包み、同じテキストを包み直さない", () => {
+    const Card = defineCard();
+    const [suffix, setSuffix] = signal("1");
+    const [items, setItems] = signal(["a", "b"]);
+    const el = createRoot(() =>
+      toNode(
+        jsx(Card, {
+          header: [
+            jsx(Loading, { children: () => `x${suffix()}` }),
+            jsx(For<string>, {
+              get each() {
+                return items();
+              },
+              children: (item: string) => [item, () => suffix()],
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(light(el)).toBe(
+      '<span slot="header">x1</span><span slot="header">a</span><span slot="header">1</span>' +
+        '<span slot="header">b</span><span slot="header">1</span>',
+    );
+    const [, a] = el.querySelectorAll("span");
+    setSuffix("2");
+    flush();
+    setItems(["b", "a"]);
+    flush();
+    expect(light(el)).toBe(
+      '<span slot="header">x2</span><span slot="header">b</span><span slot="header">2</span>' +
+        '<span slot="header">a</span><span slot="header">2</span>',
+    );
+    expect(el.querySelectorAll("span")[3]).toBe(a);
   });
 
   it("スロットに割り当てた内容が、要素の <slot> に表示される", () => {

@@ -54,20 +54,20 @@ function childNamespace(parent: ParentNode): Namespace {
     : HTML_NS;
 }
 
-/** フォールバックを返す境界の種類を表す。 */
-export type Boundary = "loading" | "errored";
+/** 1 つの領域になる、JSX が作成した値の種類を表す。`loading` と `errored` は境界で、`list` は `<For>` の項目の列である。 */
+export type Boundary = "loading" | "errored" | "list";
 
 /**
  * JSX が作成した、まだ挿入する値にしていない値を表す。
- * 最初に値を求めたときに、JSX を評価した時点の owner の下で `make` を呼ぶ。引き取りの最中なら、`make` には引き取りの位置を渡す。`make` には、値のタグを作成する名前空間も渡す。
+ * 最初に値を求めたときに、JSX を評価した時点の owner の下で `make` を呼ぶ。引き取りの最中なら、`make` には引き取りの位置を渡す。`make` には、値のタグを作成する名前空間と、挿入するノードを変換する関数も渡す。
  * 2 回目以降は、最初に作成した値を返す。`make` が投げた値は、値を求めるたびに投げ直す。
  */
 class Lazy<T> {
   readonly #owner: Owner | null = getOwner();
-  readonly #make: (at: Cursor | undefined, ns: Namespace) => T;
+  readonly #make: (at: Cursor | undefined, ns: Namespace, place: (node: Node) => Node) => T;
   #result: { readonly value: T } | { readonly error: unknown } | undefined;
 
-  constructor(make: (at: Cursor | undefined, ns: Namespace) => T) {
+  constructor(make: (at: Cursor | undefined, ns: Namespace, place: (node: Node) => Node) => T) {
     this.#make = make;
   }
 
@@ -76,9 +76,9 @@ class Lazy<T> {
     return this.#result !== undefined;
   }
 
-  /** 値を返す。まだ作成していなければ、`at` の位置で、名前空間 `ns` のタグとして作成する。 */
-  value(at: Cursor | undefined, ns: Namespace): T {
-    this.#result ??= this.#create(at, ns);
+  /** 値を返す。まだ作成していなければ、`at` の位置で、名前空間 `ns` のタグとして作成し、挿入するノードを `place` で変換する。 */
+  value(at: Cursor | undefined, ns: Namespace, place: (node: Node) => Node = (node) => node): T {
+    this.#result ??= this.#create(at, ns, place);
     if ("error" in this.#result) throw this.#result.error;
     return this.#result.value;
   }
@@ -86,11 +86,12 @@ class Lazy<T> {
   #create(
     at: Cursor | undefined,
     ns: Namespace,
+    place: (node: Node) => Node,
   ): { readonly value: T } | { readonly error: unknown } {
     try {
       return {
         value: runWithOwner(this.#owner, () =>
-          withHydrating(at !== undefined, () => this.#make(at, ns)),
+          withHydrating(at !== undefined, () => this.#make(at, ns, place)),
         ),
       };
     } catch (error) {
@@ -103,35 +104,60 @@ class Lazy<T> {
 export class Deferred extends Lazy<Node> {}
 
 /**
- * JSX が作成した境界と、要素の描画の全体を表す。値は、挿入すると 1 つの領域になる関数である。
+ * JSX が作成した境界と、`<For>` の項目の列と、要素の描画の全体を表す。値は、挿入すると 1 つの領域になる関数である。
  * 境界の中身は、作成するときにノードにする。`boundary` は、値が中身でないときに SSR の表示を残すか置換するかを決める。
  */
 export class DeferredRegion extends Lazy<() => unknown> {
-  /** `"loading"` の境界は、中身が保留中ならフォールバックを返し、`"errored"` の境界は、中身が投げたらフォールバックを返す。 */
+  /** `"loading"` の境界は、中身が保留中ならフォールバックを返し、`"errored"` の境界は、中身が投げたらフォールバックを返す。`"list"` はフォールバックを返さない。 */
   readonly boundary: Boundary;
 
-  constructor(make: (at: Cursor | undefined, ns: Namespace) => () => unknown, boundary: Boundary) {
+  constructor(
+    make: (at: Cursor | undefined, ns: Namespace, place: (node: Node) => Node) => () => unknown,
+    boundary: Boundary,
+  ) {
     super(make);
     this.boundary = boundary;
   }
 }
 
 /**
+ * `content` を挿入したノードの配列を返す。引き取りの最中なら、`at` の位置から `content` のノードを引き取り、`at` を引き取ったノードの後に進める。
+ * 引き取りの最中でなければ、`content` のタグを名前空間 `ns` で作成する。挿入するノードは `place` で変換する。
+ */
+export function buildAt(
+  content: unknown,
+  at: Cursor | undefined,
+  ns: Namespace,
+  place?: (node: Node) => Node,
+): Node[] {
+  if (at === undefined || at.hydration.state === "done")
+    return build(content, undefined, ns, place);
+  const before = at.next === null ? at.parent.lastChild : at.next.previousSibling;
+  insert(at, content, place);
+  const nodes: Node[] = [];
+  let node = before === null ? at.parent.firstChild : before.nextSibling;
+  for (; node !== null && node !== at.next; node = node.nextSibling) nodes.push(node);
+  return nodes;
+}
+
+/**
  * `content` を挿入したノードの列を返す。`content` の中の関数は、それぞれ領域になる。
  * 最初の描画の引き取りの最中なら、`at` の位置から範囲の終わりまでノードを引き取り、範囲にあるノードの列を返す。
- * 引き取りの最中でなければ、`content` のタグを名前空間 `ns` で作成する。
+ * 引き取りの最中でなければ、`content` のタグを名前空間 `ns` で作成する。挿入するノードは `place` で変換する。
  */
-export function build(content: unknown, at: Cursor | undefined, ns: Namespace): Node[] {
+export function build(
+  content: unknown,
+  at: Cursor | undefined,
+  ns: Namespace,
+  place?: (node: Node) => Node,
+): Node[] {
   if (at && at.hydration.state !== "done") {
-    const before = at.next === null ? at.parent.lastChild : at.next.previousSibling;
-    if (!claimWithin(at, (inner) => insert(inner, content))) return [];
-    const nodes: Node[] = [];
-    let node = before === null ? at.parent.firstChild : before.nextSibling;
-    for (; node !== null && node !== at.next; node = node.nextSibling) nodes.push(node);
+    let nodes: Node[] = [];
+    if (!claimWithin(at, (inner) => (nodes = buildAt(content, inner, ns, place)))) return [];
     return nodes;
   }
   const fragment = document.createDocumentFragment();
-  insert(fragment, content, undefined, ns);
+  insert(fragment, content, place, ns);
   return [...fragment.childNodes];
 }
 
@@ -295,7 +321,7 @@ export function insert(
     if (!at) parent.append(place(value.value(undefined, space)));
     else place(value.value(at, space));
   } else if (value instanceof DeferredRegion) {
-    if (!at) createRegion(parent, value.value(undefined, space), place, space);
+    if (!at) createRegion(parent, value.value(undefined, space, place), place, space);
     else claimBoundary(takeRegion(at), value, place, space);
   }
 }
@@ -325,7 +351,7 @@ function createRegion(
 }
 
 /**
- * `start` と `end` の間を、`value` の値が変化するたびに置換する。値がノードの配列なら、そのノードを並べる。
+ * `start` と `end` の間を、`value` の値が変化するたびに置換する。値がノードの配列なら、そのノードを並べる。配列の中の領域は、並べる時点の DOM の中身で並べる。
  * それ以外の値は、ノードにしてから並べる。並べるときは、領域の中のノードのうち新しい配列に無いものを削除し、
  * 残ったノードのうち、配列の順と同じ順に並んでいる最も長い列のノードは動かさずに、ほかのノードだけを移動する。
  * `first` があれば、最初の計算では `first` を呼び、`first` が `true` を返したら置換しない。
@@ -355,10 +381,34 @@ function updateRegion(
       return [...fragment.childNodes];
     },
     (nodes) => {
-      if (nodes !== undefined) rearrange(start, end, nodes);
+      if (nodes !== undefined) rearrange(start, end, withRegions(nodes));
     },
   );
 }
+
+/** `nodes` のうち、領域の開始の目印から、対応する終了の目印までのノードを、今の DOM でその 2 つの目印の間にあるノードに置き換えた配列を返す。 */
+function withRegions(nodes: readonly Node[]): Node[] {
+  const result: Node[] = [];
+  for (let index = 0; index < nodes.length; index++) {
+    const node = nodes[index]!;
+    result.push(node);
+    if (!isRegionMark(node, REGION_START)) continue;
+    let depth = 1;
+    let inner = node.nextSibling;
+    for (; inner !== null; inner = inner.nextSibling) {
+      result.push(inner);
+      if (isRegionMark(inner, REGION_START)) depth++;
+      else if (isRegionMark(inner, REGION_END) && --depth === 0) break;
+    }
+    if (inner === null) continue;
+    while (index < nodes.length - 1 && nodes[index] !== inner) index++;
+  }
+  return result;
+}
+
+/** `node` が、内容が `mark` のコメントなら `true` を返す。 */
+const isRegionMark = (node: Node, mark: string): boolean =>
+  node instanceof Comment && node.data === mark;
 
 /**
  * `start` と `end` の間のノードを `nodes` の順にする。`nodes` に無いノードを削除する。
@@ -426,7 +476,7 @@ function claimRegion(
 
 /**
  * 引き取った領域で、境界を作成する。境界の中身は、作成するときに領域の中身から引き取る。
- * サーバーが境界の中身を出力しなかった領域と、`"errored"` の境界がフォールバックを返した領域は、領域の中身を置換する。
+ * サーバーが境界の中身を出力しなかった領域と、`"errored"` の境界がフォールバックを返した領域と、`"list"` の引き取ったノードが領域の中身と異なる領域は、領域の中身を置換する。
  * `"loading"` の境界がフォールバックを返したときと、最初の計算が投げたときは、領域の SSR のノードを残し、値が変化したときに置換する。
  */
 function claimBoundary(
@@ -438,7 +488,7 @@ function claimBoundary(
   if (!region) return;
   const { start, end, inner } = region;
   const fresh = atServerFallback(inner);
-  const made = value.value(fresh ? undefined : inner, ns);
+  const made = value.value(fresh ? undefined : inner, ns, place);
   updateRegion(start, end, made, place, ns, () => {
     if (fresh) return false;
     if (!claiming(inner.hydration)) return true;

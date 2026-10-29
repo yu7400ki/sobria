@@ -409,6 +409,17 @@ type PropKind = AttributeType | "unknown" | "function" | "object" | "slot";
 type Props<T extends CheckedProps<T>> = T;
 ```
 
+## ForProps
+
+`<For>` の props を表す。`children` は、`each` の項目ごとに、その項目と、項目の位置を返す関数を受け取る。
+
+```ts
+interface ForProps<T, C> {
+  readonly each: readonly T[] | null | undefined;
+  readonly children: (item: T, index: () => number) => C;
+}
+```
+
 ## SharedContext
 
 `createContext` が返すコンテキストを表す。`<Theme value={…}>` のように記述すると、子孫の `useContext(Theme)` は `value` を返す。
@@ -483,6 +494,44 @@ function Errored(props: {
   children?: unknown;
   status?: number;
 }): ServerNode;
+
+type ServerChild =
+  | ServerNode
+  | ClientNode
+  | string
+  | number
+  | bigint
+  | boolean
+  | null
+  | undefined
+  | readonly ServerChild[]
+  | (() => ServerChild);
+```
+
+## For
+
+- 要素のファイル：`each` の項目ごとに `children` が返した内容を、項目の順に描画する。`children` は、項目が配列に加わったときに 1 回だけ呼び、配列が変化しても、残った項目の内容は作成し直さない。項目は値の同一性で対応付ける。
+- サーバーのファイル：`each` の項目ごとに `children` が返した内容を、項目の順に出力する。`children` は、項目と、項目の位置を返す関数を受け取る。
+
+```ts
+// 要素のファイル
+function For<T>(props: ForProps<T, ClientChild>): SharedNode;
+
+type ClientChild =
+  | ClientNode
+  | Slot
+  | Node
+  | string
+  | number
+  | bigint
+  | boolean
+  | null
+  | undefined
+  | readonly ClientChild[]
+  | (() => ClientChild);
+
+// サーバーのファイル
+function For<T>(props: ForProps<T, ServerChild>): SharedNode;
 
 type ServerChild =
   | ServerNode

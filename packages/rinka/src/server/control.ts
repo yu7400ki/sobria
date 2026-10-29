@@ -1,6 +1,7 @@
+import type { ForProps } from "../shared/for.ts";
 import type { ServerChild } from "../shared/jsx-types.ts";
 import type { NavigationProps } from "../shared/navigation.ts";
-import type { ServerNode } from "../shared/nodes.ts";
+import type { ServerNode, SharedNode } from "../shared/nodes.ts";
 import { isFunction } from "../shared/objects.ts";
 import { asNode, asServerNode, type Node } from "./tree.ts";
 
@@ -34,6 +35,14 @@ export function Errored(props: {
     children: () => read(props.children),
     status: props.status,
   });
+}
+
+/** `each` の項目ごとに `children` が返した内容を、項目の順に出力する。`children` は、項目と、項目の位置を返す関数を受け取る。 */
+export function For<T>(props: ForProps<T, ServerChild>): SharedNode {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  return asServerNode(() =>
+    asNode((props.each ?? []).map((item, index) => props.children(item, () => index))),
+  ) as unknown as SharedNode;
 }
 
 /** ページの遷移の設定を、文書の `<head>` に出力する。 */

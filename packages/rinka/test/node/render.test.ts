@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Errored, Loading } from "../../src/server/control.ts";
+import { Errored, For, Loading } from "../../src/server/control.ts";
 import { defineElement } from "../../src/server/element.ts";
 import { Fragment, jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToResponse, renderToString } from "../../src/server/response.ts";
@@ -8,6 +8,36 @@ import { memo } from "../../src/shared/signals.ts";
 
 /** `props` の `<option>` を作成する。 */
 const option = (props: Record<string, unknown>) => jsx("option", props);
+
+/** 位置と値を `<li>` に出力する、`<For>` の項目の関数である。 */
+const item = (value: string, index: () => number) => jsx("li", { children: `${index()}${value}` });
+
+describe("<For>", () => {
+  it("項目ごとに、項目と位置を返す関数を children に渡し、返した内容を項目の順に出力する。each が null なら何も出力しない", async () => {
+    expect(
+      await renderToString(jsx("ul", { children: jsx(For, { each: ["a", "b"], children: item }) })),
+    ).toBe("<ul><li>0a</li><li>1b</li></ul>");
+    expect(
+      await renderToString(jsx("ul", { children: jsx(For, { each: null, children: item }) })),
+    ).toBe("<ul></ul>");
+  });
+
+  it("要素の中では、項目の全体を領域の目印で囲む", async () => {
+    const tag = "test-render-for";
+    const element = defineElement(
+      tag,
+      () =>
+        jsx("ul", {
+          children: jsx(For, {
+            each: ["a"],
+            children: (value: string) => jsx("li", { children: value }),
+          }),
+        }),
+      { props: {} },
+    );
+    expect(await renderToString(jsx(element, {}))).toContain("<ul><!--[--><li>a</li><!--]--></ul>");
+  });
+});
 
 describe("ネイティブのタグ", () => {
   it("テキストと属性の値をエスケープする", async () => {

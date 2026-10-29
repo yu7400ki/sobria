@@ -1,4 +1,5 @@
 import {
+  For,
   createContext,
   createId,
   useContext,
@@ -59,4 +60,19 @@ test("createContext が返したコンポーネントは value と子を受け�
   void (<Theme value="blue" />);
   expectTypeOf(useContext(Theme)).toEqualTypeOf<"light" | "dark">();
   expectTypeOf(createId()).toEqualTypeOf<string>();
+});
+
+test("<For> の children は、each の項目の型と、位置を返す関数を受け取り、<For> は共通のノードを返す", () => {
+  const rows = [{ id: 1 }];
+  const list = (
+    <For each={rows}>
+      {(row, index) => {
+        expectTypeOf(row).toEqualTypeOf<{ id: number }>();
+        expectTypeOf(index).toEqualTypeOf<() => number>();
+        return <li>{row.id}</li>;
+      }}
+    </For>
+  );
+  void list;
+  expectTypeOf(For).returns.toEqualTypeOf<import("rinka").SharedNode>();
 });
