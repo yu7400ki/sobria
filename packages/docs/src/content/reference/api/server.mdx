@@ -148,6 +148,26 @@ type ResultOf<R> = Exclude<Awaited<R>, Response | AsyncIterable<unknown>>;
 
 `hono/factory` の `defineMiddleware` を、`rinka/server` から再 export する。
 
+## forRoute
+
+ファイルの形のパスが `route` のルートの handler を定義する関数を返す。`defineHandler` は `hono/factory` の `defineHandler` で、handler の `c.req.param()` は `route` のパラメータを `string` で返す。
+
+```ts
+function forRoute<Route extends keyof RouteParams>(
+  _route: Route,
+): Pick<Factory<any, HonoPath<Route & string>>, "defineHandler">;
+
+type HonoPath<Path extends string> = Path extends `${infer Part}/${infer Rest}`
+  ? `${HonoPart<Part>}/${HonoPath<Rest>}`
+  : HonoPart<Path>;
+
+type HonoPart<Part extends string> = Part extends `[...${infer Name}]`
+  ? `:${Name}{.+}`
+  : Part extends `[${infer Name}]`
+    ? `:${Name}`
+    : Part;
+```
+
 ## defineServerFn
 
 1 段目のオプションを受け取り、ミドルウェアと handler からサーバー関数を作成する関数を返す。サーバーで呼び出すと、処理中のリクエストの Context を使用して、ミドルウェア、入力の検証、handler の順に実行する。ミドルウェアが `next()` を呼ばずに Response を返したら、その Response を投げる。Standard Schema の検証が失敗したら、`issues` を持つ `SchemaError` を投げる。

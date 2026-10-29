@@ -8,7 +8,13 @@ import {
   type PageProps,
   type Prerender,
 } from "rinka/router";
-import { defineHandler, getContext, setBlockingRender } from "rinka/server";
+import {
+  defineHandler,
+  defineMiddleware,
+  getContext,
+  setBlockingRender,
+  forRoute,
+} from "rinka/server";
 import { describe, expectTypeOf, it } from "vitest";
 
 declare module "rinka/router" {
@@ -16,6 +22,7 @@ declare module "rinka/router" {
     "/": {};
     "/users/[id]": { id: string };
     "/docs/[...slug]": { slug: string };
+    "/api/[model]/[id]": { model: string; id: string };
   }
 }
 
@@ -81,5 +88,49 @@ describe("rinka/server のルーティングの API", () => {
 
   it("defineHandler は、hono/factory の defineHandler である", () => {
     expectTypeOf(defineHandler).toEqualTypeOf<typeof import("hono/factory").defineHandler>();
+  });
+});
+
+describe("forRoute", () => {
+  it("defineHandler の c.req.param() は、ルートのパラメータを string で返す", () => {
+    forRoute("/api/[model]/[id]").defineHandler((c) => {
+      expectTypeOf(c.req.param("model")).toEqualTypeOf<string>();
+      expectTypeOf(c.req.param()).toEqualTypeOf<{ model: string; id: string }>();
+      expectTypeOf(c.req.param("slug")).toEqualTypeOf<string | undefined>();
+      return null;
+    });
+  });
+
+  it("キャッチオールのパラメータも string で返す", () => {
+    forRoute("/docs/[...slug]").defineHandler((c) => {
+      expectTypeOf(c.req.param("slug")).toEqualTypeOf<string>();
+      return null;
+    });
+  });
+
+  it("先に渡したミドルウェアの変数と、ルートのパラメータの両方に型が付く", () => {
+    const auth = defineMiddleware<{ Variables: { user: string } }>(async (_c, next) => {
+      await next();
+    });
+    forRoute("/api/[model]/[id]").defineHandler(auth, (c) => {
+      expectTypeOf(c.get("user")).toEqualTypeOf<string>();
+      expectTypeOf(c.req.param("id")).toEqualTypeOf<string>();
+      return null;
+    });
+  });
+
+  it("検証のある defineHandler でも、ルートのパラメータに型が付く", () => {
+    forRoute("/api/[model]/[id]").defineHandler({
+      query: (value) => ({ page: Number(value["page"]) }),
+    })((c, { query }) => {
+      expectTypeOf(c.req.param("model")).toEqualTypeOf<string>();
+      expectTypeOf(query).toEqualTypeOf<{ page: number }>();
+      return null;
+    });
+  });
+
+  it("RouteParams に無いルートは受け付けない", () => {
+    // @ts-expect-error RouteParams に無いルート
+    forRoute("/missing");
   });
 });

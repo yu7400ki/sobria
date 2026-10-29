@@ -10,6 +10,7 @@ export {
 export { getContext, setBlockingRender } from "./context.ts";
 export { getServerFnResult } from "./server-fn-result.ts";
 export { defineHandler, defineMiddleware } from "hono/factory";
+export { forRoute } from "./for-route.ts";
 export {
   defineServerFn,
   SchemaError,
