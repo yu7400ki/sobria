@@ -1,4 +1,4 @@
-import { isPlainObject } from "../shared/objects.ts";
+import { isPlainObject, isPromiseLike } from "../shared/objects.ts";
 import { PAGE_HEADER } from "../shared/refresh.ts";
 import { isSeeding } from "../shared/scope.ts";
 import type { CallOptions, ServerFnMethod } from "../shared/server-fn.ts";
@@ -31,49 +31,83 @@ const never = (): Promise<never> => new Promise(() => {});
  * rinka が組み立てたレスポンスなら、`{ ok }` と `{ s }` の値を返す。`x-rinka-page` を送ったときは、値を返す前にレスポンスの `page` を反映し、`page` が描き直しの JSON でなければページを読み込み直す。
  * `{ redirect }` は、`x-rinka-page` を送り、移動先が現在のページ（hash を除く）なら、`page` を反映して `undefined` を返す。`page` が描き直しの JSON でなければ、ページを読み込み直す。
  * それ以外の `{ redirect }` では、その URL に移動する。`{ redirect }` でページを読み込み直すときと移動するときは、返す Promise は解決しない。
- * 入力に Blob があれば、multipart で送る。GET の入力に Blob があれば、送信せずに TypeError を投げる。
+ * 入力は `rpcRequest` の形式で送る。
  * `x-rinka-wire: stream` のレスポンスでは、行の値を yield する async iterable を返す。
  * 2xx 以外のレスポンスは `ServerFnError` として投げ、rinka が組み立てていない 2xx のレスポンスは Response のまま返す。
  */
 export function serverFn(id: string, method: ServerFnMethod): RpcFn {
   const call: RpcFn = async (input, { signal, headers, refresh = true }: CallOptions = {}) => {
     if (isSeeding()) return never();
-    const plain = input === undefined || isJson(input);
-    const converted = plain ? undefined : (await codec()).toRpcInput(input);
-    const blobs = converted?.blobs ?? [];
-    if (method === "GET" && blobs.length > 0) {
-      throw new TypeError("GET のサーバー関数の入力には、File と Blob を含められません。");
-    }
-    const encoded =
-      input === undefined ? undefined : JSON.stringify(converted ? converted.json : input);
-    const sent = new Headers(headers);
     const reflect = method !== "GET" && refresh ? startRewrite() : undefined;
+    const sent = new Headers(headers);
     if (reflect) sent.set(PAGE_HEADER, location.href);
-    let url = rpcPath(id);
-    let body: string | FormData | undefined;
-    if (method === "GET") {
-      if (encoded !== undefined) {
-        url += `?${plain ? rpcQuery.json : rpcQuery.seroval}=${encodeURIComponent(encoded)}`;
-      }
-    } else if (blobs.length > 0 && encoded !== undefined) {
-      const parts = new FormData();
-      parts.append(rpcInputPart, encoded);
-      blobs.forEach((blob, index) => parts.append(String(index), blob));
-      body = parts;
-    } else if (encoded !== undefined) {
-      body = encoded;
-      sent.set("content-type", "application/json");
-      if (!plain) sent.set(wireHeader, wireFormat.seroval);
-    }
-    const response = await fetch(url, {
+    const made = rpcRequest(id, method, input);
+    const request = isPromiseLike(made) ? await made : made;
+    for (const [name, value] of Object.entries(request.headers)) sent.set(name, value);
+    const response = await fetch(request.url, {
       method,
       headers: sent,
-      ...(body !== undefined && { body }),
+      ...(request.body !== undefined && { body: request.body }),
       ...(signal !== undefined && { signal }),
     });
-    return read(response, new URL(url, document.baseURI), reflect);
+    return read(response, new URL(request.url, document.baseURI), reflect);
   };
   return withServerFnRef(call, { id, method });
+}
+
+/** RPC のリクエストの URL と本文と、入力の形式を示すヘッダーを表す。 */
+export interface RpcRequest {
+  readonly url: string;
+  readonly body?: string | FormData;
+  readonly headers: Readonly<Record<string, string>>;
+}
+
+/**
+ * ID が `id` のサーバー関数を `method` で呼び出すリクエストのうち、入力 `input` から決まる部分を返す。
+ * 入力が無いときと、素の JSON で表せるときは、Promise ではない値を返す。素の JSON は、GET では `?d=` に、POST では本文に入れる。
+ * 素の JSON で表せない入力は、seroval の JSON の形式にした値の Promise を返す。GET では `?s=` に入れ、入力に Blob があれば TypeError で reject する。
+ * POST では、入力に Blob があれば multipart に、無ければ `x-rinka-wire: seroval` を付けた本文にする。
+ */
+export function rpcRequest(
+  id: string,
+  method: ServerFnMethod,
+  input: unknown,
+): RpcRequest | Promise<RpcRequest> {
+  const url = rpcPath(id);
+  if (input === undefined) return { url, headers: {} };
+  if (isJson(input)) {
+    const json = JSON.stringify(input);
+    return method === "GET"
+      ? { url: `${url}?${rpcQuery.json}=${encodeURIComponent(json)}`, headers: {} }
+      : { url, body: json, headers: { "content-type": "application/json" } };
+  }
+  return codec().then(({ toRpcInput }) => serovalRequest(url, method, toRpcInput(input)));
+}
+
+/** URL が `url` のサーバー関数を `method` で呼び出すリクエストのうち、seroval の JSON の形式にした入力 `json` と、その Blob の `blobs` から決まる部分を返す。 */
+function serovalRequest(
+  url: string,
+  method: ServerFnMethod,
+  { json, blobs }: { readonly json: unknown; readonly blobs: readonly Blob[] },
+): RpcRequest {
+  const text = JSON.stringify(json);
+  if (method === "GET") {
+    if (blobs.length > 0) {
+      throw new TypeError("GET のサーバー関数の入力には、File と Blob を含められません。");
+    }
+    return { url: `${url}?${rpcQuery.seroval}=${encodeURIComponent(text)}`, headers: {} };
+  }
+  if (blobs.length === 0) {
+    return {
+      url,
+      body: text,
+      headers: { "content-type": "application/json", [wireHeader]: wireFormat.seroval },
+    };
+  }
+  const parts = new FormData();
+  parts.append(rpcInputPart, text);
+  blobs.forEach((blob, index) => parts.append(String(index), blob));
+  return { url, body: parts, headers: {} };
 }
 
 /** 起動スクリプトの `$rinka.c` に `serverFn` を登録する。起動スクリプトを読み込んでいないページでは、何もしない。 */

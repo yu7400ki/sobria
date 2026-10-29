@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import { fromJSON, toJSON } from "seroval";
 import { describe, expect, it, vi } from "vitest";
 
+import { rpcRequest } from "../../src/client/server-fn.ts";
 import { toRpcInput } from "../../src/client/wire-codec.ts";
 import { getContext } from "../../src/server/context.ts";
 import type { OutcomeKind } from "../../src/server/endpoint.ts";
@@ -11,6 +12,7 @@ import { createApp, registerServerFn, serverFnModule } from "../../src/server/in
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
 import type { AppOptions, Routes } from "../../src/shared/routes.ts";
+import type { ServerFnMethod } from "../../src/shared/server-fn.ts";
 import { rpcInputPart, rpcPath, submissionField, wireHeader } from "../../src/shared/wire.ts";
 import { loadOf } from "./load.ts";
 
@@ -788,5 +790,65 @@ describe("async iterable を返すサーバー関数", () => {
     await reader.read();
     await reader.cancel();
     await closed.promise;
+  });
+});
+
+/** `rpcRequest` で `method` のリクエストを組み立てて送り、サーバー関数が受け取った入力を返す。 */
+async function roundTrip(method: ServerFnMethod, input: unknown): Promise<unknown> {
+  let received: unknown = "未呼び出し";
+  const id = register(
+    defineServerFn({ method, input: (value: unknown) => value })((_c, { input: value }) => {
+      received = value;
+    }),
+  );
+  const request = await rpcRequest(id, method, input);
+  const response = await createApp({ routes: [] }).fetch(
+    new Request(`http://localhost${request.url}`, {
+      method,
+      headers: request.headers,
+      ...(request.body !== undefined && { body: request.body }),
+    }),
+  );
+  expect(response.status).toBe(200);
+  return received;
+}
+
+describe("rpcRequest で組み立てたリクエスト", () => {
+  describe.each(["GET", "POST"] as const)("%s", (method) => {
+    it("入力が無いとき、素の JSON のとき、Map と Date を含むときは、同じ値を受け取る", async () => {
+      expect(await roundTrip(method, undefined)).toBeUndefined();
+      expect(await roundTrip(method, { a: [1, "b", null] })).toEqual({ a: [1, "b", null] });
+      const rich = { map: new Map([["k", 1]]), at: new Date(0) };
+      expect(await roundTrip(method, rich)).toEqual(rich);
+    });
+
+    it("自身を参照するオブジェクトは、参照の形を保って受け取る", async () => {
+      const cyclic: { self?: unknown } = {};
+      cyclic.self = cyclic;
+      const value = (await roundTrip(method, cyclic)) as { self: unknown };
+      expect(value.self).toBe(value);
+    });
+  });
+
+  it("POST では、オブジェクトの中の File と、2 か所から参照した Blob を受け取る", async () => {
+    const photo = new File(["photo"], "photo.png", { type: "image/png" });
+    const note = new Blob(["note"], { type: "text/plain" });
+    const value = (await roundTrip("POST", { photo, notes: [note, note] })) as {
+      photo: File;
+      notes: [File, File];
+    };
+    expect([value.photo.name, value.photo.type, await value.photo.text()]).toEqual([
+      "photo.png",
+      "image/png",
+      "photo",
+    ]);
+    expect(await value.notes[0].text()).toBe("note");
+    expect(value.notes[1]).toBe(value.notes[0]);
+  });
+
+  it("GET の入力に Blob があるときは、TypeError を投げる", async () => {
+    await expect(rpcRequest("src/fns.ts#fn", "GET", { note: new Blob(["x"]) })).rejects.toThrow(
+      TypeError,
+    );
   });
 });
