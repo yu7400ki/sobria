@@ -27,13 +27,19 @@ export const isRedirectJson = (value: unknown): value is RedirectJson =>
 export const rpcQuery = { json: "d", seroval: "s" } as const;
 
 /** rinka が処理する、アプリの中のパスの接頭辞である。 */
-export const internalPrefix = "/_rinka/";
+const INTERNAL_PREFIX = "/_rinka/";
 
-/** サーバー関数のエンドポイントの、アプリの中のパスの接頭辞である。 */
-export const rpcPrefix = `${internalPrefix}fn/`;
+/** rinka が処理する URL のパスの接頭辞を、アプリを配置するパスを前置して返す。 */
+export const internalUrlPrefix = (): string => withBase(INTERNAL_PREFIX);
+
+/** サーバー関数のエンドポイントの URL のパスの接頭辞を、アプリを配置するパスを前置して返す。 */
+export const rpcUrlPrefix = (): string => `${internalUrlPrefix()}fn/`;
 
 /** ID が `id` のサーバー関数のエンドポイントの URL のパスを、アプリを配置するパスを前置して返す。 */
-export const rpcPath = (id: string): string => withBase(rpcPrefix + encodeURIComponent(id));
+export const rpcPath = (id: string): string => rpcUrlPrefix() + encodeURIComponent(id);
+
+/** `404.html` に書き出すページの、アプリの中のパスである。 */
+export const notFoundPrerenderPath = `${INTERNAL_PREFIX}not-found`;
 
 /** フォームの送信で、宛先のサーバー関数の ID を値に持つ欄の名前である。 */
 export const submissionField = "_rinka_fn";

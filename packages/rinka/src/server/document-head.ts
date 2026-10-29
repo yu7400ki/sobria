@@ -1,6 +1,6 @@
 import { withBase } from "../shared/base.ts";
 import type { NavigationProps } from "../shared/navigation.ts";
-import { internalPrefix } from "../shared/wire.ts";
+import { internalUrlPrefix } from "../shared/wire.ts";
 import { escapeAttribute } from "./html.ts";
 
 /**
@@ -128,7 +128,7 @@ function navigationHead(values: NavigationValues): string {
         where: {
           and: [
             { href_matches: `${withBase("/")}*` },
-            { not: { href_matches: `${withBase(internalPrefix)}*` } },
+            { not: { href_matches: `${internalUrlPrefix()}*` } },
           ],
         },
         eagerness: prefetch,

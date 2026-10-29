@@ -1,7 +1,7 @@
 import type { Output, PrerenderScope, PrerenderTarget } from "../shared/prerender.ts";
 import { fillPattern, parseSegment } from "../shared/route-segments.ts";
 import { routeMethods, type Route, type Routes } from "../shared/routes.ts";
-import { internalPrefix } from "../shared/wire.ts";
+import { notFoundPrerenderPath } from "../shared/wire.ts";
 
 /** 書き出す URL の区切りに含められない文字である。`encodeURIComponent` がエンコードし `decodeURI` がデコードしない文字、`%`、Windows のファイル名に使用できない文字である。 */
 const UNSAFE = '/\\;,?:@&=+$#<>"|*%'.split("");
@@ -38,7 +38,7 @@ export async function prerenderTargets(
   return [
     ...targets.flat(),
     ...(scope.output === "static"
-      ? [{ kind: "not-found", urls: [`${internalPrefix}not-found`] } as const]
+      ? [{ kind: "not-found", urls: [notFoundPrerenderPath] } as const]
       : []),
   ];
 }

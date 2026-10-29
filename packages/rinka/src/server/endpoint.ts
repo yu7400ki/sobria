@@ -12,9 +12,9 @@ import {
   type ServerFnRef,
 } from "../shared/server-fn.ts";
 import {
-  internalPrefix,
+  internalUrlPrefix,
   rpcInputPart,
-  rpcPrefix,
+  rpcUrlPrefix,
   rpcQuery,
   isEndOrRedirectLineText,
   isRedirectJson,
@@ -78,7 +78,7 @@ export function serverFnMiddleware(
     if (kind === "rpc") {
       let id: string;
       try {
-        id = decodeURIComponent(new URL(c.req.url).pathname.slice(withBase(rpcPrefix).length));
+        id = decodeURIComponent(new URL(c.req.url).pathname.slice(rpcUrlPrefix().length));
       } catch {
         return responders.rpc.reject(c, 404);
       }
@@ -420,7 +420,7 @@ function localPageOf(value: string | undefined, c: Context): URL | undefined {
   const url = new URL(value);
   return url.host === new URL(c.req.url).host &&
     url.pathname.startsWith(base()) &&
-    !url.pathname.startsWith(withBase(internalPrefix))
+    !url.pathname.startsWith(internalUrlPrefix())
     ? url
     : undefined;
 }
@@ -490,8 +490,8 @@ function replaceJson(c: Context, body: object, from: Headers, status: number): v
  */
 function requestKind(c: Context): RequestKind | undefined {
   const { pathname } = new URL(c.req.url);
-  if (pathname.startsWith(withBase(rpcPrefix))) return "rpc";
-  if (pathname.startsWith(withBase(internalPrefix)) || !isFormSubmission(c)) return undefined;
+  if (pathname.startsWith(rpcUrlPrefix())) return "rpc";
+  if (pathname.startsWith(internalUrlPrefix()) || !isFormSubmission(c)) return undefined;
   const row = matchedRoutes(c).find(
     ({ handler }) => handler === acceptsSubmission || handler === refusesSubmission,
   );

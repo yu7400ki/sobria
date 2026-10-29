@@ -121,7 +121,8 @@ const constantLiterals: readonly ConstantLiteral[] = [
     target: "contained",
     definedIn: "src/shared/wire.ts",
     directories: ["src/"],
-    message: "rinka の URL の接頭辞は、src/shared/wire.ts の internalPrefix で記述してください。",
+    message:
+      "rinka の URL の接頭辞は、src/shared/wire.ts の internalUrlPrefix、rpcUrlPrefix、notFoundPrerenderPath で記述してください。",
   },
   {
     pattern: /^\0?rinka\//,
