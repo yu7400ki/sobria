@@ -325,7 +325,9 @@ function createRegion(
 }
 
 /**
- * `start` と `end` の間を、`value` の値が変化するたびに置換する。
+ * `start` と `end` の間を、`value` の値が変化するたびに置換する。値がノードの配列なら、そのノードを並べる。
+ * それ以外の値は、ノードにしてから並べる。並べるときは、領域の中のノードのうち新しい配列に無いものを削除し、
+ * 残ったノードのうち、配列の順と同じ順に並んでいる最も長い列のノードは動かさずに、ほかのノードだけを移動する。
  * `first` があれば、最初の計算では `first` を呼び、`first` が `true` を返したら置換しない。
  */
 function updateRegion(
@@ -338,23 +340,70 @@ function updateRegion(
 ): void {
   let initial = first !== undefined;
   createRenderEffect(
-    () => {
+    (): readonly Node[] | undefined => {
       if (initial) {
         initial = false;
         if (first?.()) return undefined;
       }
       const current = outsideScope(value);
       if (placed(start, end, current)) return undefined;
+      if (Array.isArray(current) && current.every((item): item is Node => item instanceof Node)) {
+        return current.map(place);
+      }
       const fragment = document.createDocumentFragment();
       insert(fragment, current, place, ns);
-      return fragment;
+      return [...fragment.childNodes];
     },
-    (fragment) => {
-      if (fragment === undefined) return;
-      while (start.nextSibling && start.nextSibling !== end) start.nextSibling.remove();
-      end.before(fragment);
+    (nodes) => {
+      if (nodes !== undefined) rearrange(start, end, nodes);
     },
   );
+}
+
+/**
+ * `start` と `end` の間のノードを `nodes` の順にする。`nodes` に無いノードを削除する。
+ * 領域に残ったノードのうち、`nodes` と同じ順に並んでいる最も長い列のノードは動かさない。
+ */
+function rearrange(start: Comment, end: Comment, nodes: readonly Node[]): void {
+  const kept = new Set(nodes);
+  const positions = new Map<Node, number>();
+  for (let node = start.nextSibling; node !== null && node !== end;) {
+    const next = node.nextSibling;
+    if (kept.has(node)) positions.set(node, positions.size);
+    else node.remove();
+    node = next;
+  }
+  const staying = increasing(nodes.map((node) => positions.get(node) ?? -1));
+  const parent = end.parentNode;
+  if (parent === null) return;
+  let anchor: Node = end;
+  for (let index = nodes.length - 1; index >= 0; index--) {
+    const node = nodes[index]!;
+    if (!staying.has(index)) parent.insertBefore(node, anchor);
+    anchor = node;
+  }
+}
+
+/** `values` のうち 0 以上の値で作る最長増加部分列の、添字の集合を返す。 */
+function increasing(values: readonly number[]): ReadonlySet<number> {
+  // tails[k] は、長さが k + 1 の増加部分列の末尾のうち、値が最も小さいものの添字である
+  const tails: number[] = [];
+  const previous: number[] = [];
+  values.forEach((value, index) => {
+    if (value < 0) return;
+    let low = 0;
+    let high = tails.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (values[tails[middle]!]! < value) low = middle + 1;
+      else high = middle;
+    }
+    previous[index] = low > 0 ? tails[low - 1]! : -1;
+    tails[low] = index;
+  });
+  const result = new Set<number>();
+  for (let index = tails.at(-1) ?? -1; index >= 0; index = previous[index]!) result.add(index);
+  return result;
 }
 
 /**

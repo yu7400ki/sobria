@@ -219,6 +219,65 @@ describe("子", () => {
     expect(runs).toBe(1);
   });
 
+  it("関数の子がノードの配列を返したら、位置の変わらないノードを領域から外さず、フォーカスも保つ", () => {
+    const [a, b, c] = ["a", "b", "c"].map((id) =>
+      Object.assign(document.createElement("input"), { id }),
+    );
+    const [list, setList] = signal<readonly HTMLInputElement[]>([a!, b!]);
+    const { node, dispose } = mount(() => jsx("div", { children: () => list() }));
+    const div = node as HTMLElement;
+    document.body.append(div);
+    const removed: Node[] = [];
+    const observer = new MutationObserver((records) => {
+      for (const record of records) removed.push(...record.removedNodes);
+    });
+    observer.observe(div, { childList: true });
+    a!.focus();
+    setList([a!, b!, c!]);
+    flush();
+    expect(document.activeElement).toBe(a);
+    setList([b!, c!]);
+    flush();
+    b!.focus();
+    setList([c!, b!]);
+    flush();
+    observer.takeRecords().forEach((record) => removed.push(...record.removedNodes));
+    observer.disconnect();
+    expect([...div.querySelectorAll("input")].map((input) => input.id)).toEqual(["c", "b"]);
+    expect(document.activeElement).toBe(b);
+    expect(removed.map((removedNode) => (removedNode as HTMLElement).id)).toEqual(["a", "c"]);
+    div.remove();
+    dispose();
+  });
+
+  it.each([
+    ["離れた 2 つの交換", "abcd", "dbca", ["a", "d"]],
+    ["先頭から末尾への移動", "abc", "bca", ["a"]],
+    ["末尾から先頭への移動", "abc", "cab", ["c"]],
+  ])(
+    "ノードの配列の%sでは、変更の前と同じ順に並ぶ最も長い列のノードは領域から外れない",
+    (_, from, to, moved) => {
+      const nodes = new Map(
+        "abcd".split("").map((id) => [id, Object.assign(document.createElement("b"), { id })]),
+      );
+      const pick = (ids: string) => ids.split("").map((id) => nodes.get(id)!);
+      const [list, setList] = signal(pick(from));
+      const { node, dispose } = mount(() => jsx("div", { children: () => list() }));
+      const div = node as HTMLElement;
+      const observer = new MutationObserver(() => {});
+      observer.observe(div, { childList: true });
+      setList(pick(to));
+      flush();
+      const removed = observer.takeRecords().flatMap((record) => Array.from(record.removedNodes));
+      observer.disconnect();
+      expect([
+        [...div.querySelectorAll("b")].map((b) => b.id).join(""),
+        removed.map((b) => (b as HTMLElement).id).toSorted(),
+      ]).toEqual([to, moved]);
+      dispose();
+    },
+  );
+
   it("関数を返す関数の子は、内側の関数も値の変化に追従する", () => {
     const [a, setA] = signal("a");
     const { node } = mount(() => jsx("p", { children: () => () => a() }));
