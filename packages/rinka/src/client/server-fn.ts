@@ -7,6 +7,7 @@ import {
   isJson,
   isRedirectJson,
   isSerovalJson,
+  rpcInputPart,
   rpcPath,
   rpcQuery,
   splitLines,
@@ -30,6 +31,7 @@ const never = (): Promise<never> => new Promise(() => {});
  * rinka が組み立てたレスポンスなら、`{ ok }` と `{ s }` の値を返す。`x-rinka-page` を送ったときは、値を返す前にレスポンスの `page` を反映し、`page` が描き直しの JSON でなければページを読み込み直す。
  * `{ redirect }` は、`x-rinka-page` を送り、移動先が現在のページ（hash を除く）なら、`page` を反映して `undefined` を返す。`page` が描き直しの JSON でなければ、ページを読み込み直す。
  * それ以外の `{ redirect }` では、その URL に移動する。`{ redirect }` でページを読み込み直すときと移動するときは、返す Promise は解決しない。
+ * 入力に Blob があれば、multipart で送る。GET の入力に Blob があれば、送信せずに TypeError を投げる。
  * `x-rinka-wire: stream` のレスポンスでは、行の値を yield する async iterable を返す。
  * 2xx 以外のレスポンスは `ServerFnError` として投げ、rinka が組み立てていない 2xx のレスポンスは Response のまま返す。
  */
@@ -37,19 +39,27 @@ export function serverFn(id: string, method: ServerFnMethod): RpcFn {
   const call: RpcFn = async (input, { signal, headers, refresh = true }: CallOptions = {}) => {
     if (isSeeding()) return never();
     const plain = input === undefined || isJson(input);
+    const converted = plain ? undefined : (await codec()).toRpcInput(input);
+    const blobs = converted?.blobs ?? [];
+    if (method === "GET" && blobs.length > 0) {
+      throw new TypeError("GET のサーバー関数の入力には、File と Blob を含められません。");
+    }
     const encoded =
-      input === undefined
-        ? undefined
-        : JSON.stringify(plain ? input : (await codec()).toJSON(input));
+      input === undefined ? undefined : JSON.stringify(converted ? converted.json : input);
     const sent = new Headers(headers);
     const reflect = method !== "GET" && refresh ? startRewrite() : undefined;
     if (reflect) sent.set(PAGE_HEADER, location.href);
     let url = rpcPath(id);
-    let body: string | undefined;
+    let body: string | FormData | undefined;
     if (method === "GET") {
       if (encoded !== undefined) {
         url += `?${plain ? rpcQuery.json : rpcQuery.seroval}=${encodeURIComponent(encoded)}`;
       }
+    } else if (blobs.length > 0 && encoded !== undefined) {
+      const parts = new FormData();
+      parts.append(rpcInputPart, encoded);
+      blobs.forEach((blob, index) => parts.append(String(index), blob));
+      body = parts;
     } else if (encoded !== undefined) {
       body = encoded;
       sent.set("content-type", "application/json");

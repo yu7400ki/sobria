@@ -1,8 +1,9 @@
 import { defineMiddleware, type StandardSchema } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
-import { createPlugin, fromJSON, toJSON, type SerovalNode } from "seroval";
+import { fromJSON, toJSON } from "seroval";
 import { describe, expect, it, vi } from "vitest";
 
+import { toRpcInput } from "../../src/client/wire-codec.ts";
 import { getContext } from "../../src/server/context.ts";
 import type { OutcomeKind } from "../../src/server/endpoint.ts";
 import { notFound, redirect } from "../../src/server/errors.ts";
@@ -10,13 +11,7 @@ import { createApp, registerServerFn, serverFnModule } from "../../src/server/in
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { defineServerFn } from "../../src/server/server-fn.ts";
 import type { AppOptions, Routes } from "../../src/shared/routes.ts";
-import {
-  blobPluginTag,
-  rpcInputPart,
-  rpcPath,
-  submissionField,
-  wireHeader,
-} from "../../src/shared/wire.ts";
+import { rpcInputPart, rpcPath, submissionField, wireHeader } from "../../src/shared/wire.ts";
 import { loadOf } from "./load.ts";
 
 /** `value` が数の文字列なら数を返し、そうでなければ issues を返す Standard Schema である。 */
@@ -78,23 +73,10 @@ const post = (body: unknown, headers: Record<string, string> = {}): RequestInit 
   body: JSON.stringify(body),
 });
 
-/** `value` の Blob を出現した順の番号の参照にした seroval の JSON と、その順の Blob を返す。 */
-function withBlobs(value: unknown): { json: unknown; blobs: Blob[] } {
-  const blobs: Blob[] = [];
-  const plugin = createPlugin<Blob, { index: SerovalNode }>({
-    tag: blobPluginTag,
-    test: (item) => item instanceof Blob,
-    parse: { sync: (item, ctx) => ({ index: ctx.parse(blobs.push(item) - 1) }) },
-    serialize: () => "",
-    deserialize: () => new Blob(),
-  });
-  return { json: toJSON(value, { plugins: [plugin] }), blobs };
-}
-
-/** `value` を、input の部分と、`parts` を番号の部分にした multipart で POST するリクエストを返す。 */
+/** `value` を、クライアントと同じ形式の input の部分と、`parts` を番号の部分にした multipart で POST するリクエストを返す。 */
 function multipart(value: unknown, parts: readonly Blob[]): RequestInit {
   const body = new FormData();
-  body.append(rpcInputPart, JSON.stringify(withBlobs(value).json));
+  body.append(rpcInputPart, JSON.stringify(toRpcInput(value).json));
   parts.forEach((part, index) => body.append(String(index), part));
   return { method: "POST", body };
 }
@@ -201,7 +183,7 @@ describe("サーバー関数のエンドポイント", () => {
 
   it("multipart でない seroval の入力が Blob の参照を含むときは、400 を返す", async () => {
     const id = register(defineServerFn({ input: (value: unknown) => value })(() => null));
-    const { json } = withBlobs({ photo: new File(["x"], "x.txt") });
+    const { json } = toRpcInput({ photo: new File(["x"], "x.txt") });
     expect((await call(id, post(json, { [wireHeader]: "seroval" }))).status).toBe(400);
   });
 

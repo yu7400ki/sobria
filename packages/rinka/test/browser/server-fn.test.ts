@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { jsx as clientJsx } from "../../src/client/jsx-runtime.ts";
 import { startRewrite } from "../../src/client/refresh.ts";
 import { serverFn } from "../../src/client/server-fn.ts";
+import { toRpcInput } from "../../src/client/wire-codec.ts";
 import { bootstrapSource } from "../../src/server/bootstrap.ts";
 import { runSeeding } from "../../src/shared/scope.ts";
 import { ServerFnError } from "../../src/shared/server-fn.ts";
@@ -77,6 +78,43 @@ describe("serverFn", () => {
     const request = sentPost();
     expect(request.headers.get("x-rinka-wire")).toBe("seroval");
     expect(await request.json()).toEqual(toJSON(new Map([["a", 1]])));
+  });
+
+  it("Blob を含む入力は、Blob を参照にした seroval の JSON の input の部分と、Blob の番号の部分を持つ multipart で送る", async () => {
+    const sent = stubFetch(() => Response.json({ ok: null }, { headers: rpcHeaders }));
+    const photo = new File(["photo"], "photo.png", { type: "image/png" });
+    const note = new Blob(["note"], { type: "text/plain" });
+    await serverFn("src/fns.ts#upload", "POST")(
+      { photo, pages: [note, photo] },
+      { refresh: false },
+    );
+    const request = sent();
+    expect(request.headers.get("content-type")?.startsWith("multipart/form-data; boundary=")).toBe(
+      true,
+    );
+    expect(request.headers.get("x-rinka-wire")).toBeNull();
+    const parts = await request.formData();
+    expect([...parts.keys()]).toEqual(["input", "0", "1"]);
+    const first = parts.get("0") as File;
+    const second = parts.get("1") as File;
+    expect([first.name, first.type, await first.text()]).toEqual([
+      "photo.png",
+      "image/png",
+      "photo",
+    ]);
+    expect([second.type, await second.text()]).toEqual(["text/plain", "note"]);
+    expect(JSON.parse(parts.get("input") as string)).toEqual(
+      toRpcInput({ photo, pages: [note, photo] }).json,
+    );
+  });
+
+  it("GET の入力に Blob を含めると、送信する前に TypeError を投げる", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ ok: 1 }, { headers: rpcHeaders }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      serverFn("src/fns.ts#get", "GET")({ photo: new File(["x"], "x.txt") }),
+    ).rejects.toThrow(TypeError);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("signal を fetch に渡す", async () => {
