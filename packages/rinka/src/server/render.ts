@@ -37,7 +37,13 @@ import {
   unsupportedFormControls,
 } from "../shared/element.ts";
 import { headKey } from "../shared/head.ts";
-import { isEventProp, propToAttribute, reservedProp, slotNameOf } from "../shared/names.ts";
+import {
+  isEventProp,
+  propToAttribute,
+  reservedProp,
+  slotNameOf,
+  voidTags,
+} from "../shared/names.ts";
 import type { NavigationProps } from "../shared/navigation.ts";
 import { isAsyncIterable, isFunction, isPromiseLike } from "../shared/objects.ts";
 import type { ListedElement, SwapSpec } from "../shared/receiver.ts";
@@ -447,21 +453,7 @@ function childPlacement(tag: string, placement: HeadPlacement): HeadPlacement {
 
 const isNodeList = (node: Node): node is readonly Node[] => Array.isArray(node);
 
-const voidTags: ReadonlySet<string> = new Set([
-  "area",
-  "base",
-  "br",
-  "col",
-  "embed",
-  "hr",
-  "img",
-  "input",
-  "link",
-  "meta",
-  "source",
-  "track",
-  "wbr",
-]);
+const voidTagSet: ReadonlySet<string> = new Set(voidTags);
 
 /** クライアントが関数の値を囲む領域の、開始の目印である。 */
 const REGION_START_MARK = `<!--${REGION_START}-->`;
@@ -898,7 +890,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     const open = this.settle(ctx, openTag);
     out.push(this.chunkOf(open, (text) => text));
     if (label) out.push(label.mark);
-    if (voidTags.has(tag)) return;
+    if (voidTagSet.has(tag)) return;
     const text = propertyOf(outputs, "text");
     this.walk(
       asNode(text === undefined || !(text in props) ? attributesOf.children : ["\n", props[text]]),

@@ -154,3 +154,20 @@ export const listenerEventName = (prop: string): string => prop.slice(2).toLower
 
 /** `<slot>` の `name` の値 `value` を、スロットの名前にする。文字列でない値は、名前の無いスロットの `""` にする。 */
 export const slotNameOf = (value: unknown): string => (typeof value === "string" ? value : "");
+
+/** 子を持てない HTML のタグ（void 要素）の名前である。 */
+export const voidTags = [
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "source",
+  "track",
+  "wbr",
+] as const;

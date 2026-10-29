@@ -1,3 +1,4 @@
+import type { voidTags } from "./names.ts";
 import type { serverFnRef, ServerFnRef } from "./server-fn.ts";
 
 /** 属性の値か、値を返す関数を表す。関数を渡すと、要素の中では、関数が返す値が変わるたびに属性に反映する。 */
@@ -97,12 +98,14 @@ export interface TagAttributes {
     formmethod?: Text;
     formnovalidate?: Bool;
   };
+  canvas: { width?: Num; height?: Num };
   col: { span?: Num };
   colgroup: { span?: Num };
   data: { value?: Text };
   del: Edit;
   details: { open?: Bool; name?: Text };
   dialog: { open?: Bool; closedby?: V<"any" | "closerequest" | "none"> };
+  embed: { src?: Text; type?: Text; width?: Num; height?: Num };
   fieldset: FormControl;
   form: {
     action?: Text | { readonly [serverFnRef]: ServerFnRef<"POST"> };
@@ -137,9 +140,22 @@ export interface TagAttributes {
     fetchpriority?: V<"high" | "low" | "auto">;
     crossorigin?: CrossOrigin;
     referrerpolicy?: Referrer;
+    usemap?: Text;
+    ismap?: Bool;
   };
   input: FormControl & {
     type?: Text;
+    alt?: Text;
+    src?: Text;
+    width?: Num;
+    height?: Num;
+    dirname?: Text;
+    capture?: V<"user" | "environment">;
+    formaction?: Text;
+    formmethod?: Text;
+    formnovalidate?: Bool;
+    popovertarget?: Text;
+    popovertargetaction?: V<"toggle" | "show" | "hide">;
     value?: V<string | number>;
     checked?: Bool;
     placeholder?: Text;
@@ -172,8 +188,10 @@ export interface TagAttributes {
     integrity?: Text;
     fetchpriority?: V<"high" | "low" | "auto">;
   };
+  map: { name?: Text };
   meta: { name?: Text; content?: Text; charset?: Text; "http-equiv"?: Text; property?: Text };
   meter: { value?: Num; min?: Num; max?: Num; low?: Num; high?: Num; optimum?: Num };
+  object: { data?: Text; type?: Text; name?: Text; form?: Text; width?: Num; height?: Num };
   ol: { start?: Num; reversed?: Bool; type?: V<"1" | "a" | "A" | "i" | "I"> };
   optgroup: { label?: Text; disabled?: Bool };
   option: { value?: Text; selected?: Bool; disabled?: Bool; label?: Text };
@@ -215,6 +233,9 @@ export interface TagAttributes {
 /** タグ `K` が受け付ける属性を表す。属性の型を用意していないタグは、共通の属性だけを受け付ける。 */
 export type NativeAttributes<K extends string> = GlobalAttributes &
   (K extends keyof TagAttributes ? TagAttributes[K] : unknown);
+
+/** 子を持てない HTML のタグ（void 要素）の名前を表す。 */
+export type VoidTag = (typeof voidTags)[number];
 
 /** 名前を検査しない属性を表す。名前に `-` を含むタグと SVG のタグが受け付ける。 */
 export type LooseAttributes = Readonly<Record<string, unknown>>;

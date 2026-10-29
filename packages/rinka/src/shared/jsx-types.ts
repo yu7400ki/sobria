@@ -4,6 +4,7 @@ import type {
   LooseAttributes,
   NativeAttributes,
   SvgTag,
+  VoidTag,
 } from "./jsx-attributes.ts";
 import type { EventPropName } from "./names.ts";
 import type { ClientNode, ServerNode, SharedNode, Slot, SlotContent } from "./nodes.ts";
@@ -15,11 +16,11 @@ export type HtmlTag = keyof HTMLElementTagNameMap;
 type NativeTag = HtmlTag | SvgTag;
 
 /**
- * ネイティブのタグの JSX の型を作成する。HTML のタグは、属性と、子の型 `C` の `children` と、タグごとの `X[K]` を受け付ける。
+ * ネイティブのタグの JSX の型を作成する。HTML のタグは、属性と、子の型 `C` の `children` と、タグごとの `X[K]` を受け付ける。子を持てないタグは `children` を受け付けない。
  * SVG のタグは `X[K]` を、名前に `-` を含むタグは `U` を受け付け、ほかの属性の名前を検査しない。
  */
 export type IntrinsicElementsOf<C, X extends Record<NativeTag, object>, U extends object> = {
-  [K in HtmlTag]: NativeAttributes<K> & X[K] & { children?: C };
+  [K in HtmlTag]: NativeAttributes<K> & X[K] & { children?: K extends VoidTag ? never : C };
 } & { [K in SvgTag]: LooseAttributes & X[K] } & {
   [tag: `${string}-${string}`]: LooseAttributes & U;
 };
