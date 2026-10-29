@@ -44,6 +44,27 @@ test("呼び出しの 2 つ目の引数で、signal と headers を指定でき�
   void fn(1);
 });
 
+test("GET のサーバー関数は、入力の型が File か Blob を含むと呼び出せず、POST のサーバー関数は呼び出せる", () => {
+  const photo = new File(["x"], "x.txt");
+  const get = defineServerFn({ method: "GET", input: (value: { photo: File }) => value })(
+    () => null,
+  );
+  // @ts-expect-error GET の入力に File を含められない
+  void get({ photo });
+  const nested = defineServerFn({
+    method: "GET",
+    input: (value: { pages: Map<string, Blob[]> }) => value,
+  })(() => null);
+  // @ts-expect-error GET の入力の Map の値の配列に Blob を含められない
+  void nested({ pages: new Map([["a", [photo]]]) });
+  const post = defineServerFn({ input: (value: { photo: File }) => value })(() => null);
+  void post({ photo });
+  const plain = defineServerFn({ method: "GET", input: (value: { name: string }) => value })(
+    () => null,
+  );
+  void plain({ name: "a" });
+});
+
 test("ミドルウェアが設定する変数は、handler の c.get で型が付き、設定されない変数は型エラーになる", () => {
   const auth = defineMiddleware<{ Variables: { session: { id: string } } }>(async (c, next) => {
     c.set("session", { id: "1" });

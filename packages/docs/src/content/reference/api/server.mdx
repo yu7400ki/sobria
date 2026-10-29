@@ -239,11 +239,37 @@ type StandardSchemaIssues = Extract<
 ```ts
 type ServerFn<In, R, M extends ServerFnMethod = ServerFnMethod> = ([In] extends [undefined]
   ? (input?: In, options?: CallOptions) => Promise<Returned<R>>
-  : (input: In, options?: CallOptions) => Promise<Returned<R>>) & {
+  : (input: CallInput<In, M>, options?: CallOptions) => Promise<Returned<R>>) & {
   readonly [serverFnRef]: ServerFnRef<M>;
 };
 
 type Returned<R> = Awaited<R> extends AsyncIterable<infer T> ? AsyncIterable<T> : Awaited<R>;
+
+type CallInput<In, M extends ServerFnMethod> = [M] extends ["GET"]
+  ? true extends HasBlob<In>
+    ? never
+    : In
+  : In;
+
+type HasBlob<T, D extends number = 9> = [D] extends [never]
+  ? false
+  : unknown extends T
+    ? false
+    : T extends Blob
+      ? true
+      : T extends ReadonlyMap<infer K, infer V>
+        ? HasBlob<K, Shallower[D]> | HasBlob<V, Shallower[D]>
+        : T extends ReadonlySet<infer V>
+          ? HasBlob<V, Shallower[D]>
+          : T extends readonly (infer V)[]
+            ? HasBlob<V, Shallower[D]>
+            : T extends object
+              ? {
+                  [K in keyof T]-?: HasBlob<T[K], Shallower[D]>;
+                }[keyof T]
+              : false;
+
+type Shallower = [never, 0, 1, 2, 3, 4, 5, 6, 7, 8];
 ```
 
 ## ServerFnOptions
