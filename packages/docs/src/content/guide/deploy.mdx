@@ -128,7 +128,7 @@ pnpm build
 pnpm exec wrangler deploy
 ```
 
-`dist/client/` は、Workers の静的アセットとして配信します。
+`dist/client/` は、Workers の静的アセットとして配信します。静的アセットは、書き出したページの URL への POST に 405 を返します。そのため、Workers では、[書き出したページ](#ページを書き出す)の[フォーム](/guide/forms)からサーバー関数に送信できません。
 
 ## ページを書き出す
 
