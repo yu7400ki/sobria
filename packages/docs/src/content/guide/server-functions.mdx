@@ -75,7 +75,7 @@ export default function LikeButton(props: { postId: number }) {
 
 rinka はタイムアウトと再試行の機能を持ちません。タイムアウトは、例のように `AbortSignal.timeout()` を `signal` に渡して設定します。
 
-入力と戻り値には、JSON で表せない値（Date や Map など）も使用できます。入力には File と Blob も使用でき、handler は File として受け取ります。戻り値には File と Blob を使用できないので、ファイルを返すときは handler から Response を返します。
+入力と戻り値には、JSON で表せない値（Date や Map など）も使用できます。入力には File と Blob も使用でき、handler は File として受け取ります。戻り値には File と Blob を使用できないので、ファイルを返すときは handler から Response を返します。入力に FormData、URLSearchParams、ジェネレーター、Map を継承したクラスや独自の反復可能なクラスのインスタンスを含めると、型を保って送れないので、送信せずに TypeError を投げます。これらの値は、配列（`Array.from()`）かプレーンなオブジェクトに変換して渡します。
 
 ### props で渡す
 
