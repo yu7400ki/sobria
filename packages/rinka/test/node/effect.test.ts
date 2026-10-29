@@ -109,7 +109,7 @@ describe("effect", () => {
     ]);
   });
 
-  // @solidjs/signals 2.0.0-rc.15 の createEffect は、確定した値で apply を 2 回呼ぶ
+  // @solidjs/signals 2.0.0-rc.19 の createEffect は、確定した値で apply を 2 回呼ぶ
   it.fails("action の中で optimistic に書き込み、yield の後で signal に書き込んでも、action が終わったときに確定した値で apply を 1 回だけ呼ぶ", async () => {
     const seen: unknown[] = [];
     const [liked, setLiked] = optimistic(false);

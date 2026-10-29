@@ -10,8 +10,8 @@ catalogs:
       specifier: ^2.1.5
       version: 2.1.5
     '@solidjs/signals':
-      specifier: 2.0.0-rc.15
-      version: 2.0.0-rc.15
+      specifier: 2.0.0-rc.19
+      version: 2.0.0-rc.19
     '@types/node':
       specifier: ^26.6.5
       version: 26.6.5
@@ -132,7 +132,7 @@ importers:
         version: 2.1.5(hono@5.0.0-rc.1)
       '@solidjs/signals':
         specifier: 'catalog:'
-        version: 2.0.0-rc.15
+        version: 2.0.0-rc.19
       magic-string:
         specifier: 'catalog:'
         version: 1.4.3
@@ -1800,8 +1800,8 @@ packages:
     resolution: {integrity: sha512-P1Cz1dWaFfR4IR+U13mqqiGsLFf1KbayybWwdd2vfctdV6hDpUkgCY0nKOLLTMSoRd/jJNjtbqzf13K8DCCXQw==}
     engines: {node: '>=18'}
 
-  '@solidjs/signals@2.0.0-rc.15':
-    resolution: {integrity: sha512-rMhLaYnBvpb9sB3NJGPsqIxjgr0XKU2nvBS7jhWX2fKx+K/m5O0VoAuCgYuTie3BMBZU9vX08NdnFXg508pcew==}
+  '@solidjs/signals@2.0.0-rc.19':
+    resolution: {integrity: sha512-Epg4lyelYZnwG152q1U7lXAXp/2/jaQdaRbzh60rcOelSwmCMf/WN6FQuUEUwbn1p/QNyoJzdGSKPajkVe3zOg==}
     engines: {node: '>=22.12.0'}
 
   '@speed-highlight/core@1.2.24':
@@ -4218,7 +4218,7 @@ snapshots:
 
   '@sindresorhus/is@7.2.0': {}
 
-  '@solidjs/signals@2.0.0-rc.15': {}
+  '@solidjs/signals@2.0.0-rc.19': {}
 
   '@speed-highlight/core@1.2.24': {}
 
