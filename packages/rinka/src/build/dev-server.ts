@@ -8,6 +8,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import type { Environment, Plugin, RunnableDevEnvironment } from "vite";
 
+import { joinBase } from "../shared/base.ts";
 import { reloadEvent } from "../shared/hmr.ts";
 import type { CreateApp } from "../shared/routes.ts";
 import { entries, serverImports, virtualId, virtualUrl } from "./entries.ts";
@@ -29,7 +30,7 @@ const STYLES_URL = `${virtualUrl(entries.styles)}?files=`;
 
 /** アプリを配置するパス `base` の開発サーバーで、Vite のクライアントを読み込むタグを返す。 */
 const viteClient = (base: string): string =>
-  `<script type="module" src="${base}@vite/client"></script>`;
+  `<script type="module" src="${joinBase(base, "@vite/client")}"></script>`;
 
 /**
  * 開発中の `rinka/app` のコードを返す。アプリは、Vite のクライアントを読み込み、

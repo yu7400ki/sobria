@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 
 import { transformWithOxc, type Plugin, type ResolvedConfig } from "vite";
 
+import { joinBase } from "../shared/base.ts";
 import { appBuild } from "./app-build.ts";
 import { sourceLangOf, type SourceLang } from "./ast.ts";
 import { transformSource } from "./compiler.ts";
@@ -150,7 +151,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           paramType: (source, position) => typeChecker().param(target.path, source, position),
           ...(scene === "app" && !client
             ? build.clientAssets.element(target.file)
-            : { module: current().base + devPath(target.path, root).slice(1) }),
+            : { module: joinBase(current().base, devPath(target.path, root)) }),
         },
       }),
       fnModule: fnModuleOf(target.file),

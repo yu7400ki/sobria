@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 
 import type { ESTree } from "vite";
 
+import { joinBase } from "../shared/base.ts";
 import { prerenderEnv, type PrerenderScope, type PrerenderTarget } from "../shared/prerender.ts";
 import { moduleExportName, parseModule, sourceLangOf } from "./ast.ts";
 import { entries, importInternal } from "./entries.ts";
@@ -112,7 +113,7 @@ export async function writePrerendered(
       // 書き出しの順序とエラーを決定的にするため、URL を 1 つずつ取得する
       // oxlint-disable-next-line no-await-in-loop
       const response = await entry.default.fetch(
-        new Request(new URL(base + url.slice(1), "http://localhost")),
+        new Request(new URL(joinBase(base, url), "http://localhost")),
         {
           [prerenderEnv]: target.kind,
         },

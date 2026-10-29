@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { joinBase } from "../shared/base.ts";
+
 /** Vite がビルドの出力先に作成する、manifest を置くディレクトリの名前である。 */
 export const MANIFEST_DIR = ".vite";
 
@@ -35,10 +37,13 @@ export function readClientAssets(outDir: string, root: string, base: string): Cl
       if (seen.has(imported)) return [];
       seen.add(imported);
       const chunk = manifest[imported];
-      return chunk ? [`${base}${chunk.file}`].concat(chunksOf(imported, seen)) : [];
+      return chunk ? [joinBase(base, chunk.file)].concat(chunksOf(imported, seen)) : [];
     });
   const files = new Map(
-    Object.entries(manifest).map(([key, chunk]) => [resolve(root, key), `${base}${chunk.file}`]),
+    Object.entries(manifest).map(([key, chunk]) => [
+      resolve(root, key),
+      joinBase(base, chunk.file),
+    ]),
   );
   return {
     element: (file) => {
@@ -48,7 +53,7 @@ export function readClientAssets(outDir: string, root: string, base: string): Cl
           `[rinka] 要素のファイル ${file} が、クライアントのビルドの manifest にありません。`,
         );
       }
-      return { module: `${base}${entry.file}`, chunks: chunksOf(file, new Set([file])) };
+      return { module: joinBase(base, entry.file), chunks: chunksOf(file, new Set([file])) };
     },
     sheet: (path) => {
       const url = files.get(resolve(path));

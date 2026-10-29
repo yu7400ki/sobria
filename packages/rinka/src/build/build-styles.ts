@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 
 import type { Rolldown } from "vite";
 
+import { joinBase } from "../shared/base.ts";
 import { STYLES_MARKER } from "./entry.ts";
 import { inside } from "./paths.ts";
 import { ROUTES_DIR } from "./routes.ts";
@@ -25,7 +26,7 @@ export function embedRouteStyles(bundle: Rolldown.OutputBundle, root: string, ba
     ];
     return chunk.imports
       .flatMap((imported) => cssOf(imported, seen))
-      .concat(own.map((file) => `${base}${file}`));
+      .concat(own.map((file) => joinBase(base, file)));
   };
   const table: Record<string, string[]> = {};
   const chunks = Object.values(bundle).filter((output) => output.type === "chunk");

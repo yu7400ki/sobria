@@ -1,5 +1,6 @@
 import { isCSSRequest, type EnvironmentModuleNode } from "vite";
 
+import { joinBase } from "../shared/base.ts";
 import { directUrl } from "./paths.ts";
 
 /**
@@ -22,7 +23,7 @@ export function routeStyles(roots: readonly EnvironmentModuleNode[], base: strin
     visited.add(node);
     for (const imported of node.importedModules) visit(imported);
     if (isCSSRequest(node.id)) {
-      links.push(directUrl(base + node.url.slice(1)));
+      links.push(directUrl(joinBase(base, node.url)));
     }
   };
   for (const root of roots) visit(root);

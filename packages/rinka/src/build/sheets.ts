@@ -1,6 +1,7 @@
 import type { MagicString } from "magic-string";
 import type { ESTree } from "vite";
 
+import { joinBase } from "../shared/base.ts";
 import { keyName, walk } from "./ast.ts";
 import { importInternal } from "./entries.ts";
 import { CompileError } from "./errors.ts";
@@ -114,7 +115,7 @@ export function sheetModule(
     case "serve":
       return client
         ? clientSheetModule(`${path}?inline`)
-        : serverSheetModule(directUrl(base + path.slice(1)));
+        : serverSheetModule(directUrl(joinBase(base, path)));
     case "app":
       return client ? clientBuildSheetModule(`${path}?url`) : serverSheetModule(builtHref());
     case "library":
