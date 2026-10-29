@@ -23,6 +23,15 @@ const field = (tag: string, value: () => unknown) =>
     { props: {}, form: true },
   );
 
+/** 文字列の 2 つの `tag` と、File の `photo` のエントリーを持つ FormData を返す。 */
+function tagsAndPhoto(): FormData {
+  const entries = new FormData();
+  entries.append("tag", "a");
+  entries.append("photo", new File(["x"], "x.txt"));
+  entries.append("tag", 'b"');
+  return entries;
+}
+
 /** `value` に解決する非同期の memo を返す。 */
 const later = <T>(value: T) => memo(async () => value);
 
@@ -124,6 +133,35 @@ describe("フォームの部品の SSR", () => {
     ).not.toContain("hidden");
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]?.[0])).toContain("<x-field-e>");
+  });
+
+  it("値が FormData なら、文字列のエントリーごとに、ホストの name の有無に関わらずエントリーの名前で hidden input を出力し、File のエントリーは出力しない", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const inputs =
+      '<input type="hidden" name="tag" value="a" data-rinka-form><input type="hidden" name="tag" value="b&quot;" data-rinka-form>';
+    expect(await renderToString(jsx(field("x-field-i", tagsAndPhoto), { name: "n" }))).toContain(
+      `</template>${inputs}</x-field-i>`,
+    );
+    expect(await renderToString(jsx(field("x-field-j", tagsAndPhoto), {}))).toContain(
+      `</template>${inputs}</x-field-j>`,
+    );
+    expect(
+      await renderToString(jsx(field("x-field-k", tagsAndPhoto), { name: "n", disabled: true })),
+    ).toContain('name="tag" value="b&quot;" data-rinka-form disabled>');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("値が File なら、hidden input を出力せずに、警告もしない", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(
+      await renderToString(
+        jsx(
+          field("x-field-l", () => new File(["x"], "x.txt")),
+          { name: "n" },
+        ),
+      ),
+    ).not.toContain("hidden");
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it("ホストの disabled と、Light DOM で外側にある <fieldset disabled> で、form.disabled() が true を返し、hidden input に disabled を付与する", async () => {

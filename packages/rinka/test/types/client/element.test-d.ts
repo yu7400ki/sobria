@@ -54,7 +54,7 @@ test("Ctx は、フォームの部品の form と、ElementInternals の interna
   expectTypeOf<Ctx["form"]["disabled"]>().toEqualTypeOf<() => boolean>();
   expectTypeOf<Ctx["form"]["value"]>()
     .parameter(0)
-    .returns.toEqualTypeOf<string | null | undefined>();
+    .returns.toEqualTypeOf<string | File | FormData | null | undefined>();
   expectTypeOf<Ctx["form"]["onRestore"]>()
     .parameter(0)
     .parameters.toEqualTypeOf<

@@ -372,17 +372,23 @@ function optionTextValue(text: unknown): string | undefined {
 const notDisabled = (): boolean => false;
 
 /**
- * フォームの部品 `<tag>` の Light DOM の先頭に出力する hidden input を返す。ホストの `name` が文字列で、`form.value` の値 `value` が文字列のときだけ出力する。
- * `name` があり、`value` が文字列、`null`、`undefined` のどれでもなければ、開発時に警告する。
+ * フォームの部品 `<tag>` の Light DOM の先頭に出力する hidden input を返す。`form.value` の値 `value` が文字列なら、ホストの `name` が文字列のときに 1 つ出力する。
+ * `value` が FormData なら、文字列のエントリーごとに、エントリーの名前で出力する。File と、FormData の File のエントリーは出力しない。
+ * `name` があり、`value` が文字列、File、FormData、`null`、`undefined` のどれでもなければ、開発時に警告する。
  */
-function hiddenInput(tag: string, name: unknown, value: unknown, disabled: boolean): string {
-  if (typeof name !== "string") return "";
-  if (typeof value === "string") {
-    return `<input type="hidden"${attribute("name", name)}${attribute("value", value)}${attribute(FORM_VALUE_ATTRIBUTE, true)}${attribute("disabled", disabled)}>`;
+function hiddenInputs(tag: string, name: unknown, value: unknown, disabled: boolean): string {
+  const input = (entry: string, text: string): string =>
+    `<input type="hidden"${attribute("name", entry)}${attribute("value", text)}${attribute(FORM_VALUE_ATTRIBUTE, true)}${attribute("disabled", disabled)}>`;
+  if (value instanceof FormData) {
+    return [...value]
+      .map(([entry, text]) => (typeof text === "string" ? input(entry, text) : ""))
+      .join("");
   }
-  if (value !== null && value !== undefined && import.meta.env?.DEV) {
+  if (typeof name !== "string") return "";
+  if (typeof value === "string") return input(name, value);
+  if (value !== null && value !== undefined && !(value instanceof File) && import.meta.env?.DEV) {
     console.warn(
-      `[rinka] <${tag}> の form.value に渡した関数が文字列以外の値を返したので、JS が届く前にフォームを送信すると、この部品の値は送信されません。`,
+      `[rinka] <${tag}> の form.value に渡した関数が、文字列、File、FormData のどれでもない値を返したので、JS が届く前にフォームを送信すると、この部品の値は送信されません。`,
     );
   }
   return "";
@@ -1212,7 +1218,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     const input =
       read &&
       this.chunkOf(this.settle(shadowCtx, read), ([given, value, off]) =>
-        hiddenInput(tag, given, value, off),
+        hiddenInputs(tag, given, value, off),
       );
     chunks.push(styles.join(""));
     this.enclose(true, chunks, () => this.walk(tree, shadowCtx, chunks));

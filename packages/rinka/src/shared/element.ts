@@ -109,8 +109,11 @@ export interface FormInvalidity extends ValidityStateFlags {
 
 /** 要素の関数が ctx の `form` で受け取る、フォームの部品の能力を表す。 */
 export interface FormControls {
-  /** `fn` の戻り値を、フォームで送信する値にする。`null` と `undefined` は値が無い状態にする。`fn` が読み取った signal が変化するたびに、`fn` を再び実行する。 */
-  readonly value: (fn: () => string | null | undefined) => void;
+  /**
+   * `fn` の戻り値を、フォームで送信する値にする。文字列と File はホストの `name` で送信し、FormData はエントリーごとにエントリーの名前で送信する。
+   * `null` と `undefined` は値が無い状態にする。`fn` が読み取った signal が変化するたびに、`fn` を再び実行する。
+   */
+  readonly value: (fn: () => FormState | undefined) => void;
   /** `fn` が `null` を返すと有効にし、オブジェクトを返すと無効にする。`fn` が読み取った signal が変化するたびに、`fn` を再び実行する。 */
   readonly validity: (fn: () => FormInvalidity | null) => void;
   /** `<form>` がリセットされたときに `fn` を呼ぶ。 */
