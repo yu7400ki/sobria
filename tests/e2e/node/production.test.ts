@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { chromium, type Browser, type Page } from "playwright";
+import { chromium, firefox, webkit, type Browser, type Page } from "playwright";
 import type { ViteDevServer } from "vite";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
@@ -60,6 +60,70 @@ it("本番のビルドのページでは、要素が起動し、シートを適�
   await expect.poll(() => page.locator("app-counter .ping").textContent()).toBe("pong");
   await page.close();
 });
+
+/** 本番のビルドのページを開くブラウザである。 */
+const browserTypes = [
+  ["Chromium", chromium],
+  ["Firefox", firefox],
+  ["WebKit", webkit],
+] as const;
+
+it.each(browserTypes)(
+  "本番のビルドのページを %s で開くと、要素はサーバーの memo の値を引き継いで起動する",
+  async (_name, type) => {
+    const launched = await type.launch();
+    try {
+      const page = await launched.newPage();
+      // クライアントで計算し直すと 4 になる memo の値を、サーバーから送る値だけ 5 にする
+      await page.route(`${deploy.origin}/stream`, async (route) => {
+        const response = await route.fetch();
+        const body = (await response.text()).replace(/(doubler\.tsx:\d+:\d+#0":)4/, "$15");
+        await route.fulfill({ response, body });
+      });
+      await page.goto(`${deploy.origin}/stream`);
+      const doubler = page.locator("app-doubler").first();
+      await doubler.and(page.locator("[data-started]")).waitFor();
+      expect(await doubler.locator(".doubled").textContent()).toBe("5");
+    } finally {
+      await launched.close();
+    }
+  },
+  60_000,
+);
+
+it.each(browserTypes)(
+  "本番のビルドのページを %s で開くと、後送りの境界の代わりの内容を先に表示し、後から届いた中身に差し替えて、その中の要素を起動する",
+  async (_name, type) => {
+    const launched = await type.launch();
+    try {
+      const page = await launched.newPage();
+      // 代わりの内容と中身が、それぞれ文書に現れた時刻を記録する
+      await page.addInitScript(() => {
+        const seen: Record<string, number> = {};
+        Object.assign(window, { seen });
+        new MutationObserver(() => {
+          for (const name of ["waiting", "late"]) {
+            if (document.querySelector(`.${name}`) !== null) seen[name] ??= performance.now();
+          }
+        }).observe(document, { childList: true, subtree: true });
+      });
+      await page.goto(`${deploy.origin}/stream`);
+      await page.waitForSelector(".late");
+      const seen = await page.evaluate(
+        () => (window as unknown as { seen: Record<string, number> }).seen,
+      );
+      // 中身は、サーバーが 500ms 待ってから送る
+      expect(seen.late! - seen.waiting!).toBeGreaterThan(200);
+      expect(await page.locator(".waiting").count()).toBe(0);
+      const late = page.locator("app-doubler").nth(1);
+      await late.and(page.locator("[data-started]")).waitFor();
+      expect(await late.locator(".doubled").textContent()).toBe("6");
+    } finally {
+      await launched.close();
+    }
+  },
+  60_000,
+);
 
 /** styles のテスト用のアプリの `/` を開き、ページと要素の見た目を表す値を返す。 */
 async function looks(origin: string): Promise<string[]> {
