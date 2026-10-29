@@ -147,34 +147,40 @@ export interface Region {
   readonly inner: Cursor;
 }
 
+/** `node` が領域の開始の目印なら `true` を返す。 */
+export const isRegionStart = (node: Node | null): node is Comment =>
+  node instanceof Comment && node.data === REGION_START;
+
+/** 領域の開始の目印 `start` の後から、入れ子の目印を数えて、対応する終了の目印を返す。`until` までに無ければ `null` を返す。 */
+export function regionEnd(start: Comment, until: Node | null): Comment | null {
+  let depth = 0;
+  for (let node = start.nextSibling; node !== null && node !== until; node = node.nextSibling) {
+    if (!(node instanceof Comment)) continue;
+    if (node.data === REGION_START) depth++;
+    else if (node.data === REGION_END && depth-- === 0) return node;
+  }
+  return null;
+}
+
 /**
- * 位置にある領域の開始の目印を引き取り、入れ子の目印を数えて、対応する終了の目印を探索する。位置は、終了の目印の次に進める。
+ * 位置にある領域の開始の目印を引き取り、対応する終了の目印を探索する。位置は、終了の目印の次に進める。
  * 目印が無ければ失敗にして、`undefined` を返す。
  */
 export function takeRegion(at: Cursor): Region | undefined {
   if (!claiming(at.hydration)) return undefined;
   const start = peek(at);
-  if (!(start instanceof Comment) || start.data !== REGION_START) {
+  if (!isRegionStart(start)) {
     fail(at, `領域の目印 ${JSON.stringify(REGION_START)}`);
     return undefined;
   }
-  let depth = 0;
-  for (let node = start.nextSibling; node !== null && node !== at.until; node = node.nextSibling) {
-    if (!(node instanceof Comment)) continue;
-    if (node.data === REGION_START) depth++;
-    else if (node.data === REGION_END && depth-- === 0) {
-      at.next = node.nextSibling;
-      const inner = {
-        parent: at.parent,
-        next: start.nextSibling,
-        until: node,
-        hydration: at.hydration,
-      };
-      return { start, end: node, inner };
-    }
+  const end = regionEnd(start, at.until);
+  if (end === null) {
+    fail(at, `領域の目印 ${JSON.stringify(REGION_END)}`);
+    return undefined;
   }
-  fail(at, `領域の目印 ${JSON.stringify(REGION_END)}`);
-  return undefined;
+  at.next = end.nextSibling;
+  const inner = { parent: at.parent, next: start.nextSibling, until: end, hydration: at.hydration };
+  return { start, end, inner };
 }
 
 /**

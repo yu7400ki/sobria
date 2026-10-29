@@ -27,6 +27,8 @@ import {
   claimWithin,
   describe,
   fail,
+  isRegionStart,
+  regionEnd,
   takeElement,
   takeRegion,
   takeText,
@@ -390,24 +392,19 @@ function withRegions(nodes: readonly Node[]): Node[] {
   const result: Node[] = [];
   for (let index = 0; index < nodes.length; index++) {
     const node = nodes[index]!;
-    result.push(node);
-    if (!isRegionMark(node, REGION_START)) continue;
-    let depth = 1;
-    let inner = node.nextSibling;
-    for (; inner !== null; inner = inner.nextSibling) {
-      result.push(inner);
-      if (isRegionMark(inner, REGION_START)) depth++;
-      else if (isRegionMark(inner, REGION_END) && --depth === 0) break;
+    const end = isRegionStart(node) ? regionEnd(node, null) : null;
+    if (end === null) {
+      result.push(node);
+      continue;
     }
-    if (inner === null) continue;
-    while (index < nodes.length - 1 && nodes[index] !== inner) index++;
+    for (let inner: Node | null = node; inner !== null; inner = inner.nextSibling) {
+      result.push(inner);
+      if (inner === end) break;
+    }
+    while (index < nodes.length - 1 && nodes[index] !== end) index++;
   }
   return result;
 }
-
-/** `node` が、内容が `mark` のコメントなら `true` を返す。 */
-const isRegionMark = (node: Node, mark: string): boolean =>
-  node instanceof Comment && node.data === mark;
 
 /**
  * `start` と `end` の間のノードを `nodes` の順にする。`nodes` に無いノードを削除する。
