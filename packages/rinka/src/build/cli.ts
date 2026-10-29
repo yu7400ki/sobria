@@ -7,6 +7,7 @@ import { entries } from "./entries.ts";
 import { rinkaPackage } from "./package.ts";
 import { rinkaApi } from "./plugin.ts";
 import { PREPARED_DIR, PROJECTS, projectConfig } from "./prepare.ts";
+import { SERVER_ENTRY_NAME } from "./settings.ts";
 
 /** `value` を、整形した JSON のファイルの内容にする。 */
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
@@ -40,7 +41,7 @@ function templateFiles(name: string): Record<string, string> {
         dev: "vite",
         build: "vite build",
         preview: "vite preview",
-        start: "node dist/server/entry.js",
+        start: `node dist/server/${SERVER_ENTRY_NAME}.js`,
         typecheck: "rinka prepare && tsc -b",
       },
       dependencies: {

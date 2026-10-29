@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+/** Vite がビルドの出力先に作成する、manifest を置くディレクトリの名前である。 */
+export const MANIFEST_DIR = ".vite";
+
 /** Vite の manifest の項目のうち、使用する欄を表す。 */
 interface ManifestChunk {
   readonly file: string;
@@ -25,7 +28,7 @@ export interface ClientAssets {
 export function readClientAssets(outDir: string, root: string): ClientAssets {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
   const manifest = JSON.parse(
-    readFileSync(join(outDir, ".vite/manifest.json"), "utf8"),
+    readFileSync(join(outDir, MANIFEST_DIR, "manifest.json"), "utf8"),
   ) as Readonly<Record<string, ManifestChunk>>;
   const chunksOf = (key: string, seen: Set<string>): string[] =>
     (manifest[key]?.imports ?? []).flatMap((imported) => {

@@ -3,10 +3,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { MagicString } from "magic-string";
 import { transformWithOxc } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { parseModule } from "../../src/build/ast.ts";
 import { CompileError, transformSource, type SourceOptions } from "../../src/build/compiler.ts";
+import { registerElement } from "../../src/build/element-transform.ts";
 import { oxc } from "../../src/build/entries.ts";
 import { transformJsx } from "../../src/build/jsx.ts";
 import { createTypeChecker, type TypeChecker } from "../../src/build/type-checker.ts";
@@ -31,15 +34,28 @@ afterAll(() => {
 const paramType = (code: string, position: number) =>
   checker.param(join(typesFixture, "x.tsx").replaceAll("\\", "/"), code, position);
 
+/** `code` を `options` で変換した結果を返す。どの変換も適用しなかったときは、`code` をそのまま持つ結果を返す。 */
+const sourceOf = (code: string, options: SourceOptions) =>
+  transformSource(code, options) ?? { code, serverFns: [] };
+
 /** `.ts` のモジュール `src/lib/a.ts` として `code` を変換し、空白をまとめたコードを返す。 */
 function module(code: string, client = false): string {
-  return transformSource(code, {
+  return sourceOf(code, {
     id: "src/lib/a.ts",
     file: "src/lib/a.ts",
     lang: "ts",
     client,
   }).code.replaceAll(/\s+/g, " ");
 }
+
+describe("変換の結果", () => {
+  it("どの変換も適用しないソースでは、undefined を返す", () => {
+    const options = { id: "src/lib/a.ts", file: "src/lib/a.ts", lang: "ts" } as const;
+    const code = 'import { x } from "./x.ts";\nexport const y = x + 1;\n';
+    expect(transformSource(code, { ...options, client: false })).toBeUndefined();
+    expect(transformSource(code, { ...options, client: true })).toBeUndefined();
+  });
+});
 
 describe("memo の呼び出し箇所の ID", () => {
   it("rinka から import した memo の呼び出しに、ファイルと行と列の ID を付与する", () => {
@@ -135,15 +151,24 @@ export async function each() { for await (const v of source()) use(v); }`;
   });
 });
 
-/** 要素のファイル `src/elements/x.tsx`（タグ名 `app-x`）として `code` を変換する。 */
+/** 要素のファイル `src/elements/x.tsx`（タグ名 `app-x`）として `code` を変換したコードと、要素の情報を返す。 */
 function element(code: string) {
-  return transformSource(code, {
+  const target = { tag: "app-x", module: "/src/elements/x.tsx", paramType };
+  const options = {
     id: "src/elements/x.tsx",
     file: "src/elements/x.tsx",
     lang: "tsx",
     client: false,
-    element: { tag: "app-x", module: "/src/elements/x.tsx", paramType },
-  });
+    element: target,
+  } as const;
+  const info = registerElement(
+    parseModule(code, options),
+    new MagicString(code),
+    target,
+    options.file,
+    false,
+  );
+  return { code: sourceOf(code, options).code, element: info };
 }
 
 /** 要素のファイルとして `code` を変換し、受け付ける props の名前の一覧を返す。 */
@@ -303,7 +328,7 @@ export default function X(props: Props) { return <p />; }`);
 
   it("クライアント向けの要素のモジュールは、内部の入口の登録の関数に import.meta.hot を渡し、自身の更新を受け入れる", () => {
     const code = `export default function X(props: { a: string }) { return <p />; }`;
-    const client = transformSource(code, {
+    const client = sourceOf(code, {
       id: "src/elements/x.tsx",
       file: "src/elements/x.tsx",
       lang: "tsx",
@@ -430,7 +455,7 @@ const runtime = (path: string): string => JSON.stringify(pathToFileURL(resolve(p
 /** `code` に、元のソースの変換、oxc の JSX の変換、JSX の規則の順に適用し、注釈を除いて空白をまとめたコードを返す。 */
 async function compile(code: string, options: Partial<SourceOptions> = {}): Promise<string> {
   const file = options.file ?? "src/routes/page.tsx";
-  const source = transformSource(code, { id: file, file, lang: "tsx", client: false, ...options });
+  const source = sourceOf(code, { id: file, file, lang: "tsx", client: false, ...options });
   return (await lower(source.code, file))
     .replaceAll("/* @__PURE__ */ ", "")
     .replaceAll(/\s+/g, " ");
@@ -561,7 +586,7 @@ describe("変換したコードの描画", () => {
       return (await import(pathToFileURL(path).href)) as { default: unknown };
     };
     try {
-      const card = transformSource(
+      const card = sourceOf(
         `import { signal } from "rinka";
 type Props = { heading: string; children?: JSX.Element };
 export default function Card(props: Props) {
@@ -577,7 +602,7 @@ export default function Card(props: Props) {
         },
       );
       await load(await lower(card.code, "src/elements/card.tsx"), "card.js");
-      const page = transformSource(
+      const page = sourceOf(
         `import Card from "./card.js";
 export default function Page() { return <main><Card heading={"h" + 1}>body</Card></main>; }`,
         { id: "src/routes/page.tsx", file: "src/routes/page.tsx", lang: "tsx", client: false },
@@ -799,8 +824,8 @@ export const config = { db: 1, limit };
       lang: "ts",
       fnModule: "mabc",
     } as const;
-    const server = transformSource(source, { ...options, client: false });
-    const client = transformSource(source, { ...options, client: true });
+    const server = sourceOf(source, { ...options, client: false });
+    const client = sourceOf(source, { ...options, client: true });
     expect(server.code).toContain('__rinka_registerServerFn("mabc#like",');
     expect(client.code).toContain('__rinka_serverFn("mabc#like", "POST")');
     expect(server.serverFns).toEqual(["mabc#like", "mabc#getUser", "mabc#ping"]);

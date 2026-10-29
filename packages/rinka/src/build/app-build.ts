@@ -7,7 +7,7 @@ import type { PrerenderScope } from "../shared/prerender.ts";
 import { embedRouteStyles, moveServerAssets } from "./build-styles.ts";
 import { entries, serverImports, virtualId } from "./entries.ts";
 import { serverEntry } from "./entry.ts";
-import { readClientAssets, type ClientAssets } from "./manifest.ts";
+import { MANIFEST_DIR, readClientAssets, type ClientAssets } from "./manifest.ts";
 import { packageOf } from "./package.ts";
 import {
   PRERENDER_ENTRY_NAME,
@@ -167,7 +167,7 @@ export function appBuild({ options, settings }: SceneContext): {
     writeBundle(_output, bundle) {
       const { clientDir, serverDir } = settings();
       moveServerAssets(bundle, serverDir, clientDir);
-      rmSync(join(clientDir, ".vite"), { recursive: true, force: true });
+      rmSync(join(clientDir, MANIFEST_DIR), { recursive: true, force: true });
     },
   };
   return {

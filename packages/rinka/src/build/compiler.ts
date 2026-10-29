@@ -1,6 +1,5 @@
 import { MagicString } from "magic-string";
 
-import type { ElementInfo } from "../shared/element.ts";
 import { serverFnId } from "../shared/server-fn.ts";
 import { parseModule, type ModuleSource, type Node, type Transformed } from "./ast.ts";
 import { registerElement, type ElementTarget } from "./element-transform.ts";
@@ -29,8 +28,6 @@ export interface SourceOptions extends ModuleSource {
 
 /** 元のソースを変換した結果を表す。 */
 export interface SourceResult extends Transformed {
-  /** 要素のファイルなら、要素の情報を持つ。 */
-  readonly element: ElementInfo | undefined;
   /** ファイルで定義したサーバー関数の ID を、ソースの順に列挙する。 */
   readonly serverFns: readonly string[];
 }
@@ -41,8 +38,9 @@ export interface SourceResult extends Transformed {
  * 要素のファイルでは、default export した関数を、要素を登録する呼び出しに書き換え、関数の中の JSX のスロットを `<slot>` にする。
  * `rinka/server` の `defineServerFn` で初期化したトップレベルの const は、サーバー向けでは ID で登録し、クライアント向けでは RPC の関数を作成する呼び出しに置換する。
  * クライアント向けでは、`defineMiddleware` で初期化したトップレベルの const の初期化の式を `undefined` に置換し、置換で使用されなくなった import を除去する。
+ * どの変換も適用しなかったときは、`undefined` を返す。
  */
-export function transformSource(code: string, options: SourceOptions): SourceResult {
+export function transformSource(code: string, options: SourceOptions): SourceResult | undefined {
   const program = parseModule(code, options);
   const output = new MagicString(code);
   const fnModule = options.fnModule ?? options.file;
@@ -52,9 +50,9 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
   );
   addSites(program, output, code, options.file, replaced);
   rewriteSheetImports(program, output, code, options.file);
-  const element =
-    options.element &&
+  if (options.element) {
     registerElement(program, output, options.element, options.file, options.client);
+  }
   if (options.client) {
     if (stopAwaits(program, output, replaced)) {
       output.prepend(importInternalAs("client", "stopIfSeeding", STOP_IF_SEEDING));
@@ -63,10 +61,10 @@ export function transformSource(code: string, options: SourceOptions): SourceRes
   } else {
     registerServerFns(output, definitions, fnModule);
   }
+  if (!output.hasChanged()) return undefined;
   return {
     code: output.toString(),
     map: output.generateMap({ hires: true, source: options.id, includeContent: true }),
-    element,
     serverFns: serverFnNames(definitions).map((name) => serverFnId(fnModule, name)),
   };
 }

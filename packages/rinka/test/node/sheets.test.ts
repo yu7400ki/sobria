@@ -12,7 +12,11 @@ const noBuiltHref = (): string => {
 
 /** `.ts` のモジュール `src/lib/a.ts` として `code` を変換したコードを返す。 */
 const transform = (code: string, client: boolean) =>
-  transformSource(code, { id: "src/lib/a.ts", file: "src/lib/a.ts", lang: "ts", client }).code;
+  (
+    transformSource(code, { id: "src/lib/a.ts", file: "src/lib/a.ts", lang: "ts", client }) ?? {
+      code,
+    }
+  ).code;
 
 describe("with { type: 'css' } の書き換え", () => {
   it("with { type: 'css' } の import を、シートのモジュールの指定子にし、import の属性を削除する", () => {

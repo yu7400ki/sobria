@@ -155,6 +155,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
       }),
       fnModule: fnModuleOf(target.file),
     });
+    if (result === undefined) return undefined;
     if (result.serverFns.length > 0 && (target.library || !isServerFnSource(target.file))) {
       throw new Error(
         target.registered
