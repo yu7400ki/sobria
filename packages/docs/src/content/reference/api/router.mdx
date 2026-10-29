@@ -72,7 +72,7 @@ type Params<Route extends keyof RouteParams> = {
 
 ## href
 
-ページのファイルの形のパス `route` とパラメータから、URL を返す。パラメータの値は URL エンコードし、キャッチオールの値は `/` を区切りとして残す。クエリが空でなければ、`?` に続けて付ける。
+ページか `route.ts` のファイルの形のパス `route` とパラメータから、URL を返す。パラメータの値は URL エンコードし、キャッチオールの値は `/` を区切りとして残す。クエリが空でなければ、`?` に続けて付ける。
 
 ```ts
 function href<Route extends keyof RouteParams>(

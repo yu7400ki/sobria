@@ -1,4 +1,4 @@
-import { defineHandler, type Factory } from "hono/factory";
+import { createFactory, type Factory } from "hono/factory";
 
 import type { RouteParams } from "../shared/router.ts";
 
@@ -15,12 +15,11 @@ type HonoPath<Path extends string> = Path extends `${infer Part}/${infer Rest}`
   : HonoPart<Path>;
 
 /**
- * ファイルの形のパスが `route` のルートの handler を定義する関数を返す。
- * `defineHandler` は `hono/factory` の `defineHandler` で、handler の `c.req.param()` は `route` のパラメータを `string` で返す。
+ * `hono/factory` の `defineHandler` を、ファイルの形のパスが `_route` のルートの型で持つオブジェクトを返す。
+ * その `defineHandler` で定義した handler の `c.req.param()` は、`_route` のパラメータを `string` で返す。
  */
 export function forRoute<Route extends keyof RouteParams>(
   _route: Route,
 ): Pick<Factory<any, HonoPath<Route & string>>, "defineHandler"> {
-  // oxlint-disable-next-line typescript/no-unsafe-assignment
-  return { defineHandler };
+  return createFactory<any, HonoPath<Route & string>>();
 }

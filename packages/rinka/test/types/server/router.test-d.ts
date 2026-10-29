@@ -11,9 +11,9 @@ import {
 import {
   defineHandler,
   defineMiddleware,
+  forRoute,
   getContext,
   setBlockingRender,
-  forRoute,
 } from "rinka/server";
 import { describe, expectTypeOf, it } from "vitest";
 

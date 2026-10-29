@@ -53,7 +53,7 @@ type HrefArgs<Route extends keyof RouteParams> =
       : [params: Params<Route>, query?: Query];
 
 /**
- * ページのファイルの形のパス `route` とパラメータから、URL を返す。
+ * ページか `route.ts` のファイルの形のパス `route` とパラメータから、URL を返す。
  * パラメータの値は URL エンコードし、キャッチオールの値は `/` を区切りとして残す。クエリが空でなければ、`?` に続けて付ける。
  */
 export function href<Route extends keyof RouteParams>(

@@ -150,7 +150,7 @@ type ResultOf<R> = Exclude<Awaited<R>, Response | AsyncIterable<unknown>>;
 
 ## forRoute
 
-ファイルの形のパスが `route` のルートの handler を定義する関数を返す。`defineHandler` は `hono/factory` の `defineHandler` で、handler の `c.req.param()` は `route` のパラメータを `string` で返す。
+`hono/factory` の `defineHandler` を、ファイルの形のパスが `_route` のルートの型で持つオブジェクトを返す。その `defineHandler` で定義した handler の `c.req.param()` は、`_route` のパラメータを `string` で返す。
 
 ```ts
 function forRoute<Route extends keyof RouteParams>(
