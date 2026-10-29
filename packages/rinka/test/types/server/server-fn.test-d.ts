@@ -11,9 +11,6 @@ const withPhoto = (value: { photo: File }) => value;
 /** Blob の配列を値に持つ Map を含む入力をそのまま返す検証の関数である。 */
 const withPages = (value: { pages: Map<string, Blob[]> }) => value;
 
-/** GET のサーバー関数を、型引数の入力の型の値で呼び出す。 */
-const callGet = <In>(fn: ServerFn<In, null, "GET">, input: In) => fn(input);
-
 /** `~standard.types` を持たず、`validate()` が数を返す Standard Schema である。 */
 const typeless = {
   "~standard": {
@@ -68,7 +65,9 @@ test("GET のサーバー関数は、入力の型が File か Blob を含むと�
 });
 
 test("GET のサーバー関数を型引数の入力の型で受け取る関数から、入力を渡して呼び出せる", () => {
-  expectTypeOf(callGet).returns.toEqualTypeOf<Promise<null>>();
+  expectTypeOf(<In>(fn: ServerFn<In, null, "GET">, input: In) => fn(input)).returns.toEqualTypeOf<
+    Promise<null>
+  >();
 });
 
 test("ミドルウェアが設定する変数は、handler の c.get で型が付き、設定されない変数は型エラーになる", () => {

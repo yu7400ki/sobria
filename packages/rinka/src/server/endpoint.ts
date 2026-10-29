@@ -529,7 +529,7 @@ async function readInput(c: Context): Promise<unknown> {
 
 /**
  * multipart の RPC の入力を読む。`rpcInputPart` の部分の seroval の JSON の Blob の参照を、名前がその番号の部分の File にする。
- * `rpcInputPart` の部分が文字列でないときと、名前が番号の部分が File でないときは、例外を投げる。
+ * `rpcInputPart` の部分が文字列でないときと、名前が番号である部分が File でないときは、例外を投げる。
  */
 async function readParts(c: Context): Promise<unknown> {
   let input: FormDataEntryValue | undefined;
