@@ -116,6 +116,12 @@ export type Target =
     }
   | { readonly kind: "refresh" };
 
+/** ブラウザに送る memo の値を表す。`stream` は、値が async iterable の最初の値なら真である。 */
+interface SentValue {
+  readonly value: unknown;
+  readonly stream: boolean;
+}
+
 /** 境界の差し替えを表す。 */
 interface Patch {
   readonly id: string;
@@ -1313,6 +1319,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
    * 境界の中身と差し替えを、目印の位置の出力がページに現れた後に出力する。
    * 中身の出力に失敗したときは、境界を囲む `<Errored>` の領域をフォールバックに差し替え、差し替えられなければエラーを記録する。中身かフォールバックが、規則に合う移動先への移動を投げたら、ページを移動させる。
    * 中身の出力に失敗したとき、目印の位置の出力がページに現れないとき、境界を囲む `<Errored>` の領域を差し替えたときは、中身と差し替えを出力しない。
+   * 目印の位置の出力がページに現れないと決まったら、中身の出力が終わる前に、境界を送り終えたものとして数える。
    */
   private schedule(boundary: Boundary, out: Out): void {
     this.interactive = true;
@@ -1327,7 +1334,16 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       (async () => {
         const regionOut = Out.of(flush);
         const content = this.serialize(boundary.region, regionOut);
-        await content.catch(() => {});
+        const finished = content.then(
+          () => true,
+          () => true,
+        );
+        if (!(await Promise.race([out.shown, finished]))) {
+          this.abandon(boundary, flush);
+          await finished;
+          return;
+        }
+        await finished;
         if (!(await out.shown) || (await this.replacedAround(boundary))) {
           this.abandon(boundary, flush);
           return;
@@ -1512,7 +1528,8 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     relayed: Promise<unknown>,
   ): Promise<void> {
     try {
-      await this.deliver(host, key, await this.memoScript(path, relayed));
+      const sent = await this.firstValue(relayed);
+      await this.deliver(host, key, () => this.memoScript(path, sent));
     } finally {
       const value = await relayed.catch(() => undefined);
       if (value instanceof Relay) {
@@ -1523,20 +1540,25 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   }
 
   /**
-   * `sendMemo` の `relayed` の値を JS の式にする。`relayed` が失敗したときと、Relay が最初の値の前に終わるか失敗したときは `$rinka.n` にする。
-   * Relay なら、最初の値を `$rinka.s` のストリームの記録にする式を返す。
+   * `sendMemo` の `relayed` の、ブラウザに送る値を返す。Relay なら最初の値を返し、`stream` を真にする。
+   * `relayed` が失敗したときと、Relay が最初の値の前に終わるか失敗したときは、`undefined` を返す。
    */
-  private async memoScript(path: string, relayed: Promise<unknown>): Promise<string> {
+  private async firstValue(relayed: Promise<unknown>): Promise<SentValue | undefined> {
     try {
       const value = await relayed;
-      if (!(value instanceof Relay)) return this.script(value, path);
+      if (!(value instanceof Relay)) return { value, stream: false };
       const first = await value.first;
-      if (first.done === true) return noValue;
-      const script = this.script(first.value, path);
-      return script === noValue ? script : streamRecordExpression(script);
+      return first.done === true ? undefined : { value: first.value, stream: true };
     } catch {
-      return noValue;
+      return undefined;
     }
+  }
+
+  /** `firstValue` が返した `sent` を JS の式にする。`sent` が無いときは `$rinka.n` にし、`stream` が真なら `$rinka.s` のストリームの記録にする。 */
+  private memoScript(path: string, sent: SentValue | undefined): string {
+    if (sent === undefined) return noValue;
+    const script = this.script(sent.value, path);
+    return sent.stream && script !== noValue ? streamRecordExpression(script) : script;
   }
 
   /** `source` を反復する Relay を作成する。`cancel` を呼んだ後なら、作成した Relay をすぐに閉じる。 */
@@ -1557,9 +1579,9 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     }
   }
 
-  /** ホストをページに出力した後に、JS の式 `value` を `$rinka.d` でホストの `key` の値として送る。 */
-  private async deliver(host: HostRecord, key: string, value: string): Promise<void> {
-    if (await host.take(key)) this.write(dataScript(host.id, key, value));
+  /** ホストをページに出力した後に、`value` が返す JS の式を `$rinka.d` でホストの `key` の値として送る。`value` は、送ると決まったときだけ呼び出す。 */
+  private async deliver(host: HostRecord, key: string, value: () => string): Promise<void> {
+    if (await host.take(key)) this.write(dataScript(host.id, key, value()));
   }
 
   /** 反復している SSR の memo の async iterable をすべて閉じ、それより後に作成する Relay も閉じる。 */
@@ -1573,7 +1595,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
    * 送るのは、開始タグの `data-om` に列挙したキーの値だけで、キーごとに 1 回だけ送る。ホストを出力しなければ送らない。
    */
   private send(host: HostRecord, key: string, expression: string): void {
-    this.values.add(this.deliver(host, key, expression));
+    this.values.add(this.deliver(host, key, () => expression));
   }
 
   /** `flush` のチャンク `html` を書き込み、`flush` のチャンクがページに現れたことを決める。 */

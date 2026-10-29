@@ -114,6 +114,25 @@ describe("memo の値", () => {
     expect(error).toHaveBeenCalledTimes(1);
   });
 
+  it("出力しないホストの memo の値は、シリアライズしない", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    class User {
+      readonly name = "u";
+    }
+    const Card = defineAsync("x-tr-hidden", "c.tsx:5:1", async () => {
+      await wait(20);
+      return new User();
+    });
+    const Host = defineElement(
+      "x-tr-hidden-host",
+      () => jsx(Errored, { fallback: "fb", children: [jsx(late, {}), jsx(Card, {})] }),
+      { props: {} },
+    );
+    const { sent } = await render([jsx(Host, {}), holding()]);
+    expect(sent).toEqual([]);
+    expect(error).not.toHaveBeenCalled();
+  });
+
   it("明示的なキーに使用できない値を指定すると、エラーにする", async () => {
     await expect(renderToString(jsx(defineKeyed("x-tr5", ["a b"]), {}))).rejects.toThrow("キー");
     await expect(renderToString(jsx(defineKeyed("x-tr6", ["@x"]), {}))).rejects.toThrow("キー");
@@ -260,6 +279,35 @@ const after = (ms: number, content: unknown) => async () => {
 
 /** 中身を 100 ミリ秒後に出力する `<Loading>` を作成する。ストリームは、それまで閉じない。 */
 const holding = () => jsx(Loading, { fallback: "w", children: jsx(after(100, "done"), {}) });
+
+/** 20 ミリ秒後に失敗するコンポーネントである。 */
+const failing = async () => {
+  await wait(20);
+  throw new Error("outer");
+};
+
+describe("捨てた境界の中の後送りの境界", () => {
+  it("外側の境界の中身を出力しないと決まったら、中の境界の中身を待たずに、ホストに @b を送る", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const Host = defineElement(
+      "x-tr-early-b",
+      () =>
+        jsx(Loading, {
+          fallback: "f",
+          children: [
+            jsx(after(10, jsx(Loading, { fallback: "g", children: jsx(after(300, "b"), {}) })), {}),
+            jsx(failing, {}),
+          ],
+        }),
+      { props: {} },
+    );
+    const chunks = await read(renderToStream([jsx(Host, {}), holding()]));
+    const released = chunks.findIndex((chunk) => chunk.includes('"@b":1'));
+    const held = chunks.findIndex((chunk) => chunk.includes(">done<"));
+    expect(released).toBeGreaterThanOrEqual(0);
+    expect(released).toBeLessThan(held);
+  });
+});
 
 describe("開始タグの後に加わったキー", () => {
   it("Errored が捨てた領域の中で後から後送りにした境界は、外側のホストに @b を送らない", async () => {
