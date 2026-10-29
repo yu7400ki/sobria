@@ -110,17 +110,46 @@ export function settingsOf(
 }
 
 /**
- * Vite の `base` の `userBase` から、アプリを配置するパスを返す。末尾に `/` が無ければ補う。ライブラリのビルドでは `/` を返す。
- * ライブラリのビルドでなければ、`/` で始まらない `userBase`（相対のパスと完全な URL）をエラーにする。
+ * `path` が、アプリを配置するパスとして扱える URL のパスなら真を返す。
+ * `/` で始まり、`//` で始まらず、`decodeURI` で復号でき、`%25` を含まないパスが該当する。
+ */
+function isAppPath(path: string): boolean {
+  if (!path.startsWith("/") || path.startsWith("//") || path.includes("%25")) return false;
+  try {
+    decodeURI(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Vite の `base` の `userBase` から、アプリを配置するパスを返す。`.` と `..` の区切りを解決し、URL の符号化をして、末尾に `/` が無ければ補う。ライブラリのビルドでは `/` を返す。
+ * ライブラリのビルドでなければ、`/` で始まらない `userBase`（相対のパスと完全な URL）、`//` で始まる `userBase`、`\`、タブ、改行を含む `userBase` と、正規化したパスが `isAppPath` に該当しない `userBase` をエラーにする。
  */
 function baseOf(userBase: string | undefined, library: boolean): string {
   if (library || userBase === undefined) return "/";
-  if (!userBase.startsWith("/") || userBase.startsWith("//")) {
+  const { pathname } =
+    userBase.startsWith("/") && !userBase.startsWith("//") && !/[\\\t\n\r]/.test(userBase)
+      ? new URL(userBase, "http://localhost")
+      : { pathname: "" };
+  if (!isAppPath(pathname)) {
     throw new Error(
-      `[rinka] Vite の base には、/ で始まるパス（/app/ など）を指定してください。指定された base: ${JSON.stringify(userBase)}`,
+      `[rinka] Vite の base には、/ で始まるパス（/app/ など）を指定してください。base には、% を符号化せずに含めることと、%25 を含めることはできません。指定された base: ${JSON.stringify(userBase)}`,
     );
   }
-  return userBase.endsWith("/") ? userBase : `${userBase}/`;
+  return pathname.endsWith("/") ? pathname : `${pathname}/`;
+}
+
+/**
+ * Vite が解決した `import.meta.env.BASE_URL` の値 `value` を、アプリを配置するパスとして返す。
+ * `/` で終わり、`isAppPath` に該当する値でなければ、エラーにする。
+ */
+export function resolvedBase(value: unknown): string {
+  if (typeof value === "string" && value.endsWith("/") && isAppPath(value)) return value;
+  throw new Error(
+    `[rinka] Vite の base が ${JSON.stringify(value)} です。rinka のプラグインより後のプラグインが base を変更するときは、/ で始まり / で終わるパスにしてください。// で始まるパスと、符号化されていない % か %25 を含むパスは使用できません。`,
+  );
 }
 
 /** rinka や Vite が拡張子で扱いを決める、`extensions` に登録できない拡張子である。 */

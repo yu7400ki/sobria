@@ -23,6 +23,7 @@ import {
   isServerEnvironment,
   checkOrigin,
   parseExtensions,
+  resolvedBase,
   settingsOf,
   type RinkaOptions,
   type Settings,
@@ -186,6 +187,7 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
             exclude: libraries.map((library) => library.name),
           },
           build: { outDir: clientDir },
+          ...(options.library !== true && { base: settings.base }),
         };
       },
       configEnvironment(name, config) {
@@ -198,6 +200,9 @@ export function rinka(options: RinkaOptions = {}): Plugin[] {
           throw new Error(
             "rinka のプラグインが 2 つ以上登録されています。vite.config.ts の plugins に rinka() を 1 回だけ記述してください。",
           );
+        }
+        if (options.library !== true) {
+          settings = { ...current(), base: resolvedBase(config.env["BASE_URL"]) };
         }
       },
       buildStart() {

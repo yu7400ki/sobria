@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { chromium, type Browser } from "playwright";
 import { rinka, type RinkaOptions } from "rinka/vite";
-import { preview, type PreviewServer, type ViteDevServer } from "vite";
+import { preview, resolveConfig, type Plugin, type PreviewServer, type ViteDevServer } from "vite";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { createDevServer, originOf } from "../dev-server.ts";
@@ -111,3 +111,77 @@ it("書き出しは base を付けた URL で描画したページを、base を
   const missing = await fetch(`${previewOrigin(prerendered)}${base}nope`);
   expect(missing.status).toBe(404);
 });
+
+it.each([
+  ["/sub", "/sub/"],
+  ["/my app", "/my%20app/"],
+  ["/a/../sub/", "/sub/"],
+])(
+  "base に %j を指定すると、ビルドと開発サーバーの import.meta.env.BASE_URL は %j になる",
+  async (value, expected) => {
+    const values = await Promise.all(
+      (["build", "serve"] as const).map(async (command) => {
+        const config = await resolveConfig(
+          {
+            root: fixture("basic"),
+            base: value,
+            configFile: false,
+            logLevel: "silent",
+            plugins: [rinka({ prefix: "app" })],
+          },
+          command,
+        );
+        return config.env["BASE_URL"] as unknown;
+      }),
+    );
+    expect(values).toEqual([expected, expected]);
+  },
+);
+
+/** base の `value` と、rinka のプラグインの後に登録する `plugins` で、ビルドの設定を解決する。 */
+const resolveWith = (value: string, plugins: Plugin[] = []) =>
+  resolveConfig(
+    {
+      root: fixture("basic"),
+      base: value,
+      configFile: false,
+      logLevel: "silent",
+      plugins: [rinka({ prefix: "app" }), ...plugins],
+    },
+    "build",
+  );
+
+it("rinka のプラグインより後のプラグインが、末尾に / の無い base に変更すると、エラーにする", async () => {
+  await expect(
+    resolveWith("/sub/", [{ name: "test:base", config: () => ({ base: "/other" }) }]),
+  ).rejects.toThrow('Vite の base が "/other" です');
+});
+
+it("rinka のプラグインより後のプラグインが、Vitest のように base を / に変更すると、開発サーバーが出力する URL もその値で始まる", async () => {
+  const server = await createDevServer(fixture("deploy"), {
+    base: "/sub/",
+    server: { port: 0 },
+    cacheDir: fileURLToPath(new URL("../node_modules/.vite/node-base-post", import.meta.url)),
+    plugins: [
+      {
+        name: "test:base",
+        enforce: "post",
+        config: { order: "post", handler: () => ({ base: "/" }) },
+      },
+    ],
+  });
+  try {
+    await server.listen();
+    const html = await (await fetch(`${originOf(server)}/`)).text();
+    expect(html).toContain('src="/@vite/client"');
+  } finally {
+    await server.close();
+  }
+});
+
+it.each(["/.//foo", "/a/..//foo"])(
+  "区切りを解決すると // で始まる base の %j をエラーにする",
+  async (value) => {
+    await expect(resolveWith(value)).rejects.toThrow("Vite の base には");
+  },
+);
