@@ -185,6 +185,32 @@ export const GET = () =>
 - 書き出したページで `refreshPage()` を呼び出すと、ページ全体を再読み込みします
 - 開発サーバーは、`prerender` を指定したページも、リクエストのたびに描画します
 
+## パスの下に配置する
+
+Vite の設定 `base` に `/docs/` のようなパスを指定すると、アプリをそのパスの下に配置できます。`base` は `/` で始めます。ページ、アセット、サーバー関数の URL は `base` から始まり、`base` の外のパスには 404 を返します。
+
+```ts
+// vite.config.ts
+import { rinka } from "rinka/vite";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  base: "/docs/",
+  plugins: [rinka()],
+});
+```
+
+`dist/client/` のファイルのパスには、`base` を含めません。静的ファイルを配信するときは、URL のパスから `base` を除いてファイルを探します。Node と Bun の例では、`serveStatic` に `rewriteRequestPath` を指定します。
+
+```ts
+server.use(
+  serveStatic({
+    root: fileURLToPath(new URL("../client", import.meta.url)),
+    rewriteRequestPath: (path) => path.replace(/^\/docs\//, "/"),
+  }),
+);
+```
+
 ## サーバーを置かずに配置する
 
 Vite プラグインの設定 `output` を `"static"` にすると、すべてのページを書き出し、`dist/client/` だけを静的なサイトとして配置できます。

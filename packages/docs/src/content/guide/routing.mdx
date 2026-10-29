@@ -297,6 +297,8 @@ export default function Home() {
 
 この例の URL は、順に `/users/1`、`/docs/guide/routing`、`/users?page=2` になります。パラメータの値は URL エンコードし、キャッチオールの値の `/` は区切りとして残します。3 つ目の引数のクエリには、オブジェクトか `URLSearchParams` を指定します。`<a href>` に直接記述した文字列は、型を検査しません。
 
+Vite の設定 `base` を指定すると、`href()` は `base` を前置した URL を返します。`<a href>` と `redirect()` に直接記述した文字列には、`base` を付けません。
+
 ## 静的な書き出し
 
 ページが `prerender` を export すると、`vite build` は、そのページの HTML をファイルに書き出します。書き出したファイルは、サーバーで描画せずに、静的ファイルとして配信します。
