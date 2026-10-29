@@ -1,12 +1,32 @@
 {
   "name": "rinka",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Hono と Vite の上で動作する、サーバーファーストの Web フレームワーク",
+  "keywords": [
+    "custom-elements",
+    "declarative-shadow-dom",
+    "framework",
+    "hono",
+    "ssr",
+    "vite"
+  ],
+  "homepage": "https://yu7400ki.github.io/rinka/",
+  "bugs": {
+    "url": "https://github.com/yu7400ki/rinka/issues"
+  },
+  "license": "MIT",
+  "author": "yu7400ki",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yu7400ki/rinka.git",
+    "directory": "packages/rinka"
+  },
   "bin": {
     "rinka": "./lib/build/bin.js"
   },
   "files": [
     "lib",
+    "docs",
     "tsconfig.app.json"
   ],
   "type": "module",
@@ -55,7 +75,8 @@
     "build": "tsc -p tsconfig.lib.json",
     "generate": "node scripts/generate-dom-names.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepack": "node scripts/copy-docs.ts"
   },
   "dependencies": {
     "@hono/node-server": "catalog:",
@@ -77,5 +98,8 @@
     "hono": "catalog:",
     "typescript": ">=7.1.0-beta <7.2.0-0",
     "vite": "catalog:"
+  },
+  "engines": {
+    "node": ">=24.2.0"
   }
 }
