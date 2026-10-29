@@ -1,4 +1,4 @@
-import { toJSON } from "seroval";
+import { fromJSON, toJSON } from "seroval";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { jsx as clientJsx } from "../../src/client/jsx-runtime.ts";
@@ -14,6 +14,24 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
+
+/** 反復可能なクラスである。 */
+class Pages {
+  *[Symbol.iterator]() {
+    yield 1;
+  }
+}
+
+/** Map を継承したクラスである。 */
+class Lookup extends Map<string, number> {}
+
+/** Uint8Array を継承したクラスである。 */
+class Bytes extends Uint8Array {}
+
+/** ページの番号を返すジェネレーターである。 */
+function* pageNumbers() {
+  yield 1;
+}
 
 const rpcHeaders = { "content-type": "application/json", "x-rinka-wire": "rpc" };
 
@@ -119,7 +137,7 @@ describe("serverFn", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("入力に FormData、URLSearchParams、Headers を含めると、送信する前に TypeError を投げる", async () => {
+  it("入力に、seroval が型を保てない反復可能なオブジェクトを含めると、送信する前に TypeError を投げる", async () => {
     const fetchMock = vi.fn(async () => Response.json({ ok: 1 }, { headers: rpcHeaders }));
     vi.stubGlobal("fetch", fetchMock);
     const withFile = new FormData();
@@ -131,6 +149,11 @@ describe("serverFn", () => {
       ["FormData", withText],
       ["URLSearchParams", new URLSearchParams("a=1")],
       ["Headers", new Headers({ a: "1" })],
+      ["Pages", new Pages()],
+      ["Generator", pageNumbers()],
+      ["ReadableStream", new ReadableStream()],
+      ["Lookup", new Lookup()],
+      ["Bytes", new Bytes(1)],
     ] as const;
     const messages = await Promise.all(
       values.map(async ([, value]) => {
@@ -143,6 +166,68 @@ describe("serverFn", () => {
     );
     for (const [index, [name]] of values.entries()) expect(messages[index]).toContain(name);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("送信する前に拒否する反復可能なオブジェクトは、seroval が往復させるとプロトタイプが変わるものと一致する", () => {
+    // seroval を更新して型を保つクラスが変わったら、wire-codec.ts の一覧と一致しなくなるので失敗する
+    const float16: unknown = Reflect.get(globalThis, "Float16Array");
+    const candidates: object[] = [
+      new Map(),
+      new Set(),
+      new String("x"),
+      new Int8Array(1),
+      new Int16Array(1),
+      new Int32Array(1),
+      new Uint8Array(1),
+      new Uint16Array(1),
+      new Uint32Array(1),
+      new Uint8ClampedArray(1),
+      new Float32Array(1),
+      new Float64Array(1),
+      new BigInt64Array(1),
+      new BigUint64Array(1),
+      ...(typeof float16 === "function" ? [Reflect.construct(float16, [1]) as object] : []),
+      new Lookup(),
+      new Bytes(1),
+      new Pages(),
+      pageNumbers(),
+      new FormData(),
+      new Headers(),
+      new URLSearchParams("a=1"),
+      { *[Symbol.iterator]() {} },
+    ];
+    for (const value of candidates) {
+      const kept = Object.getPrototypeOf(fromJSON(toJSON(value))) === Object.getPrototypeOf(value);
+      const rejected = (() => {
+        try {
+          toRpcInput(value);
+          return false;
+        } catch (error) {
+          return error instanceof TypeError;
+        }
+      })();
+      expect([Object.prototype.toString.call(value), rejected]).toEqual([
+        Object.prototype.toString.call(value),
+        !kept,
+      ]);
+    }
+  });
+
+  it("Map、Set、型付き配列、String のオブジェクト、反復可能なプレーンなオブジェクトとそれを継承したオブジェクトは、拒否せずに送る", async () => {
+    const sent = stubFetch(() => Response.json({ ok: null }, { headers: rpcHeaders }));
+    const iterable = { *[Symbol.iterator]() {} };
+    await serverFn("src/fns.ts#post", "POST")(
+      {
+        map: new Map([["a", 1]]),
+        set: new Set([1]),
+        bytes: new Uint8Array([1]),
+        text: new String("x"),
+        iterable,
+        derived: Object.create(iterable) as object,
+      },
+      { refresh: false },
+    );
+    expect((await sent().formData()).has("input")).toBe(true);
   });
 
   it("signal を fetch に渡す", async () => {
