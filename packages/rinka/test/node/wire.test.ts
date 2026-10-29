@@ -22,6 +22,9 @@ describe("isJson", () => {
     expect(isJson({ a: [1, "x", null, true], b: { c: 1.5 } })).toBe(true);
     const sparse: unknown[] = [];
     sparse[1] = 1;
+    const holed: unknown[] & { extra?: number } = [1];
+    holed.length = 2;
+    holed.extra = 1;
     const values: unknown[] = [
       new Date(0),
       new Map(),
@@ -29,12 +32,21 @@ describe("isJson", () => {
       undefined,
       { a: undefined },
       sparse,
+      holed,
       Number.NaN,
       -0,
     ];
     for (const value of values) expect(isJson(value)).toBe(false);
     expect(isJson(Object.create({}))).toBe(false);
     expect(isJson(Object.assign(Object.create(null) as object, { a: 1 }))).toBe(true);
+  });
+
+  it("自身を参照する値は JSON とせず、同じ値を 2 か所から参照する値は JSON とする", () => {
+    const cyclic: { items: unknown[] } = { items: [] };
+    cyclic.items.push({ parent: cyclic });
+    expect(isJson(cyclic)).toBe(false);
+    const shared = { n: 1 };
+    expect(isJson([shared, { shared }])).toBe(true);
   });
 });
 

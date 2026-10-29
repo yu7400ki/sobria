@@ -80,7 +80,10 @@ export const isSerovalJson = (value: unknown): value is SerovalJSON =>
   Array.isArray(value.m);
 
 /** `JSON.parse(JSON.stringify(value))` が `value` と同じ値を返すかどうかを返す。 */
-export function isJson(value: unknown): boolean {
+export const isJson = (value: unknown): boolean => isJsonBelow(value, new Set());
+
+/** `value` が JSON で表せるかどうかを返す。`ancestors` は、`value` を含む配列とオブジェクトであり、`value` がそのどれかなら偽を返す。 */
+function isJsonBelow(value: unknown, ancestors: Set<object>): boolean {
   switch (typeof value) {
     case "string":
     case "boolean":
@@ -89,13 +92,14 @@ export function isJson(value: unknown): boolean {
       return Number.isFinite(value) && !Object.is(value, -0);
     case "object": {
       if (value === null) return true;
+      if (ancestors.has(value)) return false;
       if (Array.isArray(value)) {
-        for (let i = 0; i < value.length; i++) {
-          if (!(i in value) || !isJson(value[i])) return false;
-        }
-        return true;
-      }
-      return isPlainObject(value) && Object.values(value).every(isJson);
+        for (let i = 0; i < value.length; i++) if (!(i in value)) return false;
+      } else if (!isPlainObject(value)) return false;
+      ancestors.add(value);
+      const json = Object.values(value).every((item) => isJsonBelow(item, ancestors));
+      ancestors.delete(value);
+      return json;
     }
     case "bigint":
     case "function":
