@@ -54,8 +54,8 @@ function childNamespace(parent: ParentNode): Namespace {
     : HTML_NS;
 }
 
-/** 1 つの領域になる、JSX が作成した値の種類を表す。`loading` と `errored` は境界で、`list` は `<For>` の項目の列である。 */
-export type Boundary = "loading" | "errored" | "list";
+/** 引き取った領域で、最初の値のノードが領域の中身と異なるときの扱いを表す。`keep` は SSR のノードを残して値が変化したときに置換し、`replace` は最初の値のノードで置換する。 */
+export type Mismatch = "keep" | "replace";
 
 /**
  * JSX が作成した、まだ挿入する値にしていない値を表す。
@@ -105,18 +105,17 @@ export class Deferred extends Lazy<Node> {}
 
 /**
  * JSX が作成した境界と、`<For>` の項目の列と、要素の描画の全体を表す。値は、挿入すると 1 つの領域になる関数である。
- * 境界の中身は、作成するときにノードにする。`boundary` は、値が中身でないときに SSR の表示を残すか置換するかを決める。
+ * 境界の中身は、作成するときにノードにする。`onMismatch` は、最初の値のノードが SSR の表示と異なるときに、SSR の表示を残すか置換するかを決める。
  */
 export class DeferredRegion extends Lazy<() => unknown> {
-  /** `"loading"` の境界は、中身が保留中ならフォールバックを返し、`"errored"` の境界は、中身が投げたらフォールバックを返す。`"list"` はフォールバックを返さない。 */
-  readonly boundary: Boundary;
+  readonly onMismatch: Mismatch;
 
   constructor(
     make: (at: Cursor | undefined, ns: Namespace, place: (node: Node) => Node) => () => unknown,
-    boundary: Boundary,
+    onMismatch: Mismatch,
   ) {
     super(make);
-    this.boundary = boundary;
+    this.onMismatch = onMismatch;
   }
 }
 
@@ -476,8 +475,8 @@ function claimRegion(
 
 /**
  * 引き取った領域で、境界を作成する。境界の中身は、作成するときに領域の中身から引き取る。
- * サーバーが境界の中身を出力しなかった領域と、`"errored"` の境界がフォールバックを返した領域と、`"list"` の引き取ったノードが領域の中身と異なる領域は、領域の中身を置換する。
- * `"loading"` の境界がフォールバックを返したときと、最初の計算が投げたときは、領域の SSR のノードを残し、値が変化したときに置換する。
+ * サーバーが境界の中身を出力しなかった領域は、領域の中身を置換する。最初の値のノードが領域の中身と異なるときは、`onMismatch` に従う。
+ * 最初の計算が投げたときは、領域の SSR のノードを残し、値が変化したときに置換する。
  */
 function claimBoundary(
   region: Region | undefined,
@@ -492,7 +491,7 @@ function claimBoundary(
   updateRegion(start, end, made, place, ns, () => {
     if (fresh) return false;
     if (!claiming(inner.hydration)) return true;
-    return placed(start, end, outsideScope(made)) || value.boundary === "loading";
+    return placed(start, end, outsideScope(made)) || value.onMismatch === "keep";
   });
 }
 

@@ -20,7 +20,7 @@ export function Loading(props: { fallback?: Child; children?: Child }): ClientNo
           () => build(read(props.children), at, ns, place),
           () => read(props.fallback),
         ),
-      "loading",
+      "keep",
     ),
   );
 }
@@ -47,7 +47,7 @@ export function Errored(props: {
               return typeof fallback === "function" ? fallback(error(), retry) : fallback;
             }),
         ),
-      "errored",
+      "replace",
     ),
   );
 }
@@ -65,7 +65,7 @@ export function For<T>(props: ForProps<T, ClientChild>): SharedNode {
         (item, index) => buildAt(props.children(item, index), at, ns, place),
       );
       return () => items().flat();
-    }, "list"),
+    }, "replace"),
   ) as SharedNode;
 }
 

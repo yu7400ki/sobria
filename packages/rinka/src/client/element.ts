@@ -375,7 +375,7 @@ export function registerElement<P, M extends object = object>(
             );
           const nodes = build(render(), at, ns);
           return () => nodes;
-        }, "loading");
+        }, "keep");
         if (hydration) {
           try {
             claimWithin(shadowCursor(shadow, hydration), (at) => insert(at, root));
