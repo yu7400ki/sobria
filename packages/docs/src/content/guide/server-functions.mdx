@@ -274,6 +274,20 @@ export const deletePost = defineServerFn({ input: z.number() })(auth, async (c, 
 
 `src/routes/` の配下のディレクトリにある `middleware.ts` は、サーバー関数には適用しません（[`middleware`](/reference/files#middleware)）。[フォーム](/guide/forms)の送信先はページの URL ですが、そのページのディレクトリの `middleware.ts` も、サーバー関数の実行には適用しません。リクエストを送信する人は、どのページの URL にも、任意のサーバー関数を指定した POST を送信できるからです。例えば、`src/routes/admin/middleware.ts` で保護しているページが呼び出すサーバー関数にも、サーバー関数のミドルウェアで認可を設定してください。
 
+## 本文の大きさを制限する
+
+rinka は、リクエストの本文の大きさを制限しません。ファイルを受け取るアプリでは、ルートの `middleware.ts` に Hono の `bodyLimit` を配置して、本文の大きさを制限します。
+
+```ts
+// src/routes/middleware.ts
+import { bodyLimit } from "hono/body-limit";
+import { defineMiddleware } from "rinka/server";
+
+export default defineMiddleware(bodyLimit({ maxSize: 10 * 1024 * 1024 }));
+```
+
+ルートの `middleware.ts` は、rinka が本文を読む前のリクエストを受け取ります。大きさを超えた本文は、読み取りを中止して 413 を返します。サーバー関数のミドルウェアは、rinka が本文を読んだ後に実行するので、`bodyLimit` を配置しても、rinka が読み取る本文の大きさは制限できません。
+
 ## 別のオリジンからのリクエスト
 
 rinka は、別のオリジンのページから送信された、サーバー関数への GET 以外のリクエストを、403 で拒否します。サブドメインだけが異なるページも、別のオリジンです。`route.ts` へのリクエストは拒否しません。別のオリジンのページからの呼び出しを許可するときは、Vite プラグインの `trustedOrigins` に、そのオリジンを列挙します。
