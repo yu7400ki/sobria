@@ -168,11 +168,7 @@ function forRoute<Route extends keyof RouteHandlerPaths>(
 function defineServerFn<
   V extends Validation = never,
   Method extends ServerFnMethod = typeof defaultServerFnMethod,
->(
-  options: ServerFnOptions<V, Method> & UrlInput<V, Method>,
-): <M extends AnyMiddleware[], R>(
-  ...args: [...middleware: M, handler: ServerFnHandler<M, OutputOf<V>, R>]
-) => ServerFn<InputOf<V>, R, Method>;
+>(options: ServerFnOptions<V, Method>): ServerFnBuilder<V, Method>;
 
 function defineServerFn<M extends AnyMiddleware[], R>(
   ...args: [...middleware: M, handler: ServerFnHandler<M, undefined, R>]
@@ -180,13 +176,11 @@ function defineServerFn<M extends AnyMiddleware[], R>(
 
 const defaultServerFnMethod = "POST";
 
-type UrlInput<V, M extends ServerFnMethod> = [M] extends ["GET"]
+type ServerFnBuilder<V, M extends ServerFnMethod> = [M] extends ["GET"]
   ? true extends HasBlob<InputOf<V>>
-    ? {
-        input: never;
-      }
-    : unknown
-  : unknown;
+    ? (...reasons: "GET のサーバー関数の入力の型には、File と Blob を含められません"[]) => never
+    : StepsBuilder<V, M>
+  : StepsBuilder<V, M>;
 
 type HasBlob<T, D extends number = 9> = [D] extends [never]
   ? false
@@ -227,6 +221,10 @@ type OutputOf<V> = [V] extends [never]
     : V extends (...args: never[]) => infer O
       ? Awaited<O>
       : never;
+
+type StepsBuilder<V, M extends ServerFnMethod> = <Steps extends AnyMiddleware[], R>(
+  ...args: [...middleware: Steps, handler: ServerFnHandler<Steps, OutputOf<V>, R>]
+) => ServerFn<InputOf<V>, R, M>;
 
 type AnyMiddleware = MiddlewareHandler<any, any, any>;
 

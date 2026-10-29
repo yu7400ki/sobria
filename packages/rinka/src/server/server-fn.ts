@@ -81,12 +81,20 @@ type HasBlob<T, D extends number = 9> = [D] extends [never]
               ? { [K in keyof T]-?: HasBlob<T[K], Shallower[D]> }[keyof T]
               : false;
 
-/** メソッド `M` が GET で、`input` の入力の型が Blob を含めば、`input` を `never` にするオプションの型を表す。それ以外は制約を加えない。 */
-type UrlInput<V, M extends ServerFnMethod> = [M] extends ["GET"]
+/**
+ * オプションの検証が `V` でメソッドが `M` のとき、ミドルウェアと handler からサーバー関数を作成する関数の型を表す。
+ * `M` が GET で、`V` の入力の型が Blob を含めば、引数の型を、理由を記述した文字列のリテラルの型にする。
+ */
+type ServerFnBuilder<V, M extends ServerFnMethod> = [M] extends ["GET"]
   ? true extends HasBlob<InputOf<V>>
-    ? { input: never }
-    : unknown
-  : unknown;
+    ? (...reasons: "GET のサーバー関数の入力の型には、File と Blob を含められません"[]) => never
+    : StepsBuilder<V, M>
+  : StepsBuilder<V, M>;
+
+/** ミドルウェアと handler から、入力の検証が `V` でメソッドが `M` のサーバー関数を作成する関数の型を表す。 */
+type StepsBuilder<V, M extends ServerFnMethod> = <Steps extends AnyMiddleware[], R>(
+  ...args: [...middleware: Steps, handler: ServerFnHandler<Steps, OutputOf<V>, R>]
+) => ServerFn<InputOf<V>, R, M>;
 
 /** 入力の型が `undefined` なら、入力を省略して呼び出せる。 */
 export type ServerFn<In, R, M extends ServerFnMethod = ServerFnMethod> = ([In] extends [undefined]
@@ -133,11 +141,7 @@ type StandardSchemaIssues = Extract<
 export function defineServerFn<
   V extends Validation = never,
   Method extends ServerFnMethod = typeof defaultServerFnMethod,
->(
-  options: ServerFnOptions<V, Method> & UrlInput<V, Method>,
-): <M extends AnyMiddleware[], R>(
-  ...args: [...middleware: M, handler: ServerFnHandler<M, OutputOf<V>, R>]
-) => ServerFn<InputOf<V>, R, Method>;
+>(options: ServerFnOptions<V, Method>): ServerFnBuilder<V, Method>;
 /** オプションを省略して、ミドルウェアと handler からサーバー関数を作成する。 */
 export function defineServerFn<M extends AnyMiddleware[], R>(
   ...args: [...middleware: M, handler: ServerFnHandler<M, undefined, R>]

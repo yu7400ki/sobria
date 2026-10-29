@@ -50,12 +50,17 @@ test("呼び出しの 2 つ目の引数で、signal と headers を指定でき�
   void fn(1);
 });
 
-test("GET のサーバー関数は、入力の型が File か Blob を含むと定義できず、POST のサーバー関数は定義できる", () => {
+test("GET のサーバー関数は、入力の型が File か Blob を含むと handler を渡せず、POST のサーバー関数は定義できる", () => {
   const photo = new File(["x"], "x.txt");
   // @ts-expect-error GET の入力に File を含められない
-  defineServerFn({ method: "GET", input: withPhoto });
+  defineServerFn({ method: "GET", input: withPhoto })(() => null);
   // @ts-expect-error GET の入力の Map の値の配列に Blob を含められない
-  defineServerFn({ method: "GET", input: withPages });
+  defineServerFn({ method: "GET", input: withPages })(() => null);
+  const passThrough = defineMiddleware(async (_c, next) => {
+    await next();
+  });
+  // @ts-expect-error ミドルウェアを渡しても、GET の入力に File を含められない
+  defineServerFn({ method: "GET", input: withPhoto })(passThrough, () => null);
   const post = defineServerFn({ input: withPhoto })(() => null);
   void post({ photo });
   const plain = defineServerFn({ method: "GET", input: (value: { name: string }) => value })(
