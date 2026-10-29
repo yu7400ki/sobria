@@ -78,7 +78,7 @@ export function mdx(options: MdxOptions): Plugin {
 }
 
 /**
- * MDX のソース `source` を TSX のソースにする。TSX は、本文のコンポーネントを default export し、frontmatter の `title` の文字列を `title`、深さ 2 と 3 の見出しの `{ depth, id, text }` の配列を `toc`、`/` で始まり `//` で始まらないリンクの URL の配列を `links` として export する。
+ * MDX のソース `source` を TSX のソースにする。TSX は、本文のコンポーネントを default export し、frontmatter の `title` の文字列を `title`、深さ 2 と 3 の見出しの `{ depth, id, text }` の配列を `toc`、`/` で始まり `//` で始まらないリンクの URL の配列を `links` として export する。そのようなリンクと画像の URL には、`import.meta.env.BASE_URL` を前置する。
  * frontmatter に文字列の `title` が無いときと、深さ 1 の見出しがあるときは、エラーを投げる。
  * MDX の ESM と式は、ソースの文字列のまま出力する。JSX の属性の式も、ソースの文字列のまま出力する。
  */
@@ -171,10 +171,10 @@ export async function toTsx(source: string, options: MdxOptions): Promise<string
       case "break":
         return "<br />";
       case "link":
-        if (node.url?.startsWith("/") && !node.url.startsWith("//")) links.push(node.url);
-        return `<a href={${literal(node.url ?? "")}}${optional("title", node.title)}>${children(node)}</a>`;
+        if (isLocal(node.url ?? "")) links.push(node.url ?? "");
+        return `<a href={${url(node.url ?? "")}}${optional("title", node.title)}>${children(node)}</a>`;
       case "image":
-        return `<img src={${literal(node.url ?? "")}} alt={${literal(node.alt ?? "")}}${optional("title", node.title)} />`;
+        return `<img src={${url(node.url ?? "")}} alt={${literal(node.alt ?? "")}}${optional("title", node.title)} />`;
       case "definition":
         return "";
       case "list": {
@@ -267,6 +267,13 @@ async function highlight({ code, lang }: CodeBlock): Promise<string> {
 
 /** 値 `value` を、JS の文字列のリテラルにする。 */
 const literal = (value: string): string => JSON.stringify(value);
+
+/** `value` が `/` で始まり、`//` で始まらない URL なら真を返す。 */
+const isLocal = (value: string): boolean => value.startsWith("/") && !value.startsWith("//");
+
+/** URL `value` の JSX の式を返す。`/` で始まり `//` で始まらない URL には、`import.meta.env.BASE_URL` を前置する。 */
+const url = (value: string): string =>
+  isLocal(value) ? `import.meta.env.BASE_URL + ${literal(value.slice(1))}` : literal(value);
 
 /** 値 `value` があれば、属性 `name` の JSX のソースにする。 */
 const optional = (name: string, value: string | null | undefined): string =>

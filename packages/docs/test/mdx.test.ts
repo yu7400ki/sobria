@@ -57,7 +57,7 @@ describe("toTsx", () => {
 
   it("インラインの記法をタグにする", async () => {
     expect(await body('*a* **b** ~~c~~ [d](/d "D") ![e](/e.png)  \nf')).toBe(
-      '<p><em>{"a"}</em>{" "}<strong>{"b"}</strong>{" "}<del>{"c"}</del>{" "}<a href={"/d"} title={"D"}>{"d"}</a>{" "}<img src={"/e.png"} alt={"e"} /><br />{"f"}</p>',
+      '<p><em>{"a"}</em>{" "}<strong>{"b"}</strong>{" "}<del>{"c"}</del>{" "}<a href={import.meta.env.BASE_URL + "d"} title={"D"}>{"d"}</a>{" "}<img src={import.meta.env.BASE_URL + "e.png"} alt={"e"} /><br />{"f"}</p>',
     );
   });
 
@@ -158,7 +158,9 @@ describe("toTsx", () => {
   });
 
   it("参照形式のリンクを、定義の URL へのリンクにする", async () => {
-    expect(await body("[a][b]\n\n[b]: /x")).toBe('<p><a href={"/x"}>{"a"}</a></p>');
+    expect(await body("[a][b]\n\n[b]: /x")).toBe(
+      '<p><a href={import.meta.env.BASE_URL + "x"}>{"a"}</a></p>',
+    );
   });
 
   it("ESM の export default は、エラーにする", async () => {

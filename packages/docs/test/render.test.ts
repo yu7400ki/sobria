@@ -26,7 +26,7 @@ describe("MDX の描画", () => {
     expect(content.toc).toEqual([{ depth: 2, id: "見出し", text: "見出し" }]);
     expect(html).toContain('<h2 id="見出し">見出し</h2>');
     expect(html).toContain(
-      '<p>本文の <strong>強調</strong> 注<br>改行 <img src="/a.png" alt="図" title="画像"></p>',
+      '<p>本文の <strong>強調</strong> 注<br>改行 <img src="/rinka/a.png" alt="図" title="画像"></p>',
     );
     expect(html).toContain('<aside title="注記" data-kind="note" open><p>中身</p></aside>');
     expect(html).toContain(

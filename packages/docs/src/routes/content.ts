@@ -72,7 +72,7 @@ const decodeHash = (hash: string): string | undefined => {
 for (const [slug, { links }] of modules) {
   for (const link of links) {
     const [path = "", hash] = link.split("#");
-    const target = pages.find((candidate) => candidate.href === path);
+    const target = pages.find((candidate) => candidate.href === href("/") + path.slice(1));
     const valid =
       path === "/"
         ? hash === undefined
