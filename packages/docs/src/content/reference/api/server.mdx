@@ -169,7 +169,7 @@ function defineServerFn<
   V extends Validation = never,
   Method extends ServerFnMethod = typeof defaultServerFnMethod,
 >(
-  options: ServerFnOptions<V, Method>,
+  options: ServerFnOptions<V, Method> & UrlInput<V, Method>,
 ): <M extends AnyMiddleware[], R>(
   ...args: [...middleware: M, handler: ServerFnHandler<M, OutputOf<V>, R>]
 ) => ServerFn<InputOf<V>, R, Method>;
@@ -179,6 +179,54 @@ function defineServerFn<M extends AnyMiddleware[], R>(
 ): ServerFn<undefined, R, typeof defaultServerFnMethod>;
 
 const defaultServerFnMethod = "POST";
+
+type UrlInput<V, M extends ServerFnMethod> = [M] extends ["GET"]
+  ? true extends HasBlob<InputOf<V>>
+    ? {
+        input: never;
+      }
+    : unknown
+  : unknown;
+
+type HasBlob<T, D extends number = 9> = [D] extends [never]
+  ? false
+  : unknown extends T
+    ? false
+    : T extends Blob
+      ? true
+      : T extends ReadonlyMap<infer K, infer V>
+        ? HasBlob<K, Shallower[D]> | HasBlob<V, Shallower[D]>
+        : T extends ReadonlySet<infer V>
+          ? HasBlob<V, Shallower[D]>
+          : T extends readonly (infer V)[]
+            ? HasBlob<V, Shallower[D]>
+            : T extends object
+              ? {
+                  [K in keyof T]-?: HasBlob<T[K], Shallower[D]>;
+                }[keyof T]
+              : false;
+
+type Shallower = [never, 0, 1, 2, 3, 4, 5, 6, 7, 8];
+
+type InputOf<V> = [V] extends [never]
+  ? undefined
+  : V extends AnySchema
+    ? "types" extends keyof V["~standard"]
+      ? NonNullable<V["~standard"]["types"]>["input"]
+      : OutputOf<V>
+    : V extends (value: infer I, c: Context) => unknown
+      ? I
+      : never;
+
+type AnySchema = StandardSchema<any, any>;
+
+type OutputOf<V> = [V] extends [never]
+  ? undefined
+  : V extends StandardSchema<any, infer O>
+    ? O
+    : V extends (...args: never[]) => infer O
+      ? Awaited<O>
+      : never;
 
 type AnyMiddleware = MiddlewareHandler<any, any, any>;
 
@@ -192,26 +240,6 @@ type ServerFnHandler<M extends AnyMiddleware[], In, R> = (
 type MiddlewareEnvs<M extends AnyMiddleware[]> = {
   [K in keyof M]: M[K] extends MiddlewareHandler<infer E, any, any> ? E : never;
 };
-
-type OutputOf<V> = [V] extends [never]
-  ? undefined
-  : V extends StandardSchema<any, infer O>
-    ? O
-    : V extends (...args: never[]) => infer O
-      ? Awaited<O>
-      : never;
-
-type InputOf<V> = [V] extends [never]
-  ? undefined
-  : V extends AnySchema
-    ? "types" extends keyof V["~standard"]
-      ? NonNullable<V["~standard"]["types"]>["input"]
-      : OutputOf<V>
-    : V extends (value: infer I, c: Context) => unknown
-      ? I
-      : never;
-
-type AnySchema = StandardSchema<any, any>;
 ```
 
 ## SchemaError
@@ -239,37 +267,11 @@ type StandardSchemaIssues = Extract<
 ```ts
 type ServerFn<In, R, M extends ServerFnMethod = ServerFnMethod> = ([In] extends [undefined]
   ? (input?: In, options?: CallOptions) => Promise<Returned<R>>
-  : (input: CallInput<In, M>, options?: CallOptions) => Promise<Returned<R>>) & {
+  : (input: In, options?: CallOptions) => Promise<Returned<R>>) & {
   readonly [serverFnRef]: ServerFnRef<M>;
 };
 
 type Returned<R> = Awaited<R> extends AsyncIterable<infer T> ? AsyncIterable<T> : Awaited<R>;
-
-type CallInput<In, M extends ServerFnMethod> = [M] extends ["GET"]
-  ? true extends HasBlob<In>
-    ? never
-    : In
-  : In;
-
-type HasBlob<T, D extends number = 9> = [D] extends [never]
-  ? false
-  : unknown extends T
-    ? false
-    : T extends Blob
-      ? true
-      : T extends ReadonlyMap<infer K, infer V>
-        ? HasBlob<K, Shallower[D]> | HasBlob<V, Shallower[D]>
-        : T extends ReadonlySet<infer V>
-          ? HasBlob<V, Shallower[D]>
-          : T extends readonly (infer V)[]
-            ? HasBlob<V, Shallower[D]>
-            : T extends object
-              ? {
-                  [K in keyof T]-?: HasBlob<T[K], Shallower[D]>;
-                }[keyof T]
-              : false;
-
-type Shallower = [never, 0, 1, 2, 3, 4, 5, 6, 7, 8];
 ```
 
 ## ServerFnOptions

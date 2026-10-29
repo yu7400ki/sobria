@@ -1,9 +1,18 @@
 import type { StandardSchema } from "hono/factory";
-import { defineMiddleware, defineServerFn, getServerFnResult } from "rinka/server";
+import { defineMiddleware, defineServerFn, getServerFnResult, type ServerFn } from "rinka/server";
 import { expectTypeOf, test } from "vitest";
 
 declare const numberFromString: StandardSchema<string, number>;
 declare const coerceNumber: StandardSchema<unknown, number>;
+
+/** File を含む入力をそのまま返す検証の関数である。 */
+const withPhoto = (value: { photo: File }) => value;
+
+/** Blob の配列を値に持つ Map を含む入力をそのまま返す検証の関数である。 */
+const withPages = (value: { pages: Map<string, Blob[]> }) => value;
+
+/** GET のサーバー関数を、型引数の入力の型の値で呼び出す。 */
+const callGet = <In>(fn: ServerFn<In, null, "GET">, input: In) => fn(input);
 
 /** `~standard.types` を持たず、`validate()` が数を返す Standard Schema である。 */
 const typeless = {
@@ -44,25 +53,22 @@ test("呼び出しの 2 つ目の引数で、signal と headers を指定でき�
   void fn(1);
 });
 
-test("GET のサーバー関数は、入力の型が File か Blob を含むと呼び出せず、POST のサーバー関数は呼び出せる", () => {
+test("GET のサーバー関数は、入力の型が File か Blob を含むと定義できず、POST のサーバー関数は定義できる", () => {
   const photo = new File(["x"], "x.txt");
-  const get = defineServerFn({ method: "GET", input: (value: { photo: File }) => value })(
-    () => null,
-  );
   // @ts-expect-error GET の入力に File を含められない
-  void get({ photo });
-  const nested = defineServerFn({
-    method: "GET",
-    input: (value: { pages: Map<string, Blob[]> }) => value,
-  })(() => null);
+  defineServerFn({ method: "GET", input: withPhoto });
   // @ts-expect-error GET の入力の Map の値の配列に Blob を含められない
-  void nested({ pages: new Map([["a", [photo]]]) });
-  const post = defineServerFn({ input: (value: { photo: File }) => value })(() => null);
+  defineServerFn({ method: "GET", input: withPages });
+  const post = defineServerFn({ input: withPhoto })(() => null);
   void post({ photo });
   const plain = defineServerFn({ method: "GET", input: (value: { name: string }) => value })(
     () => null,
   );
   void plain({ name: "a" });
+});
+
+test("GET のサーバー関数を型引数の入力の型で受け取る関数から、入力を渡して呼び出せる", () => {
+  expectTypeOf(callGet).returns.toEqualTypeOf<Promise<null>>();
 });
 
 test("ミドルウェアが設定する変数は、handler の c.get で型が付き、設定されない変数は型エラーになる", () => {

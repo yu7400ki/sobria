@@ -1,4 +1,4 @@
-import type { SerovalJSON } from "seroval";
+import type { SerovalJSON, SerovalNode } from "seroval";
 
 import { serverJsxNodes } from "./nodes.ts";
 import { isPlainObject } from "./objects.ts";
@@ -191,3 +191,6 @@ export const rpcInputPart = "input";
 
 /** RPC の入力の Blob を、multipart の番号の部分への参照にする seroval のプラグインの名前である。 */
 export const blobPluginTag = "rinka/blob";
+
+/** `blobPluginTag` のプラグインが作成する、multipart の番号の部分への参照のノードを表す。 */
+export type BlobNode = { readonly index: SerovalNode };

@@ -61,7 +61,10 @@ type Returned<R> = Awaited<R> extends AsyncIterable<infer T> ? AsyncIterable<T> 
 /** `HasBlob` が型を辿る深さを、1 つずつ減らす表である。 */
 type Shallower = [never, 0, 1, 2, 3, 4, 5, 6, 7, 8];
 
-/** `T` のプロパティ、配列の要素、`Map` と `Set` の要素を深さ `D` まで辿って、Blob の型があれば `true` を含む型を表す。 */
+/**
+ * `T` のプロパティ、配列の要素、`Map` と `Set` の要素を深さ `D` まで辿って、Blob の型があれば `true` を含む型を表す。
+ * `unknown` と `any` は、Blob を含まない型として扱う。深さ `D` より深い位置の Blob は検出しない。
+ */
 type HasBlob<T, D extends number = 9> = [D] extends [never]
   ? false
   : unknown extends T
@@ -78,17 +81,17 @@ type HasBlob<T, D extends number = 9> = [D] extends [never]
               ? { [K in keyof T]-?: HasBlob<T[K], Shallower[D]> }[keyof T]
               : false;
 
-/** 呼び出しの引数の型を表す。GET のサーバー関数の入力の型が Blob を含めば、`never` を表す。 */
-type CallInput<In, M extends ServerFnMethod> = [M] extends ["GET"]
-  ? true extends HasBlob<In>
-    ? never
-    : In
-  : In;
+/** メソッド `M` が GET で、`input` の入力の型が Blob を含めば、`input` を `never` にするオプションの型を表す。それ以外は制約を加えない。 */
+type UrlInput<V, M extends ServerFnMethod> = [M] extends ["GET"]
+  ? true extends HasBlob<InputOf<V>>
+    ? { input: never }
+    : unknown
+  : unknown;
 
 /** 入力の型が `undefined` なら、入力を省略して呼び出せる。 */
 export type ServerFn<In, R, M extends ServerFnMethod = ServerFnMethod> = ([In] extends [undefined]
   ? (input?: In, options?: CallOptions) => Promise<Returned<R>>
-  : (input: CallInput<In, M>, options?: CallOptions) => Promise<Returned<R>>) & {
+  : (input: In, options?: CallOptions) => Promise<Returned<R>>) & {
   readonly [serverFnRef]: ServerFnRef<M>;
 };
 
@@ -131,7 +134,7 @@ export function defineServerFn<
   V extends Validation = never,
   Method extends ServerFnMethod = typeof defaultServerFnMethod,
 >(
-  options: ServerFnOptions<V, Method>,
+  options: ServerFnOptions<V, Method> & UrlInput<V, Method>,
 ): <M extends AnyMiddleware[], R>(
   ...args: [...middleware: M, handler: ServerFnHandler<M, OutputOf<V>, R>]
 ) => ServerFn<InputOf<V>, R, Method>;

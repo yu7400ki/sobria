@@ -519,25 +519,29 @@ async function readInput(c: Context): Promise<unknown> {
     const serialized = c.req.query(rpcQuery.seroval);
     return serialized === undefined ? undefined : fromRpcInput(serialized);
   }
-  if (c.req.header("content-type")?.startsWith("multipart/form-data")) return readParts(c);
+  if (c.req.header("content-type")?.toLowerCase().startsWith("multipart/form-data")) {
+    return readParts(c);
+  }
   const text = await c.req.text();
   if (text === "") return undefined;
   return c.req.header(wireHeader) === wireFormat.seroval ? fromRpcInput(text) : parseJson(text);
 }
 
 /**
- * multipart の RPC の入力を読む。`rpcInputPart` の部分の seroval の JSON の Blob の参照を、`0` から連続する番号の部分の File にする。
- * `rpcInputPart` の部分が文字列でないときと、番号の部分が File でないときは、例外を投げる。
+ * multipart の RPC の入力を読む。`rpcInputPart` の部分の seroval の JSON の Blob の参照を、名前がその番号の部分の File にする。
+ * `rpcInputPart` の部分が文字列でないときと、名前が番号の部分が File でないときは、例外を投げる。
  */
 async function readParts(c: Context): Promise<unknown> {
-  const parts = await c.req.formData();
-  const input = parts.get(rpcInputPart);
-  if (typeof input !== "string") throw new TypeError("入力の部分がありません。");
-  const blobs: File[] = [];
-  for (let part = parts.get("0"); part !== null; part = parts.get(String(blobs.length))) {
-    if (!(part instanceof File)) throw new TypeError("番号の部分が File ではありません。");
-    blobs.push(part);
+  let input: FormDataEntryValue | undefined;
+  const blobs = new Map<number, File>();
+  for (const [name, value] of await c.req.formData()) {
+    if (name === rpcInputPart) input = value;
+    else if (/^(?:0|[1-9]\d*)$/.test(name)) {
+      if (!(value instanceof File)) throw new TypeError("番号の部分が File ではありません。");
+      blobs.set(Number(name), value);
+    }
   }
+  if (typeof input !== "string") throw new TypeError("入力の部分がありません。");
   return fromRpcInput(input, blobs);
 }
 
