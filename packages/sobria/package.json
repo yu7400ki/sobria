@@ -1,0 +1,105 @@
+{
+  "name": "sobria",
+  "version": "0.1.0",
+  "description": "Hono と Vite の上で動作する、サーバーファーストの Web フレームワーク",
+  "keywords": [
+    "custom-elements",
+    "declarative-shadow-dom",
+    "framework",
+    "hono",
+    "ssr",
+    "vite"
+  ],
+  "homepage": "https://yu7400ki.github.io/sobria/",
+  "bugs": {
+    "url": "https://github.com/yu7400ki/sobria/issues"
+  },
+  "license": "MIT",
+  "author": "yu7400ki",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yu7400ki/sobria.git",
+    "directory": "packages/sobria"
+  },
+  "bin": {
+    "sobria": "./lib/build/bin.js"
+  },
+  "files": [
+    "lib",
+    "docs",
+    "tsconfig.app.json"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "sobria-server": {
+        "types": "./lib/server/index.d.ts",
+        "default": "./lib/server/index.js"
+      },
+      "types": "./lib/client/index.d.ts",
+      "default": "./lib/client/index.js"
+    },
+    "./jsx-runtime": {
+      "sobria-shared": {
+        "types": "./lib/shared/jsx-runtime.d.ts"
+      },
+      "sobria-server": {
+        "types": "./lib/server/jsx-runtime.d.ts",
+        "default": "./lib/server/jsx-runtime.js"
+      },
+      "types": "./lib/client/jsx-runtime.d.ts",
+      "default": "./lib/client/jsx-runtime.js"
+    },
+    "./server": {
+      "sobria-client": {
+        "types": "./lib/client/server-api.d.ts"
+      },
+      "types": "./lib/server/api.d.ts",
+      "default": "./lib/server/api.js"
+    },
+    "./app": {
+      "types": "./lib/server/virtual-app.d.ts",
+      "default": "./lib/server/virtual-app.js"
+    },
+    "./router": {
+      "types": "./lib/shared/router.d.ts",
+      "default": "./lib/shared/router.js"
+    },
+    "./vite": {
+      "types": "./lib/build/plugin.d.ts",
+      "default": "./lib/build/plugin.js"
+    },
+    "./tsconfig.json": "./tsconfig.app.json"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.lib.json",
+    "generate": "node scripts/generate-dom-names.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "prepack": "node scripts/copy-docs.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "catalog:",
+    "@solidjs/signals": "catalog:",
+    "magic-string": "catalog:",
+    "seroval": "catalog:"
+  },
+  "devDependencies": {
+    "@sobria/config": "workspace:*",
+    "@types/node": "catalog:",
+    "@vitest/browser-playwright": "catalog:",
+    "hono": "catalog:",
+    "playwright": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "hono": "catalog:",
+    "typescript": ">=7.1.0-beta <7.2.0-0",
+    "vite": "catalog:"
+  },
+  "engines": {
+    "node": ">=24.2.0"
+  }
+}

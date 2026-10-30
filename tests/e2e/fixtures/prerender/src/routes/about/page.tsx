@@ -1,4 +1,4 @@
-import { Loading } from "rinka";
+import { Loading } from "sobria";
 
 export const prerender = true;
 

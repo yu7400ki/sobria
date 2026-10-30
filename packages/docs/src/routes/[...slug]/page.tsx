@@ -1,5 +1,5 @@
-import type { PageProps, Prerender } from "rinka/router";
-import { notFound } from "rinka/server";
+import type { PageProps, Prerender } from "sobria/router";
+import { notFound } from "sobria/server";
 import { css } from "styled-system/css";
 
 import Pager from "../../components/pager.tsx";
@@ -33,7 +33,7 @@ export default function Page({ params }: PageProps<"/[...slug]">) {
         py: "10",
       })}
     >
-      <title>{`${title} | rinka`}</title>
+      <title>{`${title} | sobria`}</title>
       <aside class={css({ display: { base: "none", lg: "block" } })}>
         <div class={css({ pos: "sticky", top: "10" })}>{sidebar}</div>
       </aside>

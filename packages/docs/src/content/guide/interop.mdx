@@ -2,7 +2,7 @@
 title: 外部からの利用
 ---
 
-rinka の要素は Web 標準の Custom Element なので、rinka のアプリの外でも使用できます。
+sobria の要素は Web 標準の Custom Element なので、sobria のアプリの外でも使用できます。
 
 ## タグとして使用する
 
@@ -65,7 +65,7 @@ export default defineConfig({
 
 ## タグの型
 
-rinka のアプリの中では、`rinka prepare` がアプリの要素のタグを `HTMLElementTagNameMap` に追加する型宣言を生成します。そのため、`document.querySelector()` や `document.createElement()` で取得した要素の props に型が付きます。
+sobria のアプリの中では、`sobria prepare` がアプリの要素のタグを `HTMLElementTagNameMap` に追加する型宣言を生成します。そのため、`document.querySelector()` や `document.createElement()` で取得した要素の props に型が付きます。
 
 ```ts
 document.createElement("acme-counter").count = 1;
@@ -94,7 +94,7 @@ document.querySelector("acme-dialog")?.open();
 
 ## 要素をライブラリとして配布する
 
-素の HTML や他のフレームワークで使用するときは、ビルドした ES モジュールを配布します。別の rinka のアプリで使用するときは、TSX のソースのまま配布します。
+素の HTML や他のフレームワークで使用するときは、ビルドした ES モジュールを配布します。別の sobria のアプリで使用するときは、TSX のソースのまま配布します。
 
 どちらの形でも、`prefix` には、ほかのライブラリとタグ名が重複しない固有の値を設定します。タグ名が重複すると、ES モジュールの形ではブラウザの `customElements.define()` が例外を投げ、TSX のソースの形では使用する側のアプリがエラーになります。
 
@@ -104,15 +104,15 @@ Vite プラグインの設定に `library: true` を指定して `vite build` �
 
 ```ts
 // vite.config.ts
-import { rinka } from "rinka/vite";
+import { sobria } from "sobria/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [rinka({ prefix: "acme", library: true })],
+  plugins: [sobria({ prefix: "acme", library: true })],
 });
 ```
 
-`dist/` には、要素ごとに、自分自身を登録する ES モジュールを `<タグ名>.js` の名前で出力します。rinka のランタイムと、複数の要素が共通に使用するコードは `dist/chunks/` に出力します。要素の CSS はモジュールに含まれるので、CSS のファイルを別に読み込む必要はありません。`prefix` がデフォルト値の `rinka` のままのときは、ビルドが警告を表示します。
+`dist/` には、要素ごとに、自分自身を登録する ES モジュールを `<タグ名>.js` の名前で出力します。sobria のランタイムと、複数の要素が共通に使用するコードは `dist/chunks/` に出力します。要素の CSS はモジュールに含まれるので、CSS のファイルを別に読み込む必要はありません。`prefix` がデフォルト値の `sobria` のままのときは、ビルドが警告を表示します。
 
 使用する側のページでは、モジュールを読み込むと、タグを使用できます。
 
@@ -124,7 +124,7 @@ export default defineConfig({
 </form>
 ```
 
-フォームの部品、スロット、`<label for>` は、rinka のアプリの中と同じように動作します。この形にはサーバーが無いので、要素はサーバーで描画されず、[サーバー関数](/guide/server-functions)も呼び出せません。ライブラリには、サーバーを必要としない要素だけを含めてください。
+フォームの部品、スロット、`<label for>` は、sobria のアプリの中と同じように動作します。この形にはサーバーが無いので、要素はサーバーで描画されず、[サーバー関数](/guide/server-functions)も呼び出せません。ライブラリには、サーバーを必要としない要素だけを含めてください。
 
 #### マニフェスト
 
@@ -163,23 +163,23 @@ export default function Counter(props: Props) {
 
 ### TSX のソースのまま配布する
 
-別の rinka のアプリで使用するライブラリは、要素を TSX のソースのまま配布します。使用する側のアプリが、ライブラリの要素をアプリの要素と同じようにコンパイルします。そのため、ライブラリの要素もサーバーで描画され、アプリの要素と同じように動作します。
+別の sobria のアプリで使用するライブラリは、要素を TSX のソースのまま配布します。使用する側のアプリが、ライブラリの要素をアプリの要素と同じようにコンパイルします。そのため、ライブラリの要素もサーバーで描画され、アプリの要素と同じように動作します。
 
-ライブラリの `package.json` には、`rinka` のフィールドに接頭辞と要素のディレクトリを記述し、`exports` で要素のファイルと型宣言を公開します。
+ライブラリの `package.json` には、`sobria` のフィールドに接頭辞と要素のディレクトリを記述し、`exports` で要素のファイルと型宣言を公開します。
 
 ```json
 {
   "name": "acme-ui",
   "type": "module",
-  "rinka": { "prefix": "acme", "elements": "src/elements" },
+  "sobria": { "prefix": "acme", "elements": "src/elements" },
   "exports": {
     "./*": { "types": "./types/*.d.ts", "default": "./src/elements/*.tsx" }
   },
   "files": ["src", "types"],
   "scripts": {
-    "types": "rinka prepare && tsc -p .rinka/tsconfig.elements.json --composite false --declaration --rootDir src/elements --outDir types"
+    "types": "sobria prepare && tsc -p .sobria/tsconfig.elements.json --composite false --declaration --rootDir src/elements --outDir types"
   },
-  "peerDependencies": { "rinka": "*" }
+  "peerDependencies": { "sobria": "*" }
 }
 ```
 
@@ -196,4 +196,4 @@ export default function Page() {
 }
 ```
 
-アプリの Vite プラグインは、アプリの依存のうち `package.json` に `rinka` のフィールドを持つパッケージを、コンパイルの対象にします。pnpm の `link:` のように、プロジェクトの外のディレクトリを指す依存のライブラリも使用できます。
+アプリの Vite プラグインは、アプリの依存のうち `package.json` に `sobria` のフィールドを持つパッケージを、コンパイルの対象にします。pnpm の `link:` のように、プロジェクトの外のディレクトリを指す依存のライブラリも使用できます。

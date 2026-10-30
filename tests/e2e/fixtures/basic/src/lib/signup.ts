@@ -1,4 +1,4 @@
-import { defineServerFn, redirect } from "rinka/server";
+import { defineServerFn, redirect } from "sobria/server";
 
 export const signup = defineServerFn({
   input: (value: { name?: unknown }) => ({

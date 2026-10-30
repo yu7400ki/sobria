@@ -1,9 +1,0 @@
-{
-  "extends": "@rinka/config/tsconfig.base.json",
-  "compilerOptions": {
-    "customConditions": ["rinka-server"],
-    "jsx": "react-jsx",
-    "jsxImportSource": "rinka"
-  },
-  "include": ["**/*", "../../../src/shared/env.d.ts"]
-}

@@ -1,12 +1,12 @@
 ---
-title: rinka/router
+title: sobria/router
 ---
 
-{/* pnpm --filter @rinka/docs generate で生成する。手動で編集しない。 */}
+{/* pnpm --filter @sobria/docs generate で生成する。手動で編集しない。 */}
 
 ## RouteParams
 
-ページと `route.ts` のファイルの形のパスごとに、そのルートのパラメータの名前から値への対応を表す。`declare module "rinka/router"` で拡張できる。
+ページと `route.ts` のファイルの形のパスごとに、そのルートのパラメータの名前から値への対応を表す。`declare module "sobria/router"` で拡張できる。
 
 ```ts
 interface RouteParams {}
@@ -14,7 +14,7 @@ interface RouteParams {}
 
 ## RouteHandlerPaths
 
-`route.ts` のファイルの形のパスごとに、そのルートの Hono のパスを表す。`declare module "rinka/router"` で拡張できる。
+`route.ts` のファイルの形のパスごとに、そのルートの Hono のパスを表す。`declare module "sobria/router"` で拡張できる。
 
 ```ts
 interface RouteHandlerPaths {}

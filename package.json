@@ -1,5 +1,5 @@
 {
-  "name": "rinka-repository",
+  "name": "sobria-repository",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -13,7 +13,7 @@
     "test": "pnpm build && pnpm -r --if-present test"
   },
   "devDependencies": {
-    "@rinka/config": "workspace:*",
+    "@sobria/config": "workspace:*",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "catalog:"

@@ -1,0 +1,9 @@
+{
+  "extends": "@sobria/config/tsconfig.base.json",
+  "compilerOptions": {
+    "customConditions": ["sobria-client"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "sobria"
+  },
+  "include": ["**/*", "../../../src/shared/env.d.ts"]
+}

@@ -2,7 +2,7 @@
 title: リアクティビティ
 ---
 
-要素の状態は Signal で保持します。Signal の値が変化すると、rinka はその値を読み取っている箇所だけを更新します。要素の関数を実行し直すことはありません。
+要素の状態は Signal で保持します。Signal の値が変化すると、sobria はその値を読み取っている箇所だけを更新します。要素の関数を実行し直すことはありません。
 
 ## signal
 
@@ -10,7 +10,7 @@ title: リアクティビティ
 
 ```tsx
 // src/elements/counter.tsx
-import { memo, signal } from "rinka";
+import { memo, signal } from "sobria";
 
 export default function Counter() {
   const [count, setCount] = signal(0);
@@ -42,7 +42,7 @@ memo の関数は Promise か async iterable を返してもかまいません�
 
 ```tsx
 // src/elements/user-name.tsx
-import { Loading, memo } from "rinka";
+import { Loading, memo } from "sobria";
 
 import { getUser } from "../lib/users.ts";
 
@@ -64,7 +64,7 @@ export default function UserName(props: { userId: number }) {
 
 ```tsx
 // src/elements/search-box.tsx
-import { effect, signal } from "rinka";
+import { effect, signal } from "sobria";
 
 export default function SearchBox() {
   const [query, setQuery] = signal("");
@@ -80,19 +80,19 @@ export default function SearchBox() {
 ```
 
 - `apply` の中で読み取った値は追跡しません。`apply` を呼び直すきっかけになるのは、`read` が読み取った値だけです
-- `apply` の中で signal や memo を読むときは、`untrack(() => value())` のように `untrack` で包みます。包まずに読むと、開発中にコンソールに `STRICT_READ_UNTRACKED` の警告が表示されます。`untrack` は `rinka` から import します
-- `apply` が関数を返すと、rinka はその関数を、次に `apply` を呼ぶ前と、要素を破棄するときに呼びます
+- `apply` の中で signal や memo を読むときは、`untrack(() => value())` のように `untrack` で包みます。包まずに読むと、開発中にコンソールに `STRICT_READ_UNTRACKED` の警告が表示されます。`untrack` は `sobria` から import します
+- `apply` が関数を返すと、sobria はその関数を、次に `apply` を呼ぶ前と、要素を破棄するときに呼びます
 - `read` が非同期の memo を読むときは、memo が新しい値に解決してから `apply` を呼びます
 
 ## external
 
-`external(subscribe, getSnapshot, getServerSnapshot?)` は、URL のクエリやメディアクエリのように、rinka の外にある状態を読み取る関数を返します。`subscribe` は、状態が変化したときに呼ぶ関数を受け取り、購読を解除する関数を返します。
+`external(subscribe, getSnapshot, getServerSnapshot?)` は、URL のクエリやメディアクエリのように、sobria の外にある状態を読み取る関数を返します。`subscribe` は、状態が変化したときに呼ぶ関数を受け取り、購読を解除する関数を返します。
 
 次の例は、URL のクエリの `sort` を読み書きする要素です。
 
 ```tsx
 // src/elements/sort-select.tsx
-import { external } from "rinka";
+import { external } from "sobria";
 
 const listeners = new Set<() => void>();
 
@@ -131,7 +131,7 @@ export default function SortSelect(props: { search: string }) {
 
 ```tsx
 // src/routes/posts/page.tsx
-import type { PageProps } from "rinka/router";
+import type { PageProps } from "sobria/router";
 
 import SortSelect from "../../elements/sort-select.tsx";
 
@@ -152,7 +152,7 @@ export default function Posts({ url }: PageProps<"/posts">) {
 
 ```tsx
 // src/elements/todo-list.tsx
-import { For, signal } from "rinka";
+import { For, signal } from "sobria";
 
 export default function TodoList(props: { todos: string[] }) {
   const [todos, setTodos] = signal(props.todos);
@@ -202,7 +202,7 @@ export default function TodoList(props: { todos: string[] }) {
 
 ```tsx
 // src/elements/user-card.tsx
-import { Errored, Loading, isPending, memo, refresh, signal } from "rinka";
+import { Errored, Loading, isPending, memo, refresh, signal } from "sobria";
 
 import { getUser } from "../lib/users.ts";
 
@@ -239,7 +239,7 @@ export default function UserCard(props: { userId: number }) {
 
 ```tsx
 // src/elements/like-count.tsx
-import { action, memo, optimistic, refresh } from "rinka";
+import { action, memo, optimistic, refresh } from "sobria";
 
 import { getUser, like } from "../lib/users.ts";
 
@@ -259,7 +259,7 @@ export default function LikeCount(props: { userId: number }) {
 }
 ```
 
-ボタンを押すと、`likes` はすぐに 1 増えます。`like` はいいねを保存するサーバー関数です。GET 以外のサーバー関数を呼び出すと、rinka は呼び出し元のページを描き直します。いいねの数は要素の memo が取得し直すので、`{ refresh: false }` を指定して、ページの描き直しを省略します（[サーバー関数](/guide/server-functions)）。action が `refresh(user)` を待っている間は、`likes` は書き込んだ値を保持します。action が終わると、`likes` は `user().likes` の値に戻ります。取得し直した `user().likes` は書き込んだ値と同じなので、表示される数は変化しません。
+ボタンを押すと、`likes` はすぐに 1 増えます。`like` はいいねを保存するサーバー関数です。GET 以外のサーバー関数を呼び出すと、sobria は呼び出し元のページを描き直します。いいねの数は要素の memo が取得し直すので、`{ refresh: false }` を指定して、ページの描き直しを省略します（[サーバー関数](/guide/server-functions)）。action が `refresh(user)` を待っている間は、`likes` は書き込んだ値を保持します。action が終わると、`likes` は `user().likes` の値に戻ります。取得し直した `user().likes` は書き込んだ値と同じなので、表示される数は変化しません。
 
 `action` には generator 関数（`function*`）を渡し、Promise は `await` の代わりに `yield` で待ちます。action の中の普通の Signal への書き込みは、`yield` の前後にかかわらず、action が終わるまで保留されます。async 関数の中で `await` の後に実行する処理は、action の外で実行されます。そのため、action に async 関数は渡せません。generator の中で呼び出して、その Promise を `yield` で待つ async 関数の中でも、`await` の後に `refresh` を待たないでください。action と `refresh` が互いの完了を待ち、どちらも完了しなくなることがあります。`refresh` は、action の generator の中で直接 `yield` で待ちます。
 
@@ -271,7 +271,7 @@ export default function LikeCount(props: { userId: number }) {
 
 ```tsx
 // src/elements/rename-user.tsx
-import { action, signal, wait } from "rinka";
+import { action, signal, wait } from "sobria";
 
 import { updateUser } from "../lib/users.ts";
 
@@ -283,7 +283,7 @@ export default function RenameUser(props: { userId: number }) {
   });
   return (
     <p>
-      <button onClick={() => void rename("rinka")}>名前を変更</button>
+      <button onClick={() => void rename("sobria")}>名前を変更</button>
       {message()}
     </p>
   );

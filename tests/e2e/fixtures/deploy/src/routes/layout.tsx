@@ -1,4 +1,4 @@
-import type { LayoutProps } from "rinka/router";
+import type { LayoutProps } from "sobria/router";
 
 import "../styles/app.css";
 

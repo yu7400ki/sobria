@@ -1,4 +1,4 @@
-import { memo, type Ctx } from "rinka";
+import { memo, type Ctx } from "sobria";
 
 import { letters } from "../lib/letters.ts";
 

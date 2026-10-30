@@ -1,0 +1,15 @@
+{
+  "extends": "../../../tsconfig.app.json",
+  "compilerOptions": {
+    "strict": true,
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "sobria",
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "customConditions": ["sobria-client"]
+  },
+  "files": ["env.d.ts"]
+}

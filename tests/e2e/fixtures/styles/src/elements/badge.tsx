@@ -1,4 +1,4 @@
-import type { Ctx } from "rinka";
+import type { Ctx } from "sobria";
 
 import tw from "../styles/app.css" with { type: "css" };
 

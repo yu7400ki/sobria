@@ -2,7 +2,7 @@
 title: Hono との連携
 ---
 
-rinka のアプリは Hono のアプリです。`rinka/app` は、`src/routes/` のルートとサーバー関数から構築した Hono のアプリを default export します。このアプリを自分の Hono のアプリにマウントすると、Hono のミドルウェアとルートを rinka のページと組み合わせられます。
+sobria のアプリは Hono のアプリです。`sobria/app` は、`src/routes/` のルートとサーバー関数から構築した Hono のアプリを default export します。このアプリを自分の Hono のアプリにマウントすると、Hono のミドルウェアとルートを sobria のページと組み合わせられます。
 
 ## サーバーのエントリー
 
@@ -18,7 +18,7 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { logger } from "hono/logger";
-import app from "rinka/app";
+import app from "sobria/app";
 
 const server = new Hono();
 server.use(logger());
@@ -33,9 +33,9 @@ if (import.meta.main) serve({ fetch: server.fetch, port: Number(process.env.PORT
 export default server;
 ```
 
-`server.route("/", app)` より前に `server.use()` で登録したミドルウェアは、rinka のページ、`route.ts`、サーバー関数のすべてのリクエストに適用されます。`server.get()` で追加したルートは、rinka のルートと並んで応答します。同じパスでは、`server.route()` より前に登録したルートが応答します。
+`server.route("/", app)` より前に `server.use()` で登録したミドルウェアは、sobria のページ、`route.ts`、サーバー関数のすべてのリクエストに適用されます。`server.get()` で追加したルートは、sobria のルートと並んで応答します。同じパスでは、`server.route()` より前に登録したルートが応答します。
 
-開発サーバー、`vite build` で出力したサーバー、`vite preview` は、どれも `src/server.ts` の `fetch` にリクエストを渡します。そのため、`src/server.ts` に追加したミドルウェアとルートは、開発と本番で同じように動作します。`src/server.ts` を作成しなければ、`rinka/app` をそのままサーバーのエントリーにします。静的ファイルの配信とサーバーの起動は、[デプロイ](/guide/deploy)で説明します。
+開発サーバー、`vite build` で出力したサーバー、`vite preview` は、どれも `src/server.ts` の `fetch` にリクエストを渡します。そのため、`src/server.ts` に追加したミドルウェアとルートは、開発と本番で同じように動作します。`src/server.ts` を作成しなければ、`sobria/app` をそのままサーバーのエントリーにします。静的ファイルの配信とサーバーの起動は、[デプロイ](/guide/deploy)で説明します。
 
 ## ルートのミドルウェア
 
@@ -43,7 +43,7 @@ export default server;
 
 ```ts
 // src/routes/admin/middleware.ts
-import { defineMiddleware } from "rinka/server";
+import { defineMiddleware } from "sobria/server";
 
 export default defineMiddleware(async (c, next) => {
   if (!c.get("user")) return c.text("Unauthorized", 401);
@@ -86,7 +86,7 @@ export async function readUser(c: Context): Promise<string | null> {
 
 ```ts
 // src/routes/middleware.ts
-import { defineMiddleware } from "rinka/server";
+import { defineMiddleware } from "sobria/server";
 
 import { readUser } from "../lib/session.ts";
 
@@ -106,7 +106,7 @@ export default defineMiddleware(async (c, next) => {
 
 ```tsx
 // src/routes/page.tsx
-import { getContext } from "rinka/server";
+import { getContext } from "sobria/server";
 
 export default function Page() {
   const user = getContext()?.get("user");
@@ -116,11 +116,11 @@ export default function Page() {
 
 ## API ルートの handler
 
-`route.ts` には、HTTP のメソッド名で Hono の handler を export します。`rinka/server` の `defineHandler` は、Hono の `hono/factory` の `defineHandler` と同じものです。オプションに `param`、`query`、`header`、`cookie`、`form`、`json` のスキーマを指定すると、handler を実行する前に値を検証します。スキーマには、Standard Schema に対応したライブラリ（例では Zod）を使用できます。
+`route.ts` には、HTTP のメソッド名で Hono の handler を export します。`sobria/server` の `defineHandler` は、Hono の `hono/factory` の `defineHandler` と同じものです。オプションに `param`、`query`、`header`、`cookie`、`form`、`json` のスキーマを指定すると、handler を実行する前に値を検証します。スキーマには、Standard Schema に対応したライブラリ（例では Zod）を使用できます。
 
 ```ts
 // src/routes/api/greet/route.ts
-import { defineHandler } from "rinka/server";
+import { defineHandler } from "sobria/server";
 import { z } from "zod";
 
 export const GET = defineHandler({ query: z.object({ name: z.string() }) })((c, { query }) => ({
@@ -153,7 +153,7 @@ handler が返したオブジェクトは JSON のレスポンスになります
 
 ```ts
 // src/lib/greet.ts
-import { defineMiddleware, defineServerFn } from "rinka/server";
+import { defineMiddleware, defineServerFn } from "sobria/server";
 
 import { readUser } from "./session.ts";
 

@@ -1,10 +1,10 @@
-import { href } from "rinka/router";
+import { href } from "sobria/router";
 import { css } from "styled-system/css";
 
 export default function NotFound() {
   return (
     <main class={css({ maxW: "3xl", mx: "auto", px: "6", py: "24", textAlign: "center" })}>
-      <title>ページが見つかりません | rinka</title>
+      <title>ページが見つかりません | sobria</title>
       <h1 class={css({ fontSize: "3xl", fontWeight: "bold" })}>ページが見つかりません</h1>
       <a
         href={href("/")}

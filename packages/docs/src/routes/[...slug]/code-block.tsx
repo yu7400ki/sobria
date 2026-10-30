@@ -1,4 +1,4 @@
-import type { ServerNode } from "rinka";
+import type { ServerNode } from "sobria";
 import { css } from "styled-system/css";
 
 import CopyButton from "../../elements/copy-button.tsx";

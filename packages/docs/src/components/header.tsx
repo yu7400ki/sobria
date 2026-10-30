@@ -15,7 +15,7 @@ export default function Header(props: { homeHref: string; docsHref: string }) {
       })}
     >
       <a href={props.homeHref} class={css({ fontWeight: "semibold", fontSize: "lg" })}>
-        rinka
+        sobria
       </a>
       <nav>
         <a

@@ -2,7 +2,7 @@ import { css } from "styled-system/css";
 
 import { firstPage } from "./content.ts";
 
-/** トップページで紹介する、rinka の特徴である。 */
+/** トップページで紹介する、sobria の特徴である。 */
 const features = [
   { title: "ページ", text: "サーバーコンポーネントとして描画し、JS を送信しません。" },
   { title: "要素", text: "Custom Element を Declarative Shadow DOM で SSR します。" },
@@ -16,7 +16,7 @@ export default function Home() {
         <body class="dark" />
       </html>
       <main class={css({ maxW: "5xl", mx: "auto", px: "6", py: "24", textAlign: "center" })}>
-        <h1 class={css({ fontSize: "5xl", fontWeight: "bold" })}>rinka</h1>
+        <h1 class={css({ fontSize: "5xl", fontWeight: "bold" })}>sobria</h1>
         <p class={css({ mt: "4", fontSize: "lg", color: "muted.foreground" })}>
           Hono と Vite の上で動作する、サーバーファーストの Web フレームワーク
         </p>

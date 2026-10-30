@@ -57,7 +57,7 @@ export async function Comments(props: { slug: string }) {
 ```tsx
 // src/routes/dashboard/page.tsx
 import { getCookie } from "hono/cookie";
-import { getContext, redirect } from "rinka/server";
+import { getContext, redirect } from "sobria/server";
 
 export default function Dashboard() {
   const c = getContext();
@@ -71,15 +71,15 @@ export default function Dashboard() {
 
 ## ストリーミング
 
-ページのうち `<Loading>` の外側の部分を、シェルと呼びます。rinka は、シェルの `await` がすべて終わるまで、レスポンスの送信を開始しません。一方、`<Loading>` の内側の部分は後から送信できます。中身の `await` が終わっていなければ、rinka は先にフォールバックを送信し、中身が揃った時点で、フォールバックを中身に差し替えます。
+ページのうち `<Loading>` の外側の部分を、シェルと呼びます。sobria は、シェルの `await` がすべて終わるまで、レスポンスの送信を開始しません。一方、`<Loading>` の内側の部分は後から送信できます。中身の `await` が終わっていなければ、sobria は先にフォールバックを送信し、中身が揃った時点で、フォールバックを中身に差し替えます。
 
 時間のかかるデータや、無くてもページが成り立つ部分は、`<Loading>` で囲みます。
 
 ```tsx
 // src/routes/posts/[slug]/page.tsx
-import { Errored, Loading } from "rinka";
-import type { PageProps } from "rinka/router";
-import { notFound } from "rinka/server";
+import { Errored, Loading } from "sobria";
+import type { PageProps } from "sobria/router";
+import { notFound } from "sobria/server";
 
 import { Comments } from "./comments.tsx";
 import { findPost } from "../../../lib/posts.ts";
@@ -121,12 +121,12 @@ export default async function PostPage({ params }: PageProps<"/posts/[slug]">) {
 
 ## `redirect()` と `notFound()`
 
-`rinka/server` の `redirect()` と `notFound()` は、戻り値を `throw` で投げて使用します。
+`sobria/server` の `redirect()` と `notFound()` は、戻り値を `throw` で投げて使用します。
 
 ```tsx
 // src/routes/users/[id]/page.tsx
-import type { PageProps } from "rinka/router";
-import { notFound } from "rinka/server";
+import type { PageProps } from "sobria/router";
+import { notFound } from "sobria/server";
 
 export default function User({ params }: PageProps<"/users/[id]">) {
   if (!/^\d+$/.test(params.id)) throw notFound();
@@ -153,8 +153,8 @@ export default function User({ params }: PageProps<"/users/[id]">) {
 
 ```tsx
 // src/routes/posts/[slug]/safe-comments.tsx
-import { Errored, Loading } from "rinka";
-import { NotFound } from "rinka/server";
+import { Errored, Loading } from "sobria";
+import { NotFound } from "sobria/server";
 
 import { Comments } from "./comments.tsx";
 
@@ -178,7 +178,7 @@ export function SafeComments(props: { slug: string }) {
 
 ## bot と blocking の描画
 
-検索エンジンのクローラーやリンクのプレビューを作成するサービスは、JS を実行しないことがあります。rinka は、User-Agent が bot の一覧に一致するリクエストには、すべての `<Loading>` の中身を待ってから、フォールバックと差し替えのスクリプトを含まない HTML を返します。この描画を、blocking の描画と呼びます。
+検索エンジンのクローラーやリンクのプレビューを作成するサービスは、JS を実行しないことがあります。sobria は、User-Agent が bot の一覧に一致するリクエストには、すべての `<Loading>` の中身を待ってから、フォールバックと差し替えのスクリプトを含まない HTML を返します。この描画を、blocking の描画と呼びます。
 
 blocking の描画では、`<Loading>` の内側もシェルとして扱います。そのため、`<Loading>` の内側の `notFound()` は 404 になり、`<Loading>` の内側の `<Errored>` がエラーを受け止めると 500 になります。bot に 500 を返したくない部分では、`<Errored>` に `status` を指定します。
 
@@ -186,7 +186,7 @@ blocking の描画では、`<Loading>` の内側もシェルとして扱いま�
 
 ```ts
 // src/routes/middleware.ts
-import { defineMiddleware, setBlockingRender } from "rinka/server";
+import { defineMiddleware, setBlockingRender } from "sobria/server";
 
 export default defineMiddleware(async (c, next) => {
   if (c.req.query("blocking") !== undefined) setBlockingRender(c, true);
@@ -194,4 +194,4 @@ export default defineMiddleware(async (c, next) => {
 });
 ```
 
-bot の一覧による判定は、`rinka/server` の `isBot(userAgent)` でも実行できます。blocking の描画のレスポンスに、rinka は `Vary: User-Agent` を付与しません。HTML を共有のキャッシュに保存するアプリは、ミドルウェアで `Vary` を付与してください。
+bot の一覧による判定は、`sobria/server` の `isBot(userAgent)` でも実行できます。blocking の描画のレスポンスに、sobria は `Vary: User-Agent` を付与しません。HTML を共有のキャッシュに保存するアプリは、ミドルウェアで `Vary` を付与してください。

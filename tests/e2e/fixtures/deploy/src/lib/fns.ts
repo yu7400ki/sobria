@@ -1,4 +1,4 @@
-import { defineServerFn } from "rinka/server";
+import { defineServerFn } from "sobria/server";
 
 /** title が空でない文字列のときだけ通過する Standard Schema である。 */
 const titled = {

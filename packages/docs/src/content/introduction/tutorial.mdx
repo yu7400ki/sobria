@@ -2,7 +2,7 @@
 title: チュートリアル
 ---
 
-メモを追加して一覧するアプリを作成します。[クイックスタート](/introduction/quick-start)の `rinka create` で作成した雛形から開始して、`pnpm dev` で開発サーバーを起動しておきます。
+メモを追加して一覧するアプリを作成します。[クイックスタート](/introduction/quick-start)の `sobria create` で作成した雛形から開始して、`pnpm dev` で開発サーバーを起動しておきます。
 
 ## ページでメモの一覧を表示する
 
@@ -10,7 +10,7 @@ title: チュートリアル
 
 ```ts
 // src/lib/db.ts
-export const memos: string[] = ["牛乳を買う", "rinka のチュートリアルを読む"];
+export const memos: string[] = ["牛乳を買う", "sobria のチュートリアルを読む"];
 ```
 
 `src/routes/page.tsx` を次のように置換して、配列の内容を一覧にします。雛形の `src/elements/greeter.tsx` と `src/lib/greet.ts` は使用しないので、置換した後に削除します。
@@ -33,7 +33,7 @@ export default function Page() {
 }
 ```
 
-ページはサーバーでだけ実行するので、サーバーのモジュールの値を直接参照できます。ブラウザで `http://localhost:5173/` を開くと、2 件のメモが表示されます。rinka は、このページではブラウザに JS を送信しません。
+ページはサーバーでだけ実行するので、サーバーのモジュールの値を直接参照できます。ブラウザで `http://localhost:5173/` を開くと、2 件のメモが表示されます。sobria は、このページではブラウザに JS を送信しません。
 
 ページのファイルの配置と URL の対応は[ルーティング](/guide/routing)で、ページでデータを取得する方法は[ページとデータ](/guide/pages-and-data)で説明します。
 
@@ -43,7 +43,7 @@ export default function Page() {
 
 ```tsx
 // src/elements/memo-form.tsx
-import { signal } from "rinka";
+import { signal } from "sobria";
 
 export default function MemoForm() {
   const [text, setText] = signal("");
@@ -80,7 +80,7 @@ export default function Page() {
 }
 ```
 
-ファイル名が `memo-form.tsx` なので、要素のタグ名は `rinka-memo-form` になります。要素もサーバーで描画するので、HTML には `0 文字` の表示を含む Shadow DOM が出力されます。JS が届くと要素が起動し、入力に合わせて文字数の表示が変化するようになります。
+ファイル名が `memo-form.tsx` なので、要素のタグ名は `sobria-memo-form` になります。要素もサーバーで描画するので、HTML には `0 文字` の表示を含む Shadow DOM が出力されます。JS が届くと要素が起動し、入力に合わせて文字数の表示が変化するようになります。
 
 要素の作り方は[要素](/guide/elements)で、Signal の使い方は[リアクティビティ](/guide/reactivity)で説明します。
 
@@ -90,7 +90,7 @@ export default function Page() {
 
 ```ts
 // src/lib/memos.ts
-import { defineServerFn } from "rinka/server";
+import { defineServerFn } from "sobria/server";
 
 import { memos } from "./db.ts";
 
@@ -107,7 +107,7 @@ export const addMemo = defineServerFn({
 
 ```tsx
 // src/elements/memo-form.tsx
-import { signal } from "rinka";
+import { signal } from "sobria";
 
 import { addMemo } from "../lib/memos.ts";
 
@@ -127,9 +127,9 @@ export default function MemoForm() {
 }
 ```
 
-要素の中で `addMemo` を呼び出すと、rinka はブラウザからサーバーにリクエストを送信し、サーバーで handler を実行します。ブラウザに送信する JS には、handler と `src/lib/db.ts` は含まれません。
+要素の中で `addMemo` を呼び出すと、sobria はブラウザからサーバーにリクエストを送信し、サーバーで handler を実行します。ブラウザに送信する JS には、handler と `src/lib/db.ts` は含まれません。
 
-`addMemo` は、HTTP の POST で呼び出すサーバー関数です。POST で呼び出すサーバー関数のレスポンスには、呼び出したページをサーバーで描き直した結果が含まれます。rinka はその結果をページに反映してから、`await` の後の処理に進みます。そのため、ボタンを押すと、追加したメモが一覧に表示されます。
+`addMemo` は、HTTP の POST で呼び出すサーバー関数です。POST で呼び出すサーバー関数のレスポンスには、呼び出したページをサーバーで描き直した結果が含まれます。sobria はその結果をページに反映してから、`await` の後の処理に進みます。そのため、ボタンを押すと、追加したメモが一覧に表示されます。
 
 開発サーバーでは、ファイルを保存すると、配列が最初の 2 件に戻ることがあります。
 
@@ -141,7 +141,7 @@ export default function MemoForm() {
 
 ```tsx
 // src/elements/memo-form.tsx
-import { signal } from "rinka";
+import { signal } from "sobria";
 
 import { addMemo } from "../lib/memos.ts";
 
@@ -157,11 +157,11 @@ export default function MemoForm() {
 }
 ```
 
-rinka は、`action` を出力せずに、送信先のサーバー関数を示す hidden input を出力し、`method` を `post` にします。ブラウザは、現在のページの URL にフォームを送信します。フォームの値は、入力欄の `name` をキーにして `{ text: "..." }` の形でサーバー関数の `input` に渡ります。前の章で `input` の形をオブジェクトにしたので、`src/lib/memos.ts` は変更しません。
+sobria は、`action` を出力せずに、送信先のサーバー関数を示す hidden input を出力し、`method` を `post` にします。ブラウザは、現在のページの URL にフォームを送信します。フォームの値は、入力欄の `name` をキーにして `{ text: "..." }` の形でサーバー関数の `input` に渡ります。前の章で `input` の形をオブジェクトにしたので、`src/lib/memos.ts` は変更しません。
 
 JS が無いときは、ブラウザが通常のフォームの送信を実行します。サーバーは handler を実行した後に、送信したページにリダイレクトします。ブラウザは `/` を読み込み直すので、追加したメモを含む一覧が表示されます。
 
-一方、JS があるときは、rinka がフォームの値をサーバーに送信し、描き直したページの差分を反映してから、`form.reset()` で入力欄を初期値に戻します。ページの読み込み直しは発生しません。文字数の Signal はリセットで変化しないので、`onReset` で空の文字列に戻します。
+一方、JS があるときは、sobria がフォームの値をサーバーに送信し、描き直したページの差分を反映してから、`form.reset()` で入力欄を初期値に戻します。ページの読み込み直しは発生しません。文字数の Signal はリセットで変化しないので、`onReset` で空の文字列に戻します。
 
 フォームの扱いは[フォーム](/guide/forms)で説明します。
 

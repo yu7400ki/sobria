@@ -9,11 +9,14 @@ const require = createRequire(import.meta.url);
 /** `execFile` を Promise で包んだ関数である。 */
 export const run = promisify(execFile);
 
-/** rinka のパッケージのディレクトリである。 */
-export const rinkaDir = resolve(dirname(fileURLToPath(import.meta.resolve("rinka/vite"))), "../..");
+/** sobria のパッケージのディレクトリである。 */
+export const sobriaDir = resolve(
+  dirname(fileURLToPath(import.meta.resolve("sobria/vite"))),
+  "../..",
+);
 
-/** rinka の CLI のファイルである。 */
-export const rinkaBin = join(rinkaDir, "lib/build/bin.js");
+/** sobria の CLI のファイルである。 */
+export const sobriaBin = join(sobriaDir, "lib/build/bin.js");
 
 /** TypeScript のパッケージのディレクトリである。 */
 export const typescriptDir = dirname(require.resolve("typescript/package.json"));

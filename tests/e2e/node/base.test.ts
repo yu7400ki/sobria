@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { chromium, type Browser } from "playwright";
-import { rinka, type RinkaOptions } from "rinka/vite";
+import { sobria, type SobriaOptions } from "sobria/vite";
 import { preview, resolveConfig, type Plugin, type PreviewServer, type ViteDevServer } from "vite";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
@@ -23,11 +23,11 @@ let prerendered: PreviewServer;
 let dev: ViteDevServer;
 let browser: Browser;
 
-/** `root` のアプリを、rinka のプラグインの設定 `options` と `base` で `out` にビルドしたものを、`vite preview` で配信する。 */
+/** `root` のアプリを、sobria のプラグインの設定 `options` と `base` で `out` にビルドしたものを、`vite preview` で配信する。 */
 async function previewOf(
   root: string,
   out: string,
-  options: RinkaOptions = {},
+  options: SobriaOptions = {},
 ): Promise<PreviewServer> {
   await buildFixture(root, out, options, [], { base });
   return preview({
@@ -35,7 +35,7 @@ async function previewOf(
     base,
     configFile: false,
     logLevel: "error",
-    plugins: [rinka({ prefix: "app", outDir: out, ...options })],
+    plugins: [sobria({ prefix: "app", outDir: out, ...options })],
     preview: { port: 0 },
   });
 }
@@ -44,7 +44,7 @@ async function previewOf(
 const previewOrigin = (server: PreviewServer) => new URL(server.resolvedUrls!.local[0]!).origin;
 
 beforeAll(async () => {
-  outDir = await mkdtemp(join(tmpdir(), "rinka-base-"));
+  outDir = await mkdtemp(join(tmpdir(), "sobria-base-"));
   deploy = await previewOf(fixture("deploy"), join(outDir, "deploy"));
   prerendered = await previewOf(fixture("prerender"), join(outDir, "prerender"), {
     output: "static",
@@ -127,7 +127,7 @@ it.each([
             base: value,
             configFile: false,
             logLevel: "silent",
-            plugins: [rinka({ prefix: "app" })],
+            plugins: [sobria({ prefix: "app" })],
           },
           command,
         );
@@ -138,7 +138,7 @@ it.each([
   },
 );
 
-/** base の `value` と、rinka のプラグインの後に登録する `plugins` で、ビルドの設定を解決する。 */
+/** base の `value` と、sobria のプラグインの後に登録する `plugins` で、ビルドの設定を解決する。 */
 const resolveWith = (value: string, plugins: Plugin[] = []) =>
   resolveConfig(
     {
@@ -146,18 +146,18 @@ const resolveWith = (value: string, plugins: Plugin[] = []) =>
       base: value,
       configFile: false,
       logLevel: "silent",
-      plugins: [rinka({ prefix: "app" }), ...plugins],
+      plugins: [sobria({ prefix: "app" }), ...plugins],
     },
     "build",
   );
 
-it("rinka のプラグインより後のプラグインが、末尾に / の無い base に変更すると、エラーにする", async () => {
+it("sobria のプラグインより後のプラグインが、末尾に / の無い base に変更すると、エラーにする", async () => {
   await expect(
     resolveWith("/sub/", [{ name: "test:base", config: () => ({ base: "/other" }) }]),
   ).rejects.toThrow('Vite の base が "/other" です');
 });
 
-it("rinka のプラグインより後のプラグインが、Vitest のように base を / に変更すると、開発サーバーが出力する URL もその値で始まる", async () => {
+it("sobria のプラグインより後のプラグインが、Vitest のように base を / に変更すると、開発サーバーが出力する URL もその値で始まる", async () => {
   const server = await createDevServer(fixture("deploy"), {
     base: "/sub/",
     server: { port: 0 },

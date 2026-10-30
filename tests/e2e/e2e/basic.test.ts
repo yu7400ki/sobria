@@ -49,7 +49,7 @@ it("要素の中で作成した子要素は、親が起動した後も SSR し�
 it("SSR の memo が返した async iterable の最初の値で描画し、起動するとブラウザで memo の関数を実行し直して最後の値を表示する", async () => {
   const origin = inject("basicOrigin");
   const served = inject("streamPage");
-  expect(served).toContain("$rinka.s(");
+  expect(served).toContain("$sobria.s(");
   const frame = document.createElement("iframe");
   frame.srcdoc = served.replace("<head>", `<head><base href="${origin}/">`);
   document.body.append(frame);

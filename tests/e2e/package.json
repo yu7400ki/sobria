@@ -1,5 +1,5 @@
 {
-  "name": "@rinka-tests/e2e",
+  "name": "@sobria-tests/e2e",
   "private": true,
   "type": "module",
   "scripts": {
@@ -7,8 +7,8 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@rinka-tests/fixture-library": "workspace:*",
-    "rinka": "workspace:*"
+    "@sobria-tests/fixture-library": "workspace:*",
+    "sobria": "workspace:*"
   },
   "devDependencies": {
     "@angular/common": "^22.2.3",
@@ -17,7 +17,7 @@
     "@angular/platform-browser": "^22.2.3",
     "@cloudflare/vite-plugin": "^1.64.0",
     "@hono/node-server": "catalog:",
-    "@rinka/config": "workspace:*",
+    "@sobria/config": "workspace:*",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "catalog:",

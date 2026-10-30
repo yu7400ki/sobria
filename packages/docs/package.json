@@ -1,5 +1,5 @@
 {
-  "name": "@rinka/docs",
+  "name": "@sobria/docs",
   "private": true,
   "type": "module",
   "scripts": {
@@ -7,11 +7,11 @@
     "generate": "node scripts/generate-api-reference.ts",
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "rinka prepare && pnpm run prepare && tsc -b",
+    "typecheck": "sobria prepare && pnpm run prepare && tsc -b",
     "test": "vitest run"
   },
   "dependencies": {
-    "rinka": "workspace:*"
+    "sobria": "workspace:*"
   },
   "devDependencies": {
     "@ox-content/napi": "^3.4.0",
@@ -20,7 +20,7 @@
     "@pandacss/preset-base": "^2.4.0",
     "@pandacss/preset-panda": "^2.4.0",
     "@pandacss/vite": "^2.4.0",
-    "@rinka/config": "workspace:*",
+    "@sobria/config": "workspace:*",
     "@types/node": "catalog:",
     "hono": "catalog:",
     "oxfmt": "catalog:",

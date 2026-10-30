@@ -1,4 +1,4 @@
-import type { Ctx } from "rinka";
+import type { Ctx } from "sobria";
 
 import sheet from "../styles/card.css" with { type: "css" };
 

@@ -1,4 +1,4 @@
-import { signal, type Ctx } from "rinka";
+import { signal, type Ctx } from "sobria";
 import { css } from "styled-system/css";
 
 import sheet from "../styles.css" with { type: "css" };

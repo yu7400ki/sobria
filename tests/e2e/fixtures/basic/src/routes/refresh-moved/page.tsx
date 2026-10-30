@@ -1,4 +1,4 @@
-import { redirect } from "rinka/server";
+import { redirect } from "sobria/server";
 
 import Refresher from "../../elements/refresher.tsx";
 

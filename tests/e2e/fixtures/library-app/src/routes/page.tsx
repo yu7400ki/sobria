@@ -1,4 +1,4 @@
-import Badge from "@rinka-tests/fixture-library/badge";
+import Badge from "@sobria-tests/fixture-library/badge";
 
 import Note from "../elements/badge.tsx";
 

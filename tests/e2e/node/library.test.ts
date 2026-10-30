@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { rinka } from "rinka/vite";
+import { sobria } from "sobria/vite";
 import { createBuilder, createLogger, resolveConfig } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -15,7 +15,7 @@ const root = fileURLToPath(new URL("../../fixture-library", import.meta.url));
 let outDir: string;
 
 beforeAll(async () => {
-  outDir = await mkdtemp(join(tmpdir(), "rinka-library-"));
+  outDir = await mkdtemp(join(tmpdir(), "sobria-library-"));
   await buildFixture(root, outDir, { prefix: "acme", library: true });
 }, 120_000);
 
@@ -40,7 +40,7 @@ describe("library: true のビルド", () => {
     expect(files.filter((file) => file.endsWith(".css"))).toEqual([]);
   });
 
-  it("出力は rinka と共通のコードを相対パスで import し、CSS の url() をモジュールからの相対パスで解決する", async () => {
+  it("出力は sobria と共通のコードを相対パスで import し、CSS の url() をモジュールからの相対パスで解決する", async () => {
     const files = (await readdir(outDir, { recursive: true })).filter((file) =>
       file.endsWith(".js"),
     );
@@ -109,8 +109,8 @@ describe("library: true のビルド", () => {
     });
   }, 120_000);
 
-  it("接頭辞がデフォルト値の rinka なら、警告を出力する", async () => {
-    const { warnings } = await buildCopy({ prefix: "rinka" });
+  it("接頭辞がデフォルト値の sobria なら、警告を出力する", async () => {
+    const { warnings } = await buildCopy({ prefix: "sobria" });
     expect(warnings.join("\n")).toMatch(/接頭辞/);
   }, 120_000);
 
@@ -142,7 +142,7 @@ describe("library: true のビルド", () => {
         json["customElements"] = "dist/custom-elements.json";
       },
       {
-        "src/fns.ts": `import { defineServerFn } from "rinka/server";
+        "src/fns.ts": `import { defineServerFn } from "sobria/server";
 export const like = defineServerFn(() => null);
 `,
         "src/elements/liker.tsx": `import { like } from "../fns.ts";
@@ -161,7 +161,7 @@ export default function Liker() {
         root,
         configFile: false,
         logLevel: "silent",
-        plugins: [rinka({ prefix: "acme", outDir, library: true })],
+        plugins: [sobria({ prefix: "acme", outDir, library: true })],
       },
       "serve",
       "production",
@@ -181,11 +181,11 @@ async function buildCopy(
   edit?: (json: Record<string, unknown>) => void,
   files: Readonly<Record<string, string>> = {},
 ): Promise<{ warnings: string[]; manifest: unknown }> {
-  // ビルドは .rinka/ に書き込むので、ライブラリのコピーをビルドする。rinka を解決できるように、コピーは tests/e2e の中に置く
-  const copy = await mkdtemp(fileURLToPath(new URL("../.rinka-tmp-library-", import.meta.url)));
+  // ビルドは .sobria/ に書き込むので、ライブラリのコピーをビルドする。sobria を解決できるように、コピーは tests/e2e の中に置く
+  const copy = await mkdtemp(fileURLToPath(new URL("../.sobria-tmp-library-", import.meta.url)));
   await cp(root, copy, {
     recursive: true,
-    filter: (source) => ![".rinka", "dist", "types", "node_modules"].includes(basename(source)),
+    filter: (source) => ![".sobria", "dist", "types", "node_modules"].includes(basename(source)),
   });
   if (edit) {
     const path = join(copy, "package.json");
@@ -206,7 +206,7 @@ async function buildCopy(
       root: copy,
       configFile: false,
       customLogger: logger,
-      plugins: [rinka({ ...options, library: true })],
+      plugins: [sobria({ ...options, library: true })],
     });
     await builder.buildApp();
     const manifest: unknown = JSON.parse(

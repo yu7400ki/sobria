@@ -1,4 +1,4 @@
-import { memo } from "rinka";
+import { memo } from "sobria";
 
 type Props = { start: number };
 

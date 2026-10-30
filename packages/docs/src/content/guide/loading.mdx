@@ -66,7 +66,7 @@ export default function Page() {
 
 ```ts
 // src/lib/users.ts
-import { defineServerFn } from "rinka/server";
+import { defineServerFn } from "sobria/server";
 import { z } from "zod";
 
 import { db } from "./db.ts";
@@ -78,7 +78,7 @@ export const getUser = defineServerFn({ method: "GET", input: z.number() })(asyn
 
 ```tsx
 // src/elements/user-card.tsx
-import { memo } from "rinka";
+import { memo } from "sobria";
 
 import { getUser } from "../lib/users.ts";
 
@@ -108,7 +108,7 @@ memo の関数が async iterable を返すとき、または async iterable に�
 
 ```tsx
 // src/elements/event-form.tsx
-import { signal } from "rinka";
+import { signal } from "sobria";
 
 type Props = {
   heading: string;

@@ -1,4 +1,4 @@
-import { refreshPage, signal, type Ctx } from "rinka";
+import { refreshPage, signal, type Ctx } from "sobria";
 
 import { save } from "../lib/fns.ts";
 

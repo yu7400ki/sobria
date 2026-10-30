@@ -42,17 +42,17 @@ afterAll(async () => {
 
 /** `name` のサーバー関数を 1 つだけ定義するモジュールのソースを返す。 */
 const removedSource = (name: string) =>
-  `import { defineServerFn } from "rinka/server";\nexport const ${name} = defineServerFn(() => "${name}");\n`;
+  `import { defineServerFn } from "sobria/server";\nexport const ${name} = defineServerFn(() => "${name}");\n`;
 
 /** 開発サーバーの、`src/lib/broken.ts` の `gone` のサーバー関数を RPC で呼び出す。 */
 const callBroken = () =>
-  fetch(`${origin}/_rinka/fn/${encodeURIComponent("src/lib/broken.ts#gone")}`, {
+  fetch(`${origin}/_sobria/fn/${encodeURIComponent("src/lib/broken.ts#gone")}`, {
     method: "POST",
   });
 
 /** 開発サーバーの、`src/lib/removed.ts` の `name` のサーバー関数を RPC で呼び出す。 */
 const callRemoved = (name: string) =>
-  fetch(`${origin}/_rinka/fn/${encodeURIComponent(`src/lib/removed.ts#${name}`)}`, {
+  fetch(`${origin}/_sobria/fn/${encodeURIComponent(`src/lib/removed.ts#${name}`)}`, {
     method: "POST",
   });
 
@@ -123,7 +123,7 @@ describe("開発サーバー", () => {
   });
 
   it("サーバー関数のエンドポイントは、変換の時点でサーバー関数の定義を見つけたモジュールだけを読み込む", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "rinka-probe-"));
+    const dir = await mkdtemp(join(tmpdir(), "sobria-probe-"));
     try {
       const marker = join(dir, "marker.txt");
       const payload = join(dir, "payload.mjs");
@@ -135,7 +135,7 @@ writeFileSync(${JSON.stringify(marker)}, "x");
       );
       const ids = [`${posix(relative(root, payload))}#x`, `@fs/${posix(payload)}#x`];
       const responses = await Promise.all(
-        ids.map((id) => fetch(`${origin}/_rinka/fn/${encodeURIComponent(id)}`)),
+        ids.map((id) => fetch(`${origin}/_sobria/fn/${encodeURIComponent(id)}`)),
       );
       expect(responses.map((response) => response.status)).toEqual([404, 404]);
       expect(existsSync(marker)).toBe(false);
@@ -146,7 +146,7 @@ writeFileSync(${JSON.stringify(marker)}, "x");
 
   it("まだ変換していないモジュールのサーバー関数を、RPC で呼び出せる", async () => {
     const response = await fetch(
-      `${origin}/_rinka/fn/${encodeURIComponent("src/lib/late.ts#echo")}`,
+      `${origin}/_sobria/fn/${encodeURIComponent("src/lib/late.ts#echo")}`,
       {
         method: "POST",
       },
@@ -264,10 +264,10 @@ writeFileSync(${JSON.stringify(marker)}, "x");
   it("form の action に渡したサーバー関数に、JS が無いときと同じ multipart の送信をページの URL にすると、そのページを 200 で返す", async () => {
     const html = await (await fetch(`${origin}/fns`)).text();
     const form =
-      '<form method="post" enctype="multipart/form-data"><input type="hidden" name="_rinka_fn" value="src/lib/fns.ts#save">';
+      '<form method="post" enctype="multipart/form-data"><input type="hidden" name="_sobria_fn" value="src/lib/fns.ts#save">';
     expect(html).toContain(form);
     const body = new FormData();
-    body.append("_rinka_fn", "src/lib/fns.ts#save");
+    body.append("_sobria_fn", "src/lib/fns.ts#save");
     body.append("title", "a");
     const response = await fetch(`${origin}/fns`, { method: "POST", body, redirect: "manual" });
     expect(response.status).toBe(200);
@@ -332,7 +332,7 @@ writeFileSync(${JSON.stringify(marker)}, "x");
         .waitFor({ timeout: 5000 });
       expect(await page.title()).toBe(`refresh ${after}`);
       expect([
-        requests.filter((path) => path.startsWith("/_rinka/fn/")).length,
+        requests.filter((path) => path.startsWith("/_sobria/fn/")).length,
         requests.filter((path) => path === "/refresh").length,
       ]).toEqual([1, 0]);
     } finally {
@@ -428,7 +428,7 @@ writeFileSync(${JSON.stringify(marker)}, "x");
       ]) {
         expect([label, describedBy]).toEqual([input, error]);
         expect(input).not.toBe(error);
-        expect(input).toMatch(/^rinka-i\d+$/);
+        expect(input).toMatch(/^sobria-i\d+$/);
       }
     } finally {
       await browser.close();
@@ -438,6 +438,6 @@ writeFileSync(${JSON.stringify(marker)}, "x");
   it("Vite が処理するリクエストは、Vite が返す", async () => {
     const response = await fetch(`${origin}/src/elements/counter.tsx`);
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain('__rinka_defineElement("app-counter"');
+    expect(await response.text()).toContain('__sobria_defineElement("app-counter"');
   });
 });

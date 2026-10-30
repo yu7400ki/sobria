@@ -1,4 +1,4 @@
-import { createContext, createId, useContext } from "rinka";
+import { createContext, createId, useContext } from "sobria";
 
 /** `<Field>` の入力欄とエラーの文の id である。 */
 type FieldIds = { readonly input: string; readonly error: string };

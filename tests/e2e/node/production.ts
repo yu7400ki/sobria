@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer, type AddressInfo } from "node:net";
 
-import { rinka, type RinkaOptions } from "rinka/vite";
+import { sobria, type SobriaOptions } from "sobria/vite";
 import { createBuilder, type InlineConfig, type PluginOption } from "vite";
 
 /** 本番のビルドでの、ファイル `file` のサーバー関数 `name` の ID を返す。 */
@@ -11,13 +11,13 @@ export const fnId = (file: string, name: string) =>
 
 /** 本番のビルドでの、ファイル `file` のサーバー関数 `name` の RPC のパスを返す。 */
 export const rpcPath = (file: string, name: string) =>
-  `/_rinka/fn/${encodeURIComponent(fnId(file, name))}`;
+  `/_sobria/fn/${encodeURIComponent(fnId(file, name))}`;
 
-/** テスト用のアプリのルート `root` を、rinka のプラグイン（接頭辞は `app`）と `plugins` と Vite の設定 `config` で `outDir` にビルドする。 */
+/** テスト用のアプリのルート `root` を、sobria のプラグイン（接頭辞は `app`）と `plugins` と Vite の設定 `config` で `outDir` にビルドする。 */
 export async function buildFixture(
   root: string,
   outDir: string,
-  options: RinkaOptions = {},
+  options: SobriaOptions = {},
   plugins: PluginOption[] = [],
   config: InlineConfig = {},
 ): Promise<void> {
@@ -26,7 +26,7 @@ export async function buildFixture(
     root,
     configFile: false,
     logLevel: "error",
-    plugins: [rinka({ prefix: "app", outDir, ...options }), ...plugins],
+    plugins: [sobria({ prefix: "app", outDir, ...options }), ...plugins],
   });
   await builder.buildApp();
 }

@@ -2,7 +2,7 @@
 title: 要素
 ---
 
-要素は、ページの中で操作に応じて表示を変える部品です。rinka は、要素の関数から Custom Element を作成し、サーバーで描画した HTML をブラウザで起動します。
+要素は、ページの中で操作に応じて表示を変える部品です。sobria は、要素の関数から Custom Element を作成し、サーバーで描画した HTML をブラウザで起動します。
 
 ## 要素を作成する
 
@@ -10,7 +10,7 @@ title: 要素
 
 ```tsx
 // src/elements/stepper.tsx
-import { signal } from "rinka";
+import { signal } from "sobria";
 
 type Props = {
   label: string;
@@ -42,7 +42,7 @@ export default function Page() {
 
 ## props
 
-要素の関数は、1 番目の引数で props を受け取ります。引数には Props の型を注釈します。注釈には、同じファイルで宣言した型も、別のファイルから import した型も指定できます。rinka は、この型から、どの props を属性で受け取るかを決定します。
+要素の関数は、1 番目の引数で props を受け取ります。引数には Props の型を注釈します。注釈には、同じファイルで宣言した型も、別のファイルから import した型も指定できます。sobria は、この型から、どの props を属性で受け取るかを決定します。
 
 props は `props.label` のように読みます。読み取りは追跡されるので、props が変化すると、その値を使用している箇所が更新されます。関数の引数で props を分割代入すると、ビルドのエラーになります。関数の本体で分割代入した変数は、分割代入した時点の値を保持し、後の変化には追従しません。
 
@@ -58,7 +58,7 @@ Props の型を `Props<T>` で包むと、使用できない名前をエディ�
 
 ```tsx
 // src/elements/card.tsx
-import type { Props } from "rinka";
+import type { Props } from "sobria";
 
 type CardProps = Props<{
   heading: string;
@@ -67,11 +67,11 @@ type CardProps = Props<{
 }>;
 ```
 
-`ref`、`key`、`load:*` は rinka が使用する props なので、要素の Props の型に記述できません（[Props の型に記述しなくても受け付ける props](/reference/jsx#props-の型に記述しなくても受け付ける-props)）。`load:*` は、要素を起動するタイミングを指定します（[読み込みと値の受け渡し](/guide/loading)）。
+`ref`、`key`、`load:*` は sobria が使用する props なので、要素の Props の型に記述できません（[Props の型に記述しなくても受け付ける props](/reference/jsx#props-の型に記述しなくても受け付ける-props)）。`load:*` は、要素を起動するタイミングを指定します（[読み込みと値の受け渡し](/guide/loading)）。
 
 ### ホストの属性
 
-Props の型に無い属性（`id`、`class`、`aria-*`、`data-*` など）を記述すると、ホストの要素にそのまま付与されます。例えば、次の `id` と `class` は、`rinka-stepper` の要素に付与されます。
+Props の型に無い属性（`id`、`class`、`aria-*`、`data-*` など）を記述すると、ホストの要素にそのまま付与されます。例えば、次の `id` と `class` は、`sobria-stepper` の要素に付与されます。
 
 ```tsx
 // src/routes/page.tsx
@@ -90,7 +90,7 @@ Props の型に無い属性（`id`、`class`、`aria-*`、`data-*` など）を�
 
 ```tsx
 // src/elements/like-button.tsx
-import { signal } from "rinka";
+import { signal } from "sobria";
 
 type Props = {
   count: number;
@@ -111,8 +111,8 @@ export default function LikeButton(props: Props) {
 `onLike` のイベント名は `like` で、イベントの `detail` は props を呼んだときの最初の引数です。イベント名の決まり方と、JSX で関数を渡したときの動作は、[関数の props とイベント](/reference/jsx#関数の-props-とイベント) に記述しています。
 
 ```ts
-// rinka を使用しないページの JS
-document.querySelector("rinka-like-button").addEventListener("like", (e) => {
+// sobria を使用しないページの JS
+document.querySelector("sobria-like-button").addEventListener("like", (e) => {
   console.log(e.detail);
 });
 ```
@@ -125,7 +125,7 @@ document.querySelector("rinka-like-button").addEventListener("like", (e) => {
 
 ```tsx
 // src/elements/card.tsx
-import type { Props } from "rinka";
+import type { Props } from "sobria";
 
 type CardProps = Props<{
   heading: string;
@@ -166,13 +166,13 @@ export default function Card(props: CardProps) {
 
 ## ref
 
-ネイティブのタグの `ref` に関数を渡すと、rinka はノードを作成した時点で、そのノードを引数に関数を呼びます。この時点では、ノードはまだ DOM に接続されていません。フォーカスのように接続した後に実行する処理は、`ctx.onMount` か `effect`（[リアクティビティ](/guide/reactivity)）の中で実行します。
+ネイティブのタグの `ref` に関数を渡すと、sobria はノードを作成した時点で、そのノードを引数に関数を呼びます。この時点では、ノードはまだ DOM に接続されていません。フォーカスのように接続した後に実行する処理は、`ctx.onMount` か `effect`（[リアクティビティ](/guide/reactivity)）の中で実行します。
 
-`ref` の関数が関数を返すと、rinka はその関数を、ノードが条件の分岐で消えるときと、要素がページから外れるときに呼びます。外部のライブラリを取り付ける処理と、取り外す処理を 1 か所に記述できます。
+`ref` の関数が関数を返すと、sobria はその関数を、ノードが条件の分岐で消えるときと、要素がページから外れるときに呼びます。外部のライブラリを取り付ける処理と、取り外す処理を 1 か所に記述できます。
 
 ```tsx
 // src/elements/size-label.tsx
-import { signal } from "rinka";
+import { signal } from "sobria";
 
 export default function SizeLabel() {
   const [width, setWidth] = signal(0);
@@ -198,7 +198,7 @@ export default function SizeLabel() {
 
 ```tsx
 // src/elements/dialog.tsx
-import { signal, type Ctx } from "rinka";
+import { signal, type Ctx } from "sobria";
 
 type Props = { heading: string; children?: JSX.Element };
 type Methods = { open(): void; close(): void };
@@ -222,7 +222,7 @@ export default function Dialog(props: Props, { expose }: Ctx<Methods>) {
 
 ```tsx
 // src/elements/settings.tsx
-import { signal, type ElementRef } from "rinka";
+import { signal, type ElementRef } from "sobria";
 
 import Dialog from "./dialog.tsx";
 
@@ -239,7 +239,7 @@ export default function Settings() {
 }
 ```
 
-`focus` のように `HTMLElement` に既にあるメソッドと同じ名前で公開すると、そのメソッドを置換します。`remove`、`setAttribute`、`addEventListener` のように rinka が使用するメソッドの名前と、同じ要素の props の名前は、公開できません。開発時にこれらの名前を公開すると、エラーになります。
+`focus` のように `HTMLElement` に既にあるメソッドと同じ名前で公開すると、そのメソッドを置換します。`remove`、`setAttribute`、`addEventListener` のように sobria が使用するメソッドの名前と、同じ要素の props の名前は、公開できません。開発時にこれらの名前を公開すると、エラーになります。
 
 要素の `ref` で受け取れるのはインスタンスだけで、Shadow DOM の内側のノードは受け取れません。
 
@@ -258,7 +258,7 @@ export default function Settings() {
 
 ```tsx
 // src/elements/clock.tsx
-import { effect, signal, type Ctx } from "rinka";
+import { effect, signal, type Ctx } from "sobria";
 
 export default function Clock(props: { interval?: number }, { host, onMount }: Ctx) {
   const [now, setNow] = signal(new Date().toLocaleTimeString());
@@ -298,7 +298,7 @@ export default function TextField(props: { label: string; ref?: (el: HTMLInputEl
 
 ```tsx
 // src/elements/search.tsx
-import type { Ctx } from "rinka";
+import type { Ctx } from "sobria";
 
 import TextField from "./_parts/text-field.tsx";
 
@@ -325,7 +325,7 @@ export default function Badge(props: { label: string; children?: JSX.Element }) 
 }
 ```
 
-共通のコンポーネントには、ネイティブのタグと属性、ほかの共通のコンポーネント、`children` を記述できます。共通のコンポーネントはページの中でも描画され、ページの中では JS が動作しないので、イベントハンドラーと `ref` は記述できません。共通のコンポーネントから、要素とページのコンポーネントは import できません。共通のコンポーネントの戻り値の型を明示するときは、`rinka` の `SharedNode` を使います。
+共通のコンポーネントには、ネイティブのタグと属性、ほかの共通のコンポーネント、`children` を記述できます。共通のコンポーネントはページの中でも描画され、ページの中では JS が動作しないので、イベントハンドラーと `ref` は記述できません。共通のコンポーネントから、要素とページのコンポーネントは import できません。共通のコンポーネントの戻り値の型を明示するときは、`sobria` の `SharedNode` を使います。
 
 ### コンテキストと id
 
@@ -333,7 +333,7 @@ export default function Badge(props: { label: string; children?: JSX.Element }) 
 
 ```tsx
 // src/components/field.tsx
-import { createContext, createId, useContext } from "rinka";
+import { createContext, createId, useContext } from "sobria";
 
 const FieldIds = createContext({ input: "", error: "" });
 
@@ -366,18 +366,18 @@ export function FieldError(props: { children?: JSX.Element }) {
 
 ## タグ名
 
-タグ名は、接頭辞と、`src/elements/` からのファイルのパスから決定します。例えば、`src/elements/forms/DatePicker.tsx` のタグ名は `rinka-forms-date-picker` です。タグ名の決まり方と、ビルドのエラーになるファイルは、[タグ名](/reference/files#タグ名) に記述しています。
+タグ名は、接頭辞と、`src/elements/` からのファイルのパスから決定します。例えば、`src/elements/forms/DatePicker.tsx` のタグ名は `sobria-forms-date-picker` です。タグ名の決まり方と、ビルドのエラーになるファイルは、[タグ名](/reference/files#タグ名) に記述しています。
 
 接頭辞と、要素を配置するディレクトリは、Vite プラグインの `prefix` と `elementsDir` で変更できます。
 
 ```ts
 // vite.config.ts
-import { rinka } from "rinka/vite";
+import { sobria } from "sobria/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [rinka({ prefix: "app" })],
+  plugins: [sobria({ prefix: "app" })],
 });
 ```
 
-要素は import して使用するので、アプリのコードにタグ名を記述する必要はありません。タグ名は、DevTools で要素を探すときと、HTML や rinka の外のコードに要素を記述するときに使用します（[外部からの利用](/guide/interop)）。
+要素は import して使用するので、アプリのコードにタグ名を記述する必要はありません。タグ名は、DevTools で要素を探すときと、HTML や sobria の外のコードに要素を記述するときに使用します（[外部からの利用](/guide/interop)）。

@@ -50,10 +50,10 @@ describe("要素のシート", () => {
   it("クライアントのシートのモジュールは、?inline の CSS の更新を受け入れる", async () => {
     const client = server.environments.client;
     const css = `${root.replaceAll("\\", "/")}/src/styles/card.css`;
-    await client.transformRequest(`\0rinka-sheet:${css}.js`);
+    await client.transformRequest(`\0sobria-sheet:${css}.js`);
     const inline = await client.moduleGraph.getModuleByUrl("/src/styles/card.css?inline");
     const importers = [...(inline?.importers ?? [])];
-    expect(importers.some((node) => node.id?.includes("rinka-sheet"))).toBe(true);
+    expect(importers.some((node) => node.id?.includes("sobria-sheet"))).toBe(true);
     expect(importers.every((node) => [...node.acceptedHmrDeps].includes(inline!))).toBe(true);
   });
 });
@@ -86,7 +86,7 @@ describe("本番のビルドのエラーのページの CSS", () => {
   let app: { fetch(request: Request): Response | Promise<Response> };
 
   beforeAll(async () => {
-    outDir = await mkdtemp(join(tmpdir(), "rinka-styles-"));
+    outDir = await mkdtemp(join(tmpdir(), "sobria-styles-"));
     await buildFixture(root, outDir, {}, stylesConfig().plugins);
     ({ default: app } = (await import(pathToFileURL(join(outDir, "server/entry.js")).href)) as {
       default: typeof app;

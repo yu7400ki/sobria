@@ -7,7 +7,7 @@ export interface NavSection {
 export const nav: readonly NavSection[] = [
   {
     title: "はじめに",
-    slugs: ["introduction/what-is-rinka", "introduction/quick-start", "introduction/tutorial"],
+    slugs: ["introduction/what-is-sobria", "introduction/quick-start", "introduction/tutorial"],
   },
   {
     title: "ガイド",
@@ -28,7 +28,7 @@ export const nav: readonly NavSection[] = [
   {
     title: "リファレンス",
     slugs: [
-      "reference/api/rinka",
+      "reference/api/sobria",
       "reference/api/server",
       "reference/api/router",
       "reference/api/vite",

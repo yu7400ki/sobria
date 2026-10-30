@@ -87,18 +87,18 @@ describe("API のリファレンスの生成", () => {
 });
 
 describe("API のリファレンス", () => {
-  it("コミットしたファイルは、rinka の型定義から生成したファイルの一覧と内容に一致する", async () => {
+  it("コミットしたファイルは、sobria の型定義から生成したファイルの一覧と内容に一致する", async () => {
     const sources = await apiReferenceSources();
     expect(
       readdirSync(resolve(import.meta.dirname, "..", apiReferenceDir))
         .map((file) => `${apiReferenceDir}/${file}`)
         .toSorted(),
-      "生成しないファイルがあるので、pnpm --filter @rinka/docs generate を実行してください。",
+      "生成しないファイルがあるので、pnpm --filter @sobria/docs generate を実行してください。",
     ).toEqual(Object.keys(sources).toSorted());
     for (const [path, content] of Object.entries(sources)) {
       expect(
         readFileSync(resolve(import.meta.dirname, "..", path), "utf8"),
-        `${path} が古いので、pnpm --filter @rinka/docs generate を実行してください。`,
+        `${path} が古いので、pnpm --filter @sobria/docs generate を実行してください。`,
       ).toBe(content);
     }
   }, 30_000);

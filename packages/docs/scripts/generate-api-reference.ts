@@ -1,4 +1,4 @@
-// rinka の型定義から、API のリファレンスの MDX を生成する。生成しなかったファイルは削除する。
+// sobria の型定義から、API のリファレンスの MDX を生成する。生成しなかったファイルは削除する。
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 

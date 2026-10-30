@@ -10,7 +10,7 @@ title: スタイル
 
 ```tsx
 // src/elements/user-card.tsx
-import type { Ctx } from "rinka";
+import type { Ctx } from "sobria";
 
 export default function UserCard(props: { name: string }, { css }: Ctx) {
   css`
@@ -43,7 +43,7 @@ CSS ファイルを `with { type: "css" }` を付けて import すると、`CSSS
 
 ```tsx
 // src/elements/card.tsx
-import type { Ctx } from "rinka";
+import type { Ctx } from "sobria";
 
 import sheet from "../styles/card.css" with { type: "css" };
 
@@ -66,11 +66,11 @@ Tailwind CSS のように、ページ全体で使用する 1 つの CSS を生�
 ```ts
 // vite.config.ts
 import tailwindcss from "@tailwindcss/vite";
-import { rinka } from "rinka/vite";
+import { sobria } from "sobria/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [rinka(), tailwindcss()],
+  plugins: [sobria(), tailwindcss()],
 });
 ```
 
@@ -81,7 +81,7 @@ export default defineConfig({
 
 ```tsx
 // src/routes/layout.tsx
-import type { LayoutProps } from "rinka/router";
+import type { LayoutProps } from "sobria/router";
 
 import "../styles/app.css";
 
@@ -92,7 +92,7 @@ export default function Layout(props: LayoutProps) {
 
 ```tsx
 // src/elements/badge.tsx
-import type { Ctx } from "rinka";
+import type { Ctx } from "sobria";
 
 import tw from "../styles/app.css" with { type: "css" };
 
@@ -124,7 +124,7 @@ import tw from "../styles/shared.ts";
 
 ```tsx
 // src/routes/layout.tsx
-import type { LayoutProps } from "rinka/router";
+import type { LayoutProps } from "sobria/router";
 
 import "../styles/global.css";
 
@@ -138,11 +138,11 @@ export default function Layout(props: LayoutProps) {
 import "./about.css";
 
 export default function Page() {
-  return <h1 class="title">rinka について</h1>;
+  return <h1 class="title">sobria について</h1>;
 }
 ```
 
-レイアウト、ページ、それらが import するモジュールが読み込んだ CSS を、rinka はページの `<head>` に `<link rel="stylesheet">` として出力します。外側のレイアウトの CSS から順に出力し、ページの CSS を最後に出力します。同じ CSS は 1 回だけ出力します。
+レイアウト、ページ、それらが import するモジュールが読み込んだ CSS を、sobria はページの `<head>` に `<link rel="stylesheet">` として出力します。外側のレイアウトの CSS から順に出力し、ページの CSS を最後に出力します。同じ CSS は 1 回だけ出力します。
 
 ## エラーのページの CSS
 

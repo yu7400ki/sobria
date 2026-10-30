@@ -2,7 +2,7 @@
 title: デプロイ
 ---
 
-rinka のアプリは Hono のアプリなので、Hono が対応するランタイムで動作します。
+sobria のアプリは Hono のアプリなので、Hono が対応するランタイムで動作します。
 
 ## ビルドの出力
 
@@ -14,13 +14,13 @@ rinka のアプリは Hono のアプリなので、Hono が対応するランタ
 | `dist/server/entry.js`     | サーバーのエントリーをビルドしたもの          |
 | `dist/server/package.json` | `entry.js` を ES モジュールとして読み込む設定 |
 
-サーバーのエントリーは、`src/server.ts` があればそのファイル、無ければ `rinka/app` です。rinka、`hono`、TSX のソースのまま配布された要素のライブラリ（[外部からの利用](/guide/interop)）と、`src/server.ts` が import した `@hono/node-server` は、`dist/server/` に含まれます。Node と Bun では、アプリが import するほかのパッケージは `dist/server/` に含まれないので、起動する環境にもインストールします。
+サーバーのエントリーは、`src/server.ts` があればそのファイル、無ければ `sobria/app` です。sobria、`hono`、TSX のソースのまま配布された要素のライブラリ（[外部からの利用](/guide/interop)）と、`src/server.ts` が import した `@hono/node-server` は、`dist/server/` に含まれます。Node と Bun では、アプリが import するほかのパッケージは `dist/server/` に含まれないので、起動する環境にもインストールします。
 
 `dist/client/` の静的ファイルは、サーバーのエントリーより先に配信するように設定します。Node と Bun の例では `serveStatic` が、Workers では静的アセットの配信が、リクエストをサーバーのエントリーより先に処理します。
 
 ## Node
 
-`rinka create` で作成した `src/server.ts` は、そのまま Node で起動できます。
+`sobria create` で作成した `src/server.ts` は、そのまま Node で起動できます。
 
 ```ts
 // src/server.ts
@@ -31,7 +31,7 @@ import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
-import app from "rinka/app";
+import app from "sobria/app";
 
 const server = new Hono();
 if (import.meta.main) {
@@ -63,7 +63,7 @@ import { fileURLToPath } from "node:url";
 
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
-import app from "rinka/app";
+import app from "sobria/app";
 
 const server = new Hono();
 if (import.meta.main) {
@@ -92,17 +92,17 @@ pnpm add -D @cloudflare/vite-plugin wrangler
 ```ts
 // vite.config.ts
 import { cloudflare } from "@cloudflare/vite-plugin";
-import { rinka } from "rinka/vite";
+import { sobria } from "sobria/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [
-    rinka(),
+    sobria(),
     cloudflare({
       viteEnvironment: { name: "ssr" },
       config: {
         name: "my-app",
-        main: "rinka/app",
+        main: "sobria/app",
         compatibility_date: "2026-07-01",
         compatibility_flags: ["nodejs_als"],
         assets: { html_handling: "drop-trailing-slash" },
@@ -114,8 +114,8 @@ export default defineConfig({
 
 | 設定                                               | 内容                                                                                                      |
 | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `viteEnvironment: { name: "ssr" }`                 | rinka のサーバーのビルドを Worker として実行する                                                          |
-| `main: "rinka/app"`                                | Worker のエントリーを rinka のアプリにする                                                                |
+| `viteEnvironment: { name: "ssr" }`                 | sobria のサーバーのビルドを Worker として実行する                                                         |
+| `main: "sobria/app"`                               | Worker のエントリーを sobria のアプリにする                                                               |
 | `compatibility_flags: ["nodejs_als"]`              | リクエストごとの Context を保持するために、`node:async_hooks` の AsyncLocalStorage を使用できるようにする |
 | `assets: { html_handling: "drop-trailing-slash" }` | 書き出したページを `/about` の URL で返す。デフォルト値では、`/about` を `/about/` にリダイレクトする     |
 
@@ -136,7 +136,7 @@ pnpm exec wrangler deploy
 
 ```tsx
 // src/routes/about/page.tsx
-import type { Prerender } from "rinka/router";
+import type { Prerender } from "sobria/router";
 
 export const prerender: Prerender<"/about"> = true;
 
@@ -149,7 +149,7 @@ export default function About() {
 
 ```tsx
 // src/routes/posts/[slug]/page.tsx
-import type { PageProps, Prerender } from "rinka/router";
+import type { PageProps, Prerender } from "sobria/router";
 
 const posts = [
   { slug: "hello", title: "はじめての投稿" },
@@ -191,12 +191,12 @@ Vite の設定 `base` に `/docs/` のようなパスを指定すると、アプ
 
 ```ts
 // vite.config.ts
-import { rinka } from "rinka/vite";
+import { sobria } from "sobria/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
   base: "/docs/",
-  plugins: [rinka()],
+  plugins: [sobria()],
 });
 ```
 
@@ -217,11 +217,11 @@ Vite プラグインの設定 `output` を `"static"` にすると、すべて�
 
 ```ts
 // vite.config.ts
-import { rinka } from "rinka/vite";
+import { sobria } from "sobria/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [rinka({ output: "static" })],
+  plugins: [sobria({ output: "static" })],
 });
 ```
 

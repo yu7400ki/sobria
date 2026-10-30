@@ -2,13 +2,13 @@
   "files": [],
   "references": [
     {
-      "path": "./.rinka/tsconfig.shared.json"
+      "path": "./.sobria/tsconfig.shared.json"
     },
     {
-      "path": "./.rinka/tsconfig.elements.json"
+      "path": "./.sobria/tsconfig.elements.json"
     },
     {
-      "path": "./.rinka/tsconfig.server.json"
+      "path": "./.sobria/tsconfig.server.json"
     },
     {
       "path": "./tsconfig.node.json"

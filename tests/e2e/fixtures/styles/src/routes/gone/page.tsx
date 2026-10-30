@@ -1,4 +1,4 @@
-import { notFound } from "rinka/server";
+import { notFound } from "sobria/server";
 
 import "./gone.css";
 

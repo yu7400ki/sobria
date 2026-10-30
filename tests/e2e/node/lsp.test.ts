@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { rinkaBin, run, tscBin } from "./typescript.ts";
+import { sobriaBin, run, tscBin } from "./typescript.ts";
 
 /** 言語サーバーに接続するテスト用のアプリのルートである。 */
 const root = fileURLToPath(new URL("../fixtures/types", import.meta.url));
@@ -134,7 +134,7 @@ async function hover(file: string, text: string, offset: number): Promise<string
 }
 
 beforeAll(async () => {
-  await run(process.execPath, [rinkaBin, "prepare", root]);
+  await run(process.execPath, [sobriaBin, "prepare", root]);
   server = new LanguageServer();
   await server.request("initialize", {
     processId: process.pid,

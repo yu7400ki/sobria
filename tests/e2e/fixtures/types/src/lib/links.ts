@@ -1,4 +1,4 @@
-import { href } from "rinka/router";
+import { href } from "sobria/router";
 
 export const userLink = href("/users/[id]", { id: "1" });
 

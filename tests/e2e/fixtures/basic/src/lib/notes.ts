@@ -1,4 +1,4 @@
-import { defineServerFn } from "rinka/server";
+import { defineServerFn } from "sobria/server";
 
 /** 保存したノートの名前である。 */
 export const notes: string[] = [];

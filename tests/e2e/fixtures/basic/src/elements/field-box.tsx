@@ -1,4 +1,4 @@
-import type { Ctx } from "rinka";
+import type { Ctx } from "sobria";
 
 import { Field, FieldError, FieldInput, FieldLabel } from "../components/field.tsx";
 

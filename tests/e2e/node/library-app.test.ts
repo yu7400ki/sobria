@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { chromium, type Browser } from "playwright";
-import { rinka } from "rinka/vite";
+import { sobria } from "sobria/vite";
 import { createServer, preview, type PreviewServer, type ViteDevServer } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -64,7 +64,7 @@ describe("TSX のソースの形のライブラリ", () => {
   }, 60_000);
 
   it("本番のビルドで、ライブラリの要素を SSR し、クライアントで起動する", async () => {
-    const outDir = await mkdtemp(join(tmpdir(), "rinka-library-app-"));
+    const outDir = await mkdtemp(join(tmpdir(), "sobria-library-app-"));
     let server: PreviewServer | undefined;
     try {
       await buildFixture(root, outDir);
@@ -72,7 +72,7 @@ describe("TSX のソースの形のライブラリ", () => {
         root,
         configFile: false,
         logLevel: "error",
-        plugins: [rinka({ prefix: "app", outDir })],
+        plugins: [sobria({ prefix: "app", outDir })],
         preview: { port: 0 },
       });
       await checkPage(server.resolvedUrls!.local[0]!.replace(/\/$/, ""));
@@ -88,7 +88,7 @@ describe("TSX のソースの形のライブラリ", () => {
         root,
         configFile: false,
         logLevel: "silent",
-        plugins: [rinka({ prefix: "acme" })],
+        plugins: [sobria({ prefix: "acme" })],
       }),
     ).rejects.toThrow(/acme-badge/);
   });

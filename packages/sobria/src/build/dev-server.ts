@@ -1,0 +1,275 @@
+import { existsSync, readFileSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { basename, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
+import { getRequestListener } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
+import { Hono } from "hono";
+import type { Environment, Plugin, RunnableDevEnvironment } from "vite";
+
+import { joinBase } from "../shared/base.ts";
+import { reloadEvent } from "../shared/hmr.ts";
+import type { CreateApp } from "../shared/routes.ts";
+import { entries, serverImports, virtualId, virtualUrl } from "./entries.ts";
+import { appCode, serverEntry, serverFnLoaderCode, type AppModuleOptions } from "./entry.ts";
+import { ParseError } from "./errors.ts";
+import { fromApp } from "./package.ts";
+import { inside } from "./paths.ts";
+import { isPrepareInput } from "./prepare.ts";
+import { routeStyles } from "./route-styles.ts";
+import { isRouteFile, ROUTES_DIR } from "./routes.ts";
+import { isServerFnSource, serverFnModules } from "./server-fns.ts";
+import { SERVER_ENTRY_NAME, isClient, type SceneContext } from "./settings.ts";
+
+/** `sobria/styles` の仮想モジュールの ID の、ルートのファイルの一覧を表すクエリの前までである。 */
+const STYLES = `${virtualId(entries.styles)}?files=`;
+
+/** ランナーが動的に import して、`sobria/styles` の仮想モジュールを読み込む指定子の、クエリの前までである。 */
+const STYLES_URL = `${virtualUrl(entries.styles)}?files=`;
+
+/** アプリを配置するパス `base` の開発サーバーで、Vite のクライアントを読み込むタグを返す。 */
+const viteClient = (base: string): string =>
+  `<script type="module" src="${joinBase(base, "@vite/client")}"></script>`;
+
+/**
+ * 開発中の `sobria/app` のコードを返す。アプリは、Vite のクライアントを読み込み、
+ * サーバーコンポーネントの CSS の一覧を `sobria/styles` から読み込み、エラーを Vite のエラーのオーバーレイで表示する。
+ */
+export const devAppModule = ({
+  serverFns,
+  trustedOrigins,
+  output,
+  base,
+}: AppModuleOptions & { readonly base: string }): string =>
+  appCode(
+    ["createApp", "serverFnLoader", "devErrorResponse"],
+    [
+      `  head: ${JSON.stringify(viteClient(base))},`,
+      `  styles: async (files) => (await import(/* @vite-ignore */ ${JSON.stringify(STYLES_URL)} + encodeURIComponent(JSON.stringify(files)))).default,`,
+      "  onError: devErrorResponse,",
+      `  loadServerFn: ${serverFnLoaderCode(serverFns)},`,
+      ...(output === "static" ? ['  output: "static",'] : []),
+    ],
+    trustedOrigins,
+  );
+
+/** 開発サーバーのプラグインを作成する関数が受け取る値を表す。 */
+export interface ServeContext extends SceneContext {
+  /** `.sobria/` を生成する。 */
+  readonly writeTypes: () => void;
+}
+
+/** 開発サーバーと `vite preview` で、サーバーのエントリーにリクエストを渡すプラグインを返す。 */
+export function serve({ settings, writeTypes }: ServeContext): Plugin {
+  return {
+    name: "sobria:serve",
+    apply: "serve",
+    config: (user) =>
+      hasCloudflare(user.plugins ?? [])
+        ? { environments: { ssr: { optimizeDeps: { include: serverImports.map(fromApp) } } } }
+        : null,
+    configurePreviewServer(server) {
+      return () => {
+        const { serverDir, clientDir, output, base } = settings();
+        const entry = pathToFileURL(join(serverDir, `${SERVER_ENTRY_NAME}.js`)).href;
+        // 本番の Node のサーバーと同じく、書き出したページをサーバーのエントリーより先に返す
+        const statics = new Hono().use(
+          serveStatic({
+            root: clientDir,
+            rewriteRequestPath: (path) =>
+              path.startsWith(base) ? path.slice(base.length - 1) : path,
+          }),
+        );
+        if (output === "static") {
+          // 一致するファイルが無い URL には、404.html を 404 で返す
+          const missing = join(clientDir, "404.html");
+          statics.notFound((c) =>
+            existsSync(missing)
+              ? c.html(readFileSync(missing, "utf8"), 404)
+              : c.text("Not Found", 404),
+          );
+          server.middlewares.use(
+            entryMiddleware(async () => ({ default: statics }), { forwardErrors: false }),
+          );
+          return;
+        }
+        const load = async (): Promise<ServerModule> => {
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+          const { default: app } = (await import(entry)) as ServerModule;
+          return {
+            default: {
+              fetch: async (request) => {
+                const found = await statics.fetch(request);
+                return found.status === 404 ? app.fetch(request) : found;
+              },
+            },
+          };
+        };
+        server.middlewares.use(entryMiddleware(load, { forwardErrors: false }));
+      };
+    },
+    resolveId: (id) => (id.startsWith(STYLES) ? id : null),
+    async load(id) {
+      if (!id.startsWith(STYLES) || isClient(this.environment)) return null;
+      if (!("moduleGraph" in this.environment)) return null;
+      const { moduleGraph } = this.environment;
+      const files: unknown = JSON.parse(decodeURIComponent(id.slice(STYLES.length)));
+      if (!Array.isArray(files) || !files.every((file) => typeof file === "string")) {
+        throw new TypeError(
+          `[sobria] ${entries.styles} のクエリには、ルートのファイルの一覧を指定してください。`,
+        );
+      }
+      const nodes = await Promise.all(files.map((file) => moduleGraph.getModuleByUrl(`/${file}`)));
+      const links = routeStyles(
+        nodes.filter((node) => node !== undefined),
+        settings().base,
+      );
+      return `export default ${JSON.stringify(links)};\n`;
+    },
+    configureServer(server) {
+      const { root, elementsDir } = settings();
+      const routesDir = resolve(root, ROUTES_DIR);
+      /** すべての環境のモジュールのグラフで、仮想モジュール `specifier` を無効にする。 */
+      const invalidate = (specifier: string): void => {
+        for (const environment of Object.values(server.environments)) {
+          const node = environment.moduleGraph.getModuleById(virtualId(specifier));
+          if (node) environment.moduleGraph.invalidateModule(node);
+        }
+      };
+      /** サーバー関数を定義したファイルの一覧を、改行で区切って返す。構文エラーで解析できないファイルがあれば、`previous` を返す。 */
+      const scanServerFns = (previous: string): string => {
+        try {
+          return serverFnModules(root).join("\n");
+        } catch (error) {
+          if (error instanceof ParseError) return previous;
+          throw error;
+        }
+      };
+      let serverFnFiles = scanServerFns("");
+      /**
+       * ファイル `path` が追加、変更、削除されたら、すべての環境の `sobria/styles` を無効にする。
+       * サーバー関数を定義できるファイルで、サーバー関数を定義したファイルの集合が変わったら、`sobria/app` も無効にする。
+       */
+      const onSource = (path: string): void => {
+        for (const environment of Object.values(server.environments)) {
+          for (const [id, node] of environment.moduleGraph.idToModuleMap) {
+            if (id.startsWith(STYLES)) environment.moduleGraph.invalidateModule(node);
+          }
+        }
+        const file = inside(root, path);
+        if (file === undefined || !isServerFnSource(file)) return;
+        const files = scanServerFns(serverFnFiles);
+        if (files === serverFnFiles) return;
+        serverFnFiles = files;
+        invalidate(entries.app);
+      };
+      const rewriteTypes = (): void => {
+        try {
+          writeTypes();
+        } catch (error) {
+          server.config.logger.error(error instanceof Error ? error.message : String(error));
+        }
+      };
+      const onFile = (path: string): void => {
+        if (
+          inside(routesDir, path) !== undefined &&
+          isRouteFile(basename(path), settings().extensions)
+        ) {
+          invalidate(entries.routes);
+        }
+        if (isPrepareInput(root, elementsDir, path)) rewriteTypes();
+        onSource(path);
+      };
+      const onDir = (path: string): void => {
+        if (inside(routesDir, path) !== undefined) invalidate(entries.routes);
+        if (isPrepareInput(root, elementsDir, path)) rewriteTypes();
+      };
+      server.watcher.on("add", onFile);
+      server.watcher.on("unlink", onFile);
+      server.watcher.on("change", onSource);
+      server.watcher.on("addDir", onDir);
+      server.watcher.on("unlinkDir", onDir);
+      for (const environment of Object.values(server.environments)) {
+        if (!isClient(environment)) continue;
+        environment.hot.on(reloadEvent, (_data, client) => {
+          client.send({ type: "full-reload" });
+        });
+      }
+      return () => {
+        const file = serverEntry(root);
+        const entry = file === undefined ? entries.app : `/${file}`;
+        server.middlewares.use(
+          entryMiddleware(
+            async () => {
+              const ssr = server.environments.ssr;
+              return ssr && isRunnable(ssr) ? ssr.runner.import<ServerModule>(entry) : undefined;
+            },
+            { forwardErrors: true },
+          ),
+        );
+      };
+    },
+  };
+}
+
+/** Vite の設定の `plugins` に、入れ子の配列の中も含めて、Cloudflare のプラグインがあるかどうかを返す。 */
+const hasCloudflare = (plugins: readonly unknown[]): boolean =>
+  plugins.some((plugin) =>
+    Array.isArray(plugin)
+      ? hasCloudflare(plugin)
+      : typeof plugin === "object" &&
+        plugin !== null &&
+        "name" in plugin &&
+        typeof plugin.name === "string" &&
+        plugin.name.startsWith("vite-plugin-cloudflare"),
+  );
+
+/** サーバーのエントリーのモジュールを表す。 */
+interface ServerModule {
+  readonly default: ReturnType<CreateApp>;
+}
+
+/**
+ * `load` が返すサーバーのエントリーの default export の `fetch` に、リクエストを渡すミドルウェアを返す。
+ * `fetch` が投げたエラーは、`forwardErrors` が真なら `next` に渡し、偽なら本文の無い 500 の Response にする。
+ * `load` が投げたエラーは `next` に渡し、`load` が undefined を返せば、リクエストを `next` に渡す。
+ */
+function entryMiddleware(
+  load: () => Promise<ServerModule | undefined>,
+  { forwardErrors }: { readonly forwardErrors: boolean },
+): (request: IncomingMessage, response: ServerResponse, next: (error?: unknown) => void) => void {
+  return (request, response, next) => {
+    (async () => {
+      const entry = await load();
+      if (entry === undefined) {
+        next();
+        return;
+      }
+      // アプリには、Vite が base を除く前の URL を渡す
+      request.url =
+        (request as IncomingMessage & { originalUrl?: string }).originalUrl ?? request.url;
+      await getRequestListener(
+        async (incoming) => {
+          const result = await entry.default.fetch(incoming);
+          response.statusCode = result.status;
+          return result;
+        },
+        forwardErrors
+          ? {
+              errorHandler: (error) => {
+                next(error);
+              },
+            }
+          : {},
+      )(request, response);
+    })().catch(next);
+  };
+}
+
+/**
+ * `environment` がモジュールを実行できる開発の環境かどうかを返す。
+ * クラスで判定せずに、`runner` の有無で判定する。
+ */
+const isRunnable = (environment: Environment): environment is RunnableDevEnvironment =>
+  "runner" in environment;

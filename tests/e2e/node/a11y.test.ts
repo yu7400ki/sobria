@@ -32,7 +32,7 @@ afterAll(async () => {
 });
 
 /**
- * `path` のページを開く。`js` が真なら、要素が起動して `data-rinka-aria` を持つ要素が無くなるまで待つ。
+ * `path` のページを開く。`js` が真なら、要素が起動して `data-sobria-aria` を持つ要素が無くなるまで待つ。
  * `js` が偽なら、サーバーの HTML からスクリプトと modulepreload を除いたページを開く。axe-core を実行するので、ブラウザの JS は有効にしたままにする。
  */
 async function open(path: string, js: boolean): Promise<Page> {
@@ -47,7 +47,7 @@ async function open(path: string, js: boolean): Promise<Page> {
   }
   await page.goto(origin + path, { waitUntil: "load" });
   if (js) {
-    await page.waitForFunction(() => document.querySelector("[data-rinka-aria]") === null, null, {
+    await page.waitForFunction(() => document.querySelector("[data-sobria-aria]") === null, null, {
       timeout: 10_000,
     });
   }

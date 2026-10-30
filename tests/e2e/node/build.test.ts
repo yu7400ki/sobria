@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { rinka } from "rinka/vite";
+import { sobria } from "sobria/vite";
 import { preview, type InlineConfig } from "vite";
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from "vitest";
 
@@ -45,7 +45,7 @@ const stylesheets = (html: string) =>
 /** `save` のサーバー関数を宛先にして `title` を入力したフォームの、JS が無いときの本文を返す。 */
 function saveForm(title: string): FormData {
   const body = new FormData();
-  body.append("_rinka_fn", fnId("src/lib/fns.ts", "save"));
+  body.append("_sobria_fn", fnId("src/lib/fns.ts", "save"));
   body.append("title", title);
   return body;
 }
@@ -59,7 +59,7 @@ const request = (path: string, init?: RequestInit) =>
   app.fetch(new Request(new URL(path, "http://localhost"), init));
 
 beforeAll(async () => {
-  outDir = await mkdtemp(join(tmpdir(), "rinka-build-"));
+  outDir = await mkdtemp(join(tmpdir(), "sobria-build-"));
   await buildFixture(root, outDir);
   app = await serverEntry(outDir);
 }, 120_000);
@@ -69,7 +69,7 @@ afterAll(async () => {
 });
 
 describe("本番のビルド", () => {
-  it("dist/server/entry.js は src/server.ts をビルドしたもので、src/server.ts のルートと、rinka のページと API ルートに応答し、無いページには 404 を返す", async () => {
+  it("dist/server/entry.js は src/server.ts をビルドしたもので、src/server.ts のルートと、sobria のページと API ルートに応答し、無いページには 404 を返す", async () => {
     expect(await (await request("/health")).text()).toBe("ok");
     const page = await request("/");
     expect(page.status).toBe(200);
@@ -80,13 +80,13 @@ describe("本番のビルド", () => {
 
   it("ページの要素のモジュールの URL と先読みは、クライアントのビルドが出力した /assets/ のファイルを指す", async () => {
     const html = await (await request("/")).text();
-    const module = /\$rinka\.m\(\[\["app-counter","([^"]+)"/.exec(html)?.[1];
+    const module = /\$sobria\.m\(\[\["app-counter","([^"]+)"/.exec(html)?.[1];
     expect(module).toMatch(/^\/assets\/.+\.js$/);
     const preloads = [...html.matchAll(/<link rel="modulepreload" href="([^"]+)">/g)].map(
       ([, href]) => href!,
     );
     expect(preloads).toContain(module);
-    // 2 つの要素が共有する rinka のランタイムは、要素のモジュールが静的に import するチャンクになる
+    // 2 つの要素が共有する sobria のランタイムは、要素のモジュールが静的に import するチャンクになる
     expect(preloads.length).toBeGreaterThan(2);
     await Promise.all(preloads.map((url) => readFile(join(outDir, "client", url))));
   });
@@ -112,7 +112,7 @@ describe("本番のビルド", () => {
     const counter = html.slice(html.indexOf("<app-counter"), html.indexOf("</app-counter>"));
     const sheet = /<link rel="stylesheet" href="([^"]+)">/.exec(counter)?.[1];
     expect(sheet).toMatch(/^\/assets\/.+\.css$/);
-    const module = /\$rinka\.m\(\[\["app-counter","([^"]+)"/.exec(html)![1]!;
+    const module = /\$sobria\.m\(\[\["app-counter","([^"]+)"/.exec(html)![1]!;
     expect(await readFile(join(outDir, "client", module), "utf8")).toContain(sheet);
   });
 
@@ -154,7 +154,7 @@ async function checkServer(origin: string): Promise<void> {
   const html = await (await fetch(`${origin}/`)).text();
   expect(html).toContain("<h1>deploy</h1>");
   expect((await fetch(`${origin}/missing`)).status).toBe(404);
-  const module = /\$rinka\.m\(\[\["app-counter","([^"]+)"/.exec(html)![1]!;
+  const module = /\$sobria\.m\(\[\["app-counter","([^"]+)"/.exec(html)![1]!;
   const asset = await fetch(`${origin}${module}`);
   expect(asset.status).toBe(200);
   expect(asset.headers.get("content-type")).toMatch(/javascript/);
@@ -170,7 +170,7 @@ async function checkServer(origin: string): Promise<void> {
 
 /** ビルドの出力先 `out` を node_modules の無い一時ディレクトリにコピーし、`command` で `entry.js` を実行して確認する。 */
 async function checkRuntime(command: string, out: string): Promise<void> {
-  const copy = await mkdtemp(join(tmpdir(), "rinka-dist-"));
+  const copy = await mkdtemp(join(tmpdir(), "sobria-dist-"));
   await cp(out, copy, { recursive: true });
   try {
     const server = await startServer(command, () => [join(copy, "server/entry.js")]);
@@ -192,7 +192,7 @@ const BUN_SERVER = `import { fileURLToPath } from "node:url";
 
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
-import app from "rinka/app";
+import app from "sobria/app";
 
 const server = new Hono();
 if (import.meta.main) {
@@ -212,8 +212,8 @@ describe("サーバーの起動", () => {
   it.skipIf(!hasBun)(
     "serve() を呼び出さない src/server.ts でビルドした dist/server/entry.js を bun で実行すると、Bun が default export でサーバーを起動する",
     async () => {
-      // rinka を解決できるように、コピーは tests/e2e の中に置く
-      const copy = await mkdtemp(fileURLToPath(new URL("../.rinka-tmp-", import.meta.url)));
+      // sobria を解決できるように、コピーは tests/e2e の中に置く
+      const copy = await mkdtemp(fileURLToPath(new URL("../.sobria-tmp-", import.meta.url)));
       try {
         await cp(root, copy, { recursive: true });
         await writeFile(join(copy, "src/server.ts"), BUN_SERVER);
@@ -231,7 +231,7 @@ describe("サーバーの起動", () => {
       root,
       configFile: false,
       logLevel: "error",
-      plugins: [rinka({ prefix: "app", outDir })],
+      plugins: [sobria({ prefix: "app", outDir })],
       preview: { port: 0 },
     });
     try {
@@ -242,7 +242,7 @@ describe("サーバーの起動", () => {
   }, 60_000);
 
   it("vite preview は、サーバーのエントリーの fetch が投げたエラーに、本文の無い 500 を返す", async () => {
-    const out = await mkdtemp(join(tmpdir(), "rinka-preview-error-"));
+    const out = await mkdtemp(join(tmpdir(), "sobria-preview-error-"));
     await cp(join(outDir, "client"), join(out, "client"), { recursive: true });
     await cp(join(outDir, "server"), join(out, "server"), { recursive: true });
     await writeFile(
@@ -253,7 +253,7 @@ describe("サーバーの起動", () => {
       root,
       configFile: false,
       logLevel: "silent",
-      plugins: [rinka({ prefix: "app", outDir: out })],
+      plugins: [sobria({ prefix: "app", outDir: out })],
       preview: { port: 0 },
     });
     try {
@@ -268,8 +268,8 @@ describe("サーバーの起動", () => {
 });
 
 describe("src/server.ts の無いアプリ", () => {
-  it("rinka/app をサーバーのエントリーにし、要素が 1 つも無くてもビルドでき、出力は node:async_hooks 以外の Node の API を import しない", async () => {
-    const out = await mkdtemp(join(tmpdir(), "rinka-build-empty-"));
+  it("sobria/app をサーバーのエントリーにし、要素が 1 つも無くてもビルドでき、出力は node:async_hooks 以外の Node の API を import しない", async () => {
+    const out = await mkdtemp(join(tmpdir(), "sobria-build-empty-"));
     try {
       await buildFixture(fileURLToPath(new URL("../fixtures/no-elements", import.meta.url)), out);
       const empty = await serverEntry(out);
@@ -304,7 +304,7 @@ interface SharedSheetBuild {
 
 /** shared-sheet のテスト用のアプリを Vite の設定 `config` で一時ディレクトリにビルドし、`/` のページが参照する CSS の URL を返す。一時ディレクトリはテストの終了後に削除する。 */
 async function buildSharedSheet(config: InlineConfig): Promise<SharedSheetBuild> {
-  const out = await mkdtemp(join(tmpdir(), "rinka-build-shared-sheet-"));
+  const out = await mkdtemp(join(tmpdir(), "sobria-build-shared-sheet-"));
   onTestFinished(() => rm(out, { recursive: true, force: true }));
   await buildFixture(
     fileURLToPath(new URL("../fixtures/shared-sheet", import.meta.url)),
@@ -316,7 +316,7 @@ async function buildSharedSheet(config: InlineConfig): Promise<SharedSheetBuild>
   const html = await (
     await (await serverEntry(out)).fetch(new Request("http://localhost/"))
   ).text();
-  const module = /\$rinka\.m\(\[\["app-note","([^"]+)"/.exec(html)![1]!;
+  const module = /\$sobria\.m\(\[\["app-note","([^"]+)"/.exec(html)![1]!;
   const code = await readFile(join(out, "client", module), "utf8");
   return {
     out,

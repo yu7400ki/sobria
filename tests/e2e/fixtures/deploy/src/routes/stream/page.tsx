@@ -1,4 +1,4 @@
-import { Loading } from "rinka";
+import { Loading } from "sobria";
 
 import Doubler from "../../elements/doubler.tsx";
 

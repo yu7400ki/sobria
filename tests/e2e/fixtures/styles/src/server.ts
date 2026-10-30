@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
-import app from "rinka/app";
+import app from "sobria/app";
 
 const server = new Hono();
 if (import.meta.main) {

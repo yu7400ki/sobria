@@ -1,0 +1,203 @@
+import { describe, expect, it, onTestFinished, vi } from "vitest";
+
+import { Errored, Loading, Navigation } from "../../src/server/control.ts";
+import { defineElement } from "../../src/server/element.ts";
+import { notFound, redirect } from "../../src/server/errors.ts";
+import { defineElement as defineDelivered, registerServerFn } from "../../src/server/internal.ts";
+import { jsx } from "../../src/server/jsx-runtime.ts";
+import { refreshPage } from "../../src/server/refresh.ts";
+import { renderRefresh } from "../../src/server/response.ts";
+import { defineServerFn } from "../../src/server/server-fn.ts";
+import type { RefreshJson } from "../../src/shared/refresh.ts";
+
+/** `node` を描き直しとして描画し、ステータスと JSON を返す。 */
+async function refreshOf(node: unknown, options = {}) {
+  const response = await renderRefresh(node, options);
+  return {
+    status: response.status,
+    type: response.headers.get("content-type"),
+    json: (await response.json()) as RefreshJson,
+  };
+}
+
+/** `data` の値を評価する。 */
+// oxlint-disable-next-line typescript/no-implied-eval
+const evaluate = (expression: string): unknown => new Function(`return (${expression})`)();
+
+const executed = vi.fn();
+
+const Card = defineElement(
+  "x-refresh-card",
+  (props: { label?: string; data?: object; onPick?: () => void; header?: unknown }) => {
+    executed();
+    return jsx("p", { children: () => props.label });
+  },
+  {
+    props: {
+      label: "unknown",
+      data: "unknown",
+      onPick: "function",
+      header: "slot",
+      children: "slot",
+    },
+  },
+);
+
+const later = (ms: number, node: unknown) => async () => {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+  return node;
+};
+
+/** 描き直しで出力した、最初のホストの ID を返す。 */
+const firstHostId = async (): Promise<string> =>
+  Object.keys((await refreshOf(jsx(Card, { label: "a" }))).json.data)[0] ?? "";
+
+const missing = () => {
+  throw notFound();
+};
+
+const broken = () => {
+  throw new Error("boom");
+};
+
+const moved = () => {
+  throw redirect("/login");
+};
+
+const pick = defineServerFn(() => "picked");
+registerServerFn("src/refresh-test.ts#pick", pick);
+
+describe("renderRefresh", () => {
+  it("<head> のタグ、本文、<html> と <body> の属性を JSON で返し、<Loading> の内側も待つ", async () => {
+    const { status, type, json } = await refreshOf(
+      jsx("html", {
+        lang: "ja",
+        children: jsx("body", {
+          class: "app",
+          children: [
+            jsx("title", { children: "Page" }),
+            jsx("meta", { charset: "utf-8" }),
+            jsx(Navigation, { transitions: true }),
+            jsx("main", {
+              children: jsx(Loading, { fallback: "wait", children: jsx(later(5, "done"), {}) }),
+            }),
+          ],
+        }),
+      }),
+    );
+    expect(status).toBe(200);
+    expect(type).toContain("application/json");
+    expect(json.head).toBe("<title>Page</title><style>@view-transition{navigation:auto}</style>");
+    expect(json.body).toBe("<main>done</main>");
+    expect(json.doc).toEqual({ html: { lang: "ja" }, body: { class: "app" } });
+    expect(json.data).toEqual({});
+    expect(json.elements).toEqual([]);
+  });
+
+  it("要素を実行せず、Shadow DOM の中身を持たないホストと Light DOM の子を出力し、props を data に入れる", async () => {
+    executed.mockClear();
+    const { json } = await refreshOf(
+      jsx(Card, {
+        label: "hi",
+        data: { a: 1 },
+        header: jsx("b", { children: "head" }),
+        children: "child",
+      }),
+    );
+    expect(executed).not.toHaveBeenCalled();
+    const match = /^<x-refresh-card data-oh="([^"]+)" label="hi">(.*)<\/x-refresh-card>$/.exec(
+      json.body,
+    );
+    expect(match?.[2]).toBe('<b slot="header">head</b>child');
+    const id = match?.[1] ?? "";
+    expect(id).toMatch(/^r[0-9a-f]{8}-h\d+$/);
+    expect(Object.keys(json.data)).toEqual([id]);
+    expect(evaluate(json.data[id] ?? "")).toEqual({
+      "@r": { label: "hi", data: { a: 1 } },
+      "@p": { data: { a: 1 } },
+    });
+  });
+
+  it("関数の props も、ページにある要素に設定する props に入れる", async () => {
+    vi.stubGlobal("$sobria", { f: (id: string, method: string) => `${method} ${id}` });
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    const { json } = await refreshOf(jsx(Card, { onPick: pick }));
+    expect(evaluate(Object.values(json.data)[0] ?? "")).toStrictEqual({
+      "@r": { label: undefined, data: undefined, onPick: "POST src/refresh-test.ts#pick" },
+      "@p": { onPick: "POST src/refresh-test.ts#pick" },
+    });
+  });
+
+  it("<Errored> がフォールバックに切り替えた中身のホストの props は、data に入れない", async () => {
+    const { json } = await refreshOf(
+      jsx("div", {
+        children: [
+          jsx(Errored, {
+            fallback: "failed",
+            children: [jsx(Card, { label: "in" }), jsx(later(5, jsx(broken, {})), {})],
+          }),
+          jsx(Card, { label: "out" }),
+        ],
+      }),
+    );
+    const id = /data-oh="([^"]+)"/.exec(json.body)?.[1] ?? "";
+    expect(json.body).toContain("failed");
+    expect(Object.keys(json.data)).toEqual([id]);
+  });
+
+  it("描き直しで使用した、モジュールを持つ要素を elements に入れる", async () => {
+    const Delivered = defineDelivered(
+      "x-refresh-delivered",
+      () => null,
+      { props: {} },
+      { module: "/src/elements/x-refresh-delivered.tsx", load: "idle" },
+    );
+    const { json } = await refreshOf(jsx(Delivered, {}));
+    expect(json.elements).toEqual([
+      ["x-refresh-delivered", "/src/elements/x-refresh-delivered.tsx", "idle"],
+    ]);
+  });
+
+  it("後に記述した false で消した属性は、doc に入れない", async () => {
+    const { json } = await refreshOf([
+      jsx("html", { lang: "ja", class: "a", children: "a" }),
+      jsx("html", { class: false, children: "b" }),
+    ]);
+    expect(json.doc).toStrictEqual({ html: { lang: "ja" }, body: {} });
+  });
+
+  it("描画ごとに、ホストの ID の接頭辞を変える", async () => {
+    expect((await firstHostId()).split("-")[0]).not.toBe((await firstHostId()).split("-")[0]);
+  });
+
+  it("notFound() は not-found のページを 404 で、エラーは error のページを 500 で、どちらも JSON で返す", async () => {
+    const options = {
+      notFound: () => jsx("p", { children: "missing" }),
+      error: () => jsx("p", { children: "broken" }),
+    };
+    const lost = await refreshOf(jsx(missing, {}), options);
+    expect([lost.status, lost.json.body]).toEqual([404, "<p>missing</p>"]);
+    const failed = await refreshOf(jsx(broken, {}), options);
+    expect([failed.status, failed.json.body]).toEqual([500, "<p>broken</p>"]);
+  });
+
+  it("シェルで投げた redirect() は、リダイレクトのレスポンスにする", async () => {
+    const response = await renderRefresh(jsx(moved, {}));
+    expect([response.status, response.headers.get("location")]).toEqual([303, "/login"]);
+  });
+
+  it("<Errored> が受け止めたときは、そのステータスで返す", async () => {
+    const { status, json } = await refreshOf(
+      jsx(Errored, { fallback: "failed", status: 503, children: jsx(broken, {}) }),
+    );
+    expect([status, json.body]).toEqual([503, "failed"]);
+  });
+});
+
+describe("サーバーの refreshPage", () => {
+  it("呼び出すと、エラーで reject する Promise を返す", async () => {
+    await expect(refreshPage()).rejects.toThrow("refreshPage()");
+  });
+});

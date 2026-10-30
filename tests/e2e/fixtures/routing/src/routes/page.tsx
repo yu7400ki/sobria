@@ -1,4 +1,4 @@
-import { href } from "rinka/router";
+import { href } from "sobria/router";
 
 import UserLink from "../elements/user-link.tsx";
 

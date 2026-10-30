@@ -23,8 +23,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter rinka exec playwright install --with-deps chromium firefox webkit
-      - run: pnpm --filter @rinka/docs run prepare
+      - run: pnpm --filter sobria exec playwright install --with-deps chromium firefox webkit
+      - run: pnpm --filter @sobria/docs run prepare
       - run: pnpm format:check
       # lint は、test が生成する tests/fixture-library の型を検査するので、test の後に実行する
       - run: pnpm test

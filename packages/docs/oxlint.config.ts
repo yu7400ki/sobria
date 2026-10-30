@@ -1,4 +1,4 @@
-import { base, defineConfig, testRelaxations } from "@rinka/config/oxlint";
+import { base, defineConfig, testRelaxations } from "@sobria/config/oxlint";
 
 export default defineConfig({
   ...base,

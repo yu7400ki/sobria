@@ -1,4 +1,4 @@
-import { getServerFnResult } from "rinka/server";
+import { getServerFnResult } from "sobria/server";
 
 import Refresher from "../../elements/refresher.tsx";
 import { signup } from "../../lib/signup.ts";

@@ -1,4 +1,4 @@
-import { jsx } from "rinka/jsx-runtime";
+import { jsx } from "sobria/jsx-runtime";
 
 /** 見本の MDX が ESM で import する値である。 */
 export const label = "注";

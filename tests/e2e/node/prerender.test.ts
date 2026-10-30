@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { rinka } from "rinka/vite";
+import { sobria } from "sobria/vite";
 import { createServer, preview, type Plugin } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -21,7 +21,7 @@ const temporaries: string[] = [];
 
 /** 一時ディレクトリを作成して返す。テストの後で削除する。 */
 async function temporary(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "rinka-prerender-"));
+  const dir = await mkdtemp(join(tmpdir(), "sobria-prerender-"));
   temporaries.push(dir);
   return dir;
 }
@@ -71,7 +71,7 @@ describe("登録した拡張子のページの書き出し", () => {
     const project = await temporary();
     const files = {
       "src/server.ts":
-        'import app from "rinka/app";\nReflect.set(globalThis, "rinkaEntryLoaded", true);\nexport default app;\n',
+        'import app from "sobria/app";\nReflect.set(globalThis, "sobriaEntryLoaded", true);\nexport default app;\n',
       "src/routes/page.page": "@page\nexport default function Page() { return <h1>home</h1>; }\n",
     };
     await Promise.all(
@@ -81,7 +81,7 @@ describe("登録した拡張子のページの書き出し", () => {
       }),
     );
     await buildFixture(project, join(project, "dist"), { extensions: [".page"] }, [pagePlugin]);
-    expect(Reflect.get(globalThis, "rinkaEntryLoaded")).toBeUndefined();
+    expect(Reflect.get(globalThis, "sobriaEntryLoaded")).toBeUndefined();
     expect(existsSync(join(project, "dist/client/index.html"))).toBe(false);
   }, 60_000);
 });
@@ -153,7 +153,7 @@ describe("prerender を export するページと route.ts の書き出し", () 
       root,
       configFile: false,
       logLevel: "error",
-      plugins: [rinka({ prefix: "app", outDir })],
+      plugins: [sobria({ prefix: "app", outDir })],
       preview: { port: 0 },
     });
     try {
@@ -168,8 +168,8 @@ describe("prerender を export するページと route.ts の書き出し", () 
 
 /** テスト用のアプリを tests/e2e の中の一時ディレクトリにコピーし、そのルートを返す。 */
 async function copyFixture(): Promise<string> {
-  // rinka を解決できるように、コピーは tests/e2e の中に置く
-  const copy = await mkdtemp(fileURLToPath(new URL("../.rinka-tmp-", import.meta.url)));
+  // sobria を解決できるように、コピーは tests/e2e の中に置く
+  const copy = await mkdtemp(fileURLToPath(new URL("../.sobria-tmp-", import.meta.url)));
   temporaries.push(copy);
   await cp(root, copy, { recursive: true });
   return copy;
@@ -196,7 +196,7 @@ describe("output: 'static'", () => {
       root,
       configFile: false,
       logLevel: "error",
-      plugins: [rinka({ prefix: "app", outDir, output: "static" })],
+      plugins: [sobria({ prefix: "app", outDir, output: "static" })],
       preview: { port: 0 },
     });
     try {
@@ -225,7 +225,7 @@ describe("output: 'static'", () => {
       "};",
     ]);
     await addFile(copy, "routes/layout.tsx", [
-      'import { getContext } from "rinka/server";',
+      'import { getContext } from "sobria/server";',
       "export default function Layout(props) {",
       '  return <main data-who={String(getContext()?.get("who"))}>{props.children}</main>;',
       "}",
@@ -271,7 +271,7 @@ describe("output: 'static'", () => {
   it("サーバー関数を定義したファイルがあれば、ファイルの名前を含むビルドのエラーにする", async () => {
     const copy = await copyFixture();
     await addFile(copy, "lib/fns.ts", [
-      'import { defineServerFn } from "rinka/server";',
+      'import { defineServerFn } from "sobria/server";',
       "export const save = defineServerFn(() => 1);",
     ]);
     await expect(buildFixture(copy, join(copy, "dist"), { output: "static" })).rejects.toThrow(
@@ -298,7 +298,7 @@ describe("output: 'static'", () => {
       logLevel: "error",
       server: { hmr: false, port: 0 },
       cacheDir: join(await temporary(), "vite"),
-      plugins: [rinka({ prefix: "app", output: "static" })],
+      plugins: [sobria({ prefix: "app", output: "static" })],
     });
     await server.listen();
     try {
@@ -328,7 +328,7 @@ describe("書き出しの失敗", () => {
   it("書き出す URL のレスポンスが 200 でなければ、URL とステータスを含むビルドのエラーにする", async () => {
     const copy = await copyFixture();
     await addFile(copy, "routes/missing/[id]/page.tsx", [
-      'import { notFound } from "rinka/server";',
+      'import { notFound } from "sobria/server";',
       'export const prerender = () => [{ id: "gone" }];',
       "export default function Missing() {",
       "  throw notFound();",
@@ -342,9 +342,9 @@ describe("書き出しの失敗", () => {
   it("output: 'static' で、404.html を取得するリクエストのレスポンスが 404 でなければ、ステータスを含むビルドのエラーにする", async () => {
     const copy = await copyFixture();
     await addFile(copy, "routes/middleware.ts", [
-      'import { redirect } from "rinka/server";',
+      'import { redirect } from "sobria/server";',
       "export default async (c, next) => {",
-      '  if (c.req.path.startsWith("/_rinka/")) throw redirect("/");',
+      '  if (c.req.path.startsWith("/_sobria/")) throw redirect("/");',
       "  await next();",
       "};",
     ]);

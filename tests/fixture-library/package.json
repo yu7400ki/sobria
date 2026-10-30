@@ -1,5 +1,5 @@
 {
-  "name": "@rinka-tests/fixture-library",
+  "name": "@sobria-tests/fixture-library",
   "private": true,
   "files": [
     "src",
@@ -13,17 +13,17 @@
     }
   },
   "scripts": {
-    "types": "rinka prepare && tsc -p .rinka/tsconfig.elements.json --composite false --declaration --rootDir src/elements --outDir types"
+    "types": "sobria prepare && tsc -p .sobria/tsconfig.elements.json --composite false --declaration --rootDir src/elements --outDir types"
   },
   "dependencies": {
-    "rinka": "workspace:*"
+    "sobria": "workspace:*"
   },
   "devDependencies": {
     "typescript": "catalog:",
     "vite": "catalog:"
   },
   "customElements": "dist/custom-elements.json",
-  "rinka": {
+  "sobria": {
     "prefix": "acme",
     "elements": "src/elements"
   }

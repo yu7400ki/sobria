@@ -1,4 +1,4 @@
-import type { PageProps } from "rinka/router";
+import type { PageProps } from "sobria/router";
 
 export const prerender = () => [{ slug: "hello" }, { slug: "a b" }, { slug: "日本" }];
 

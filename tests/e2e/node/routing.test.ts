@@ -108,7 +108,7 @@ describe("ルーティング", () => {
     expect(pages[0]?.body).toContain('<section id="users">');
   });
 
-  it("要素は、クライアントの環境でも rinka/router を import できる", async () => {
+  it("要素は、クライアントの環境でも sobria/router を import できる", async () => {
     const result = await server.environments.client.transformRequest("/src/elements/user-link.tsx");
     expect(result?.code).toMatch(/from "[^"]*\/lib\/shared\/router\.js"/);
   });

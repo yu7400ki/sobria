@@ -1,0 +1,124 @@
+import type { MagicString } from "magic-string";
+import type { ESTree } from "vite";
+
+import { joinBase } from "../shared/base.ts";
+import { keyName, walk } from "./ast.ts";
+import { importInternal } from "./entries.ts";
+import { CompileError } from "./errors.ts";
+import { directUrl } from "./paths.ts";
+import type { Scene } from "./settings.ts";
+
+/** `with { type: 'css' }` の import の指定子に付与する、シートのモジュールを表すクエリである。 */
+export const SHEET_QUERY = "?sobria-sheet";
+
+/** シートのモジュールの ID の接頭辞である。 */
+const SHEET_PREFIX = "\0sobria-sheet:";
+
+/** CSS のファイル `path` のシートのモジュールの ID を返す。Vite の CSS の変換の対象にならないように、末尾を `.js` にする。 */
+export const sheetId = (path: string): string => `${SHEET_PREFIX}${path}.js`;
+
+/** `id` がシートのモジュールの ID なら、CSS のファイルのパスを返す。 */
+export const sheetPath = (id: string): string | undefined =>
+  id.startsWith(SHEET_PREFIX) && id.endsWith(".js") ? id.slice(SHEET_PREFIX.length, -3) : undefined;
+
+/**
+ * `with { type: 'css' }` の import と、`from` を持つ export の指定子に `SHEET_QUERY` を付与し、属性を削除する。
+ * `type: 'css'` を指定した動的な import があれば、`CompileError` を投げる。
+ */
+export function rewriteSheetImports(
+  program: ESTree.Program,
+  output: MagicString,
+  code: string,
+  file: string,
+): void {
+  for (const statement of program.body) {
+    if (
+      (statement.type !== "ImportDeclaration" &&
+        statement.type !== "ExportNamedDeclaration" &&
+        statement.type !== "ExportAllDeclaration") ||
+      !statement.source ||
+      !statement.attributes.some(isCssType)
+    ) {
+      continue;
+    }
+    const end = code[statement.end - 1] === ";" ? statement.end - 1 : statement.end;
+    output.overwrite(
+      statement.source.start,
+      end,
+      JSON.stringify(`${statement.source.value}${SHEET_QUERY}`),
+    );
+  }
+  walk(program, (node) => {
+    if (node.type !== "ImportExpression" || !node.options) return;
+    if (!/type\s*:\s*["']css["']/.test(code.slice(node.options.start, node.options.end))) return;
+    throw new CompileError(
+      `${file}: type: 'css' を指定した動的な import は使用できません。with { type: 'css' } の import 文で記述してください。`,
+    );
+  });
+}
+
+/** import の属性が `type: 'css'` かどうかを返す。 */
+const isCssType = ({ key, value }: ESTree.ImportAttribute): boolean =>
+  keyName(key) === "type" && value.value === "css";
+
+/** `?inline` の指定子 `inline` の CSS から作成したシートを default export し、CSS が更新されたら同じシートを差し替える、クライアントのシートのモジュールのコードを返す。 */
+function clientSheetModule(inline: string): string {
+  const specifier = JSON.stringify(inline);
+  return `${importInternal("client", "createSheet", "updateSheet")}
+import css from ${specifier};
+const sheet = createSheet(css);
+if (import.meta.hot) {
+  import.meta.hot.accept(${specifier}, (module) => {
+    if (module) updateSheet(sheet, module.default);
+  });
+}
+export default sheet;
+`;
+}
+
+/** `<link>` に出力する URL `href` から作成したシートの情報を default export する、サーバーのシートのモジュールのコードを返す。 */
+function serverSheetModule(href: string): string {
+  return `${importInternal("server", "serverSheet")}
+export default serverSheet(${JSON.stringify(href)});
+`;
+}
+
+/** ライブラリのビルドで、`?inline` の指定子 `inline` の CSS から作成したシートを default export する、クライアントのシートのモジュールのコードを返す。 */
+function librarySheetModule(inline: string): string {
+  return `${importInternal("client", "createSheet")}
+import css from ${JSON.stringify(inline)};
+export default createSheet(css);
+`;
+}
+
+/** 本番のビルドで、`?url` の指定子 `url` の CSS を fetch して作成したシートを default export する、クライアントのシートのモジュールのコードを返す。 */
+function clientBuildSheetModule(url: string): string {
+  return `${importInternal("client", "loadSheet")}
+import url from ${JSON.stringify(url)};
+export default await loadSheet(url);
+`;
+}
+
+/**
+ * 開発サーバーのパス `path` の CSS から、場面 `scene` の、`client` が真ならクライアントの、偽ならサーバーのシートのモジュールのコードを返す。開発中のサーバーのシートの URL は、アプリを配置するパス `base` で始める。
+ * ライブラリのビルドはクライアントの環境だけを持ち、CSS をモジュールに埋め込む。
+ * アプリの本番のビルドのサーバーのモジュールは、`builtHref` が返す、クライアントのビルドが出力した CSS の URL を使用する。
+ */
+export function sheetModule(
+  path: string,
+  base: string,
+  scene: Scene,
+  client: boolean,
+  builtHref: () => string,
+): string {
+  switch (scene) {
+    case "serve":
+      return client
+        ? clientSheetModule(`${path}?inline`)
+        : serverSheetModule(directUrl(joinBase(base, path)));
+    case "app":
+      return client ? clientBuildSheetModule(`${path}?url`) : serverSheetModule(builtHref());
+    case "library":
+      return librarySheetModule(`${path}?inline`);
+  }
+}

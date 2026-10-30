@@ -1,0 +1,189 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+
+import { scanElements, type ElementSource } from "./elements.ts";
+import { entries } from "./entries.ts";
+import { inside, relativePath } from "./paths.ts";
+import { ROUTES_DIR, scanRouteParams } from "./routes.ts";
+
+/** 生成したファイルを置く、アプリのルートからの相対パスのディレクトリである。 */
+export const PREPARED_DIR = ".sobria";
+
+/** `.sobria/` に tsconfig を生成するプロジェクトの名前である。 */
+export const PROJECTS = ["shared", "elements", "server"] as const;
+
+/** `.sobria/` に tsconfig を生成するプロジェクトの名前を表す。 */
+type Project = (typeof PROJECTS)[number];
+
+/** プロジェクト `project` の tsconfig の、`.sobria/` の中のファイルの名前を返す。 */
+export const projectConfig = (project: Project): string => `tsconfig.${project}.json`;
+
+/** ルートが `root` のアプリで、要素のプロジェクトの tsconfig のパスを返す。 */
+export const elementsConfig = (root: string): string =>
+  join(root, PREPARED_DIR, projectConfig("elements"));
+
+/** 生成する tsconfig が extends する、アプリの tsconfig のファイルの名前である。 */
+const BASE_CONFIG = "tsconfig.base.json";
+
+/** パス `path` が、アプリのルート `root` の `src/routes` の中か、要素のディレクトリ `elementsDir` の中か、`tsconfig.base.json` なら真を返す。 */
+export const isPrepareInput = (root: string, elementsDir: string, path: string): boolean =>
+  inside(join(root, ROUTES_DIR), path) !== undefined ||
+  inside(elementsDir, path) !== undefined ||
+  resolve(path) === join(root, BASE_CONFIG);
+
+/** `.sobria/` のファイルを生成する入力を表す。 */
+export interface PrepareOptions {
+  /** アプリのルートの絶対パスである。 */
+  readonly root: string;
+  /** 要素のタグ名の接頭辞である。 */
+  readonly prefix: string;
+  /** 要素のディレクトリの絶対パスである。 */
+  readonly elementsDir: string;
+  /** プラグインの設定の `extensions` に登録した拡張子である。 */
+  readonly extensions: readonly string[];
+  /** 真なら、`env.d.ts` でグローバルの `JSX.Element` を宣言する。 */
+  readonly globalJSX: boolean;
+}
+
+/** 生成する tsconfig の `compilerOptions` に記述し、アプリの `tsconfig.base.json` より優先させる設定である。 */
+const REQUIRED_OPTIONS = {
+  module: "preserve",
+  moduleResolution: "bundler",
+  jsx: "react-jsx",
+  jsxImportSource: entries.main,
+  verbatimModuleSyntax: true,
+  allowImportingTsExtensions: true,
+  composite: true,
+  emitDeclarationOnly: true,
+  noEmit: false,
+} as const;
+
+/** 生成したファイルの先頭に付けるコメントである。 */
+const HEADER = "// sobria prepare が生成したファイルである。\n";
+
+/** アプリのファイルを走査し、`.sobria/` に置くファイルの名前ごとの内容を返す。生成する tsconfig は、アプリに `tsconfig.base.json` があればそれも extends する。 */
+export function preparedFiles(options: PrepareOptions): Map<string, string> {
+  const { root, elementsDir } = options;
+  const prepared = join(root, PREPARED_DIR);
+  const fromPrepared = (path: string): string => relativePath(prepared, path);
+  const base = existsSync(join(root, BASE_CONFIG)) ? [`../${BASE_CONFIG}`] : [];
+  const routesDir = fromPrepared(join(root, ROUTES_DIR));
+  const elements = fromPrepared(elementsDir);
+  const tsconfig = (
+    project: Project,
+    customConditions: readonly string[],
+    files: { include: readonly string[]; exclude?: readonly string[] },
+    references: readonly Project[],
+  ): string =>
+    `${JSON.stringify(
+      {
+        extends: [entries.tsconfig, ...base],
+        compilerOptions: {
+          ...REQUIRED_OPTIONS,
+          rootDir: "..",
+          outDir: `out/${project}`,
+          customConditions,
+        },
+        ...files,
+        ...(references.length > 0 && {
+          references: references.map((name) => ({ path: projectConfig(name) })),
+        }),
+      },
+      null,
+      2,
+    )}\n`;
+  /** すべてのプロジェクトが含める型宣言のファイルである。 */
+  const declarations = ["env.d.ts", "routes.d.ts"];
+  return new Map([
+    ["routes.d.ts", routesDeclaration(root, options.extensions)],
+    ["env.d.ts", envDeclaration(options.globalJSX)],
+    [
+      "elements.d.ts",
+      elementsDeclaration({ prefix: options.prefix, elementsDir, dir: root }, fromPrepared),
+    ],
+    [
+      projectConfig("shared"),
+      tsconfig(
+        "shared",
+        ["sobria-shared", "sobria-server"],
+        {
+          include: [fromPrepared(join(root, "src")), ...declarations],
+          exclude: [elements, routesDir],
+        },
+        [],
+      ),
+    ],
+    [
+      projectConfig("elements"),
+      tsconfig(
+        "elements",
+        ["sobria-client"],
+        { include: [elements, ...declarations, "elements.d.ts"] },
+        ["shared"],
+      ),
+    ],
+    [
+      projectConfig("server"),
+      tsconfig("server", ["sobria-server"], { include: [routesDir, ...declarations] }, [
+        "elements",
+        "shared",
+      ]),
+    ],
+  ]);
+}
+
+/** アプリのルート `root` の、登録した拡張子 `extensions` のものを含むページと `route.ts` から、`RouteParams` と `RouteHandlerPaths` を拡張する型宣言を返す。 */
+function routesDeclaration(root: string, extensions: readonly string[]): string {
+  const paramLines: string[] = [];
+  const handlerLines: string[] = [];
+  for (const { path, params, handlerPath } of scanRouteParams(root, extensions)) {
+    const type =
+      params.length === 0 ? "{}" : `{ ${params.map((name) => `${name}: string`).join("; ")} }`;
+    paramLines.push(`    ${JSON.stringify(path)}: ${type};\n`);
+    if (handlerPath !== undefined) {
+      handlerLines.push(`    ${JSON.stringify(path)}: ${JSON.stringify(handlerPath)};\n`);
+    }
+  }
+  return `${HEADER}export {};\n\ndeclare module "${entries.router}" {\n${block("RouteParams", paramLines)}${block("RouteHandlerPaths", handlerLines)}}\n`;
+}
+
+/** `declare module` の中に出力する、`lines` を並べ替えてプロパティにした interface `name` を返す。 */
+const block = (name: string, lines: readonly string[]): string =>
+  `  interface ${name} {\n${lines.toSorted().join("")}  }\n`;
+
+/** Vite の `ImportMeta` とアセットのモジュールの型を参照し、`*.css` の型と、`globalJSX` が真ならグローバルの `JSX.Element` を宣言する、モジュールではない型宣言を返す。 */
+function envDeclaration(globalJSX: boolean): string {
+  const vite = `/// <reference types="vite/client" />\n\n`;
+  const css = `declare module "*.css" {\n  const sheet: CSSStyleSheet;\n  export default sheet;\n}\n`;
+  const jsx = `\ndeclare namespace JSX {\n  type Element = import("${entries.main}").Slot;\n}\n`;
+  return `${HEADER}${vite}${css}${globalJSX ? jsx : ""}`;
+}
+
+/** `source` の要素のタグを、`HTMLElementTagNameMap` に追加する型宣言を返す。 */
+function elementsDeclaration(
+  source: ElementSource,
+  fromPrepared: (path: string) => string,
+): string {
+  const elements = scanElements([source]);
+  const imports = elements.map(
+    ({ path }, index) => `import type E${index} from ${JSON.stringify(fromPrepared(path))};\n`,
+  );
+  const tags = elements.map(
+    ({ tag }, index) => `    ${JSON.stringify(tag)}: ElementRef<typeof E${index}>;\n`,
+  );
+  return `${HEADER}import type { ElementRef } from "${entries.main}";\n${imports.join("")}\ndeclare global {\n  interface HTMLElementTagNameMap {\n${tags.join("")}  }\n}\n`;
+}
+
+/** アプリのルート `root` の `.sobria/` に `files` を書き込み、内容が変わって書き込んだファイルの名前を返す。 */
+export function writePrepared(root: string, files: ReadonlyMap<string, string>): string[] {
+  const dir = join(root, PREPARED_DIR);
+  mkdirSync(dir, { recursive: true });
+  const written: string[] = [];
+  for (const [name, content] of files) {
+    const path = join(dir, name);
+    if (existsSync(path) && readFileSync(path, "utf8") === content) continue;
+    writeFileSync(path, content);
+    written.push(name);
+  }
+  return written;
+}

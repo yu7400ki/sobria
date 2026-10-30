@@ -8,7 +8,7 @@ title: フォーム
 
 ```ts
 // src/lib/posts.ts
-import { defineServerFn } from "rinka/server";
+import { defineServerFn } from "sobria/server";
 import { z } from "zod";
 
 import { db } from "./db.ts";
@@ -42,7 +42,7 @@ export default function Page() {
 }
 ```
 
-rinka は、フォームの `method` を `post` に、`enctype` を `multipart/form-data` にします。HTML の `action` 属性は出力しないので、ブラウザは、クエリを含めた現在のページの URL に送信します。rinka は、`name` が `_rinka_fn` で、値が送信先のサーバー関数の ID である hidden input を、フォームに出力します。`<input type="file">` のファイルは、handler で File として受け取れます。
+sobria は、フォームの `method` を `post` に、`enctype` を `multipart/form-data` にします。HTML の `action` 属性は出力しないので、ブラウザは、クエリを含めた現在のページの URL に送信します。sobria は、`name` が `_sobria_fn` で、値が送信先のサーバー関数の ID である hidden input を、フォームに出力します。`<input type="file">` のファイルは、handler で File として受け取れます。
 
 ## JS が無いときの送信
 
@@ -66,7 +66,7 @@ handler が例外を投げたときに `error.tsx` が無ければ、500 を返�
 
 ## JS があるときの送信
 
-ページに[要素](/guide/elements)が 1 つでもあれば、rinka はフォームを fetch で送信します。送信する内容とサーバー関数の実行は、JS が無いときと同じです。
+ページに[要素](/guide/elements)が 1 つでもあれば、sobria はフォームを fetch で送信します。送信する内容とサーバー関数の実行は、JS が無いときと同じです。
 
 - 送信の結果、移動先が現在のページなら、ページを描き直した結果を反映してから、フォームを初期値に戻します。フォームの部品の `form.onReset` は、描き直した後の props を読みます。URL とスクロールの位置は変化せず、フォームの部品でない要素の状態も保持されます
 - 移動先が別のページなら、そのページに移動します
@@ -85,7 +85,7 @@ form[aria-busy="true"] button {
 }
 ```
 
-`onSubmit` は、rinka の送信より先に実行します。`onSubmit` の中で `e.preventDefault()` を呼び出すと、rinka は送信しません。
+`onSubmit` は、sobria の送信より先に実行します。`onSubmit` の中で `e.preventDefault()` を呼び出すと、sobria は送信しません。
 
 ## FormData の名前の構造
 
@@ -102,7 +102,7 @@ form[aria-busy="true"] button {
 
 ```ts
 // src/lib/orders.ts
-import { defineServerFn } from "rinka/server";
+import { defineServerFn } from "sobria/server";
 import { z } from "zod";
 
 const orderSchema = z.object({
@@ -151,11 +151,11 @@ export default function Page() {
 
 ## 失敗を表示する
 
-`input` のスキーマの検証に失敗したときの 422 は、利用者に表示する画面になりません。利用者に表示する検証のエラーは、handler の中で検証して、値として返します。フォームの送信で handler が `undefined` 以外の値を返すと、rinka はリダイレクトせずに、送信したページを描画します。ページは、`getServerFnResult` で handler が返した値を受け取ります。
+`input` のスキーマの検証に失敗したときの 422 は、利用者に表示する画面になりません。利用者に表示する検証のエラーは、handler の中で検証して、値として返します。フォームの送信で handler が `undefined` 以外の値を返すと、sobria はリダイレクトせずに、送信したページを描画します。ページは、`getServerFnResult` で handler が返した値を受け取ります。
 
 ```ts
 // src/lib/users.ts
-import { defineServerFn, redirect } from "rinka/server";
+import { defineServerFn, redirect } from "sobria/server";
 import { z } from "zod";
 
 const taken = new Set(["admin"]);
@@ -174,7 +174,7 @@ export const signup = defineServerFn({
 
 ```tsx
 // src/routes/signup/page.tsx
-import { getServerFnResult } from "rinka/server";
+import { getServerFnResult } from "sobria/server";
 
 import { signup } from "../../lib/users.ts";
 
@@ -198,7 +198,7 @@ export default function Page() {
 
 - `getServerFnResult(fn)` は、ページを描画するきっかけになったリクエストで `fn` が値を返していなければ、`undefined` を返します。`getServerFnResult` では、別のサーバー関数が返した値は読めません
 - 値を返す代わりに別のページへ移動するには、handler で `redirect()` を投げます。handler が何も返さないときは、送信したページにリダイレクトします
-- JS があるときは、rinka はフォームを初期値に戻さずに、描き直したページを反映します。JS が無いときは、送信したページを POST のレスポンスとして表示するので、入力欄の値は、ページが出力した値になります。どちらの場合も同じ表示にするには、上の例のように、handler が返した入力の値をページが入力欄に渡します
+- JS があるときは、sobria はフォームを初期値に戻さずに、描き直したページを反映します。JS が無いときは、送信したページを POST のレスポンスとして表示するので、入力欄の値は、ページが出力した値になります。どちらの場合も同じ表示にするには、上の例のように、handler が返した入力の値をページが入力欄に渡します
 - JS が無いときに、値を返した後の画面で再読み込みすると、ブラウザは送信をやり直すかを確認します
 - 同じサーバー関数を使うフォームが 1 つのページに複数あるときは、どのフォームの結果かを区別できる値（id など）を、handler の戻り値に含めます
 - 要素の描画の中では `getServerFnResult` を呼べません。ページが props で要素に値を渡します
@@ -209,7 +209,7 @@ export default function Page() {
 
 ```tsx
 // src/elements/rating.tsx
-import { signal, type Ctx } from "rinka";
+import { signal, type Ctx } from "sobria";
 
 type Props = { required?: boolean; max?: number };
 
@@ -282,4 +282,4 @@ export default function Page() {
 
 `form` は、要素の関数の第 2 引数の分割代入（`{ form }`）、`ctx.form`、`const { form } = ctx` のどれかの形で参照します。`ctx` を別の関数に渡して、その中で `form` を参照すると、ビルドのエラーになります。
 
-Vite プラグインを使用せずに `defineElement` で要素を登録するときは、3 つ目の引数の `ElementOptions` に `form: true` を指定します。`defineElement` の引数は [API のリファレンス](/reference/api/rinka) を参照してください。
+Vite プラグインを使用せずに `defineElement` で要素を登録するときは、3 つ目の引数の `ElementOptions` に `form: true` を指定します。`defineElement` の引数は [API のリファレンス](/reference/api/sobria) を参照してください。

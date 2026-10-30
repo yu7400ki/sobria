@@ -14,13 +14,13 @@ const wranglerBin = fileURLToPath(
   new URL("../node_modules/wrangler/bin/wrangler.js", import.meta.url),
 );
 
-/** Worker の `main` を `rinka/app` にした Cloudflare のプラグインを返す。 */
+/** Worker の `main` を `sobria/app` にした Cloudflare のプラグインを返す。 */
 const workers = () =>
   cloudflare({
     viteEnvironment: { name: "ssr" },
     config: {
-      name: "rinka-deploy",
-      main: "rinka/app",
+      name: "sobria-deploy",
+      main: "sobria/app",
       compatibility_date: "2026-07-01",
       compatibility_flags: ["nodejs_als"],
     },
@@ -29,8 +29,8 @@ const workers = () =>
 let copy: string;
 
 beforeAll(async () => {
-  // rinka を解決できるように、コピーは tests/e2e の中に置く
-  copy = await mkdtemp(fileURLToPath(new URL("../.rinka-tmp-", import.meta.url)));
+  // sobria を解決できるように、コピーは tests/e2e の中に置く
+  copy = await mkdtemp(fileURLToPath(new URL("../.sobria-tmp-", import.meta.url)));
   await cp(fileURLToPath(new URL("../fixtures/deploy", import.meta.url)), copy, {
     recursive: true,
   });
@@ -48,7 +48,7 @@ describe("@cloudflare/vite-plugin との組み合わせ", () => {
     await dev?.close();
   });
 
-  it("開発中は、workerd の Worker が rinka/app で、サーバーコンポーネントの CSS を含むページ、エラーのページ、要素のモジュール、RPC に応答する", async () => {
+  it("開発中は、workerd の Worker が sobria/app で、サーバーコンポーネントの CSS を含むページ、エラーのページ、要素のモジュール、RPC に応答する", async () => {
     dev = await createDevServer(copy, {
       server: { port: 0 },
       cacheDir: join(copy, "node_modules/.vite"),
@@ -67,7 +67,7 @@ describe("@cloudflare/vite-plugin との組み合わせ", () => {
     expect(error).toContain("ページの描画に失敗しました");
     expect(error).toContain("ErrorOverlay");
     const id = encodeURIComponent("src/lib/orphan.ts#orphan");
-    const rpc = await fetch(`${origin}/_rinka/fn/${id}`, { method: "POST" });
+    const rpc = await fetch(`${origin}/_sobria/fn/${id}`, { method: "POST" });
     expect(await rpc.json()).toEqual({ ok: "orphan" });
   }, 120_000);
 
@@ -83,7 +83,7 @@ describe("@cloudflare/vite-plugin との組み合わせ", () => {
       const html = await (await fetch(`${origin}/`)).text();
       expect(html).toContain("<h1>deploy</h1>");
       expect((await fetch(`${origin}/missing`)).status).toBe(404);
-      const module = /\$rinka\.m\(\[\["app-counter","([^"]+)"/.exec(html)![1]!;
+      const module = /\$sobria\.m\(\[\["app-counter","([^"]+)"/.exec(html)![1]!;
       expect((await fetch(`${origin}${module}`)).status).toBe(200);
       expect((await fetch(`${origin}/.vite/manifest.json`)).status).toBe(404);
       const rpc = await fetch(`${origin}${rpcPath("src/lib/orphan.ts", "orphan")}`, {
@@ -92,7 +92,7 @@ describe("@cloudflare/vite-plugin との組み合わせ", () => {
       expect(await rpc.json()).toEqual({ ok: "orphan" });
       const form = (title: string) => {
         const body = new FormData();
-        body.append("_rinka_fn", fnId("src/lib/fns.ts", "save"));
+        body.append("_sobria_fn", fnId("src/lib/fns.ts", "save"));
         body.append("title", title);
         return fetch(`${origin}/`, { method: "POST", body, redirect: "manual" });
       };

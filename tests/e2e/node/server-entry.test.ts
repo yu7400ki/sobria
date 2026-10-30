@@ -25,7 +25,7 @@ afterAll(async () => {
 });
 
 describe("開発サーバーのサーバーのエントリー", () => {
-  it("src/server.ts に追加したルートに応答し、rinka のページと 404 は src/server.ts を通して返す", async () => {
+  it("src/server.ts に追加したルートに応答し、sobria のページと 404 は src/server.ts を通して返す", async () => {
     expect(await (await fetch(`${origin}/health`)).text()).toBe("ok");
     const html = await (await fetch(`${origin}/`)).text();
     expect(html).toContain('<script type="module" src="/@vite/client"></script>');
@@ -44,7 +44,7 @@ describe("開発サーバーのサーバーのエントリー", () => {
 
   it("サーバー関数の RPC は、ファイルのパスの ID で呼び出せる", async () => {
     const id = encodeURIComponent("src/lib/orphan.ts#orphan");
-    const response = await fetch(`${origin}/_rinka/fn/${id}`, { method: "POST" });
+    const response = await fetch(`${origin}/_sobria/fn/${id}`, { method: "POST" });
     expect(await response.json()).toEqual({ ok: "orphan" });
   });
 });

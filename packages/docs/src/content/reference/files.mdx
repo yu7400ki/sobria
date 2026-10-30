@@ -2,17 +2,17 @@
 title: ファイルの規約
 ---
 
-rinka は、次のファイルとディレクトリを名前で認識します。Vite プラグインの設定は [rinka/vite の API](/reference/api/vite) に記述しています。
+sobria は、次のファイルとディレクトリを名前で認識します。Vite プラグインの設定は [sobria/vite の API](/reference/api/vite) に記述しています。
 
 ```sh
 src/
   routes/          # ページ、レイアウト、API のルート
   elements/        # 要素
   server.ts        # サーバーのエントリー（任意）
-.rinka/            # rinka prepare が生成するファイル
+.sobria/           # sobria prepare が生成するファイル
 ```
 
-要素を TSX のソースのまま配布するライブラリは、`package.json` に `rinka` のフィールドを記述し、`prefix` に接頭辞を、`elements` に要素のディレクトリを指定します（[外部からの利用](/guide/interop)）。
+要素を TSX のソースのまま配布するライブラリは、`package.json` に `sobria` のフィールドを記述し、`prefix` に接頭辞を、`elements` に要素のディレクトリを指定します（[外部からの利用](/guide/interop)）。
 
 ## `src/routes/` のファイル
 
@@ -53,7 +53,7 @@ HTTP のメソッド名の関数を export します。
 | `undefined`  | 204                        |
 | そのほかの値 | 値を JSON にしたレスポンス |
 
-`rinka/server` の `defineHandler`（Hono の `defineHandler`）で包んだ関数の戻り値には、上の表と異なる Hono の規則を適用します。この規則では、文字列は HTML に、`null` も 204 になります。
+`sobria/server` の `defineHandler`（Hono の `defineHandler`）で包んだ関数の戻り値には、上の表と異なる Hono の規則を適用します。この規則では、文字列は HTML に、`null` も 204 になります。
 
 ### `middleware`
 
@@ -123,18 +123,18 @@ HTTP のメソッド名の関数を export します。
 
 タグ名は、接頭辞と、`src/elements/` からのファイルのパスから決まります。接頭辞は Vite プラグインの設定 `prefix` で指定します。
 
-| ファイル               | 接頭辞がデフォルトの `rinka` のときのタグ名 |
-| ---------------------- | ------------------------------------------- |
-| `user-card.tsx`        | `rinka-user-card`                           |
-| `forms/DatePicker.tsx` | `rinka-forms-date-picker`                   |
-| `forms/index.tsx`      | `rinka-forms`                               |
-| `HTMLViewer.tsx`       | `rinka-html-viewer`                         |
+| ファイル               | 接頭辞がデフォルトの `sobria` のときのタグ名 |
+| ---------------------- | -------------------------------------------- |
+| `user-card.tsx`        | `sobria-user-card`                           |
+| `forms/DatePicker.tsx` | `sobria-forms-date-picker`                   |
+| `forms/index.tsx`      | `sobria-forms`                               |
+| `HTMLViewer.tsx`       | `sobria-html-viewer`                         |
 
 - パスの区切りは `-` で連結します。camelCase、PascalCase、snake_case の名前は kebab-case にします
 - `index` のファイルのタグ名は、ディレクトリの名前になります
 - `src/elements/` の直下の `index` のファイルはビルドのエラーになります
 - ファイル名とディレクトリ名に英数字、`-`、`_` 以外の文字を含むと、ビルドのエラーになります
-- 2 つのファイルが同じタグ名になると、ビルドのエラーになります。例えば、`forms/date-picker.tsx` と `forms-date-picker.tsx` はどちらも `rinka-forms-date-picker` になります
+- 2 つのファイルが同じタグ名になると、ビルドのエラーになります。例えば、`forms/date-picker.tsx` と `forms-date-picker.tsx` はどちらも `sobria-forms-date-picker` になります
 
 ### 要素のファイルの export
 
@@ -154,13 +154,13 @@ HTTP のメソッド名の関数を export します。
 
 `src/server.ts` は、サーバーのエントリーです。fetch を持つ値（Hono のアプリなど）を default export します。
 
-`src/server.ts` が無ければ、`rinka/app` をサーバーのエントリーにします。`rinka/app` は、`src/routes/` のファイルとサーバー関数から rinka が構築した Hono のアプリを default export します。
+`src/server.ts` が無ければ、`sobria/app` をサーバーのエントリーにします。`sobria/app` は、`src/routes/` のファイルとサーバー関数から sobria が構築した Hono のアプリを default export します。
 
 開発サーバー、`vite build` の出力、`vite preview` は、どれも同じエントリーにリクエストを渡します。書き方は [Hono との連携](/guide/hono)と[デプロイ](/guide/deploy)に記述しています。
 
-## `.rinka/`
+## `.sobria/`
 
-`.rinka/` には、型の検査に使用するファイルを生成します。
+`.sobria/` には、型の検査に使用するファイルを生成します。
 
 | ファイル                 | 内容                                                                                                                                                            |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -172,20 +172,20 @@ HTTP のメソッド名の関数を export します。
 | `tsconfig.server.json`   | `src/routes/` の tsconfig                                                                                                                                       |
 | `out/`                   | `tsc -b` が出力する型宣言                                                                                                                                       |
 
-- 生成するのは、開発サーバーとビルドの開始時と、`rinka prepare` を実行したときです。開発中は、`src/routes/` か要素のディレクトリの中でファイルかディレクトリを追加か削除したときと、`tsconfig.base.json` を追加か削除したときにも生成します
+- 生成するのは、開発サーバーとビルドの開始時と、`sobria prepare` を実行したときです。開発中は、`src/routes/` か要素のディレクトリの中でファイルかディレクトリを追加か削除したときと、`tsconfig.base.json` を追加か削除したときにも生成します
 - 内容が変わったファイルだけを書き込みます
 - 生成する tsconfig は、アプリの `tsconfig.base.json` があれば、それを extends します
 - アプリの `tsconfig.json` には、3 つの tsconfig を `references` に列挙します
-- `.rinka/` は git で管理しません
+- `.sobria/` は git で管理しません
 
 ## 登録した拡張子
 
-Vite プラグインの設定 `extensions` に、ほかのプラグインが TSX に変換するファイルの拡張子（`.mdx` など）を登録できます。変換するプラグインは、`plugins` の配列で rinka より前に配置します。
+Vite プラグインの設定 `extensions` に、ほかのプラグインが TSX に変換するファイルの拡張子（`.mdx` など）を登録できます。変換するプラグインは、`plugins` の配列で sobria より前に配置します。
 
 ```ts
 // vite.config.ts
 export default defineConfig({
-  plugins: [mdx(), rinka({ extensions: [".mdx"] })],
+  plugins: [mdx(), sobria({ extensions: [".mdx"] })],
 });
 ```
 
@@ -196,7 +196,7 @@ export default defineConfig({
 | サーバー関数    | 定義すると、変換のエラーになります                    |
 | 型の検査        | 生成する tsconfig の対象にしません                    |
 
-次の拡張子は、`rinka()` を呼び出した時点でエラーになります。
+次の拡張子は、`sobria()` を呼び出した時点でエラーになります。
 
 - `.ts`、`.tsx`、`.js`、`.jsx`、`.mts`、`.cts`、`.mjs`、`.cjs`、`.json`、`.css`
 - `.` の後に英数字以外の文字を含む拡張子（`.page.md` など）

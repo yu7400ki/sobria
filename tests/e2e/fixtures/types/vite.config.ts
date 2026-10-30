@@ -1,6 +1,6 @@
-import { rinka } from "rinka/vite";
+import { sobria } from "sobria/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [rinka({ prefix: "app" })],
+  plugins: [sobria({ prefix: "app" })],
 });

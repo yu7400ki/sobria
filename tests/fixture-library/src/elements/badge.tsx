@@ -1,4 +1,4 @@
-import type { Ctx } from "rinka";
+import type { Ctx } from "sobria";
 
 import sheet from "../styles/badge.css" with { type: "css" };
 

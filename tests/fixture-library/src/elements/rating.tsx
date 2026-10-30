@@ -1,4 +1,4 @@
-import { signal, type Ctx } from "rinka";
+import { signal, type Ctx } from "sobria";
 
 type Props = { required?: boolean; max?: number };
 

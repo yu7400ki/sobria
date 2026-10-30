@@ -1,5 +1,5 @@
-import type { PageProps } from "rinka/router";
-import { getContext, notFound } from "rinka/server";
+import type { PageProps } from "sobria/router";
+import { getContext, notFound } from "sobria/server";
 
 export default function User({ params, url }: PageProps<"/users/[id]">) {
   if (params.id === "0") throw notFound();

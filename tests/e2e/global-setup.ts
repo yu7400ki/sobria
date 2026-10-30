@@ -58,7 +58,7 @@ async function start(
  */
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   const servers: ViteDevServer[] = [];
-  const library = await mkdtemp(fileURLToPath(new URL(".rinka-tmp-library-", import.meta.url)));
+  const library = await mkdtemp(fileURLToPath(new URL(".sobria-tmp-library-", import.meta.url)));
   const close = async () => {
     await Promise.all(servers.map((server) => server.close()));
     await rm(library, { recursive: true, force: true });

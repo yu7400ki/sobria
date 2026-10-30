@@ -2,13 +2,13 @@
   "name": "fixture",
   "exports": {
     ".": {
-      "rinka-server": {
+      "sobria-server": {
         "types": "./server.d.ts"
       },
       "types": "./client.d.ts"
     },
     "./tool": {
-      "rinka-client": {
+      "sobria-client": {
         "types": "./tool-client.d.ts"
       },
       "types": "./tool.d.ts"

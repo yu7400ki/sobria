@@ -1,4 +1,4 @@
-import { memo, signal } from "rinka";
+import { memo, signal } from "sobria";
 
 type Props = { start: number; label?: string; children?: JSX.Element };
 

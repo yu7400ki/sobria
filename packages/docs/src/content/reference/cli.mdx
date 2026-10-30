@@ -2,19 +2,19 @@
 title: CLI
 ---
 
-`rinka` のコマンドは、Vite を起動しない作業に使用します。開発、ビルド、ビルドの確認には、Vite のコマンド（`vite`、`vite build`、`vite preview`）を使用します。
+`sobria` のコマンドは、Vite を起動しない作業に使用します。開発、ビルド、ビルドの確認には、Vite のコマンド（`vite`、`vite build`、`vite preview`）を使用します。
 
-| コマンド               | 内容                                                |
-| ---------------------- | --------------------------------------------------- |
-| `rinka create <dir>`   | アプリの雛形を作成します                            |
-| `rinka prepare [root]` | 型の検査に使用するファイルを `.rinka/` に生成します |
+| コマンド                | 内容                                                 |
+| ----------------------- | ---------------------------------------------------- |
+| `sobria create <dir>`   | アプリの雛形を作成します                             |
+| `sobria prepare [root]` | 型の検査に使用するファイルを `.sobria/` に生成します |
 
 コマンドが失敗すると、メッセージを標準エラー出力に表示し、終了コード 1 で終了します。コマンドを指定しないときと、上の表に無いコマンドを指定したときも、使い方を表示して終了コード 1 で終了します。
 
-## `rinka create <dir>`
+## `sobria create <dir>`
 
 ```sh
-pnpm dlx rinka create my-app
+pnpm dlx sobria create my-app
 ```
 
 `<dir>` に、ページ、レイアウト、要素、サーバー関数を 1 つずつ持つアプリの雛形を作成します。依存はインストールしません。
@@ -27,30 +27,30 @@ pnpm dlx rinka create my-app
 
 | 条件                           | メッセージ                                                                                 |
 | ------------------------------ | ------------------------------------------------------------------------------------------ |
-| `<dir>` を省略した             | `rinka create には、作成するディレクトリを指定してください。`                              |
+| `<dir>` を省略した             | `sobria create には、作成するディレクトリを指定してください。`                             |
 | `<dir>` が空でないディレクトリ | `<dir> は空ではありません。空のディレクトリか、存在しないディレクトリを指定してください。` |
 
 ### 作成するファイル
 
-| ファイル                   | 内容                                                      |
-| -------------------------- | --------------------------------------------------------- |
-| `package.json`             | `name` はディレクトリの名前です                           |
-| `vite.config.ts`           | `rinka()` を登録した Vite の設定                          |
-| `tsconfig.json`            | `.rinka/` の 3 つの tsconfig を `references` に列挙します |
-| `tsconfig.base.json`       | `strict` だけを指定します                                 |
-| `.gitignore`               | `node_modules`、`dist`、`.rinka`                          |
-| `src/server.ts`            | Node でサーバーを起動するエントリー                       |
-| `src/routes/layout.tsx`    | レイアウト                                                |
-| `src/routes/page.tsx`      | `/` のページ                                              |
-| `src/elements/greeter.tsx` | サーバー関数を呼び出す要素                                |
-| `src/lib/greet.ts`         | サーバー関数                                              |
+| ファイル                   | 内容                                                       |
+| -------------------------- | ---------------------------------------------------------- |
+| `package.json`             | `name` はディレクトリの名前です                            |
+| `vite.config.ts`           | `sobria()` を登録した Vite の設定                          |
+| `tsconfig.json`            | `.sobria/` の 3 つの tsconfig を `references` に列挙します |
+| `tsconfig.base.json`       | `strict` だけを指定します                                  |
+| `.gitignore`               | `node_modules`、`dist`、`.sobria`                          |
+| `src/server.ts`            | Node でサーバーを起動するエントリー                        |
+| `src/routes/layout.tsx`    | レイアウト                                                 |
+| `src/routes/page.tsx`      | `/` のページ                                               |
+| `src/elements/greeter.tsx` | サーバー関数を呼び出す要素                                 |
+| `src/lib/greet.ts`         | サーバー関数                                               |
 
 ### `package.json`
 
-| 欄                | 内容                                 |
-| ----------------- | ------------------------------------ |
-| `dependencies`    | `rinka`、`hono`、`@hono/node-server` |
-| `devDependencies` | `vite`、`typescript`、`@types/node`  |
+| 欄                | 内容                                  |
+| ----------------- | ------------------------------------- |
+| `dependencies`    | `sobria`、`hono`、`@hono/node-server` |
+| `devDependencies` | `vite`、`typescript`、`@types/node`   |
 
 | script      | コマンド                    |
 | ----------- | --------------------------- |
@@ -58,28 +58,28 @@ pnpm dlx rinka create my-app
 | `build`     | `vite build`                |
 | `preview`   | `vite preview`              |
 | `start`     | `node dist/server/entry.js` |
-| `typecheck` | `rinka prepare && tsc -b`   |
+| `typecheck` | `sobria prepare && tsc -b`  |
 
-## `rinka prepare [root]`
+## `sobria prepare [root]`
 
 ```sh
-rinka prepare
+sobria prepare
 ```
 
-`[root]` の `vite.config` を読み込み、rinka のプラグインの設定に従って、`.rinka/` にファイルを生成します。内容が変わったファイルだけを書き込みます。生成するファイルは[ファイルの規約](/reference/files)に記述しています。
+`[root]` の `vite.config` を読み込み、sobria のプラグインの設定に従って、`.sobria/` にファイルを生成します。内容が変わったファイルだけを書き込みます。生成するファイルは[ファイルの規約](/reference/files)に記述しています。
 
 | 引数     | 内容                                                             |
 | -------- | ---------------------------------------------------------------- |
 | `[root]` | アプリのルートのディレクトリ。省略するとカレントディレクトリです |
 
-開発サーバーとビルドは、開始時に同じファイルを生成します。CI などで、Vite を起動せずに `tsc -b` で型を検査するときは、その前に `rinka prepare` を実行します。
+開発サーバーとビルドは、開始時に同じファイルを生成します。CI などで、Vite を起動せずに `tsc -b` で型を検査するときは、その前に `sobria prepare` を実行します。
 
 ### エラーになる条件
 
-| 条件                                           | メッセージ                                                                                                     |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `vite.config` の `plugins` に `rinka()` が無い | `<root> の vite.config に rinka のプラグインがありません。plugins に rinka() を記述してください。`             |
-| `src/routes/` のルートの配置が不正             | ルートを走査したときのエラー（[ファイルの規約](/reference/files)の「エラーになる配置」）                       |
-| 要素のファイルのタグ名が不正                   | ファイルとタグ名を示すエラー。2 つのファイルが同じタグ名になる場合と、名前に使用できない文字を含む場合などです |
+| 条件                                            | メッセージ                                                                                                     |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `vite.config` の `plugins` に `sobria()` が無い | `<root> の vite.config に sobria のプラグインがありません。plugins に sobria() を記述してください。`           |
+| `src/routes/` のルートの配置が不正              | ルートを走査したときのエラー（[ファイルの規約](/reference/files)の「エラーになる配置」）                       |
+| 要素のファイルのタグ名が不正                    | ファイルとタグ名を示すエラー。2 つのファイルが同じタグ名になる場合と、名前に使用できない文字を含む場合などです |
 
 `vite.config` の読み込みで発生したエラーも、そのまま表示します。

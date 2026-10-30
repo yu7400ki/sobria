@@ -20,7 +20,7 @@ let stylesDev: ViteDevServer;
 let browser: Browser;
 
 beforeAll(async () => {
-  outDir = await mkdtemp(join(tmpdir(), "rinka-production-"));
+  outDir = await mkdtemp(join(tmpdir(), "sobria-production-"));
   await buildFixture(fixture("deploy"), join(outDir, "deploy"));
   await buildFixture(fixture("styles"), join(outDir, "styles"), {}, stylesConfig().plugins);
   deploy = await startServer(process.execPath, () => [join(outDir, "deploy/server/entry.js")]);

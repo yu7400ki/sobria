@@ -2,7 +2,7 @@
 title: ルーティング
 ---
 
-rinka は、`src/routes/` のディレクトリの構成から、ページの URL を決定します。
+sobria は、`src/routes/` のディレクトリの構成から、ページの URL を決定します。
 
 ## ページのファイル
 
@@ -16,7 +16,7 @@ rinka は、`src/routes/` のディレクトリの構成から、ページの UR
 
 ```tsx
 // src/routes/users/page.tsx
-import type { PageProps } from "rinka/router";
+import type { PageProps } from "sobria/router";
 
 export default function Users({ url }: PageProps<"/users">) {
   const page = Number(url.searchParams.get("page") ?? "1");
@@ -45,8 +45,8 @@ export default function Users({ url }: PageProps<"/users">) {
 
 ```tsx
 // src/routes/users/[id]/page.tsx
-import type { PageProps } from "rinka/router";
-import { notFound } from "rinka/server";
+import type { PageProps } from "sobria/router";
+import { notFound } from "sobria/server";
 
 export default function User({ params }: PageProps<"/users/[id]">) {
   if (!/^\d+$/.test(params.id)) throw notFound();
@@ -66,7 +66,7 @@ export default function User({ params }: PageProps<"/users/[id]">) {
 
 ```tsx
 // src/routes/docs/[...slug]/page.tsx
-import type { PageProps } from "rinka/router";
+import type { PageProps } from "sobria/router";
 
 export default function Doc({ params }: PageProps<"/docs/[...slug]">) {
   return <h1>{params.slug}</h1>;
@@ -85,7 +85,7 @@ export default function Doc({ params }: PageProps<"/docs/[...slug]">) {
 
 ```tsx
 // src/routes/(marketing)/layout.tsx
-import type { LayoutProps } from "rinka/router";
+import type { LayoutProps } from "sobria/router";
 
 export default function MarketingLayout(props: LayoutProps) {
   return <article class="marketing">{props.children}</article>;
@@ -107,7 +107,7 @@ export default function About() {
 
 ```tsx
 // src/routes/users/layout.tsx
-import type { LayoutProps } from "rinka/router";
+import type { LayoutProps } from "sobria/router";
 
 export default function UsersLayout(props: LayoutProps) {
   return (
@@ -132,7 +132,7 @@ export default function UsersLayout(props: LayoutProps) {
 ```ts
 // src/routes/admin/middleware.ts
 import { getCookie } from "hono/cookie";
-import { defineMiddleware, redirect } from "rinka/server";
+import { defineMiddleware, redirect } from "sobria/server";
 
 export default defineMiddleware(async (c, next) => {
   if (getCookie(c, "session") === undefined) throw redirect("/login");
@@ -152,7 +152,7 @@ export default defineMiddleware(async (c, next) => {
 
 ```tsx
 // src/routes/not-found.tsx
-import type { NotFoundProps } from "rinka/router";
+import type { NotFoundProps } from "sobria/router";
 
 export default function NotFoundPage(props: NotFoundProps) {
   return <h1>{props.url.pathname} は見つかりません</h1>;
@@ -163,7 +163,7 @@ export default function NotFoundPage(props: NotFoundProps) {
 
 ```tsx
 // src/routes/error.tsx
-import type { ErrorProps } from "rinka/router";
+import type { ErrorProps } from "sobria/router";
 
 export default function ErrorPage(props: ErrorProps) {
   return (
@@ -221,11 +221,11 @@ export const pageTitle = (name: string) => `${name} | My App`;
 
 ### `<html>` と `<body>`
 
-`<!doctype html>`、`<html>`、`<head>`、`<body>` は rinka が出力します。`<html>` の `lang` のような属性は、レイアウトに `<html>` と `<body>` を記述して指定します。
+`<!doctype html>`、`<html>`、`<head>`、`<body>` は sobria が出力します。`<html>` の `lang` のような属性は、レイアウトに `<html>` と `<body>` を記述して指定します。
 
 ```tsx
 // src/routes/layout.tsx
-import type { LayoutProps } from "rinka/router";
+import type { LayoutProps } from "sobria/router";
 
 export default function RootLayout(props: LayoutProps) {
   return (
@@ -240,28 +240,28 @@ export default function RootLayout(props: LayoutProps) {
 }
 ```
 
-属性は、rinka が出力する `<html>` と `<body>` の開始タグに移動します。複数のファイルが同じ属性を指定したときは、深いファイルの値を使用します。`<script>` や `<style>` を `<head>` に出力するときは、レイアウトに `<head>` を記述し、その子にします。
+属性は、sobria が出力する `<html>` と `<body>` の開始タグに移動します。複数のファイルが同じ属性を指定したときは、深いファイルの値を使用します。`<script>` や `<style>` を `<head>` に出力するときは、レイアウトに `<head>` を記述し、その子にします。
 
 ## ルートのパラメータの型
 
-`rinka prepare` は、`src/routes/` のページと `route.ts` から、ルートごとのパラメータの型を生成します。開発サーバーとビルドは、開始するときと、`src/routes/` のファイルを追加か削除したときに、同じ処理を実行します。手動で実行するのは、Vite を起動せずに型を検査するときだけです。`rinka create` で作成したアプリでは、`pnpm typecheck` が `rinka prepare` を実行してから型を検査します。
+`sobria prepare` は、`src/routes/` のページと `route.ts` から、ルートごとのパラメータの型を生成します。開発サーバーとビルドは、開始するときと、`src/routes/` のファイルを追加か削除したときに、同じ処理を実行します。手動で実行するのは、Vite を起動せずに型を検査するときだけです。`sobria create` で作成したアプリでは、`pnpm typecheck` が `sobria prepare` を実行してから型を検査します。
 
 `PageProps` には、`/users/[id]` のように、ページのディレクトリの名前を `/` で連結したパスを指定します。グループの名前は含めません。指定したルートのパラメータが、`params` の型になります。
 
 ```tsx
 // src/routes/users/[id]/page.tsx
-import type { PageProps } from "rinka/router";
+import type { PageProps } from "sobria/router";
 
 export default function User({ params }: PageProps<"/users/[id]">) {
   return <h1>ユーザー {params.id}</h1>;
 }
 ```
 
-`route.ts` の handler には、`rinka/server` の `forRoute()` に `PageProps` と同じ形のルートを指定して、パラメータの型を付けます。`forRoute()` の `defineHandler` は Hono の `defineHandler` と同じもので、handler の `c.req.param(name)` は、指定したルートのパラメータの値を `string` で返します。
+`route.ts` の handler には、`sobria/server` の `forRoute()` に `PageProps` と同じ形のルートを指定して、パラメータの型を付けます。`forRoute()` の `defineHandler` は Hono の `defineHandler` と同じもので、handler の `c.req.param(name)` は、指定したルートのパラメータの値を `string` で返します。
 
 ```ts
 // src/routes/api/users/[id]/route.ts
-import { forRoute } from "rinka/server";
+import { forRoute } from "sobria/server";
 
 import { db } from "../../../../lib/db.ts";
 
@@ -276,7 +276,7 @@ export const GET = forRoute("/api/users/[id]").defineHandler((c) =>
 
 ```tsx
 // src/routes/page.tsx
-import { href } from "rinka/router";
+import { href } from "sobria/router";
 
 export default function Home() {
   return (
@@ -305,7 +305,7 @@ Vite の設定 `base` を指定すると、`href()` は `base` を前置した U
 
 ```tsx
 // src/routes/terms/page.tsx
-import type { Prerender } from "rinka/router";
+import type { Prerender } from "sobria/router";
 
 export const prerender: Prerender<"/terms"> = true;
 
@@ -318,8 +318,8 @@ export default function Terms() {
 
 ```tsx
 // src/routes/blog/[slug]/page.tsx
-import type { PageProps, Prerender } from "rinka/router";
-import { notFound } from "rinka/server";
+import type { PageProps, Prerender } from "sobria/router";
+import { notFound } from "sobria/server";
 
 import { findPost, listPosts } from "../../../lib/posts.ts";
 

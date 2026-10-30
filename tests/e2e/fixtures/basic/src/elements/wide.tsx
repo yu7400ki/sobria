@@ -1,4 +1,4 @@
-import type { Ctx } from "rinka";
+import type { Ctx } from "sobria";
 
 export default function Wide(_props: {}, ctx: Ctx) {
   ctx.onMount(() => ctx.host.setAttribute("data-started", ""));

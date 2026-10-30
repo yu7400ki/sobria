@@ -1,5 +1,5 @@
-import type { ServerNode } from "rinka";
-import { href } from "rinka/router";
+import type { ServerNode } from "sobria";
+import { href } from "sobria/router";
 
 import type { TocItem } from "../components/toc.tsx";
 import { nav } from "../content/nav.ts";

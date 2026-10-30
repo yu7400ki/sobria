@@ -151,14 +151,14 @@ vite.config.ts.timestamp-*
 # Turbo Repo
 .turbo
 
-# rinka
-/packages/rinka/lib/
-/packages/rinka/docs/
-/packages/rinka/.lint-probe-*/
-/packages/rinka/test/fixtures/type-checker/*-*/
-/tests/e2e/.rinka-tmp-*/
+# sobria
+/packages/sobria/lib/
+/packages/sobria/docs/
+/packages/sobria/.lint-probe-*/
+/packages/sobria/test/fixtures/type-checker/*-*/
+/tests/e2e/.sobria-tmp-*/
 /tests/fixture-library/types/
-.rinka/
+.sobria/
 
 # Panda CSS が生成するファイル
 /packages/docs/styled-system/

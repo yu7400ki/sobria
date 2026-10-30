@@ -2,10 +2,10 @@
   "name": "dual",
   "exports": {
     ".": {
-      "rinka-server": {
+      "sobria-server": {
         "types": "./index.d.ts"
       },
-      "rinka-client": {
+      "sobria-client": {
         "types": "./index.d.ts"
       },
       "types": "./index.d.ts"

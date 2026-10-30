@@ -1,5 +1,5 @@
-import { signal, type Ctx } from "rinka";
-import { href } from "rinka/router";
+import { signal, type Ctx } from "sobria";
+import { href } from "sobria/router";
 
 import Card from "../components/card.tsx";
 import { greet } from "../lib/greet.ts";

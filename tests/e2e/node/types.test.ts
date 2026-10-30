@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
 
-import { rinkaBin, run, tscBin, typecheck } from "./typescript.ts";
+import { sobriaBin, run, tscBin, typecheck } from "./typescript.ts";
 
 /** テスト用のライブラリのルートである。 */
 const library = fileURLToPath(new URL("../../fixture-library", import.meta.url));
@@ -13,29 +13,29 @@ const library = fileURLToPath(new URL("../../fixture-library", import.meta.url))
 let root: string;
 
 beforeAll(async () => {
-  // rinka を解決できるように、コピーは tests/e2e の中に置く
-  root = await mkdtemp(fileURLToPath(new URL("../.rinka-tmp-types-", import.meta.url)));
+  // sobria を解決できるように、コピーは tests/e2e の中に置く
+  root = await mkdtemp(fileURLToPath(new URL("../.sobria-tmp-types-", import.meta.url)));
   await cp(fileURLToPath(new URL("../fixtures/types", import.meta.url)), root, {
     recursive: true,
-    filter: (source) => basename(source) !== ".rinka",
+    filter: (source) => basename(source) !== ".sobria",
   });
-  await run(process.execPath, [rinkaBin, "prepare", root]);
+  await run(process.execPath, [sobriaBin, "prepare", root]);
 }, 60_000);
 
 afterAll(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-it("rinka prepare で生成した型宣言と tsconfig で、テスト用のアプリの型の検査が通る", async () => {
+it("sobria prepare で生成した型宣言と tsconfig で、テスト用のアプリの型の検査が通る", async () => {
   expect(await typecheck(root)).toEqual({ stdout: "", code: 0 });
 }, 60_000);
 
 it("tsc が出力したライブラリの型宣言で、ライブラリの要素の props を検査し、load:* を受け付ける", async () => {
-  await run(process.execPath, [rinkaBin, "prepare", library]);
+  await run(process.execPath, [sobriaBin, "prepare", library]);
   await run(process.execPath, [
     tscBin,
     "-p",
-    join(library, ".rinka/tsconfig.elements.json"),
+    join(library, ".sobria/tsconfig.elements.json"),
     "--composite",
     "false",
     "--declaration",
@@ -48,7 +48,7 @@ it("tsc が出力したライブラリの型宣言で、ライブラリの要素
   await mkdir(dirname(file), { recursive: true });
   await writeFile(
     file,
-    `import Badge from "@rinka-tests/fixture-library/badge";
+    `import Badge from "@sobria-tests/fixture-library/badge";
 
 export default function Page() {
   return (

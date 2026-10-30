@@ -8,7 +8,7 @@ title: サーバー関数
 
 ```ts
 // src/lib/posts.ts
-import { defineServerFn } from "rinka/server";
+import { defineServerFn } from "sobria/server";
 import { z } from "zod";
 
 import { db } from "./db.ts";
@@ -54,7 +54,7 @@ export const likePost = defineServerFn({
 
 ```tsx
 // src/elements/like-button.tsx
-import { signal } from "rinka";
+import { signal } from "sobria";
 
 import { likePost } from "../lib/posts.ts";
 
@@ -73,7 +73,7 @@ export default function LikeButton(props: { postId: number }) {
 | `headers`  | リクエストに付与するヘッダーです                        |
 | `refresh`  | `false` にすると、呼び出した後にページを描き直しません  |
 
-rinka はタイムアウトと再試行の機能を持ちません。タイムアウトは、例のように `AbortSignal.timeout()` を `signal` に渡して設定します。
+sobria はタイムアウトと再試行の機能を持ちません。タイムアウトは、例のように `AbortSignal.timeout()` を `signal` に渡して設定します。
 
 入力と戻り値には、JSON で表せない値（Date や Map など）も使用できます。入力には File と Blob も使用でき、handler は File として受け取ります。戻り値には File と Blob を使用できないので、ファイルを返すときは handler から Response を返します。入力に FormData、URLSearchParams、ジェネレーター、Map を継承したクラスや独自の反復可能なクラスのインスタンスを含めると、型を保って送れないので、送信せずに TypeError を投げます。これらの値は、配列（`Array.from()`）かプレーンなオブジェクトに変換して渡します。
 
@@ -106,7 +106,7 @@ export default function Page() {
 
 ```tsx
 // src/elements/post-form.tsx
-import { ServerFnError, signal } from "rinka";
+import { ServerFnError, signal } from "sobria";
 
 import { addPost } from "../lib/posts.ts";
 
@@ -135,13 +135,13 @@ export default function PostForm() {
 }
 ```
 
-handler の中で `rinka/server` の `redirect()` を投げると、ブラウザはその URL に移動します。移動するときは、呼び出しが返す Promise は解決しないので、`await` の後のコードは実行されません。`notFound()` を投げると、呼び出しは 404 の `ServerFnError` を投げます。
+handler の中で `sobria/server` の `redirect()` を投げると、ブラウザはその URL に移動します。移動するときは、呼び出しが返す Promise は解決しないので、`await` の後のコードは実行されません。`notFound()` を投げると、呼び出しは 404 の `ServerFnError` を投げます。
 
 ## 呼び出した後のページの描き直し
 
-GET 以外のサーバー関数を要素から呼び出すと、rinka は、サーバー関数のレスポンスに、現在のページを描き直した結果も含めます。呼び出しは、描き直した結果をページに反映してから値を返します。例えば、上の `PostForm` で投稿すると、ページの投稿の一覧に新しい投稿が表示されます。
+GET 以外のサーバー関数を要素から呼び出すと、sobria は、サーバー関数のレスポンスに、現在のページを描き直した結果も含めます。呼び出しは、描き直した結果をページに反映してから値を返します。例えば、上の `PostForm` で投稿すると、ページの投稿の一覧に新しい投稿が表示されます。
 
-描き直すのは、サーバーで描画した部分（ページ、レイアウト、`<head>`、要素の props）です。要素の状態は保持されます。要素には値が変化した props だけを設定し直し、その props を読み取った memo は値を取得し直します。オブジェクト、配列、Date や Map などの props は、描き直すたびに新しい値として設定し直します。要素が memo に保持している値を、サーバー関数を呼び出した後に取得し直すときは、`rinka` の `refresh()` に memo を渡し、呼び出すサーバー関数には `{ refresh: false }` を指定します（[リアクティビティ](/guide/reactivity)）。
+描き直すのは、サーバーで描画した部分（ページ、レイアウト、`<head>`、要素の props）です。要素の状態は保持されます。要素には値が変化した props だけを設定し直し、その props を読み取った memo は値を取得し直します。オブジェクト、配列、Date や Map などの props は、描き直すたびに新しい値として設定し直します。要素が memo に保持している値を、サーバー関数を呼び出した後に取得し直すときは、`sobria` の `refresh()` に memo を渡し、呼び出すサーバー関数には `{ refresh: false }` を指定します（[リアクティビティ](/guide/reactivity)）。
 
 handler が `redirect()` で現在のページの URL を指定したときは、ページを移動せずに描き直し、呼び出しは `undefined` を返します。`refresh: false` を指定した呼び出しでは、handler が現在のページの URL を指定したときも、ブラウザはその URL に移動します。
 
@@ -151,11 +151,11 @@ handler が `redirect()` で現在のページの URL を指定したときは�
 await likePost(postId, { refresh: false });
 ```
 
-サーバー関数を呼び出さずにページを描き直すときは、`rinka` の `refreshPage()` を呼び出します。
+サーバー関数を呼び出さずにページを描き直すときは、`sobria` の `refreshPage()` を呼び出します。
 
 ```tsx
 // src/elements/reload-button.tsx
-import { refreshPage } from "rinka";
+import { refreshPage } from "sobria";
 
 export default function ReloadButton() {
   return <button onClick={() => refreshPage()}>最新の状態にする</button>;
@@ -181,7 +181,7 @@ export const getPost = defineServerFn({ method: "GET", input: z.number() })(asyn
 
 ```tsx
 // src/elements/post-title.tsx
-import { memo } from "rinka";
+import { memo } from "sobria";
 
 import { getPost } from "../lib/posts.ts";
 
@@ -191,9 +191,9 @@ export default function PostTitle(props: { postId: number }) {
 }
 ```
 
-rinka は、サーバー関数の結果をキャッシュしません。GET のサーバー関数の URL は入力ごとに決まるので、例のように `cache-control` のヘッダーを設定すると、ブラウザのキャッシュが使用されます。例えば、同じ入力で 2 回呼び出すと、2 回目はブラウザのキャッシュから値を返します。
+sobria は、サーバー関数の結果をキャッシュしません。GET のサーバー関数の URL は入力ごとに決まるので、例のように `cache-control` のヘッダーを設定すると、ブラウザのキャッシュが使用されます。例えば、同じ入力で 2 回呼び出すと、2 回目はブラウザのキャッシュから値を返します。
 
-GET のサーバー関数は、データを変更しない処理にだけ使用してください。rinka はこれを検査しません。
+GET のサーバー関数は、データを変更しない処理にだけ使用してください。sobria はこれを検査しません。
 
 ## 値を順に返す
 
@@ -201,7 +201,7 @@ handler を async generator 関数（`async function*`）にすると、値を y
 
 ```ts
 // src/lib/jobs.ts
-import { defineServerFn } from "rinka/server";
+import { defineServerFn } from "sobria/server";
 import { z } from "zod";
 
 import { jobs } from "./jobs-store.ts";
@@ -218,7 +218,7 @@ export const watchJob = defineServerFn({ method: "GET", input: z.string() })(asy
 
 ```tsx
 // src/elements/job-progress.tsx
-import { memo } from "rinka";
+import { memo } from "sobria";
 
 import { watchJob } from "../lib/jobs.ts";
 
@@ -245,7 +245,7 @@ export default function JobProgress(props: { jobId: string }) {
 ```ts
 // src/lib/auth.ts
 import { getSignedCookie } from "hono/cookie";
-import { defineMiddleware } from "rinka/server";
+import { defineMiddleware } from "sobria/server";
 
 import { sessionSecret } from "./secret.ts";
 
@@ -276,29 +276,29 @@ export const deletePost = defineServerFn({ input: z.number() })(auth, async (c, 
 
 ## 本文の大きさを制限する
 
-rinka は、リクエストの本文の大きさを制限しません。ファイルを受け取るアプリでは、ルートの `middleware.ts` に Hono の `bodyLimit` を配置して、本文の大きさを制限します。
+sobria は、リクエストの本文の大きさを制限しません。ファイルを受け取るアプリでは、ルートの `middleware.ts` に Hono の `bodyLimit` を配置して、本文の大きさを制限します。
 
 ```ts
 // src/routes/middleware.ts
 import { bodyLimit } from "hono/body-limit";
-import { defineMiddleware } from "rinka/server";
+import { defineMiddleware } from "sobria/server";
 
 export default defineMiddleware(bodyLimit({ maxSize: 10 * 1024 * 1024 }));
 ```
 
-ルートの `middleware.ts` は、rinka が本文を読む前のリクエストを受け取ります。大きさを超えた本文は、読み取りを中止して 413 を返します。サーバー関数のミドルウェアは、rinka が本文を読んだ後に実行するので、`bodyLimit` を配置しても、rinka が読み取る本文の大きさは制限できません。サーバー関数のミドルウェアの `bodyLimit` は、`Content-Length` のあるリクエストには本文を読んだ後に 413 を返し、`Content-Length` の無いリクエストには大きさに関わらず 500 を返します。
+ルートの `middleware.ts` は、sobria が本文を読む前のリクエストを受け取ります。大きさを超えた本文は、読み取りを中止して 413 を返します。サーバー関数のミドルウェアは、sobria が本文を読んだ後に実行するので、`bodyLimit` を配置しても、sobria が読み取る本文の大きさは制限できません。サーバー関数のミドルウェアの `bodyLimit` は、`Content-Length` のあるリクエストには本文を読んだ後に 413 を返し、`Content-Length` の無いリクエストには大きさに関わらず 500 を返します。
 
 ## 別のオリジンからのリクエスト
 
-rinka は、別のオリジンのページから送信された、サーバー関数への GET 以外のリクエストを、403 で拒否します。サブドメインだけが異なるページも、別のオリジンです。`route.ts` へのリクエストは拒否しません。別のオリジンのページからの呼び出しを許可するときは、Vite プラグインの `trustedOrigins` に、そのオリジンを列挙します。
+sobria は、別のオリジンのページから送信された、サーバー関数への GET 以外のリクエストを、403 で拒否します。サブドメインだけが異なるページも、別のオリジンです。`route.ts` へのリクエストは拒否しません。別のオリジンのページからの呼び出しを許可するときは、Vite プラグインの `trustedOrigins` に、そのオリジンを列挙します。
 
 ```ts
 // vite.config.ts
-import { rinka } from "rinka/vite";
+import { sobria } from "sobria/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [rinka({ trustedOrigins: ["https://www.example.com"] })],
+  plugins: [sobria({ trustedOrigins: ["https://www.example.com"] })],
 });
 ```
 
@@ -306,11 +306,11 @@ export default defineConfig({
 
 ## API ルート
 
-サーバー関数の URL は rinka が決定し、定義したファイルを移動すると変わります。外部に公開する API や Webhook は、`src/routes/` の `route.ts` に、HTTP のメソッドの名前で handler を export して定義します。
+サーバー関数の URL は sobria が決定し、定義したファイルを移動すると変わります。外部に公開する API や Webhook は、`src/routes/` の `route.ts` に、HTTP のメソッドの名前で handler を export して定義します。
 
 ```ts
 // src/routes/api/posts/route.ts
-import { defineHandler } from "rinka/server";
+import { defineHandler } from "sobria/server";
 import { z } from "zod";
 
 import { db } from "../../../lib/db.ts";
@@ -326,4 +326,4 @@ export const POST = defineHandler({ json: z.object({ title: z.string().min(1) })
 });
 ```
 
-`rinka/server` の `defineHandler` は、Hono の `defineHandler` と同じものです。handler が返したオブジェクトは JSON のレスポンスになります。パスのパラメータに型を付けるときは、`forRoute()` の `defineHandler` を使用します（[ルーティング](/guide/routing#ルートのパラメータの型)）。`route.ts` の配置の規則は [ルーティング](/guide/routing) を、Hono との組み合わせは [Hono との連携](/guide/hono) を参照してください。
+`sobria/server` の `defineHandler` は、Hono の `defineHandler` と同じものです。handler が返したオブジェクトは JSON のレスポンスになります。パスのパラメータに型を付けるときは、`forRoute()` の `defineHandler` を使用します（[ルーティング](/guide/routing#ルートのパラメータの型)）。`route.ts` の配置の規則は [ルーティング](/guide/routing) を、Hono との組み合わせは [Hono との連携](/guide/hono) を参照してください。

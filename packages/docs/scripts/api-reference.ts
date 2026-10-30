@@ -1,4 +1,4 @@
-// rinka の型定義とドキュメントコメントから、API のリファレンスの MDX を作成する。
+// sobria の型定義とドキュメントコメントから、API のリファレンスの MDX を作成する。
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -19,8 +19,8 @@ type Side = "要素のファイル" | "サーバーのファイル";
 
 /** package.json の exports の条件のうち、型定義を適用するファイルの種類を表すものである。 */
 const conditionSides: Readonly<Record<string, Side>> = {
-  "rinka-server": "サーバーのファイル",
-  "rinka-client": "要素のファイル",
+  "sobria-server": "サーバーのファイル",
+  "sobria-client": "要素のファイル",
 };
 
 /** API のページを作成しないエントリーポイントである。JSX の型は、手で記述するリファレンスのページで扱う。 */
@@ -357,7 +357,7 @@ export function referenceSources(packageDir: string, tsconfig: string): Record<s
           `title: ${entry.specifier}`,
           "---",
           "",
-          "{/* pnpm --filter @rinka/docs generate で生成する。手動で編集しない。 */}",
+          "{/* pnpm --filter @sobria/docs generate で生成する。手動で編集しない。 */}",
           "",
           body,
         ].join("\n");
@@ -379,11 +379,11 @@ const readOxfmtrc = (): Oxfmtrc & { $schema?: string } =>
     $schema?: string;
   };
 
-/** rinka の API のリファレンスの、パッケージからの相対パスと、リポジトリの oxfmt の設定で整形した内容を返す。 */
+/** sobria の API のリファレンスの、パッケージからの相対パスと、リポジトリの oxfmt の設定で整形した内容を返す。 */
 export async function apiReferenceSources(): Promise<Record<string, string>> {
   const { $schema: _, ignorePatterns: __, ...options } = readOxfmtrc();
   const sources = referenceSources(
-    resolve(root, "node_modules/rinka"),
+    resolve(root, "node_modules/sobria"),
     resolve(root, "scripts/tsconfig.api.json"),
   );
   const formatted = await Promise.all(

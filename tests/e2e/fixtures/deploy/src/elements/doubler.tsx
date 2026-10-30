@@ -1,4 +1,4 @@
-import { memo, type Ctx } from "rinka";
+import { memo, type Ctx } from "sobria";
 
 export default function Doubler(props: { base: number }, { host, onMount }: Ctx) {
   const doubled = memo(async () => {

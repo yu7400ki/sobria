@@ -1,4 +1,4 @@
-import { signal, type Ctx } from "rinka";
+import { signal, type Ctx } from "sobria";
 
 import { ping } from "../lib/fns.ts";
 

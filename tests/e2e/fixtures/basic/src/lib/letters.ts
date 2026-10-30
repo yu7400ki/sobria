@@ -1,4 +1,4 @@
-import { defineServerFn } from "rinka/server";
+import { defineServerFn } from "sobria/server";
 
 export const letters = defineServerFn({ method: "GET" })(async function* () {
   yield "a";

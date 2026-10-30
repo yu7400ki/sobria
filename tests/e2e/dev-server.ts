@@ -1,7 +1,7 @@
 import type { AddressInfo } from "node:net";
 
 import tailwindcss from "@tailwindcss/vite";
-import { rinka, type RinkaOptions } from "rinka/vite";
+import { sobria, type SobriaOptions } from "sobria/vite";
 import {
   createServer,
   mergeConfig,
@@ -10,28 +10,28 @@ import {
   type ViteDevServer,
 } from "vite";
 
-/** 開発サーバーの rinka のプラグインに渡す設定と、rinka のプラグインより前に登録するプラグインを表す。 */
-export interface RinkaSetup {
-  readonly options?: RinkaOptions;
+/** 開発サーバーの sobria のプラグインに渡す設定と、sobria のプラグインより前に登録するプラグインを表す。 */
+export interface SobriaSetup {
+  readonly options?: SobriaOptions;
   readonly before?: readonly PluginOption[];
 }
 
 /**
- * `root` のアプリの開発サーバーを、rinka のプラグイン（接頭辞は `app`）を登録し、HMR を無効にして作成する。
- * `config` は Vite の `mergeConfig` でこの設定に重ねるので、`plugins` に記述したプラグインは rinka のプラグインの後ろに追加する。
- * `setup` の `options` は rinka のプラグインの設定に重ね、`before` のプラグインは rinka のプラグインの前に登録する。
+ * `root` のアプリの開発サーバーを、sobria のプラグイン（接頭辞は `app`）を登録し、HMR を無効にして作成する。
+ * `config` は Vite の `mergeConfig` でこの設定に重ねるので、`plugins` に記述したプラグインは sobria のプラグインの後ろに追加する。
+ * `setup` の `options` は sobria のプラグインの設定に重ね、`before` のプラグインは sobria のプラグインの前に登録する。
  */
 export function createDevServer(
   root: string,
   config: InlineConfig = {},
-  setup: RinkaSetup = {},
+  setup: SobriaSetup = {},
 ): Promise<ViteDevServer> {
   const base: InlineConfig = {
     root,
     configFile: false,
     logLevel: "error",
     server: { hmr: false },
-    plugins: [...(setup.before ?? []), rinka({ prefix: "app", ...setup.options })],
+    plugins: [...(setup.before ?? []), sobria({ prefix: "app", ...setup.options })],
   };
   return createServer(mergeConfig(base, config));
 }

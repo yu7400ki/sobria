@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { rinka, type RinkaApi } from "rinka/vite";
+import { sobria, type SobriaApi } from "sobria/vite";
 import {
   type HotPayload,
   type InlineConfig,
@@ -16,7 +16,7 @@ import {
 } from "vite";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { createDevServer, originOf, type RinkaSetup } from "../dev-server.ts";
+import { createDevServer, originOf, type SobriaSetup } from "../dev-server.ts";
 
 const root = fileURLToPath(new URL("../fixtures/basic", import.meta.url));
 
@@ -33,8 +33,8 @@ afterAll(async () => {
 describe("Vite プラグイン", () => {
   it("ssr の環境で読み込んだページを描画すると、要素の DSD を出力する", async () => {
     const { runner } = server.environments.ssr as RunnableDevEnvironment;
-    const { renderToString } = await runner.import("rinka/server");
-    const { jsx } = await runner.import("rinka/jsx-runtime");
+    const { renderToString } = await runner.import("sobria/server");
+    const { jsx } = await runner.import("sobria/jsx-runtime");
     const { default: Page } = await runner.import("/src/routes/page.tsx");
     const html: string = await renderToString(jsx(Page, {}));
     expect(html).toContain('<app-counter data-oh="h1"');
@@ -47,8 +47,8 @@ describe("Vite プラグイン", () => {
 
   it("client の環境で変換した要素のモジュールは、要素を登録し、await する値を stopIfSeeding の戻り値に渡す", async () => {
     const result = await server.environments.client.transformRequest("/src/elements/counter.tsx");
-    expect(result?.code).toContain('__rinka_defineElement("app-counter", Counter,');
-    expect(result?.code).toContain("await __rinka_stop(Promise.resolve())");
+    expect(result?.code).toContain('__sobria_defineElement("app-counter", Counter,');
+    expect(result?.code).toContain("await __sobria_stop(Promise.resolve())");
     expect(result?.code).toContain('site: "src/elements/counter.tsx:');
   });
 
@@ -82,27 +82,27 @@ describe("Vite プラグイン", () => {
     }
   });
 
-  it("client の環境は、rinka のランタイムが動的に import する seroval を事前バンドルの対象にし、変換で新しい依存として発見しない", async () => {
+  it("client の環境は、sobria のランタイムが動的に import する seroval を事前バンドルの対象にし、変換で新しい依存として発見しない", async () => {
     const client = server.environments.client;
     const codec = fileURLToPath(
-      new URL("../node_modules/rinka/lib/client/wire-codec.js", import.meta.url),
+      new URL("../node_modules/sobria/lib/client/wire-codec.js", import.meta.url),
     );
     await client.transformRequest(`/@fs/${realpathSync(codec).split(sep).join("/")}`);
     const metadata = client.depsOptimizer?.metadata;
     const deps = Object.keys({ ...metadata?.optimized, ...metadata?.discovered });
-    expect(deps).toContain("rinka > seroval");
+    expect(deps).toContain("sobria > seroval");
     expect(deps).not.toContain("seroval");
   });
 
   it("trustedOrigins に、オリジンでない値を記述するとエラーにする", () => {
-    expect(() => rinka({ trustedOrigins: ["https://www.example.com"] })).not.toThrow();
+    expect(() => sobria({ trustedOrigins: ["https://www.example.com"] })).not.toThrow();
     for (const origin of ["https://*.example.com", "https://www.example.com/", "www.example.com"]) {
-      expect(() => rinka({ trustedOrigins: [origin] })).toThrow("trustedOrigins");
+      expect(() => sobria({ trustedOrigins: [origin] })).toThrow("trustedOrigins");
     }
   });
 
   it("extensions に、登録できない拡張子を記述するとエラーにする", () => {
-    expect(() => rinka({ extensions: [".mdx", ".page"] })).not.toThrow();
+    expect(() => sobria({ extensions: [".mdx", ".page"] })).not.toThrow();
     for (const extensions of [
       ["mdx"],
       ["."],
@@ -115,21 +115,21 @@ describe("Vite プラグイン", () => {
       [".css"],
       [".mdx", ".mdx"],
     ]) {
-      expect(() => rinka({ extensions })).toThrow("extensions");
+      expect(() => sobria({ extensions })).toThrow("extensions");
     }
   });
 
-  it("rinka のプラグインを 2 回登録すると、エラーで停止する", async () => {
-    // createDevServer が 1 つ目の rinka のプラグインを登録する
+  it("sobria のプラグインを 2 回登録すると、エラーで停止する", async () => {
+    // createDevServer が 1 つ目の sobria のプラグインを登録する
     await expect(
-      createDevServer(root, { server: { middlewareMode: true }, plugins: [rinka()] }),
+      createDevServer(root, { server: { middlewareMode: true }, plugins: [sobria()] }),
     ).rejects.toThrow(/2 つ以上/);
   });
 });
 
 describe("タグ名の検査", () => {
   it("2 つのファイルが同じタグになると、開発サーバーの起動時にエラーにする", async () => {
-    const project = await mkdtemp(join(tmpdir(), "rinka-tags-"));
+    const project = await mkdtemp(join(tmpdir(), "sobria-tags-"));
     try {
       await mkdir(join(project, "src/elements/forms"), { recursive: true });
       const source = "export default function X() { return <p />; }\n";
@@ -148,9 +148,9 @@ async function withProject(
   files: Readonly<Record<string, string>>,
   run: (server: ViteDevServer) => Promise<void>,
   config: InlineConfig = {},
-  setup: RinkaSetup = {},
+  setup: SobriaSetup = {},
 ): Promise<void> {
-  const project = await mkdtemp(join(tmpdir(), "rinka-plugin-"));
+  const project = await mkdtemp(join(tmpdir(), "sobria-plugin-"));
   try {
     await Promise.all(
       Object.entries(files).map(async ([file, source]) => {
@@ -182,7 +182,7 @@ describe("サーバー関数を定義できる範囲", () => {
     await withProject(
       {
         "test/fns.ts":
-          'import { defineServerFn } from "rinka/server";\nexport const f = defineServerFn(() => 1);\n',
+          'import { defineServerFn } from "sobria/server";\nexport const f = defineServerFn(() => 1);\n',
       },
       async (dev) => {
         await expect(dev.environments.ssr.transformRequest("/test/fns.ts")).rejects.toThrow(
@@ -201,10 +201,10 @@ describe("サーバー関数を定義できる範囲", () => {
         "package.json": JSON.stringify({ dependencies: { "acme-lib": "1.0.0" } }),
         "node_modules/acme-lib/package.json": JSON.stringify({
           name: "acme-lib",
-          rinka: { prefix: "acme", elements: "src/elements" },
+          sobria: { prefix: "acme", elements: "src/elements" },
         }),
         "node_modules/acme-lib/src/fns.ts":
-          'import { defineServerFn } from "rinka/server";\nexport const f = defineServerFn(() => 1);\n',
+          'import { defineServerFn } from "sobria/server";\nexport const f = defineServerFn(() => 1);\n',
       },
       async (dev) => {
         await expect(
@@ -228,19 +228,19 @@ describe("変換の対象", () => {
     await withProject({ "src/elements/card.tsx": "export const raw = 1;\n" }, async (dev) => {
       const result = await dev.environments.client.transformRequest("/src/elements/card.tsx?raw");
       expect(result?.code).toContain("export const raw = 1;");
-      expect(result?.code).not.toContain("__rinka_defineElement");
+      expect(result?.code).not.toContain("__sobria_defineElement");
     });
   });
 
-  it("client の環境で rinka/server を参照するファイルは、参照したファイルを示すエラーにする", async () => {
+  it("client の環境で sobria/server を参照するファイルは、参照したファイルを示すエラーにする", async () => {
     await withProject(
       {
         "src/lib/value.ts":
-          'import { redirect } from "rinka/server";\nexport const go = () => redirect("/");\n',
-        "src/lib/side.ts": 'import "rinka/server";\n',
-        "src/lib/dynamic.ts": 'export const load = () => import("rinka/server");\n',
+          'import { redirect } from "sobria/server";\nexport const go = () => redirect("/");\n',
+        "src/lib/side.ts": 'import "sobria/server";\n',
+        "src/lib/dynamic.ts": 'export const load = () => import("sobria/server");\n',
         "src/lib/fns.ts":
-          'import { defineServerFn, type ServerFn } from "rinka/server";\nexport const a: ServerFn<undefined, number> = defineServerFn(() => 1);\n',
+          'import { defineServerFn, type ServerFn } from "sobria/server";\nexport const a: ServerFn<undefined, number> = defineServerFn(() => 1);\n',
       },
       async (dev) => {
         const client = dev.environments.client;
@@ -252,7 +252,7 @@ describe("変換の対象", () => {
             ),
           ),
         );
-        const message = ": クライアント向けのコードから rinka/server を参照しています。";
+        const message = ": クライアント向けのコードから sobria/server を参照しています。";
         expect(results).toEqual([
           expect.stringContaining(`src/lib/value.ts${message}`),
           expect.stringContaining(`src/lib/side.ts${message}`),
@@ -263,15 +263,15 @@ describe("変換の対象", () => {
     );
   });
 
-  it("依存の事前走査では、client の環境の rinka/server の解決をエラーにしない", async () => {
+  it("依存の事前走査では、client の環境の sobria/server の解決をエラーにしない", async () => {
     // Vite の依存の事前走査は、型に無い scan のオプションを付けて resolveId を呼ぶ
     const scan = { isEntry: false, scan: true };
     const scanned = await server.environments.client.pluginContainer.resolveId(
-      "rinka/server",
+      "sobria/server",
       join(root, "src/lib/fns.ts"),
       scan,
     );
-    expect(scanned).toMatchObject({ id: "rinka/server", external: true });
+    expect(scanned).toMatchObject({ id: "sobria/server", external: true });
   });
 
   it("consumer が client の環境は、名前に関わらずクライアント向けに変換する", async () => {
@@ -280,8 +280,8 @@ describe("変換の対象", () => {
       async (dev) => {
         const widget = dev.environments.widget!;
         const result = await widget.transformRequest("/src/elements/card.tsx");
-        expect(result?.code).toContain("__rinka_stop(0)");
-        const resolved = await widget.pluginContainer.resolveId("rinka");
+        expect(result?.code).toContain("__sobria_stop(0)");
+        const resolved = await widget.pluginContainer.resolveId("sobria");
         expect(resolved?.id.split(sep).join("/")).toMatch(/\/lib\/client\/index\.js$/);
       },
       { environments: { widget: { consumer: "client" } } },
@@ -317,7 +317,7 @@ describe("登録した拡張子のファイル", () => {
       "export default function Card(props: { n: number }) { return <p>{props.n}</p>; }\n",
   };
 
-  it("変換するプラグインを rinka より前に配置すると、enforce が無くても、ssr と client の環境で TSX としてコンパイルする", async () => {
+  it("変換するプラグインを sobria より前に配置すると、enforce が無くても、ssr と client の環境で TSX としてコンパイルする", async () => {
     await withProject(
       {
         ...files,
@@ -338,10 +338,10 @@ describe("登録した拡張子のファイル", () => {
     );
   });
 
-  it("enforce の無い変換するプラグインを rinka より後ろに配置すると、配置を直すことを求めるエラーにする", async () => {
+  it("enforce の無い変換するプラグインを sobria より後ろに配置すると、配置を直すことを求めるエラーにする", async () => {
     await withProject(
       files,
-      async (dev) => expect(await transformed(dev)).toContain("rinka より前に配置してください"),
+      async (dev) => expect(await transformed(dev)).toContain("sobria より前に配置してください"),
       { plugins: [pagePlugin()] },
       { options },
     );
@@ -380,7 +380,7 @@ describe("登録した拡張子のファイル", () => {
     await withProject(
       {
         "src/lib/doc.page": `@page
-import { defineServerFn } from "rinka/server";
+import { defineServerFn } from "sobria/server";
 export const a = defineServerFn(() => 1);
 `,
       },
@@ -392,9 +392,9 @@ export const a = defineServerFn(() => 1);
   });
 });
 
-/** 開発サーバー `dev` が生成した `.rinka/` のファイルのうち、名前が `name` のファイルの内容を返す。 */
+/** 開発サーバー `dev` が生成した `.sobria/` のファイルのうち、名前が `name` のファイルの内容を返す。 */
 const prepared = (dev: ViteDevServer, name: string) =>
-  readFile(join(dev.config.root, ".rinka", name), "utf8");
+  readFile(join(dev.config.root, ".sobria", name), "utf8");
 
 /** 開発サーバー `dev` のプロジェクトに、ルートからの相対パス `file` のファイルを追加し、追加を通知する。 */
 async function addFile(dev: ViteDevServer, file: string, source: string): Promise<void> {
@@ -413,24 +413,24 @@ async function removeFile(dev: ViteDevServer, file: string): Promise<void> {
 
 const page = "export default function Page() { return <p>page</p>; }\n";
 
-describe(".rinka/ の生成", () => {
+describe(".sobria/ の生成", () => {
   it("tsconfig.base.json を追加すると、生成する tsconfig がそれを extends し、削除すると extends から取り除く", async () => {
     await withProject({ "src/routes/page.tsx": page }, async (dev) => {
       const extendsOf = async () =>
         (JSON.parse(await prepared(dev, "tsconfig.shared.json")) as { extends: string[] }).extends;
       await addFile(dev, "tsconfig.base.json", "{}\n");
-      expect(await extendsOf()).toEqual(["rinka/tsconfig.json", "../tsconfig.base.json"]);
+      expect(await extendsOf()).toEqual(["sobria/tsconfig.json", "../tsconfig.base.json"]);
       await removeFile(dev, "tsconfig.base.json");
-      expect(await extendsOf()).toEqual(["rinka/tsconfig.json"]);
+      expect(await extendsOf()).toEqual(["sobria/tsconfig.json"]);
     });
   });
 
   it("Vite の設定を解決する前に api の prepare を呼ぶと、エラーを投げる", () => {
-    const api: RinkaApi = rinka()[0]?.api;
+    const api: SobriaApi = sobria()[0]?.api;
     expect(() => api.prepare()).toThrow(/設定を解決した後/);
   });
 
-  it("開発サーバーを起動すると、.rinka/ に型宣言と tsconfig を生成する", async () => {
+  it("開発サーバーを起動すると、.sobria/ に型宣言と tsconfig を生成する", async () => {
     await withProject(
       { "src/elements/card.tsx": card, "src/routes/users/[id]/page.tsx": page },
       async (dev) => {
@@ -440,7 +440,7 @@ describe(".rinka/ の生成", () => {
         expect(await prepared(dev, "routes.d.ts")).toContain('"/users/[id]": { id: string };');
         expect(await prepared(dev, "env.d.ts")).toContain("type Element =");
         expect(JSON.parse(await prepared(dev, "tsconfig.elements.json"))).toMatchObject({
-          extends: ["rinka/tsconfig.json"],
+          extends: ["sobria/tsconfig.json"],
         });
       },
     );
@@ -542,7 +542,7 @@ describe("開発中の HMR", () => {
       await dev.listen();
       const url = new URL(originOf(dev).replace("http", "ws"));
       const [first, second] = await Promise.all([connect(url), connect(url)]);
-      first.socket.send(JSON.stringify({ type: "custom", event: "rinka:reload" }));
+      first.socket.send(JSON.stringify({ type: "custom", event: "sobria:reload" }));
       expect(await first.next()).toBe("full-reload");
       // full-reload が全体に送られていれば、後のクライアントには test:echo より先に full-reload が届く
       second.socket.send(JSON.stringify({ type: "custom", event: "test:echo" }));
