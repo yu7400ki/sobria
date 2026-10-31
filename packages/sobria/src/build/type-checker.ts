@@ -289,10 +289,11 @@ export function createTypeChecker(options: { readonly config: string }): TypeChe
         [typesPath(file), virtualPath(file)].map((path) => files.delete(path)).includes(true),
       );
       for (const file of removed) analyses.delete(file);
+      const createdFiles = (changes.created ?? []).map(slash);
       update({
         fileNotifications: {
-          created: (changes.created ?? []).map(slash),
-          changed: (changes.changed ?? []).map(slash),
+          created: createdFiles,
+          changed: [...createdFiles, ...(changes.changed ?? []).map(slash)],
           deleted,
         },
         ...(removed.length > 0 && { reconfigurePrograms: [{ id, ...program() }] }),
