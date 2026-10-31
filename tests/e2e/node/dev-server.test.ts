@@ -75,24 +75,15 @@ const transformed = async (name: string) =>
   );
 
 /**
- * 要素のファイル `src/elements/<name>.tsx` の名前、パス、ソースを返す。要素は、props の型に、型のファイル
- * `src/lib/<name>-props.ts` の `Props` を import する。型のファイルのパスと、2 つのファイルを削除する関数も返す。
- * 削除する関数は、ファイル監視を待たずに、削除を開発サーバーに通知する。テストごとに異なる `name` を使用する。
+ * 要素のファイル `src/elements/<name>.tsx` の名前、パス、ソースを返す。要素は、props の型として、型のファイル
+ * `src/lib/<name>-props.ts` の `Props` を import する。型のファイルのパスも返す。テストごとに異なる `name` を使用する。
  */
-const typedFiles = (name: string) => {
-  const elementFile = join(root, `src/elements/${name}.tsx`);
-  const typesFile = join(root, `src/lib/${name}-props.ts`);
-  return {
-    element: `${name}.tsx`,
-    elementFile,
-    typesFile,
-    source: `import type { Props } from "../lib/${name}-props.ts";\nexport default function Typed(props: Props) {\n  return <p>{String(props.value)}</p>;\n}\n`,
-    remove: async () => {
-      await Promise.all([elementFile, typesFile].map((file) => rm(file, { force: true })));
-      for (const file of [elementFile, typesFile]) server.watcher.emit("unlink", posix(file));
-    },
-  };
-};
+const typedFiles = (name: string) => ({
+  element: `${name}.tsx`,
+  elementFile: join(root, `src/elements/${name}.tsx`),
+  typesFile: join(root, `src/lib/${name}-props.ts`),
+  source: `import type { Props } from "../lib/${name}-props.ts";\nexport default function Typed(props: Props) {\n  return <p>{String(props.value)}</p>;\n}\n`,
+});
 
 /** `value` の型を `type` にした `OwnerProps` 型を export する、要素のファイルのソースを返す。 */
 const ownerSource = (type: string) =>
@@ -201,7 +192,7 @@ writeFileSync(${JSON.stringify(marker)}, "x");
   });
 
   it("要素が import した Props の型のファイルが変更されると、要素を新しい props の分類で登録し直す", async () => {
-    const { element, elementFile, typesFile, source, remove } = typedFiles("typed-changed");
+    const { element, elementFile, typesFile, source } = typedFiles("typed-changed");
     try {
       await writeFile(typesFile, "export type Props = { value?: string };\n");
       await writeFile(elementFile, source);
@@ -214,12 +205,13 @@ writeFileSync(${JSON.stringify(marker)}, "x");
         timeout: 5000,
       });
     } finally {
-      await remove();
+      await rm(elementFile, { force: true });
+      await rm(typesFile, { force: true });
     }
   }, 20_000);
 
   it("要素が import した Props の型のファイルが作成されると、要素を props の分類で登録し直す", async () => {
-    const { element, elementFile, typesFile, source, remove } = typedFiles("typed-created");
+    const { element, elementFile, typesFile, source } = typedFiles("typed-created");
     try {
       await writeFile(elementFile, source);
       await vi.waitUntil(async () => (await transformed(element)).includes("解決できない"), {
@@ -231,12 +223,13 @@ writeFileSync(${JSON.stringify(marker)}, "x");
         timeout: 5000,
       });
     } finally {
-      await remove();
+      await rm(elementFile, { force: true });
+      await rm(typesFile, { force: true });
     }
   }, 20_000);
 
   it("要素のファイルと Props の型のファイルを削除してから、要素のファイルを同じ内容で作成し直すと、Props の型を解決できない要素として変換し直す", async () => {
-    const { element, elementFile, typesFile, source, remove } = typedFiles("typed-recreated");
+    const { element, elementFile, typesFile, source } = typedFiles("typed-recreated");
     try {
       await writeFile(typesFile, "export type Props = { value?: string };\n");
       await writeFile(elementFile, source);
@@ -251,7 +244,8 @@ writeFileSync(${JSON.stringify(marker)}, "x");
       server.watcher.emit("add", posix(elementFile));
       expect(await transformed(element)).toContain("解決できない");
     } finally {
-      await remove();
+      await rm(elementFile, { force: true });
+      await rm(typesFile, { force: true });
     }
   }, 20_000);
 

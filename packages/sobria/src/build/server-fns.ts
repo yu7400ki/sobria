@@ -38,12 +38,25 @@ function definesServerFn(path: string, file: string, code: string): boolean {
   return defines;
 }
 
-/** アプリのルート `root` で、サーバー関数を定義したファイルを走査し、ルートからの相対パスを文字列の順に返す。 */
+/** `read` を呼び出した結果を返す。`read` が、ファイルかディレクトリが無いことを示すエラーを投げたら、`undefined` を返す。 */
+function unlessMissing<T>(read: () => T): T | undefined {
+  try {
+    return read();
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+/**
+ * アプリのルート `root` で、サーバー関数を定義したファイルを走査し、ルートからの相対パスを文字列の順に返す。
+ * 走査の途中で削除されたファイルとディレクトリは、走査の結果に含めない。
+ */
 export function serverFnModules(root: string): string[] {
   const modules: string[] = [];
   const visited = new Set<string>();
   const visit = (dir: string): void => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    for (const entry of unlessMissing(() => readdirSync(dir, { withFileTypes: true })) ?? []) {
       const path = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (entry.name !== "node_modules") visit(path);
@@ -51,8 +64,10 @@ export function serverFnModules(root: string): string[] {
       }
       const file = relativePath(root, path);
       if (!isServerFnSource(file)) continue;
+      const code = unlessMissing(() => readFileSync(path, "utf8"));
+      if (code === undefined) continue;
       visited.add(path);
-      if (definesServerFn(path, file, readFileSync(path, "utf8"))) modules.push(file);
+      if (definesServerFn(path, file, code)) modules.push(file);
     }
   };
   const start = join(root, SERVER_FN_DIR);

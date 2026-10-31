@@ -232,6 +232,30 @@ export default function X(props: Base) { return null; }`;
     }
   });
 
+  it("要素のファイルの削除の通知で中身が空の型のファイルを読み込んだ後でも、型のファイルの作成を通知すると、要素の props を型のファイルの型で分類する", async () => {
+    const dir = await mkdtemp(join(fixture, "created-early-"));
+    const shared = join(dir, "shared.ts").replaceAll("\\", "/");
+    const other = join(dir, "other.tsx").replaceAll("\\", "/");
+    const file = join(dir, "element.tsx").replaceAll("\\", "/");
+    const otherCode = "export default function O(props: { a: string }) { return null; }";
+    const code = `import type { Base } from "./shared.ts";
+export default function X(props: Base) { return null; }`;
+    try {
+      checker.param(other, otherCode, nameAt(otherCode));
+      expect(checker.param(file, code, nameAt(code))).toBeUndefined();
+      await writeFile(shared, "");
+      // 要素のファイルの削除の通知でプログラムを作り直すと、型チェッカーは空の shared.ts を読み込む
+      checker.notify({ deleted: [other] });
+      await writeFile(shared, "export interface Base { value: number }");
+      expect(checker.notify({ created: [shared] })).toEqual([file]);
+      expect(checker.param(file, code, nameAt(code))?.props).toEqual([
+        { name: "value", kind: "number" },
+      ]);
+    } finally {
+      await rm(dir, { recursive: true });
+    }
+  });
+
   it("通知を反映すると、解析した要素のファイルのうち、解析の結果が変わったファイルを返す", async () => {
     const dir = await mkdtemp(join(fixture, "notified-"));
     const shared = join(dir, "shared.ts").replaceAll("\\", "/");
