@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 
-import { transformWithOxc, type Plugin, type ResolvedConfig } from "vite";
+import { normalizePath, transformWithOxc, type Plugin, type ResolvedConfig } from "vite";
 
 import { joinBase } from "../shared/base.ts";
 import { appBuild } from "./app-build.ts";
@@ -220,10 +220,20 @@ export function sobria(options: SobriaOptions = {}): Plugin[] {
         /**
          * スクリプトのファイル `path` の作成、変更、削除を型チェッカーに通知する。
          * 解析の結果が変わった要素のモジュールを、すべての環境で無効にし、HMR が有効なら読み込み直す。
+         * 削除したファイルのモジュールは、すべての環境で無効にする。
          */
         const onFile = (kind: keyof FileChanges, path: string): void => {
           if (checker === undefined || !SCRIPT.test(path)) return;
           try {
+            if (kind === "deleted") {
+              for (const environment of Object.values(server.environments)) {
+                for (const module of environment.moduleGraph.getModulesByFile(
+                  normalizePath(path),
+                ) ?? []) {
+                  environment.moduleGraph.invalidateModule(module);
+                }
+              }
+            }
             const reloads = checker.notify({ [kind]: [path] }).flatMap((element) =>
               Object.values(server.environments).flatMap((environment) =>
                 [...(environment.moduleGraph.getModulesByFile(element) ?? [])].map((module) => {
