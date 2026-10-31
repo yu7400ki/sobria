@@ -8,6 +8,7 @@ catalog:
   magic-string: ^1.4.3
   vite: ^8.3.4
   seroval: ^1.6.11
+  csstype: ^3.2.3
   "@solidjs/signals": 2.0.0-rc.19
   "@types/node": ^26.6.5
   typescript: 7.1.0-beta

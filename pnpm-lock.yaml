@@ -18,6 +18,9 @@ catalogs:
     '@vitest/browser-playwright':
       specifier: ^5.0.5
       version: 5.0.5
+    csstype:
+      specifier: ^3.2.3
+      version: 3.2.3
     hono:
       specifier: 5.0.0-rc.1
       version: 5.0.0-rc.1
@@ -133,6 +136,9 @@ importers:
       '@solidjs/signals':
         specifier: 'catalog:'
         version: 2.0.0-rc.19
+      csstype:
+        specifier: 'catalog:'
+        version: 3.2.3
       magic-string:
         specifier: 'catalog:'
         version: 1.4.3
