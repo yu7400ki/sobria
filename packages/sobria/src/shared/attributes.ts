@@ -4,9 +4,10 @@ import { isPlainObject } from "./objects.ts";
 const enumerated: ReadonlySet<string> = new Set(["draggable", "spellcheck", "contenteditable"]);
 
 /**
- * 属性に出力する値を返す。`false`、`null`、`undefined` と、値が真のキーが無い `class` のオブジェクトでは `null` を返す。
+ * 属性に出力する値を返す。`false`、`null`、`undefined` と、値が真のキーが無い `class` のオブジェクト、宣言が無い `style` のオブジェクトでは `null` を返す。
  * `true` は値の無い属性の `""` にする。`aria-*` と列挙型の属性の真偽値は、`"true"` か `"false"` にする。
- * `class` のプレーンなオブジェクトは、値が真のキーを空白で区切る。それ以外の値は文字列に変換する。
+ * `class` のプレーンなオブジェクトは、値が真のキーを空白で区切る。`style` のプレーンなオブジェクトは、値が `null`、`undefined`、`false` のプロパティを除いて、`プロパティ:値` を `;` で区切る。
+ * それ以外の値は文字列に変換する。
  */
 export function attributeValue(name: string, value: unknown): string | null {
   if (typeof value === "boolean" && (name.startsWith("aria-") || enumerated.has(name))) {
@@ -19,6 +20,12 @@ export function attributeValue(name: string, value: unknown): string | null {
       .filter(([, on]) => Boolean(on))
       .map(([key]) => key);
     return names.length === 0 ? null : names.join(" ");
+  }
+  if (name === "style" && isPlainObject(value)) {
+    const declarations = Object.entries(value)
+      .filter(([, declared]) => declared !== null && declared !== undefined && declared !== false)
+      .map(([property, declared]) => `${property}:${String(declared)}`);
+    return declarations.length === 0 ? null : declarations.join(";");
   }
   // oxlint-disable-next-line typescript/no-base-to-string
   return String(value);

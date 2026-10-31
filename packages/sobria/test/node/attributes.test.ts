@@ -31,6 +31,23 @@ describe("attributeValue", () => {
     expect(attributeValue("class", "x y")).toBe("x y");
     expect(attributeValue("class", ["a", "b"])).toBe("a,b");
   });
+
+  it("style のオブジェクトは、null、undefined、false の値を除いた宣言を ; で区切り、宣言が無ければ出力しない", () => {
+    expect(
+      attributeValue("style", {
+        color: "red",
+        "--gap": 4,
+        opacity: 0,
+        width: null,
+        height: undefined,
+        margin: false,
+        content: "",
+      }),
+    ).toBe("color:red;--gap:4;opacity:0;content:");
+    expect(attributeValue("style", { color: null })).toBeNull();
+    expect(attributeValue("style", {})).toBeNull();
+    expect(attributeValue("style", "color: red")).toBe("color: red");
+  });
 });
 
 describe("tagAttributeName", () => {

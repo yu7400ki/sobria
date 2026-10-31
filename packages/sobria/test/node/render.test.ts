@@ -129,6 +129,14 @@ describe("ネイティブのタグ", () => {
     expect(html).toBe('<div aria-checked="false" class="a" alt="" title="" data-ok="k"></div>');
   });
 
+  it("style のオブジェクトは、宣言を ; で区切って出力し、値の中の引用符を文字参照にする", async () => {
+    expect(
+      await renderToString(
+        jsx("div", { style: { "font-family": '"Noto Sans"', "--gap": 4, color: false } }),
+      ),
+    ).toBe('<div style="font-family:&quot;Noto Sans&quot;;--gap:4"></div>');
+  });
+
   it("関数で渡した子と属性は、呼び出した値を出力する", async () => {
     expect(await renderToString(jsx("p", { title: () => "t", children: () => ["a", 1] }))).toBe(
       '<p title="t">a1</p>',

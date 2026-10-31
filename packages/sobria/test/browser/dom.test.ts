@@ -52,6 +52,21 @@ describe("ネイティブのタグ", () => {
     expect(el.hasAttribute("title")).toBe(false);
   });
 
+  it("関数で渡した style のオブジェクトは、値が変化するたびに属性の全体を設定し直し、宣言が無くなれば属性を削除する", () => {
+    const [style, setStyle] = signal<Record<string, unknown>>({ color: "red", "--gap": 4 });
+    const { node } = mount(() => jsx("p", { style: () => style() }));
+    const el = node as unknown as HTMLElement;
+    expect(el.getAttribute("style")).toBe("color:red;--gap:4");
+    expect(el.style.color).toBe("red");
+    expect(el.style.getPropertyValue("--gap")).toBe("4");
+    setStyle({ color: "blue" });
+    flush();
+    expect(el.getAttribute("style")).toBe("color:blue");
+    setStyle({ color: null });
+    flush();
+    expect(el.hasAttribute("style")).toBe(false);
+  });
+
   it("on と大文字で始まる名前の関数は、小文字のイベント名のリスナーにする", () => {
     const log: string[] = [];
     const { node } = mount(() =>
