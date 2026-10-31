@@ -128,7 +128,60 @@ pnpm build
 pnpm exec wrangler deploy
 ```
 
-`dist/client/` は、Workers の静的アセットとして配信します。静的アセットは、書き出したページの URL への POST に 405 を返します。そのため、Workers では、[書き出したページ](#ページを書き出す)の[フォーム](/guide/forms)からサーバー関数に送信できません。
+`dist/client/` は、Workers の静的アセットとして配信します。静的アセットは、書き出したページの URL への POST に 405 を返します。そのため、この設定では、[書き出したページ](#ページを書き出す)の[フォーム](/guide/forms)からサーバー関数に送信できません。
+
+### 書き出したページからフォームを送信する
+
+書き出したページのフォームを使用するときは、`assets` の `run_worker_first` に指定したパスのリクエストを、静的アセットより先に Worker で受信します。Worker のエントリーの `src/server.ts` は、GET と HEAD のリクエストを静的アセットに渡します。GET と HEAD のリクエストのうち静的アセットが 404 を返したものと、ほかのメソッドのリクエストは、sobria のアプリに渡します。
+
+```ts
+// src/server.ts
+import type { ExecutionContext } from "hono";
+import app from "sobria/app";
+
+interface Env {
+  readonly ASSETS?: { fetch(request: Request): Promise<Response> };
+}
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    if (env.ASSETS && (request.method === "GET" || request.method === "HEAD")) {
+      const asset = await env.ASSETS.fetch(request);
+      if (asset.status !== 404) return asset;
+    }
+    return app.fetch(request, env, ctx);
+  },
+};
+```
+
+```ts
+// vite.config.ts
+import { cloudflare } from "@cloudflare/vite-plugin";
+import { sobria } from "sobria/vite";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [
+    sobria(),
+    cloudflare({
+      viteEnvironment: { name: "ssr" },
+      config: {
+        name: "my-app",
+        main: "./src/server.ts",
+        compatibility_date: "2026-07-01",
+        compatibility_flags: ["nodejs_als"],
+        assets: {
+          binding: "ASSETS",
+          html_handling: "drop-trailing-slash",
+          run_worker_first: ["/*", "!/assets/*"],
+        },
+      },
+    }),
+  ],
+});
+```
+
+この設定では、`/assets/` の外のすべてのリクエストで Worker を起動します。`/assets/` は、要素のモジュールと CSS を出力する Vite の `build.assetsDir` のデフォルト値です。`build.assetsDir` を変更したときは、`!/assets/*` のパスも変更します。`vite build` がページを書き出すときに `src/server.ts` に渡す `env` には `ASSETS` が無いので、`env` に `ASSETS` が無いときも、リクエストをアプリに渡します。
 
 ## ページを書き出す
 

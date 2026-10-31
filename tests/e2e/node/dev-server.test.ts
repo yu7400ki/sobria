@@ -223,6 +223,28 @@ writeFileSync(${JSON.stringify(marker)}, "x");
     }
   }, 20_000);
 
+  it("要素のファイルと Props の型のファイルを削除してから、要素のファイルを同じ内容で作成し直すと、Props の型を解決できない要素として変換し直す", async () => {
+    const typesFile = join(root, "src/lib/typed-props.ts");
+    const elementFile = join(root, "src/elements/typed.tsx");
+    try {
+      await writeFile(typesFile, "export type Props = { value?: string };\n");
+      await writeFile(elementFile, typedSource);
+      await vi.waitUntil(async () => /"value": "string"/.test(await transformed()), {
+        timeout: 5000,
+      });
+      await rm(elementFile);
+      server.watcher.emit("unlink", posix(elementFile));
+      await rm(typesFile);
+      server.watcher.emit("unlink", posix(typesFile));
+      await writeFile(elementFile, typedSource);
+      server.watcher.emit("add", posix(elementFile));
+      expect(await transformed()).toContain("解決できない");
+    } finally {
+      await rm(elementFile, { force: true });
+      await rm(typesFile, { force: true });
+    }
+  }, 20_000);
+
   it("ほかの要素のファイルで宣言した Props の型が変更されると、その型を import する要素も登録し直す", async () => {
     const ownerFile = join(root, "src/elements/owner.tsx");
     const userFile = join(root, "src/elements/user.tsx");
