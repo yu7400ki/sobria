@@ -68,15 +68,31 @@ const link = async () => {
 };
 
 /** クライアントの環境で変換した、`src/elements/` の要素のファイル `name` のモジュールのコードを返す。変換の結果が無ければ空文字列を返し、変換に失敗したら、エラーを文字列にして返す。 */
-const transformed = async (name = "typed.tsx") =>
+const transformed = async (name: string) =>
   server.environments.client.transformRequest(`/src/elements/${name}`).then(
     (result) => result?.code ?? "",
     (error: unknown) => String(error),
   );
 
-/** 要素の props の型に `../lib/typed-props.ts` の `Props` を使用する、要素のファイルのソースである。 */
-const typedSource =
-  'import type { Props } from "../lib/typed-props.ts";\nexport default function Typed(props: Props) {\n  return <p>{String(props.value)}</p>;\n}\n';
+/**
+ * 要素のファイル `src/elements/<name>.tsx` の名前、パス、ソースを返す。要素は、props の型に、型のファイル
+ * `src/lib/<name>-props.ts` の `Props` を import する。型のファイルのパスと、2 つのファイルを削除する関数も返す。
+ * 削除する関数は、ファイル監視を待たずに、削除を開発サーバーに通知する。テストごとに異なる `name` を使用する。
+ */
+const typedFiles = (name: string) => {
+  const elementFile = join(root, `src/elements/${name}.tsx`);
+  const typesFile = join(root, `src/lib/${name}-props.ts`);
+  return {
+    element: `${name}.tsx`,
+    elementFile,
+    typesFile,
+    source: `import type { Props } from "../lib/${name}-props.ts";\nexport default function Typed(props: Props) {\n  return <p>{String(props.value)}</p>;\n}\n`,
+    remove: async () => {
+      await Promise.all([elementFile, typesFile].map((file) => rm(file, { force: true })));
+      for (const file of [elementFile, typesFile]) server.watcher.emit("unlink", posix(file));
+    },
+  };
+};
 
 /** `value` の型を `type` にした `OwnerProps` 型を export する、要素のファイルのソースを返す。 */
 const ownerSource = (type: string) =>
@@ -185,63 +201,57 @@ writeFileSync(${JSON.stringify(marker)}, "x");
   });
 
   it("要素が import した Props の型のファイルが変更されると、要素を新しい props の分類で登録し直す", async () => {
-    const typesFile = join(root, "src/lib/typed-props.ts");
-    const elementFile = join(root, "src/elements/typed.tsx");
+    const { element, elementFile, typesFile, source, remove } = typedFiles("typed-changed");
     try {
       await writeFile(typesFile, "export type Props = { value?: string };\n");
-      await writeFile(elementFile, typedSource);
-      await vi.waitUntil(async () => /"value": "string"/.test(await transformed()), {
+      await writeFile(elementFile, source);
+      await vi.waitUntil(async () => /"value": "string"/.test(await transformed(element)), {
         timeout: 5000,
       });
       await writeFile(typesFile, "export type Props = { value?: number };\n");
       server.watcher.emit("change", posix(typesFile));
-      await vi.waitUntil(async () => /"value": "number"/.test(await transformed()), {
+      await vi.waitUntil(async () => /"value": "number"/.test(await transformed(element)), {
         timeout: 5000,
       });
     } finally {
-      await rm(elementFile, { force: true });
-      await rm(typesFile, { force: true });
+      await remove();
     }
   }, 20_000);
 
   it("要素が import した Props の型のファイルが作成されると、要素を props の分類で登録し直す", async () => {
-    const typesFile = join(root, "src/lib/typed-props.ts");
-    const elementFile = join(root, "src/elements/typed.tsx");
+    const { element, elementFile, typesFile, source, remove } = typedFiles("typed-created");
     try {
-      await writeFile(elementFile, typedSource);
-      await vi.waitUntil(async () => (await transformed()).includes("解決できない"), {
+      await writeFile(elementFile, source);
+      await vi.waitUntil(async () => (await transformed(element)).includes("解決できない"), {
         timeout: 5000,
       });
       await writeFile(typesFile, "export type Props = { value?: number };\n");
       server.watcher.emit("add", posix(typesFile));
-      await vi.waitUntil(async () => /"value": "number"/.test(await transformed()), {
+      await vi.waitUntil(async () => /"value": "number"/.test(await transformed(element)), {
         timeout: 5000,
       });
     } finally {
-      await rm(elementFile, { force: true });
-      await rm(typesFile, { force: true });
+      await remove();
     }
   }, 20_000);
 
   it("要素のファイルと Props の型のファイルを削除してから、要素のファイルを同じ内容で作成し直すと、Props の型を解決できない要素として変換し直す", async () => {
-    const typesFile = join(root, "src/lib/typed-props.ts");
-    const elementFile = join(root, "src/elements/typed.tsx");
+    const { element, elementFile, typesFile, source, remove } = typedFiles("typed-recreated");
     try {
       await writeFile(typesFile, "export type Props = { value?: string };\n");
-      await writeFile(elementFile, typedSource);
-      await vi.waitUntil(async () => /"value": "string"/.test(await transformed()), {
+      await writeFile(elementFile, source);
+      await vi.waitUntil(async () => /"value": "string"/.test(await transformed(element)), {
         timeout: 5000,
       });
       await rm(elementFile);
       server.watcher.emit("unlink", posix(elementFile));
       await rm(typesFile);
       server.watcher.emit("unlink", posix(typesFile));
-      await writeFile(elementFile, typedSource);
+      await writeFile(elementFile, source);
       server.watcher.emit("add", posix(elementFile));
-      expect(await transformed()).toContain("解決できない");
+      expect(await transformed(element)).toContain("解決できない");
     } finally {
-      await rm(elementFile, { force: true });
-      await rm(typesFile, { force: true });
+      await remove();
     }
   }, 20_000);
 
