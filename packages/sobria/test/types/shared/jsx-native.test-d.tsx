@@ -4,6 +4,21 @@ test("共通のコンポーネントのネイティブのタグは、属性を�
   void (<label for="name" class="field" />);
 });
 
+test("style は、CSS のプロパティ名と CSS 変数をキーにしたオブジェクトを受け付ける", () => {
+  void (<div style="color: red" />);
+  void (<div style={{ color: "red", "--gap": 4, "--accent": "#f00", opacity: 0.5 }} />);
+  void (<div style={{ width: null, height: undefined, margin: false }} />);
+  void (<div style={() => ({ color: "red" })} />);
+  // @ts-expect-error 未知のプロパティは受け付けない
+  void (<div style={{ colr: "red" }} />);
+  // @ts-expect-error 長さの数値は 0 だけを受け付ける
+  void (<div style={{ width: 10 }} />);
+  // @ts-expect-error CSS 変数の値にオブジェクトは渡せない
+  void (<div style={{ "--gap": {} }} />);
+  // @ts-expect-error プロパティの値に関数は渡せない
+  void (<div style={{ color: () => "red" }} />);
+});
+
 test("子を持てないタグに子を渡すと型エラーになり、子を持てるタグには子を渡せる", () => {
   // @ts-expect-error input は子を持てない
   void (<input>text</input>);

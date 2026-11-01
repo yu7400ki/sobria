@@ -81,6 +81,7 @@
   "dependencies": {
     "@hono/node-server": "catalog:",
     "@solidjs/signals": "catalog:",
+    "csstype": "catalog:",
     "magic-string": "catalog:",
     "seroval": "catalog:"
   },

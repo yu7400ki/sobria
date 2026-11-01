@@ -1,3 +1,5 @@
+import type { PropertiesHyphen } from "csstype";
+
 import type { voidTags } from "./names.ts";
 import type { serverFnRef, ServerFnRef } from "./server-fn.ts";
 
@@ -12,13 +14,23 @@ type Toggle = V<boolean | "true" | "false">;
 type CrossOrigin = V<"anonymous" | "use-credentials" | "">;
 type Referrer = V<globalThis.ReferrerPolicy | "">;
 
+/** `style` 属性のオブジェクトが受け付ける CSS のプロパティを、kebab-case の名前で表す。 */
+export interface CSSProperties extends PropertiesHyphen {}
+
+/** `style` 属性に渡す、CSS のプロパティ名と CSS 変数の名前をキーにしたオブジェクトを表す。値が `null`、`undefined`、`false` のプロパティは出力しない。 */
+type StyleObject = {
+  readonly [K in keyof CSSProperties]?: CSSProperties[K] | null | false;
+} & {
+  readonly [custom: `--${string}`]: string | number | null | undefined | false;
+};
+
 /** すべてのネイティブのタグが受け付ける属性を、HTML の属性名で表す。 */
 export interface GlobalAttributes {
   readonly [data: `data-${string}`]: V<unknown>;
   readonly [aria: `aria-${string}`]: V<unknown>;
   id?: Text;
   class?: V<string | Readonly<Record<string, unknown>>>;
-  style?: Text;
+  style?: V<string | StyleObject>;
   slot?: Text;
   part?: Text;
   exportparts?: Text;
