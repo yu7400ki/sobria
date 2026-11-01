@@ -8,7 +8,7 @@ import { asNode, asServerNode, asSharedNode, type Node } from "./tree.ts";
 /** 関数で渡された内容は、呼び出した値にする。 */
 const read = (value: unknown): Node => asNode(isFunction(value) ? value() : value);
 
-/** 内側が保留中であれば、`fallback` を先に送り、中身を後から送る。 */
+/** 内側の非同期の値が、この `<Loading>` を含む部分を送る時点までに解決しなければ、`fallback` を先に送り、中身を後から送る。 */
 export function Loading(props: { fallback?: unknown; children?: unknown }): ServerNode {
   return asServerNode({
     kind: "loading",
