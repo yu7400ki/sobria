@@ -1,0 +1,66 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - run: |
+          version="$(node -p "require('./packages/sobria/package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::タグ $GITHUB_REF_NAME と、packages/sobria/package.json の版 $version が一致しません"
+            exit 1
+          fi
+  check:
+    needs: version
+    uses: ./.github/workflows/ci.yml
+  publish:
+    needs: check
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6.1.0
+        with:
+          version: 12.9.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter sobria build
+      - working-directory: packages/sobria
+        run: |
+          case "$GITHUB_REF_NAME" in
+            *-*) dist_tag=next ;;
+            *) dist_tag=latest ;;
+          esac
+          pnpm publish --no-git-checks --tag "$dist_tag"
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - run: |
+          prerelease=""
+          case "$GITHUB_REF_NAME" in
+            *-*) prerelease=--prerelease ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes $prerelease
