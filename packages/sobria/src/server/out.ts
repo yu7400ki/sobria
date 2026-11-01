@@ -17,18 +17,20 @@ interface Resolvable {
   readonly resolve: (shown: boolean) => void;
 }
 
-/** シェルを送るチャンクを表す。 */
-export interface ShellFlush extends Resolvable {
-  readonly kind: "shell";
-  /** シェルにその場に出力した境界の中身の中で、`notFound()` を受け止めたことを表す。 */
+/** チャンクに共通する状態を表す。 */
+interface FlushState extends Resolvable {
+  /** チャンクに出力する中身の中で `notFound()` を受け止めたことを表す。 */
   noindex: boolean;
 }
 
+/** シェルを送るチャンクを表す。`noindex` は、シェルと一緒に出力した保留中の境界の中身で `notFound()` を受け止めたときだけ真になる。 */
+export interface ShellFlush extends FlushState {
+  readonly kind: "shell";
+}
+
 /** 後送りの境界の中身を送るチャンクを表す。 */
-export interface DeferredFlush extends Resolvable {
+export interface DeferredFlush extends FlushState {
   readonly kind: "deferred";
-  /** 中身の中で `notFound()` を受け止めたことを表す。 */
-  noindex: boolean;
 }
 
 /** `source` の要素を、タグ名ごとに `target` に加える。同じタグなら、どちらかがすぐ起動するインスタンスを持つときに `immediate` を真にする。 */
