@@ -14,10 +14,7 @@ type Toggle = V<boolean | "true" | "false">;
 type CrossOrigin = V<"anonymous" | "use-credentials" | "">;
 type Referrer = V<globalThis.ReferrerPolicy | "">;
 
-/**
- * `style` 属性のオブジェクトが受け付ける CSS のプロパティを、kebab-case の名前で表す。
- * `declare module "sobria"` で拡張できる。
- */
+/** `style` 属性のオブジェクトが受け付ける CSS のプロパティを、kebab-case の名前で表す。 */
 export interface CSSProperties extends PropertiesHyphen {}
 
 /** `style` 属性に渡す、CSS のプロパティ名と CSS 変数の名前をキーにしたオブジェクトを表す。値が `null`、`undefined`、`false` のプロパティは出力しない。 */
