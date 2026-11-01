@@ -45,7 +45,10 @@ async function start(
 ): Promise<string> {
   const server = await createDevServer(
     fileURLToPath(new URL(`fixtures/${name}`, import.meta.url)),
-    mergeConfig({ server: { port: 0 } }, config),
+    {
+      ...mergeConfig({ server: { port: 0 } }, config),
+      cacheDir: fileURLToPath(new URL(`node_modules/.vite/e2e-${name}`, import.meta.url)),
+    },
   );
   servers.push(server);
   await server.listen();

@@ -23,7 +23,10 @@ const root = fileURLToPath(new URL("../fixtures/basic", import.meta.url));
 let server: ViteDevServer;
 
 beforeAll(async () => {
-  server = await createDevServer(root, { server: { middlewareMode: true } });
+  server = await createDevServer(root, {
+    server: { middlewareMode: true },
+    cacheDir: fileURLToPath(new URL("../node_modules/.vite/node-plugin", import.meta.url)),
+  });
 });
 
 afterAll(async () => {
@@ -122,7 +125,13 @@ describe("Vite プラグイン", () => {
   it("sobria のプラグインを 2 回登録すると、エラーで停止する", async () => {
     // createDevServer が 1 つ目の sobria のプラグインを登録する
     await expect(
-      createDevServer(root, { server: { middlewareMode: true }, plugins: [sobria()] }),
+      createDevServer(root, {
+        server: { middlewareMode: true },
+        cacheDir: fileURLToPath(
+          new URL("../node_modules/.vite/node-plugin-twice", import.meta.url),
+        ),
+        plugins: [sobria()],
+      }),
     ).rejects.toThrow(/2 つ以上/);
   });
 });
@@ -135,7 +144,10 @@ describe("タグ名の検査", () => {
       const source = "export default function X() { return <p />; }\n";
       await writeFile(join(project, "src/elements/forms/date-picker.tsx"), source);
       await writeFile(join(project, "src/elements/forms-date-picker.tsx"), source);
-      const starting = createDevServer(project, { server: { middlewareMode: true } });
+      const starting = createDevServer(project, {
+        server: { middlewareMode: true },
+        cacheDir: join(project, "node_modules/.vite"),
+      });
       await expect(starting).rejects.toThrow(/app-forms-date-picker/);
     } finally {
       await rm(project, { recursive: true, force: true });
@@ -160,7 +172,10 @@ async function withProject(
     );
     const dev = await createDevServer(
       project,
-      mergeConfig({ server: { middlewareMode: true } }, config),
+      {
+        ...mergeConfig({ server: { middlewareMode: true } }, config),
+        cacheDir: join(project, "node_modules/.vite"),
+      },
       setup,
     );
     try {
@@ -374,7 +389,7 @@ describe("登録した拡張子のファイル", () => {
       { server: { middlewareMode: false, port: 0 } },
       { options, before: [pagePlugin()] },
     );
-  }, 30_000);
+  });
 
   it("登録した拡張子のファイルでサーバー関数を定義すると、エラーにする", async () => {
     await withProject(
@@ -537,7 +552,11 @@ describe("開発中の HMR", () => {
         });
       },
     };
-    const dev = await createDevServer(root, { server: { port: 0, hmr: true }, plugins: [echo] });
+    const dev = await createDevServer(root, {
+      server: { port: 0, hmr: true },
+      cacheDir: fileURLToPath(new URL("../node_modules/.vite/node-plugin-hmr", import.meta.url)),
+      plugins: [echo],
+    });
     try {
       await dev.listen();
       const url = new URL(originOf(dev).replace("http", "ws"));

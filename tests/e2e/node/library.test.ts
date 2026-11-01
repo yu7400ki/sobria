@@ -206,6 +206,8 @@ async function buildCopy(
       root: copy,
       configFile: false,
       customLogger: logger,
+      // Rolldown がプラグインの所要時間を警告するかどうかは、マシンの負荷で変わるので、この警告を無効にする
+      build: { rolldownOptions: { checks: { bundlerTimings: false } } },
       plugins: [sobria({ ...options, library: true })],
     });
     await builder.buildApp();

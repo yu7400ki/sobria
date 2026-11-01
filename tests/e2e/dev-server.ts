@@ -20,10 +20,11 @@ export interface SobriaSetup {
  * `root` のアプリの開発サーバーを、sobria のプラグイン（接頭辞は `app`）を登録し、HMR を無効にして作成する。
  * `config` は Vite の `mergeConfig` でこの設定に重ねるので、`plugins` に記述したプラグインは sobria のプラグインの後ろに追加する。
  * `setup` の `options` は sobria のプラグインの設定に重ね、`before` のプラグインは sobria のプラグインの前に登録する。
+ * `config` の `cacheDir` には、ほかの開発サーバーが使用しないディレクトリを指定する。Vite は依存を事前バンドルした結果をこのディレクトリに書き込むので、並行して動く開発サーバーが同じディレクトリを使用すると、書き込みが競合する。
  */
 export function createDevServer(
   root: string,
-  config: InlineConfig = {},
+  config: InlineConfig & { readonly cacheDir: string },
   setup: SobriaSetup = {},
 ): Promise<ViteDevServer> {
   const base: InlineConfig = {

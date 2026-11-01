@@ -70,12 +70,25 @@ export async function startServer(
   const child = spawn(command, args(port), {
     cwd,
     env: { ...process.env, PORT: String(port) },
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", "pipe"],
   });
-  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  let stderr = "";
+  child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+    stderr += chunk;
+  });
+  const exited = new Promise<string>((resolve) => {
+    child.once("close", (code, signal) => resolve(signal ?? `終了コード ${code}`));
+  });
   const origin = `http://localhost:${port}`;
   try {
-    await waitFor(origin);
+    await Promise.race([
+      waitFor(origin),
+      exited.then((reason) => {
+        throw new Error(
+          `${origin} のサーバーが、応答する前に終了しました（${reason}）。\n${stderr}`,
+        );
+      }),
+    ]);
   } catch (error) {
     child.kill();
     throw error;

@@ -14,7 +14,11 @@ let server: ViteDevServer;
 let origin: string;
 
 beforeAll(async () => {
-  server = await createDevServer(root, { server: { port: 0 }, ...stylesConfig() });
+  server = await createDevServer(root, {
+    server: { port: 0 },
+    cacheDir: fileURLToPath(new URL("../node_modules/.vite/node-styles", import.meta.url)),
+    ...stylesConfig(),
+  });
   await server.listen();
   origin = originOf(server);
 });
