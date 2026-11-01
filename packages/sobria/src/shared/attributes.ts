@@ -3,6 +3,10 @@ import { isPlainObject } from "./objects.ts";
 /** 真偽値を `"true"` か `"false"` の文字列で出力する、列挙型の属性の名前を列挙する。 */
 const enumerated: ReadonlySet<string> = new Set(["draggable", "spellcheck", "contenteditable"]);
 
+/** 属性と `style` の宣言に出力しない値であれば `true` を返す。 */
+const absent = (value: unknown): value is false | null | undefined =>
+  value === false || value === null || value === undefined;
+
 /**
  * 属性に出力する値を返す。`false`、`null`、`undefined` と、値が真のキーが無い `class` のオブジェクト、宣言が無い `style` のオブジェクトでは `null` を返す。
  * `true` は値の無い属性の `""` にする。`aria-*` と列挙型の属性の真偽値は、`"true"` か `"false"` にする。
@@ -14,7 +18,7 @@ export function attributeValue(name: string, value: unknown): string | null {
     return String(value);
   }
   if (value === true) return "";
-  if (value === false || value === null || value === undefined) return null;
+  if (absent(value)) return null;
   if (name === "class" && isPlainObject(value)) {
     const names = Object.entries(value)
       .filter(([, on]) => Boolean(on))
@@ -23,7 +27,7 @@ export function attributeValue(name: string, value: unknown): string | null {
   }
   if (name === "style" && isPlainObject(value)) {
     const declarations = Object.entries(value)
-      .filter(([, declared]) => declared !== null && declared !== undefined && declared !== false)
+      .filter(([, declared]) => !absent(declared))
       .map(([property, declared]) => `${property}:${String(declared)}`);
     return declarations.length === 0 ? null : declarations.join(";");
   }
