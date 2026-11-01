@@ -20,5 +20,6 @@ export {
 export type { Ctx, ElementOptions, ElementRef, AttributeType, PropKind } from "./element.ts";
 export type { Props } from "./prop-names.ts";
 export type { ForProps } from "./for.ts";
+export type { CSSProperties } from "./jsx-attributes.ts";
 export type { SharedContext } from "./shared-context.ts";
 export { ServerFnError } from "./server-fn.ts";

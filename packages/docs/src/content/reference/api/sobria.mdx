@@ -423,6 +423,14 @@ interface ForProps<T, C> {
 }
 ```
 
+## CSSProperties
+
+`style` 属性のオブジェクトが受け付ける CSS のプロパティを、kebab-case の名前で表す。`declare module "sobria"` で拡張できる。
+
+```ts
+interface CSSProperties extends PropertiesHyphen {}
+```
+
 ## SharedContext
 
 `createContext` が返すコンテキストを表す。`<Theme value={…}>` のように記述すると、子孫の `useContext(Theme)` は `value` を返す。
