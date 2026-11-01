@@ -79,7 +79,7 @@ function checkLateChild(
 
 /**
  * ストリームのチャンクの列が、出力の順序の前提に合うことを確認する。合わなければ、合わない条件と位置を含むエラーを投げる。
- * 前提は、最初のチャンクが文書の先頭であること、`$sobria.r` が境界の目印より後にあること、`$sobria.d` がホストの開始タグより後にあること、
+ * 前提は、最初のチャンクが文書の先頭であること、描画の途中で埋め込む目印（NUL 文字、UUID、`!` か `:` の順に並ぶ文字列）が残っていないこと、`$sobria.r` が境界の目印より後にあること、`$sobria.d` がホストの開始タグより後にあること、
  * `data-om` のキーが重複しないこと、どのキーの値も 1 回だけ送ること、出力したホストの `data-om` の各キーの値を送ること、
  * `@b` が、そのホストを含むすべての `$sobria.r` より後にあることである。
  * 送るキーは、そのホストの `data-om` に列挙したキーか、開始タグの後に作成した子要素の `@c:キー` である。
@@ -90,6 +90,13 @@ export function checkOrder(chunks: readonly string[]): void {
     throw new Error(`最初のチャンクが文書の先頭ではありません: ${chunks[0]?.slice(0, 80)}`);
   }
   const html = chunks.join("");
+  // oxlint-disable-next-line no-control-regex
+  const leftover = /\u0000[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}[!:]/.exec(html);
+  if (leftover) {
+    throw new Error(
+      `出力に描画の途中の目印が残っています: ${JSON.stringify(html.slice(leftover.index, leftover.index + 80))}`,
+    );
+  }
   const found = calls(html);
   const tags = hostTags(html);
   const sent = new Set<string>();
