@@ -20,6 +20,8 @@ interface Resolvable {
 /** シェルを送るチャンクを表す。 */
 export interface ShellFlush extends Resolvable {
   readonly kind: "shell";
+  /** シェルにその場に出力した境界の中身の中で、`notFound()` を受け止めたことを表す。 */
+  noindex: boolean;
 }
 
 /** 後送りの境界の中身を送るチャンクを表す。 */

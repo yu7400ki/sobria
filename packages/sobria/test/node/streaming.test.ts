@@ -7,7 +7,7 @@ import { defineElement } from "../../src/server/element.ts";
 import { notFound, redirect } from "../../src/server/errors.ts";
 import { jsx } from "../../src/server/jsx-runtime.ts";
 import { renderToResponse, renderToStream } from "../../src/server/response.ts";
-import { memo } from "../../src/shared/signals.ts";
+import { memo, siteMemo } from "../../src/shared/signals.ts";
 import { checkOrder, read, readText } from "./stream-order.ts";
 
 /** 外から解決できる async のコンポーネントを作成する。 */
@@ -63,9 +63,9 @@ describe("シェルと後送り", () => {
       renderToStream(jsx(Loading, { fallback: "o", children: jsx(outer.Slow, {}) })),
     );
     await tick();
-    inner.resolve();
-    await tick();
     outer.resolve();
+    await tick();
+    inner.resolve();
     const html = (await reading).join("");
     const outerAt = html.indexOf('<template data-os="b1">');
     const innerAt = html.indexOf('<template data-os="b2">');
@@ -722,5 +722,226 @@ describe("スロットの内容の中の境界", () => {
     slow.resolve();
     const html = (await reading).join("");
     expect(html).toMatch(/<template data-os="b\d+">in<\/template>/);
+  });
+});
+
+/** タイマーを 1 回待ってから `content` を返す、async のコンポーネントを作成する。 */
+function afterTick(content: unknown) {
+  return async () => {
+    await tick();
+    return content;
+  };
+}
+
+/** 待たずに `<b>` を返す、async のコンポーネントである。 */
+const ReadyBold = async () => jsx("b", { children: "done" });
+
+/** 待たずに文字列を返す、async のコンポーネントである。 */
+const ReadyText = async () => "in";
+
+/** 描画するとエラーを投げるコンポーネントである。 */
+const Throw = () => {
+  throw new Error("fallback");
+};
+
+/** 待たずに `redirect()` を投げる、async のコンポーネントである。 */
+const Moved = async () => {
+  throw redirect("/next");
+};
+
+describe("書き出す時点で揃っている境界", () => {
+  it("シェルを書き出す時点で中身が揃っている境界は、フォールバックと目印を出力せずに中身を出力し、起動スクリプトを出力しない", async () => {
+    const html = (
+      await read(
+        renderToStream(
+          jsx("main", {
+            children: [
+              jsx(afterTick("s"), {}),
+              jsx(Loading, { fallback: "wait", children: jsx(ReadyBold, {}) }),
+            ],
+          }),
+        ),
+      )
+    ).join("");
+    expect(html).toBe(
+      '<!doctype html><html><head><meta charset="utf-8"></head><body><main>s<b>done</b></main></body></html>',
+    );
+  });
+
+  it.each([
+    ["エラー", () => new Error("broken"), ""],
+    ["notFound()", () => notFound(), '<meta name="robots" content="noindex">'],
+  ])(
+    "揃った境界の中の Errored が %s を受け止めても、ステータスは 200 のままにし、notFound() なら <head> に noindex を出力する",
+    async (_name, thrown, head) => {
+      const Fail = async () => {
+        throw thrown();
+      };
+      const response = await renderToResponse(
+        jsx("main", {
+          children: [
+            jsx(afterTick("s"), {}),
+            jsx(Loading, {
+              fallback: "wait",
+              children: jsx(Errored, { fallback: "caught", children: jsx(Fail, {}) }),
+            }),
+          ],
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(await readText(response)).toBe(
+        `<!doctype html><html><head><meta charset="utf-8">${head}</head><body><main>scaught</main></body></html>`,
+      );
+    },
+  );
+
+  it("シェルが揃う前に中身が redirect() を投げた境界は、フォールバックを送り、シェルの後にページを移動させるスクリプトを送る", async () => {
+    const response = await renderToResponse(
+      jsx("main", {
+        children: [
+          jsx(afterTick("s"), {}),
+          jsx(Loading, { fallback: "wait", children: jsx(Moved, {}) }),
+        ],
+      }),
+    );
+    expect(response.status).toBe(200);
+    const html = await readText(response);
+    expect(html).toContain('<main>s<template data-ob="b1"></template>wait<!--/ob:b1--></main>');
+    expect(html).toContain('<script>location.replace("/next")</script>');
+  });
+
+  it("後送りの境界の中身を書き出す時点で揃っている入れ子の境界は、外側の境界の中身の中に出力する", async () => {
+    const html = (
+      await read(
+        renderToStream(
+          jsx(Loading, {
+            fallback: "o",
+            children: [
+              jsx(Loading, { fallback: "i", children: jsx(ReadyText, {}) }),
+              jsx(afterTick("s"), {}),
+            ],
+          }),
+        ),
+      )
+    ).join("");
+    expect(html).toContain('<template data-ob="b1"></template>o<!--/ob:b1-->');
+    expect(html).toContain('<template data-os="b1">ins</template>');
+    expect(html).not.toContain('data-ob="b2"');
+  });
+
+  it("揃った境界の中で読んだ memo の値と、境界を囲むホストの @b を送る", async () => {
+    const Card = defineElement(
+      "x-ready-card",
+      () => {
+        const value = siteMemo(() => Promise.resolve("v"), { site: "rc" });
+        return jsx(Loading, { fallback: "wait", children: jsx("b", { children: () => value() }) });
+      },
+      { props: {} },
+    );
+    const html = (
+      await read(
+        renderToStream(jsx("main", { children: [jsx(afterTick("s"), {}), jsx(Card, {})] })),
+      )
+    ).join("");
+    expect(html).toContain(
+      '<template shadowrootmode="open"><!--[--><!--[--><b><!--[-->v<!--]--></b><!--]--><!--]--></template></x-ready-card>',
+    );
+    expect(html).not.toContain("<template data-ob");
+    expect(html).toContain('<script>$sobria.d("h1",{"rc#0":"v"})</script>');
+    expect(html).toContain('<script>$sobria.d("h1",{"@b":1})</script>');
+  });
+
+  it("<slot> を囲む境界とスロットの内容が揃っていれば、スロットの内容を Light DOM に出力する", async () => {
+    const Container = defineElement(
+      "x-ready-container",
+      () => jsx(Loading, { fallback: "wait", children: jsx("slot", {}) }),
+      { props: { children: "slot" } },
+    );
+    const Child = defineElement(
+      "x-ready-child",
+      () => {
+        const value = memo(() => Promise.resolve("v"));
+        return jsx("i", { children: () => value() });
+      },
+      { props: {} },
+    );
+    const html = (
+      await read(
+        renderToStream(
+          jsx("main", {
+            children: [jsx(afterTick("s"), {}), jsx(Container, { children: jsx(Child, {}) })],
+          }),
+        ),
+      )
+    ).join("");
+    expect(html).toContain(
+      '<template shadowrootmode="open"><!--[--><!--[--><slot></slot><!--]--><!--]--></template><x-ready-child data-oh="h3"',
+    );
+    expect(html).not.toContain("<template data-ob");
+    expect(html).not.toContain("<template data-op");
+    expect(html).toContain('<script>$sobria.d("h1",{"@b":1})</script>');
+  });
+
+  it("保留中の境界のフォールバックが投げたエラーは、境界を囲む Errored が受け止める", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const response = await renderToResponse(
+      jsx("main", {
+        children: jsx(Errored, {
+          fallback: "caught",
+          children: jsx(Loading, { fallback: jsx(Throw, {}), children: jsx(afterTick("x"), {}) }),
+        }),
+      }),
+    );
+    expect(response.status).toBe(500);
+    expect(await readText(response)).toContain("<main>caught</main>");
+  });
+
+  it("後送りの境界の中身の中で、保留中の境界のフォールバックが投げたエラーは、その境界を囲む Errored が受け止める", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const outer = deferred(
+      jsx(Errored, {
+        fallback: "caught",
+        children: jsx(Loading, { fallback: jsx(Throw, {}), children: jsx(afterTick("x"), {}) }),
+      }),
+    );
+    const reading = read(
+      renderToStream(jsx(Loading, { fallback: "o", children: jsx(outer.Slow, {}) })),
+    );
+    await tick();
+    outer.resolve();
+    const html = (await reading).join("");
+    expect(html).toContain('<template data-os="b1">caught</template>');
+  });
+
+  it("後送りにした境界のフォールバックの中の保留中の境界も、目印で囲んで送る", async () => {
+    const html = (
+      await read(
+        renderToStream(
+          jsx(Loading, {
+            fallback: jsx(Loading, { fallback: "i", children: jsx(afterTick("x"), {}) }),
+            children: jsx(afterTick("o"), {}),
+          }),
+        ),
+      )
+    ).join("");
+    expect(html).toContain(
+      '<template data-ob="b1"></template><template data-ob="b2"></template>i<!--/ob:b2--><!--/ob:b1-->',
+    );
+  });
+
+  it("シェルを送った後に描画する Errored のフォールバックの中の保留中の境界も、目印か中身に置換して送る", async () => {
+    const { Fail, reject } = failing();
+    const reading = read(
+      renderToStream(
+        jsx(Errored, {
+          fallback: () => jsx(Loading, { fallback: "w", children: jsx(ReadyText, {}) }),
+          children: jsx(Loading, { fallback: "f", children: jsx(Fail, {}) }),
+        }),
+      ),
+    );
+    await tick();
+    reject();
+    const html = (await reading).join("");
+    expect(html).toMatch(/<template data-os="e1">(in|<template data-ob="b\d+"><\/template>w)/);
   });
 });

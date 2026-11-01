@@ -136,7 +136,35 @@ interface Patch {
   readonly html: Promise<string>;
   /** 差し替えの中身を出力する位置である。 */
   readonly out: Out;
+  /** 差し替えの中身の描画が成功したら、その HTML を保持する。 */
+  settled: string | undefined;
 }
+
+/** 保留中の境界の、中身の描画の状態を表す。 */
+interface Pending {
+  /** 中身を送るチャンクである。 */
+  readonly flush: DeferredFlush;
+  /** 中身を出力する位置である。 */
+  readonly out: Out;
+  /** 中身の描画が成功したら、中身の HTML を保持する。 */
+  html: string | undefined;
+  /** 中身を、目印を含む出力の中にその場に出力すると決定したら真である。 */
+  inlined: boolean;
+}
+
+/**
+ * 置換用の文字列が指す位置を表す。`mark` は保留中の境界の位置で、`patch` は境界に属する差し替えの位置である。
+ * `fallback` は、目印の位置で描画したフォールバックの HTML で、`fallbackOut` はフォールバックを出力した位置である。
+ */
+type Placeholder =
+  | {
+      readonly kind: "mark";
+      readonly boundary: Boundary;
+      readonly pending: Pending;
+      readonly fallback: string;
+      readonly fallbackOut: Out;
+    }
+  | { readonly kind: "patch"; readonly pending: Pending; readonly patch: Patch };
 
 /** サーバーの描画で、`ctx.host` の代わりに渡す値である。プロパティを参照すると、エラーを投げる。 */
 const serverHost = new Proxy(
@@ -170,7 +198,8 @@ interface Fail {
 }
 
 /**
- * `<Loading>` の位置を表す。中身を埋め込むか、フォールバックを出力して後送りにするかは、文字列にする時点で決定する。
+ * `<Loading>` の位置を表す。境界が保留中かどうかは、文字列にする時点で決定する。
+ * 保留中の境界の中身をその場に出力するか、フォールバックを出力して後送りにするかは、目印を含む出力を書き出す時点で決定する。
  * `raw` が真なら、保留中のときはフォールバックだけを出力し、中身を送らない。
  */
 interface Mark {
@@ -256,8 +285,8 @@ interface Boundary {
   /** 境界の中の `<slot>` に配置するスロットの内容を表す。内容に穴があれば、境界は保留中になる。 */
   readonly slotted: Chunk[][];
   readonly patches: Patch[];
-  /** 境界を後送りにしたときに、中身を送るチャンクを表す。 */
-  flush?: DeferredFlush;
+  /** 境界が保留中なら、中身の描画の状態を持つ。 */
+  pending?: Pending;
   /** 境界を囲む `<Errored>` のうち、シェルを送った後の中身の失敗を受け止めるものを、内側から順に列挙する。 */
   readonly catchers: readonly Catcher[];
 }
@@ -530,16 +559,19 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   private readonly values = new Set<Promise<void>>();
   /** 反復している SSR の memo の async iterable を保持する。`cancel` を呼んだ後は `undefined` である。 */
   private relays: Set<Relay> | undefined = new Set();
-  /** 要素を描画したか、`<Loading>` の中身を後送りにしたときに真になる。真になったページにだけ、起動スクリプトを出力する。 */
+  /** 要素を描画したか、`<Loading>` の中身を後送りにすると決定したときに真になる。真になったページにだけ、起動スクリプトを出力する。 */
   private interactive = false;
   /** `noindex` の `<meta>` を出力したことを表す。 */
   private noindexSent = false;
+  /** 置換用の文字列が指す位置を、境界か差し替えの ID ごとに保持する。 */
+  private readonly placeholders = new Map<string, Placeholder>();
   /** シェルを表す境界である。 */
   private readonly root = this.newBoundary("", [], []);
   /** シェルの最も外側の位置である。 */
   private readonly shellOut = Out.of({
     ...resolvable(),
     kind: "shell",
+    noindex: false,
   } satisfies ShellFlush);
   /** 起動スクリプトに伝えた要素のタグ名を保持する。 */
   private readonly announcedTags = new Set<string>();
@@ -549,6 +581,8 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   private readonly nonce = crypto.randomUUID();
   /** `<label for>` の補完の目印を作成し、置換する。 */
   private readonly labels = new Labels(this.nonce);
+  /** 置換用の文字列に一致し、境界か差し替えの ID を抽出する正規表現である。 */
+  private readonly placeholderPattern = new RegExp(`\u0000${this.nonce}!([bp]\\d+)\u0000`);
   /** 文書の骨組みに移動するものを、目印の番号ごとに保持する。 */
   private readonly hoisted = new Map<number, Hoisted>();
 
@@ -1239,7 +1273,10 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     return parts.join("");
   }
 
-  /** 出力の単位を文字列にする。保留中の境界は、フォールバックを目印で囲んで出力し、中身を後送りにする。 */
+  /**
+   * 出力の単位を文字列にする。保留中の境界と、その境界に属する差し替えの位置には、置換用の文字列を出力し、それぞれの中身の描画を開始する。
+   * 置換用の文字列は、目印を含む出力を書き出す時点で `place` が置換する。
+   */
   private async serializeChunk(chunk: Chunk, out: Out): Promise<string> {
     if (typeof chunk === "string") return chunk;
     switch (chunk.kind) {
@@ -1251,19 +1288,33 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         const boundary = chunk.mark;
         if (!this.isPending(boundary)) return this.serialize(boundary.region, out);
         if (chunk.raw) return this.serialize(chunk.fallback(), out);
-        this.schedule(boundary, out);
-        return marker(boundary.id, await this.serialize(chunk.fallback(), out));
+        const pending = this.schedule(boundary, out);
+        const fallbackOut = out.conditional(() => !pending.inlined);
+        const fallback = await this.serialize(chunk.fallback(), fallbackOut);
+        return this.placeholder(boundary.id, {
+          kind: "mark",
+          boundary,
+          pending,
+          fallback,
+          fallbackOut,
+        });
       }
       case "slotted": {
         const { boundary, chunks, path } = chunk.slotted;
-        const { flush } = boundary;
-        if (!flush || !hasHole(chunks)) return this.serialize(chunks, out);
+        const { pending } = boundary;
+        if (!pending || !hasHole(chunks)) return this.serialize(chunks, out);
         const id = `p${++this.seq}`;
-        const into = out.into(flush);
+        const into = out.into(pending.flush);
         const html = this.serialize(chunks, into);
-        html.catch(() => {});
-        boundary.patches.push({ id, path, html, out: into });
-        return marker(id);
+        const patch: Patch = { id, path, html, out: into, settled: undefined };
+        html.then(
+          (settled) => {
+            patch.settled = settled;
+          },
+          () => {},
+        );
+        boundary.patches.push(patch);
+        return this.placeholder(id, { kind: "patch", pending, patch });
       }
       case "host": {
         const { attributes, open, chunks, announce, delivered } = chunk.host;
@@ -1307,25 +1358,82 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     }
   }
 
+  /** `placeholder` を ID が `id` の位置として記録し、その位置の置換用の文字列を返す。 */
+  private placeholder(id: string, placeholder: Placeholder): string {
+    this.placeholders.set(id, placeholder);
+    return `\u0000${this.nonce}!${id}\u0000`;
+  }
+
+  /**
+   * 1 つの単位として書き出す文字列 `html` に含まれる置換用の文字列を、出現する順に置換した文字列を返す。`unit` は、単位を出力する最も外側の位置である。
+   * 保留中の境界の中身と、境界に属する差し替えがすべて揃っていれば、境界を中身に、差し替えの位置を差し替えの中身に置換する。
+   * そうでなければ、境界をフォールバックを囲んだ目印に、差し替えの位置を目印に置換する。置換した内容に含まれる置換用の文字列も、同じ単位で置換する。
+   */
+  private place(html: string, unit: Out): string {
+    return html
+      .split(this.placeholderPattern)
+      .map((part, index) => (index % 2 === 0 ? part : this.placeOne(part, unit)))
+      .join("");
+  }
+
+  /**
+   * ID が `id` の置換用の文字列を置換する内容を返す。差し替えの位置は、境界を Shadow DOM の中に持つ要素の Light DOM にあるので、文書の中では境界が先に出現し、差し替えより先に置換される。
+   * 境界を中身に置換したら、中身を出力した位置のスクリプトと要素を `unit` に追加し、`unit` がページに現れた時点で、境界の中身も現れたことにする。
+   * 境界をフォールバックに置換したら、フォールバックを出力した位置のスクリプトと要素を `unit` に追加する。
+   * 差し替えの位置を差し替えの中身に置換したら、差し替えを出力した位置のスクリプトと要素を `unit` に追加する。
+   */
+  private placeOne(id: string, unit: Out): string {
+    const placeholder = this.placeholders.get(id);
+    if (placeholder === undefined) throw new Error(`置換用の文字列 ${id} の記録がありません。`);
+    if (placeholder.kind === "patch") {
+      const { pending, patch } = placeholder;
+      if (!pending.inlined || patch.settled === undefined) return marker(id);
+      unit.absorb(patch.out);
+      return this.place(patch.settled, unit);
+    }
+    const { boundary, pending, fallback, fallbackOut } = placeholder;
+    if (
+      pending.html === undefined ||
+      boundary.patches.some(({ settled }) => settled === undefined)
+    ) {
+      this.interactive = true;
+      unit.absorb(fallbackOut);
+      return marker(id, this.place(fallback, unit));
+    }
+    pending.inlined = true;
+    unit.absorb(pending.out);
+    void unit.shown.then(pending.flush.resolve);
+    if (pending.flush.noindex) unit.flush.noindex = true;
+    return this.place(pending.html, unit);
+  }
+
   /**
    * 境界の中身と差し替えを、目印の位置の出力がページに現れた後に出力する。
    * 中身の出力に失敗したときは、境界を囲む `<Errored>` の領域をフォールバックに差し替え、差し替えられなければエラーを記録する。中身かフォールバックが、規則に合う移動先への移動を投げたら、ページを移動させる。
    * 中身の出力に失敗したとき、目印の位置の出力がページに現れないとき、境界を囲む `<Errored>` の領域を差し替えたときは、中身と差し替えを出力しない。
    * 目印の位置の出力がページに現れないと決まったら、中身の出力が終わる前に、境界を送り終えたものとして数える。
+   * 中身をその場に出力したときは、中身と差し替えを後送りのチャンクとして出力せずに、境界を送り終えたものとして数える。
+   * 中身の描画の状態を返す。
    */
-  private schedule(boundary: Boundary, out: Out): void {
-    this.interactive = true;
+  private schedule(boundary: Boundary, out: Out): Pending {
     const flush: DeferredFlush = {
       ...resolvable(),
       kind: "deferred",
       noindex: false,
     };
-    boundary.flush = flush;
     for (const host of boundary.path) host.defer();
+    const regionOut = Out.of(flush);
+    const content = this.serialize(boundary.region, regionOut);
+    const pending: Pending = { flush, out: regionOut, html: undefined, inlined: false };
+    boundary.pending = pending;
+    content.then(
+      (html) => {
+        pending.html = html;
+      },
+      () => {},
+    );
     this.track(
       (async () => {
-        const regionOut = Out.of(flush);
-        const content = this.serialize(boundary.region, regionOut);
         const finished = content.then(
           () => true,
           () => true,
@@ -1340,14 +1448,18 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
           this.abandon(boundary, flush);
           return;
         }
+        if (pending.inlined) {
+          this.finishBoundary(boundary);
+          return;
+        }
         let region: string;
         let patches: [Patch, string][];
         try {
-          region = await content;
+          region = this.place(await content, regionOut);
           patches = await Promise.all(
             boundary.patches.map(async (patch): Promise<[Patch, string]> => [
               patch,
-              await patch.html,
+              this.place(await patch.html, patch.out),
             ]),
           );
         } catch (error) {
@@ -1378,6 +1490,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         this.finishBoundary(boundary);
       })(),
     );
+    return pending;
   }
 
   /**
@@ -1426,13 +1539,16 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     const fallbackOut = Out.of(flush);
     let html: string;
     try {
-      html = await this.serialize(
-        this.chunks(
-          this.inPosition(catcher.ctx, () => catcher.node.fallback(error)),
-          {
-            ...catcher.ctx,
-            head: restrict(catcher.ctx.head, "loading"),
-          },
+      html = this.place(
+        await this.serialize(
+          this.chunks(
+            this.inPosition(catcher.ctx, () => catcher.node.fallback(error)),
+            {
+              ...catcher.ctx,
+              head: restrict(catcher.ctx.head, "loading"),
+            },
+          ),
+          fallbackOut,
         ),
         fallbackOut,
       );
@@ -1458,7 +1574,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     content: readonly [string, Out],
     patches: readonly (readonly [Patch, string])[],
   ): void {
-    const noindex = this.noindexOnce(flush.noindex);
+    const noindex = this.noindexOnce(flush.noindex, false);
     const [region, ...patched] = this.labels.resolve([
       content[0],
       ...patches.map(([, html]) => html),
@@ -1483,11 +1599,17 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     );
   }
 
-  /** `noindex` が真で、このレスポンスでまだ出力していなければ、`noindex` の `<meta>` と、それを `<head>` に加えるスクリプトを返す。 */
-  private noindexOnce(noindex: boolean): string {
+  /**
+   * `noindex` が真で、このレスポンスでまだ出力していなければ、`noindex` の `<meta>` を返す。
+   * `inHead` が真なら `<head>` の中に出力する `<meta>` だけを返し、偽なら `<meta>` を `<head>` に追加するスクリプトも続けて返す。
+   */
+  private noindexOnce(noindex: boolean, inHead: boolean): string {
     if (!noindex || this.noindexSent) return "";
     this.noindexSent = true;
-    return '<meta name="robots" content="noindex"><script>document.head.append(document.currentScript.previousSibling.cloneNode())</script>';
+    const meta = '<meta name="robots" content="noindex">';
+    return inHead
+      ? meta
+      : `${meta}<script>document.head.append(document.currentScript.previousSibling.cloneNode())</script>`;
   }
 
   /**
@@ -1644,7 +1766,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
       }),
       this.shellOut,
     );
-    return this.labels.resolve([html])[0] ?? "";
+    return this.labels.resolve([this.place(html, this.shellOut)])[0] ?? "";
   }
 
   /** `outs` に出力した要素のうち、まだ起動スクリプトに伝えていない要素を、伝えたものとして記録して返す。 */
@@ -1710,7 +1832,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         ? bootstrap + preloadLinks(fresh) + announceScript(fresh)
         : "";
       const parts = await this.takeDocument(shell);
-      const head = `<meta charset="utf-8">${headTags(parts)}`;
+      const head = `<meta charset="utf-8">${this.noindexOnce(this.shellOut.flush.noindex, true)}${headTags(parts)}`;
       this.reveal(
         this.shellOut.flush,
         `<!doctype html><html${attributesText(parts.html)}><head>${head}${script}${extraHead}</head><body${attributesText(parts.body)}>${parts.rest}${this.shellOut.scriptText}`,

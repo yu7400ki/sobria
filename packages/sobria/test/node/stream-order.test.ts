@@ -39,6 +39,12 @@ describe("出力の順序の検査", () => {
     );
   });
 
+  it("描画の途中の目印が残っている出力ではエラーを投げ、利用者の値の NUL 文字は受け入れる", () => {
+    const nonce = "0f8fad5b-d9cb-469f-a165-70867728950e";
+    expect(() => checkOrder([`${head}\u0000${nonce}!b1\u0000`])).toThrow("目印が残っています");
+    expect(() => checkOrder([`${head}<p>a\u0000b</p>`])).not.toThrow();
+  });
+
   it("チャンクが無いか、最初のチャンクが文書の先頭でなければ、エラーを投げる", () => {
     expect(() => checkOrder([])).toThrow("最初のチャンク");
     expect(() => checkOrder([value, head + host])).toThrow("最初のチャンク");

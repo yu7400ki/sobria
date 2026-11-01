@@ -39,6 +39,9 @@ const head = (document: string): string =>
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+/** 待たずに文字列を返す、async のコンポーネントである。 */
+const Ready = async () => "ready";
+
 describe("要素の配信", () => {
   it("すぐ起動するインスタンスがある要素のモジュールと、そのモジュールが静的に import するチャンクを、重複せずに先読みする", async () => {
     const document = await html(
@@ -141,6 +144,37 @@ describe("要素の配信", () => {
       /<script>\$sobria\.m\(\[\["x-e","\/src\/elements\/x-e\.tsx","visible"\]\]\)<\/script><script>\$sobria\.r\(/,
     );
     expect(document.match(/"x-a","\/src/g)).toHaveLength(1);
+  });
+
+  it("後送りにした境界のフォールバックの中の要素は伝え、中身をその場に出力した境界のフォールバックの中の要素は伝えない", async () => {
+    const Spin = element("x-spin");
+    const Idle = element("x-idle");
+    const { promise, resolve } = Promise.withResolvers<void>();
+    const Slow = async () => {
+      await promise;
+      return "slow";
+    };
+    const Shell = async () => {
+      await tick();
+      return "s";
+    };
+    const reading = read(
+      renderToStream(
+        jsx("main", {
+          children: [
+            jsx(Shell, {}),
+            jsx(Loading, { fallback: jsx(Spin, {}), children: jsx(Slow, {}) }),
+            jsx(Loading, { fallback: jsx(Idle, {}), children: jsx(Ready, {}) }),
+          ],
+        }),
+      ),
+    );
+    await tick();
+    await tick();
+    resolve();
+    const document = (await reading).join("");
+    expect(head(document)).toContain('$sobria.m([["x-spin","/src/elements/x-spin.tsx","load"]])');
+    expect(document).not.toContain("x-idle");
   });
 
   it("配信の情報を持たない要素は伝えず、先読みもしない", async () => {
