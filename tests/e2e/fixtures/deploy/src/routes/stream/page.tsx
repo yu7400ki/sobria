@@ -3,7 +3,7 @@ import { Loading } from "sobria";
 import Doubler from "../../elements/doubler.tsx";
 
 async function Late() {
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  await new Promise((resolve) => setTimeout(resolve, 1000));
   return (
     <>
       <p class="late">late</p>

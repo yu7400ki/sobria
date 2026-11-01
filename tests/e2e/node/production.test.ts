@@ -112,7 +112,7 @@ it.each(browserTypes)(
       const seen = await page.evaluate(
         () => (window as unknown as { seen: Record<string, number> }).seen,
       );
-      // 中身は、サーバーが 500ms 待ってから送る
+      // 中身は、サーバーが 1000ms 待ってから送る
       expect(seen.late! - seen.waiting!).toBeGreaterThan(200);
       expect(await page.locator(".waiting").count()).toBe(0);
       const late = page.locator("app-doubler").nth(1);
