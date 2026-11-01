@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, relative, sep } from "node:path";
+import { basename, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright";
@@ -10,7 +10,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createDevServer, originOf } from "../dev-server.ts";
 
-const root = fileURLToPath(new URL("../fixtures/basic", import.meta.url));
+/** テストがファイルを書き込む、`fixtures/basic` の複製のルートである。 */
+let root: string;
 
 /** パスの区切りを `/` にする。 */
 const posix = (path: string) => path.split(sep).join("/");
@@ -21,10 +22,15 @@ let origin: string;
 const warnings: string[] = [];
 
 beforeAll(async () => {
-  // e2e のプロジェクトの開発サーバーと依存の事前バンドルを共有しないように、キャッシュのディレクトリを分ける
+  // ほかのテストの開発サーバーも fixtures/basic を監視するので、ファイルを書き込むこのテストは複製を使用する。sobria を解決できるように、複製は tests/e2e の中に配置する
+  root = await mkdtemp(fileURLToPath(new URL("../.sobria-tmp-dev-server-", import.meta.url)));
+  await cp(fileURLToPath(new URL("../fixtures/basic", import.meta.url)), root, {
+    recursive: true,
+    filter: (source) => basename(source) !== ".sobria",
+  });
   server = await createDevServer(root, {
     server: { port: 0 },
-    cacheDir: fileURLToPath(new URL("../node_modules/.vite/node-dev-server", import.meta.url)),
+    cacheDir: join(root, "node_modules/.vite"),
   });
   const { logger } = server.config;
   const warn = logger.warn.bind(logger);
@@ -34,10 +40,11 @@ beforeAll(async () => {
   };
   await server.listen();
   origin = originOf(server);
-});
+}, 60_000);
 
 afterAll(async () => {
-  await server.close();
+  await server?.close();
+  await rm(root, { recursive: true, force: true });
 });
 
 /** `name` のサーバー関数を 1 つだけ定義するモジュールのソースを返す。 */
