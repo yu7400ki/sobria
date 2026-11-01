@@ -6,7 +6,14 @@ export default defineConfig({
   test: {
     passWithNoTests: true,
     projects: [
-      { test: { name: "node", include: ["node/**/*.test.ts"] } },
+      {
+        test: {
+          name: "node",
+          include: ["node/**/*.test.ts"],
+          // 開発サーバーは、最初のリクエストでモジュールを変換し、依存を事前バンドルする。その時間は、ファイルの最初のテストに含まれる
+          testTimeout: 30_000,
+        },
+      },
       {
         plugins: [svelte()],
         test: {

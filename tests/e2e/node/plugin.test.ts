@@ -389,7 +389,7 @@ describe("登録した拡張子のファイル", () => {
       { server: { middlewareMode: false, port: 0 } },
       { options, before: [pagePlugin()] },
     );
-  }, 30_000);
+  });
 
   it("登録した拡張子のファイルでサーバー関数を定義すると、エラーにする", async () => {
     await withProject(

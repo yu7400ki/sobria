@@ -101,7 +101,7 @@ const registered = (kind: string) =>
   Promise.all(
     ["owner.tsx", "user.tsx"].map((name) =>
       vi.waitUntil(async () => (await transformed(name)).includes(`"value": "${kind}"`), {
-        timeout: 5000,
+        timeout: 10_000,
       }),
     ),
   );
@@ -173,11 +173,15 @@ writeFileSync(${JSON.stringify(marker)}, "x");
     try {
       await writeFile(file, removedSource("gone"));
       server.watcher.emit("add", posix(file));
-      await vi.waitUntil(async () => (await callRemoved("gone")).status === 200, { timeout: 2000 });
+      await vi.waitUntil(async () => (await callRemoved("gone")).status === 200, {
+        timeout: 10_000,
+      });
       await writeFile(file, removedSource("kept"));
       server.watcher.emit("change", posix(file));
       // Vite は変更の通知を非同期に処理するので、変換の結果が変わるまで待つ
-      await vi.waitUntil(async () => (await callRemoved("gone")).status === 404, { timeout: 2000 });
+      await vi.waitUntil(async () => (await callRemoved("gone")).status === 404, {
+        timeout: 10_000,
+      });
     } finally {
       await rm(file, { force: true });
     }
@@ -204,36 +208,36 @@ writeFileSync(${JSON.stringify(marker)}, "x");
       await writeFile(typesFile, "export type Props = { value?: string };\n");
       await writeFile(elementFile, source);
       await vi.waitUntil(async () => /"value": "string"/.test(await transformed(element)), {
-        timeout: 5000,
+        timeout: 10_000,
       });
       await writeFile(typesFile, "export type Props = { value?: number };\n");
       server.watcher.emit("change", posix(typesFile));
       await vi.waitUntil(async () => /"value": "number"/.test(await transformed(element)), {
-        timeout: 5000,
+        timeout: 10_000,
       });
     } finally {
       await rm(elementFile, { force: true });
       await rm(typesFile, { force: true });
     }
-  }, 20_000);
+  });
 
   it("要素が import した Props の型のファイルが作成されると、要素を props の分類で登録し直す", async () => {
     const { element, elementFile, typesFile, source } = typedFiles("typed-created");
     try {
       await writeFile(elementFile, source);
       await vi.waitUntil(async () => (await transformed(element)).includes("解決できない"), {
-        timeout: 5000,
+        timeout: 10_000,
       });
       await writeFile(typesFile, "export type Props = { value?: number };\n");
       server.watcher.emit("add", posix(typesFile));
       await vi.waitUntil(async () => /"value": "number"/.test(await transformed(element)), {
-        timeout: 5000,
+        timeout: 10_000,
       });
     } finally {
       await rm(elementFile, { force: true });
       await rm(typesFile, { force: true });
     }
-  }, 20_000);
+  });
 
   it("要素のファイルと Props の型のファイルを削除してから、要素のファイルを同じ内容で作成し直すと、Props の型を解決できない要素として変換し直す", async () => {
     const { element, elementFile, typesFile, source } = typedFiles("typed-recreated");
@@ -241,7 +245,7 @@ writeFileSync(${JSON.stringify(marker)}, "x");
       await writeFile(typesFile, "export type Props = { value?: string };\n");
       await writeFile(elementFile, source);
       await vi.waitUntil(async () => /"value": "string"/.test(await transformed(element)), {
-        timeout: 5000,
+        timeout: 10_000,
       });
       await rm(elementFile);
       server.watcher.emit("unlink", posix(elementFile));
@@ -254,7 +258,7 @@ writeFileSync(${JSON.stringify(marker)}, "x");
       await rm(elementFile, { force: true });
       await rm(typesFile, { force: true });
     }
-  }, 20_000);
+  });
 
   it("ほかの要素のファイルで宣言した Props の型が変更されると、その型を import する要素も登録し直す", async () => {
     const ownerFile = join(root, "src/elements/owner.tsx");
@@ -273,7 +277,7 @@ writeFileSync(${JSON.stringify(marker)}, "x");
       await rm(userFile, { force: true });
       await rm(ownerFile, { force: true });
     }
-  }, 30_000);
+  });
 
   it("ページの CSS の import を追加か削除すると、HMR が無効でも、次のリクエストの <link> に反映する", async () => {
     const dir = join(root, "src/routes/styled");
@@ -282,13 +286,13 @@ writeFileSync(${JSON.stringify(marker)}, "x");
       await mkdir(dir, { recursive: true });
       await writeFile(join(dir, "styled.css"), "p { color: red; }\n");
       await writeFile(pageFile, pageSource(false));
-      await vi.waitUntil(async () => (await link()) === false, { timeout: 5000 });
+      await vi.waitUntil(async () => (await link()) === false, { timeout: 10_000 });
       await writeFile(pageFile, pageSource(true));
       server.watcher.emit("change", posix(pageFile));
-      await vi.waitUntil(async () => (await link()) === true, { timeout: 5000 });
+      await vi.waitUntil(async () => (await link()) === true, { timeout: 10_000 });
       await writeFile(pageFile, pageSource(false));
       server.watcher.emit("change", posix(pageFile));
-      await vi.waitUntil(async () => (await link()) === false, { timeout: 5000 });
+      await vi.waitUntil(async () => (await link()) === false, { timeout: 10_000 });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -312,57 +316,59 @@ writeFileSync(${JSON.stringify(marker)}, "x");
     try {
       const page = await browser.newPage();
       await page.goto(`${origin}/fns`);
-      await page.locator("app-pinger[data-started]").waitFor({ timeout: 5000 });
+      await page.locator("app-pinger[data-started]").waitFor({ timeout: 10_000 });
       // 前のテストの /boom のエラーが、Vite のエラーのオーバーレイとしてボタンの上に表示されるので、click のイベントを直接送る
       await page.locator("app-pinger button").dispatchEvent("click");
-      await page.locator("app-pinger button", { hasText: "pong pong" }).waitFor({ timeout: 5000 });
+      await page
+        .locator("app-pinger button", { hasText: "pong pong" })
+        .waitFor({ timeout: 10_000 });
     } finally {
       await browser.close();
     }
-  }, 30_000);
+  });
 
   it("要素から refreshPage() を呼び出すと、要素の状態を保ったまま、本文と <title> と要素の props を描き直しで更新する", async () => {
     const browser = await chromium.launch();
     try {
       const page = await browser.newPage();
       await page.goto(`${origin}/refresh`);
-      await page.locator("app-refresher[data-started]").waitFor({ timeout: 5000 });
+      await page.locator("app-refresher[data-started]").waitFor({ timeout: 10_000 });
       const before = Number(await page.locator("#renders").textContent());
       await page.locator("app-refresher #count").dispatchEvent("click");
       await page
         .locator("app-refresher #count", { hasText: `v${before} 1` })
-        .waitFor({ timeout: 5000 });
+        .waitFor({ timeout: 10_000 });
       await page.locator("app-refresher #refresh").dispatchEvent("click");
       const after = before + 1;
-      await page.locator("#renders", { hasText: String(after) }).waitFor({ timeout: 5000 });
+      await page.locator("#renders", { hasText: String(after) }).waitFor({ timeout: 10_000 });
       await page
         .locator("app-refresher #count", { hasText: `v${after} 1` })
-        .waitFor({ timeout: 5000 });
+        .waitFor({ timeout: 10_000 });
       expect(await page.title()).toBe(`refresh ${after}`);
     } finally {
       await browser.close();
     }
-  }, 30_000);
+  });
 
   it("要素から POST のサーバー関数を呼び出すと、要素の状態を保ったまま、同じレスポンスで本文と <title> と要素の props を描き直す", async () => {
     const browser = await chromium.launch();
     try {
       const page = await browser.newPage();
       await page.goto(`${origin}/refresh`);
-      await page.locator("app-refresher[data-started]").waitFor({ timeout: 5000 });
+      await page.locator("app-refresher[data-started]").waitFor({ timeout: 10_000 });
       const before = Number(await page.locator("#renders").textContent());
       await page.locator("app-refresher #count").dispatchEvent("click");
       await page
         .locator("app-refresher #count", { hasText: `v${before} 1` })
-        .waitFor({ timeout: 5000 });
+        .waitFor({ timeout: 10_000 });
       const requests: string[] = [];
       page.on("request", (request) => requests.push(new URL(request.url()).pathname));
       await page.locator("app-refresher #save").dispatchEvent("click");
       const after = before + 1;
-      await page.locator("#renders", { hasText: String(after) }).waitFor({ timeout: 5000 });
+      await page.locator("#renders", { hasText: String(after) }).waitFor({ timeout: 10_000 });
       await page
         .locator("app-refresher #count", { hasText: `v${after} 1` })
-        .waitFor({ timeout: 5000 });
+        .waitFor({ timeout: 10_000 });
       expect(await page.title()).toBe(`refresh ${after}`);
       expect([
         requests.filter((path) => path.startsWith("/_sobria/fn/")).length,
@@ -371,42 +377,44 @@ writeFileSync(${JSON.stringify(marker)}, "x");
     } finally {
       await browser.close();
     }
-  }, 30_000);
+  });
 
   it("refreshPage() のレスポンスがリダイレクトのときは、ページを読み込み直してリダイレクト先に移動する", async () => {
     const browser = await chromium.launch();
     try {
       const page = await browser.newPage();
       await page.goto(`${origin}/refresh-moved`);
-      await page.locator("app-refresher[data-started]").waitFor({ timeout: 5000 });
+      await page.locator("app-refresher[data-started]").waitFor({ timeout: 10_000 });
       await page.locator("app-refresher #refresh").dispatchEvent("click");
-      await page.waitForURL(`${origin}/refresh`, { timeout: 5000 });
+      await page.waitForURL(`${origin}/refresh`, { timeout: 10_000 });
     } finally {
       await browser.close();
     }
-  }, 30_000);
+  });
 
   it("JS があるときのフォームの送信は、要素の状態を保ったまま本文を描き直し、失敗したら URL を変えずに error.tsx を表示する", async () => {
     const browser = await chromium.launch();
     try {
       const page = await browser.newPage();
       await page.goto(`${origin}/notes`);
-      await page.locator("app-refresher[data-started]").waitFor({ timeout: 5000 });
+      await page.locator("app-refresher[data-started]").waitFor({ timeout: 10_000 });
       const before = await page.locator("#notes li").count();
       await page.locator("app-refresher #count").dispatchEvent("click");
       await page.locator("input[name=title]").fill("draft");
       await page.locator("#add").dispatchEvent("click");
-      await page.locator("#notes li").nth(before).waitFor({ timeout: 5000 });
-      await page.locator("app-refresher #count", { hasText: "notes 1" }).waitFor({ timeout: 5000 });
+      await page.locator("#notes li").nth(before).waitFor({ timeout: 10_000 });
+      await page
+        .locator("app-refresher #count", { hasText: "notes 1" })
+        .waitFor({ timeout: 10_000 });
       expect(await page.locator("input[name=title]").inputValue()).toBe("");
       expect(page.url()).toBe(`${origin}/notes`);
       await page.locator("#fail").dispatchEvent("click");
-      await page.locator("#error", { hasText: "note failed" }).waitFor({ timeout: 5000 });
+      await page.locator("#error", { hasText: "note failed" }).waitFor({ timeout: 10_000 });
       expect(page.url()).toBe(`${origin}/notes`);
     } finally {
       await browser.close();
     }
-  }, 30_000);
+  });
 
   it.each([true, false])(
     "JS が %s のときに、検証に失敗したフォームの送信は、handler が返した入力した値とエラーを、送信したページに表示する",
@@ -416,14 +424,14 @@ writeFileSync(${JSON.stringify(marker)}, "x");
         const page = await (await browser.newContext({ javaScriptEnabled })).newPage();
         await page.goto(`${origin}/signup`);
         if (javaScriptEnabled) {
-          await page.locator("app-refresher[data-started]").waitFor({ timeout: 5000 });
+          await page.locator("app-refresher[data-started]").waitFor({ timeout: 10_000 });
           await page.locator("app-refresher #count").dispatchEvent("click");
         }
         await page.locator("input[name=name]").fill("admin");
         await page.locator("#signup").click();
         await page
           .locator("#error", { hasText: "この名前は使用されています" })
-          .waitFor({ timeout: 5000 });
+          .waitFor({ timeout: 10_000 });
         expect(await page.locator("input[name=name]").getAttribute("value")).toBe("admin");
         if (javaScriptEnabled) {
           expect(await page.locator("app-refresher #count").textContent()).toBe("signup 1");
@@ -433,7 +441,6 @@ writeFileSync(${JSON.stringify(marker)}, "x");
         await browser.close();
       }
     },
-    30_000,
   );
 
   it("共通のコンポーネントは、ページの中と要素の中の両方で、ラベル、入力欄、エラーの文を id で関連付ける", async () => {
@@ -441,7 +448,7 @@ writeFileSync(${JSON.stringify(marker)}, "x");
     try {
       const page = await browser.newPage();
       await page.goto(`${origin}/field`);
-      await page.locator("app-field-box[data-started]").waitFor({ timeout: 5000 });
+      await page.locator("app-field-box[data-started]").waitFor({ timeout: 10_000 });
       /** セレクター `host` が指す要素の Shadow DOM（空の文字列なら文書）の中の、ラベルの `for`、入力欄の `id` と `aria-describedby`、エラーの文の `id` を返す。 */
       const links = (host: string) =>
         page.evaluate((selector) => {
@@ -466,7 +473,7 @@ writeFileSync(${JSON.stringify(marker)}, "x");
     } finally {
       await browser.close();
     }
-  }, 30_000);
+  });
 
   it("Vite が処理するリクエストは、Vite が返す", async () => {
     const response = await fetch(`${origin}/src/elements/counter.tsx`);

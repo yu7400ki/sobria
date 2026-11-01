@@ -44,7 +44,7 @@ it("要素が取り込んだ CSS を書き換えると、再読み込みせず�
     Object.assign(window, { sheet: host.shadowRoot!.adoptedStyleSheets[0], kept: true });
   });
   await writeFile(file, original.replace("rgb(0, 128, 0)", "rgb(128, 0, 128)"));
-  await expect.poll(color, { timeout: 5000 }).toBe("rgb(128, 0, 128)");
+  await expect.poll(color, { timeout: 10_000 }).toBe("rgb(128, 0, 128)");
   expect(
     await page.evaluate(() => {
       const host = document.querySelector("app-hot")!;
