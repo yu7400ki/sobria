@@ -1,6 +1,6 @@
 {
   "name": "sobria",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Hono と Vite の上で動作する、サーバーファーストの Web フレームワーク",
   "keywords": [
     "custom-elements",
