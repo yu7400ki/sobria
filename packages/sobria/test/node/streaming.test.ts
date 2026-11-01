@@ -829,6 +829,34 @@ describe("書き出す時点で揃っている境界", () => {
     expect(html).not.toContain('data-ob="b2"');
   });
 
+  it("後送りにした境界の中で <slot> を囲む境界が受け取るスロットの内容は、外側の境界の中身を書き出すより先に揃っても、その境界の差し替えとして送る", async () => {
+    const gate = deferred("slow");
+    const Nest = defineElement(
+      "x-ready-nest",
+      () =>
+        jsx(Loading, {
+          fallback: "d",
+          children: [
+            jsx(gate.Slow, {}),
+            jsx(Loading, { fallback: "b", children: jsx("slot", {}) }),
+          ],
+        }),
+      { props: { children: "slot" } },
+    );
+    const reading = read(
+      renderToStream(
+        jsx("main", {
+          children: [jsx(afterTick("s"), {}), jsx(Nest, { children: jsx(ReadyText, {}) })],
+        }),
+      ),
+    );
+    await tick();
+    await tick();
+    gate.resolve();
+    const html = (await reading).join("");
+    expect(html).toMatch(/<template data-op="p\d+">in<\/template>/);
+  });
+
   it("揃った境界の中で読んだ memo の値と、境界を囲むホストの @b を送る", async () => {
     const Card = defineElement(
       "x-ready-card",

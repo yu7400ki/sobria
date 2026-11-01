@@ -148,8 +148,8 @@ interface Pending {
   readonly out: Out;
   /** 中身の描画が成功したら、中身の HTML を保持する。 */
   html: string | undefined;
-  /** 中身を、目印を含む出力の中にその場に出力すると決定したら真である。 */
-  inlined: boolean;
+  /** 中身をその場に出力するか、後送りにするかの決定である。決定していなければ `undefined` である。 */
+  decision: "inline" | "defer" | undefined;
 }
 
 /**
@@ -1289,7 +1289,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
         if (!this.isPending(boundary)) return this.serialize(boundary.region, out);
         if (chunk.raw) return this.serialize(chunk.fallback(), out);
         const pending = this.schedule(boundary, out);
-        const fallbackOut = out.conditional(() => !pending.inlined);
+        const fallbackOut = out.conditional(() => pending.decision !== "inline");
         const fallback = await this.serialize(chunk.fallback(), fallbackOut);
         return this.placeholder(boundary.id, {
           kind: "mark",
@@ -1366,8 +1366,8 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
 
   /**
    * 1 つの単位として書き出す文字列 `html` に含まれる置換用の文字列を、出現する順に置換した文字列を返す。`unit` は、単位を出力する最も外側の位置である。
-   * 保留中の境界の中身と、境界に属する差し替えがすべて揃っていれば、境界を中身に、差し替えの位置を差し替えの中身に置換する。
-   * そうでなければ、境界をフォールバックを囲んだ目印に、差し替えの位置を目印に置換する。置換した内容に含まれる置換用の文字列も、同じ単位で置換する。
+   * 境界をその場に出力すると決定したら、境界を中身に、差し替えの位置を差し替えの中身に置換する。
+   * 後送りにすると決定したら、境界をフォールバックを囲んだ目印に、差し替えの位置を目印に置換する。置換した内容に含まれる置換用の文字列も、同じ単位で置換する。
    */
   private place(html: string, unit: Out): string {
     return html
@@ -1377,7 +1377,8 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
   }
 
   /**
-   * ID が `id` の置換用の文字列を置換する内容を返す。差し替えの位置は、境界を Shadow DOM の中に持つ要素の Light DOM にあるので、文書の中では境界が先に出現し、差し替えより先に置換される。
+   * ID が `id` の置換用の文字列を置換する内容を返す。境界と、境界に属する差し替えのうち、先に置換した側が境界の出力を決定する。
+   * 差し替えを先に置換したら、後送りにすると決定する。境界を先に置換したら、中身と差し替えがすべて揃っているときに、その場に出力すると決定する。
    * 境界を中身に置換したら、中身を出力した位置のスクリプトと要素を `unit` に追加し、`unit` がページに現れた時点で、境界の中身も現れたことにする。
    * 境界をフォールバックに置換したら、フォールバックを出力した位置のスクリプトと要素を `unit` に追加する。
    * 差し替えの位置を差し替えの中身に置換したら、差し替えを出力した位置のスクリプトと要素を `unit` に追加する。
@@ -1387,24 +1388,35 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     if (placeholder === undefined) throw new Error(`置換用の文字列 ${id} の記録がありません。`);
     if (placeholder.kind === "patch") {
       const { pending, patch } = placeholder;
-      if (!pending.inlined || patch.settled === undefined) return marker(id);
+      if (this.decide(pending, false) === "defer" || patch.settled === undefined) return marker(id);
       unit.absorb(patch.out);
       return this.place(patch.settled, unit);
     }
     const { boundary, pending, fallback, fallbackOut } = placeholder;
-    if (
-      pending.html === undefined ||
-      boundary.patches.some(({ settled }) => settled === undefined)
-    ) {
-      this.interactive = true;
+    if (pending.decision === "inline")
+      throw new Error(`境界 ${id} の置換用の文字列を 2 回置換しました。`);
+    const ready =
+      pending.html !== undefined && boundary.patches.every((patch) => patch.settled !== undefined);
+    if (this.decide(pending, ready) === "defer" || pending.html === undefined) {
       unit.absorb(fallbackOut);
       return marker(id, this.place(fallback, unit));
     }
-    pending.inlined = true;
     unit.absorb(pending.out);
     void unit.shown.then(pending.flush.resolve);
     if (pending.flush.noindex) unit.flush.noindex = true;
     return this.place(pending.html, unit);
+  }
+
+  /**
+   * 保留中の境界の出力をまだ決定していなければ、決定を記録する。`inline` が真なら、その場に出力すると決定する。偽なら、後送りにすると決定する。
+   * 記録されている決定を返す。後送りにすると決定したら、文書に起動スクリプトを出力するように `interactive` を真にする。
+   */
+  private decide(pending: Pending, inline: boolean): "inline" | "defer" {
+    if (pending.decision === undefined) {
+      pending.decision = inline ? "inline" : "defer";
+      if (!inline) this.interactive = true;
+    }
+    return pending.decision;
   }
 
   /**
@@ -1424,7 +1436,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
     for (const host of boundary.path) host.defer();
     const regionOut = Out.of(flush);
     const content = this.serialize(boundary.region, regionOut);
-    const pending: Pending = { flush, out: regionOut, html: undefined, inlined: false };
+    const pending: Pending = { flush, out: regionOut, html: undefined, decision: undefined };
     boundary.pending = pending;
     content.then(
       (html) => {
@@ -1448,7 +1460,7 @@ export class Renderer<K extends Target["kind"] = Target["kind"]> {
           this.abandon(boundary, flush);
           return;
         }
-        if (pending.inlined) {
+        if (pending.decision === "inline") {
           this.finishBoundary(boundary);
           return;
         }
